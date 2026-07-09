@@ -1,6 +1,6 @@
 # Orchestra — Multi-Agent Operating Protocol
 
-<!-- Installed by ClaudeCreations/Orchestra. Do not hand-edit here; edit the master copy and re-run the installer. -->
+<!-- Installed by the Orchestra harness. Do not hand-edit here; edit the master copy and re-run the installer. -->
 
 This project runs under the **Orchestra harness**: a fixed division of labor between the session model (the **Director**) and three specialist subagents. The Director decides; the agents do.
 

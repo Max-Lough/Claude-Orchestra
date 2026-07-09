@@ -58,18 +58,27 @@ This folder is the **master copy**. Projects get stamped copies; to change the s
 
 ## Install into a project
 
+Clone the master once, then point the installer at any project. `ORCHESTRA_HOME` below is wherever you cloned it.
+
 ```powershell
 # Get the master (once):
 git clone https://github.com/Max-Lough/Claude-Orchestra.git
+cd Claude-Orchestra
 
-# From this folder (PowerShell):
+# From the master folder (PowerShell):
 .\install.ps1 "C:\path\to\your\project"
 
-# or anywhere, directly:
-node install.js "C:\path\to\your\project"
+# or by absolute path from anywhere:
+node "$ORCHESTRA_HOME\install.js" "C:\path\to\your\project"
 
-# or from inside the target project:
-node "C:\Users\maxtl\ClaudeCreations\Orchestra\install.js"
+# or from inside the target project (installs into the current dir):
+node "$ORCHESTRA_HOME\install.js"
+```
+
+```bash
+# POSIX (macOS/Linux):
+git clone https://github.com/Max-Lough/Claude-Orchestra.git && cd Claude-Orchestra
+./install.sh /path/to/your/project
 ```
 
 The installer is **idempotent** — run it again anytime to update a project to the latest master. It:
@@ -166,3 +175,7 @@ This trades tokens for quality and control, deliberately:
 - **Why a hook and not just instructions?** Under pressure ("just quickly fix the import"), models drift toward doing work themselves. The hook makes drift impossible instead of discouraged; the denial message itself re-points the Director at the right agent.
 - **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout does all discovery.
 - **Why does MODE B still spawn a reviewer?** Self-review inside the planning context inherits the planner's blind spots. A fresh-context Opus reviewer that re-runs the tests is independent in the ways that matter, even though it's the same model family.
+
+## License
+
+[MIT](LICENSE) — use, modify, and distribute freely with attribution; no warranty.

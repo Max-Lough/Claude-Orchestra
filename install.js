@@ -26,7 +26,7 @@ function availableSpecialists() {
 }
 const GUARD = 'orchestra-guard.js';
 const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
-const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by ClaudeCreations/Orchestra installer - do not edit between markers) -->';
+const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by the Orchestra installer - do not edit between markers) -->';
 const END = '<!-- ORCHESTRA:END -->';
 const IMPORT_BLOCK = BEGIN + '\n@.claude/ORCHESTRA.md\n' + END;
 

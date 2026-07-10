@@ -9,6 +9,19 @@
  * The settings.json matcher fires this hook on every main-session tool call;
  * this script is the single source of truth for what the Director may do.
  *
+ * Model-aware: Director law binds only director models (ORCHESTRA.md §1).
+ * Before denying, the guard reads the latest main-session assistant turn from
+ * the session transcript (tail read, sidechain-filtered): Opus/Fable ->
+ * enforce; anything else (Sonnet, Haiku) -> the Orchestra is dormant and the
+ * guard stands down entirely. Undetermined -> enforce, so the harness never
+ * silently vanishes on a director session. Known one-turn staleness windows
+ * (both fail toward enforcement on directors, by design):
+ *   - fresh session, first assistant turn: no assistant entry is flushed yet
+ *     -> enforce (a brand-new Sonnet session may see one denial on its very
+ *     first turn if that turn immediately calls a blocked tool);
+ *   - the current turn is flushed only after it completes, so a mid-session
+ *     /model switch is picked up one turn late.
+ *
  * Optional per-project policy — .claude/orchestra.json:
  *   {
  *     "directorBlockedPatterns": ["^mcp__blender__", "^mcp__godot__"],
@@ -21,7 +34,9 @@
  *
  * Fail-open by design: any unexpected input, config error, or internal error
  * allows the call rather than bricking the session. A broken orchestra.json
- * disables only itself — the default blocklist still applies.
+ * disables only itself — the default blocklist still applies. (Model
+ * detection is the one deliberate exception: an undetermined model enforces
+ * rather than allows, per above.)
  */
 'use strict';
 
@@ -39,6 +54,13 @@ const BLOCKED = new Set([
   'Grep',
   'Glob',
 ]);
+
+// Models allowed to direct (MODE A / MODE B). Anything else — Sonnet, Haiku,
+// or unknown — means the Orchestra is dormant (ORCHESTRA.md §1) and the guard
+// stands down so the session behaves like plain Claude Code. Matches bare ids
+// ("claude-opus-4-8"), suffixed ("claude-opus-4-8[1m]"), and provider-prefixed
+// ("us.anthropic.claude-opus-...") forms.
+const DIRECTOR_MODEL = /opus|fable/i;
 
 const PAUSE_BASENAME = 'orchestra.pause';
 const CONFIG_BASENAME = 'orchestra.json';
@@ -111,6 +133,45 @@ function loadPolicy() {
   }
 }
 
+// Latest main-session assistant model from the session transcript. Reads only
+// the file tail (fixed cost regardless of transcript size) and skips sidechain
+// (subagent) entries so a recently finished Haiku scout cannot masquerade as
+// the session model. Returns null when undetermined — callers must treat null
+// as "enforce", never as "stand down".
+function latestMainModel(input) {
+  try {
+    const tp = input.transcript_path;
+    if (typeof tp !== 'string' || tp === '') return null;
+    const size = fs.statSync(tp).size;
+    const start = Math.max(0, size - 262144); // last 256 KB
+    const buf = Buffer.alloc(size - start);
+    const fd = fs.openSync(tp, 'r');
+    try {
+      fs.readSync(fd, buf, 0, buf.length, start);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const lines = buf.toString('utf8').split('\n');
+    if (start > 0) lines.shift(); // first line may begin mid-entry
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (line === '') continue;
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch (_) {
+        continue; // partial/corrupt line — keep scanning backwards
+      }
+      if (!entry || entry.type !== 'assistant' || entry.isSidechain === true) continue;
+      const model = entry.message && entry.message.model;
+      if (typeof model === 'string' && model !== '' && model !== '<synthetic>') return model;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // The one mutation the Director is permitted: creating/removing the pause file
 // itself, at the user's explicit request (see ORCHESTRA.md §6).
 function isPauseFileOperation(toolName, toolInput) {
@@ -154,18 +215,24 @@ function main(raw) {
   const toolName = input.tool_name;
   if (typeof toolName !== 'string') return allow();
 
+  // The one mutation the Director may perform: the pause-file toggle (§6).
+  if (isPauseFileOperation(toolName, input.tool_input)) return allow();
+
   const policy = loadPolicy();
 
-  if (BLOCKED.has(toolName) && !policy.allowed.includes(toolName)) {
-    if (isPauseFileOperation(toolName, input.tool_input)) return allow();
-    return denyDefault(toolName);
-  }
+  const deniedByDefault = BLOCKED.has(toolName) && !policy.allowed.includes(toolName);
+  const deniedByPolicy = policy.patterns.some((re) => re.test(toolName));
+  if (!deniedByDefault && !deniedByPolicy) return allow();
 
-  if (policy.patterns.some((re) => re.test(toolName))) {
-    return denyByPolicy(toolName);
-  }
+  // Model-aware dormancy (ORCHESTRA.md §1): only Opus/Fable direct. If the
+  // latest main-session assistant turn ran on any other model, the Orchestra
+  // is dormant — stand down so the session behaves like plain Claude Code.
+  // Undetermined (no transcript, unreadable, no assistant turn yet) enforces:
+  // the harness must never silently vanish on a director session.
+  const model = latestMainModel(input);
+  if (model !== null && !DIRECTOR_MODEL.test(model)) return allow();
 
-  return allow();
+  return deniedByDefault ? denyDefault(toolName) : denyByPolicy(toolName);
 }
 
 let raw = '';

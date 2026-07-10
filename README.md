@@ -19,7 +19,7 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
    └───────────────┘     └───────────────┘     └───────────────┘
 ```
 
-The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block.
+The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code.
 
 ## Two modes, selected automatically
 
@@ -30,7 +30,7 @@ The Director is **hard-blocked by a PreToolUse hook** from editing files, runnin
 | Review | `reviewer` agent (Opus, fresh context) | Opus owns review judgment; still spawns `reviewer` for substantive changes, may self-review small low-risk ones |
 | Scout / Executor | Haiku / Sonnet | Haiku / Sonnet |
 
-Mode detection is automatic — the protocol tells the session to identify its own model. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so.
+Mode detection is automatic and two-layered: the protocol tells the session to identify its own model, and the guard hook independently reads the live model from the session transcript. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so — the guard stands down too, so a Sonnet/Haiku session is a plain Claude Code session with no denials and no pause file. A mid-session `/model` switch is picked up one turn later.
 
 Every **substantive** change (logic, config, dependencies, data, API surface) gets adversarial review before the Director reports it done. Two failed review cycles force a re-plan instead of a third retry.
 
@@ -162,17 +162,18 @@ This trades tokens for quality and control, deliberately:
 
 | Symptom | Cause / fix |
 |---|---|
-| "Orchestra: the Director does not use X" denials | Working as intended — the session should delegate. If it happens in a session you wanted un-harnessed, pause (above). |
+| "Orchestra: the Director does not use X" denials | Working as intended on Fable/Opus — the session should delegate. On Sonnet/Haiku the guard stands down automatically (one denial is possible on the very first turn of a fresh session, before the model reaches the transcript; it clears next turn). Persistent denials on Sonnet/Haiku mean model detection failed — pause (above) and file a bug against the master. |
 | Hook seems inactive | Did you approve project hooks at first launch? Check `/hooks` in Claude Code; confirm `.claude/settings.json` has the `orchestra-guard` entry. |
 | Executor/scout getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |
 | `node` not found when hook fires | Claude Code itself runs on Node, but the hook shell needs `node` on PATH. Install Node or add it to PATH. |
-| Session model is Sonnet/Haiku | Orchestra goes dormant by design. Relaunch as Fable, or `claude --model opus` for MODE B. |
+| Session model is Sonnet/Haiku | Orchestra goes dormant by design — protocol and guard both stand down, leaving a normal session. Relaunch as Fable, or `claude --model opus` for MODE B. |
 | Skill/slash-command in a harnessed session wants to edit files | That's a hands-on skill in the Director's context — route it per ORCHESTRA.md §7: a specialist with the skill preloaded, or a work order telling the executor to invoke it. Pausing works too, but forfeits the harness for that stretch. |
 | Director drives MCP tools (Blender, DBs, …) directly | Instruction rule §7 should stop it; to enforce, add the server's pattern to `directorBlockedPatterns` in `.claude/orchestra.json` (see "Specialists & hands-on skills"). |
 
 ## Design notes
 
 - **Why a hook and not just instructions?** Under pressure ("just quickly fix the import"), models drift toward doing work themselves. The hook makes drift impossible instead of discouraged; the denial message itself re-points the Director at the right agent.
+- **Why does the guard read the transcript for the model?** The protocol already tells non-director sessions to act normally, but instructions can't unblock a hook — without detection, a Sonnet session would be told "you're dormant" and then denied every Edit. So before denying, the guard tail-reads the session transcript (fixed cost, sub-millisecond, regardless of transcript size), takes the latest non-sidechain assistant turn's model, and stands down for non-directors. An undetermined model resolves to *enforce*: the harness can drop out only on positive evidence of a non-director model, never by accident on a director. Reading the *latest* turn (rather than trusting the session's static self-image) also means mid-session `/model` switches are honored.
 - **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout does all discovery.
 - **Why does MODE B still spawn a reviewer?** Self-review inside the planning context inherits the planner's blind spots. A fresh-context Opus reviewer that re-runs the tests is independent in the ways that matter, even though it's the same model family.
 

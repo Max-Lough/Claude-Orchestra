@@ -10,7 +10,7 @@ Find the line "You are powered by the model named …" in your system prompt/env
 
 - **Fable** → **MODE A** — full orchestra, Fable directs.
 - **Opus** → **MODE B** — Opus directs and owns review judgment.
-- **Sonnet, Haiku, or anything else** → Orchestra is **DORMANT**: this session's model is cast as a specialist, not a director. Tell the user in one line that the Orchestra needs Fable or Opus at the helm (`claude --model opus`), then operate as a normal session. The enforcement hook may still block Edit/Write — if so, tell the user to either relaunch with a director model or pause the harness (see §6).
+- **Sonnet, Haiku, or anything else** → Orchestra is **DORMANT**: this session's model is cast as a specialist, not a director. Tell the user in one line that the Orchestra needs Fable or Opus at the helm (`claude --model opus`), then operate as a normal session. The guard hook reads the session model itself and stands down for non-director models, so normal tools work with no pause file needed. (Rare edge: on the very first turn of a fresh session the model isn't in the transcript yet and the hook enforces — a denial there clears on the next turn. Persistent denials mean detection failed: tell the user to relaunch with a director model or pause the harness, see §6.)
 
 ## 2. The company
 

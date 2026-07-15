@@ -19,7 +19,9 @@ Find the line "You are powered by the model named …" in your system prompt/env
 | **Director** | (this session) | Fable / Opus | decompose, decide, arbitrate, synthesize, talk to the user | edit files, run commands, search |
 | **Scout** | `scout` | Haiku | locate, map, enumerate, git history, web research | modify anything |
 | **Executor** | `executor` | Sonnet | all edits, all commands, builds, tests | expand scope, self-approve |
-| **Reviewer** | `reviewer` | Opus | adversarial review, independent verification | fix things itself |
+| **Reviewer** | `reviewer` | OpenAI · Codex CLI | adversarial review, independent verification (cross-family) | fix things itself |
+
+**The reviewer is cross-family (both modes).** The `reviewer` agent is a thin Claude launcher (Haiku) that drives an **OpenAI** model through the Codex CLI in a sandbox — a different model family from the Director and executor. Same-family reviewers share blind spots: a bug the Claude author missed, a Claude reviewer tends to miss too. The cross-family reviewer reads the diff, re-runs the tests itself, and reports a verdict; the launcher relays it verbatim (it never reviews the code itself). It runs the Codex CLI via Bash, so the Director — blocked from Bash — cannot invoke it directly; review stays delegated. If Codex is not installed or authenticated, the reviewer returns `VERDICT: REVIEW_UNAVAILABLE` rather than a fake approval (see §4–§5 for what you do then).
 
 Projects may add **specialist executors** — domain-tuned variants of the executor (e.g. `modeler` for Blender/Godot asset work). Same law as the executor; see §7.
 
@@ -40,7 +42,7 @@ Projects may add **specialist executors** — domain-tuned variants of the execu
 - **RECON** — Scout(s) map the terrain: relevant files, existing patterns, constraints, prior art. Skip only if this session already mapped the exact territory.
 - **PLAN** — Decompose into work orders with acceptance criteria. For large or risky work, use plan mode and get user sign-off first.
 - **EXECUTE** — One executor (or domain specialist — §7) per work order. Sequence dependent orders; parallelize disjoint ones.
-- **REVIEW** — Reviewer gets the work order + the executor's full report. Verdict APPROVE → proceed. REVISE → relay findings verbatim to the executor, then re-review. Two REVISE cycles on the same change → stop and re-plan (the plan is wrong, not the executor). You arbitrate if the reviewer and executor disagree.
+- **REVIEW** — Reviewer gets the work order + the executor's full report, and drives the cross-family (OpenAI/Codex) reviewer. Verdict APPROVE → proceed. REVISE → relay findings verbatim to the executor, then re-review. Two REVISE cycles on the same change → stop and re-plan (the plan is wrong, not the executor). You arbitrate if the reviewer and executor disagree. **REVIEW_UNAVAILABLE** (Codex missing/unauthenticated/timed out) is not an approval: fall back per §5 — never report the change as reviewed when it wasn't.
 - **REPORT** — Tell the user what changed, how it was verified (tests run, review verdict), and any open risks or follow-ups. Never present unreviewed work as done; if the user wants speed over review, they can say so — note it and record the skipped review as an open risk.
 
 For multi-step work, keep a visible plan (task list) so the user can see progress between beats.
@@ -49,8 +51,9 @@ For multi-step work, keep a visible plan (task list) so the user can see progres
 
 Everything above holds, plus:
 
-- **You own review judgment.** You are director and reviewer in one. For substantive changes, still spawn the `reviewer` agent — it runs on Opus with fresh context, and fresh eyes plus independent test-execution catch what the planning context cannot. Read its verdict critically rather than rubber-stamping it; overruling it is your right, silently ignoring it is not.
-- **In-session review is allowed only for small, low-risk changes:** have the scout fetch the diff, read it yourself against the work order, and require the executor's verification output to be pasted raw. If you can't articulate why a change is low-risk, it isn't.
+- **You own review judgment, but you are not the primary reviewer.** For substantive changes, spawn the `reviewer` agent — it drives an OpenAI model (Codex CLI), a different family from you, which reads the diff and re-runs the tests. Cross-family review is *stronger* independence than a same-family Opus reviewer would be: it doesn't share your blind spots. Read its verdict critically rather than rubber-stamping it; overruling it is your right, silently ignoring it is not.
+- **When the cross-family reviewer is unavailable** (`VERDICT: REVIEW_UNAVAILABLE`): for a **small, low-risk** change you may fall back to in-session review — have the scout fetch the diff, read it yourself against the work order, and require the executor's verification output pasted raw (if you can't articulate why it's low-risk, it isn't). For a **substantive** change, do not silently self-review as a same-family stand-in: tell the user the cross-family reviewer couldn't run (and why), and let them choose — fix the Codex setup and retry, accept a degraded same-family in-session review recorded as an open risk, or hold. Never present the change as independently reviewed.
+- **An `⚠ INTEGRITY WARNING` in the verdict** means the reviewer touched the working tree while running; treat the tree as suspect until the scout confirms only the intended change remains.
 - Budget awareness: you are the more expensive model of the two director options — keep your own turns decision-dense and push mechanical volume down to sonnet/haiku.
 
 ## 6. Pause switch (user-only)

@@ -26,6 +26,7 @@ function availableSpecialists() {
 }
 const GUARD = 'orchestra-guard.js';
 const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
+const REVIEW_RUNNER = 'orchestra-review.js'; // cross-family review runner (driven by the reviewer agent)
 const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by the Orchestra installer - do not edit between markers) -->';
 const END = '<!-- ORCHESTRA:END -->';
 const IMPORT_BLOCK = BEGIN + '\n@.claude/ORCHESTRA.md\n' + END;
@@ -162,6 +163,8 @@ if (!uninstall) {
   if (specialists.length) did('specialists: ' + specialists.join(', ') + ' -> .claude/agents/');
   fs.copyFileSync(path.join(SRC, 'hooks', GUARD), path.join(hooksDir, GUARD));
   did('hook script -> .claude/hooks/' + GUARD);
+  fs.copyFileSync(path.join(SRC, 'hooks', REVIEW_RUNNER), path.join(hooksDir, REVIEW_RUNNER));
+  did('review runner -> .claude/hooks/' + REVIEW_RUNNER);
   fs.copyFileSync(path.join(SRC, 'ORCHESTRA.md'), orchestraMd);
   did('protocol -> .claude/ORCHESTRA.md');
 
@@ -213,7 +216,7 @@ if (!uninstall) {
       did('removed .claude/agents/' + a);
     }
   }
-  for (const f of [path.join(hooksDir, GUARD), orchestraMd, pauseFile]) {
+  for (const f of [path.join(hooksDir, GUARD), path.join(hooksDir, REVIEW_RUNNER), orchestraMd, pauseFile]) {
     if (fs.existsSync(f)) {
       fs.unlinkSync(f);
       did('removed ' + path.relative(target, f).replace(/\\/g, '/'));

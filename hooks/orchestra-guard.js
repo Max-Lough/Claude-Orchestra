@@ -13,12 +13,16 @@
  * Before denying, the guard reads the latest main-session assistant turn from
  * the session transcript (tail read, sidechain-filtered): Opus/Fable ->
  * enforce; anything else (Sonnet, Haiku) -> the Orchestra is dormant and the
- * guard stands down entirely. Undetermined -> enforce, so the harness never
- * silently vanishes on a director session. Known one-turn staleness windows
- * (both fail toward enforcement on directors, by design):
+ * guard stands down entirely. Undetermined -> stand down too: enforcement
+ * requires positive evidence of a director model. Sonnet/Haiku sessions must
+ * never see a denial (they can't cheaply delegate simple tasks), whereas an
+ * unenforced first turn on a director session is harmless — ORCHESTRA.md
+ * still instructs the Director to delegate, and the guard picks up hard
+ * enforcement as soon as the model reaches the transcript. Known one-turn
+ * staleness windows (both now fail toward standing down):
  *   - fresh session, first assistant turn: no assistant entry is flushed yet
- *     -> enforce (a brand-new Sonnet session may see one denial on its very
- *     first turn if that turn immediately calls a blocked tool);
+ *     -> undetermined -> stand down (a director session's opening turn is
+ *     covered by protocol instructions rather than the hook);
  *   - the current turn is flushed only after it completes, so a mid-session
  *     /model switch is picked up one turn late.
  *
@@ -34,9 +38,8 @@
  *
  * Fail-open by design: any unexpected input, config error, or internal error
  * allows the call rather than bricking the session. A broken orchestra.json
- * disables only itself — the default blocklist still applies. (Model
- * detection is the one deliberate exception: an undetermined model enforces
- * rather than allows, per above.)
+ * disables only itself — the default blocklist still applies. Model detection
+ * follows the same rule: undetermined stands down rather than enforcing.
  */
 'use strict';
 
@@ -137,7 +140,7 @@ function loadPolicy() {
 // the file tail (fixed cost regardless of transcript size) and skips sidechain
 // (subagent) entries so a recently finished Haiku scout cannot masquerade as
 // the session model. Returns null when undetermined — callers must treat null
-// as "enforce", never as "stand down".
+// as "stand down": only positive evidence of a director model enforces.
 function latestMainModel(input) {
   try {
     const tp = input.transcript_path;
@@ -224,13 +227,15 @@ function main(raw) {
   const deniedByPolicy = policy.patterns.some((re) => re.test(toolName));
   if (!deniedByDefault && !deniedByPolicy) return allow();
 
-  // Model-aware dormancy (ORCHESTRA.md §1): only Opus/Fable direct. If the
-  // latest main-session assistant turn ran on any other model, the Orchestra
-  // is dormant — stand down so the session behaves like plain Claude Code.
-  // Undetermined (no transcript, unreadable, no assistant turn yet) enforces:
-  // the harness must never silently vanish on a director session.
+  // Model-aware dormancy (ORCHESTRA.md §1): only Opus/Fable direct. Enforce
+  // only on positive evidence of a director model at the helm. Any other
+  // model (Sonnet, Haiku) — or an undetermined one (no transcript, unreadable,
+  // no assistant turn flushed yet, e.g. a fresh session's first turn) — means
+  // the guard stands down so the session behaves like plain Claude Code; a
+  // director session's opening turn is covered by ORCHESTRA.md instructions
+  // until the model reaches the transcript.
   const model = latestMainModel(input);
-  if (model !== null && !DIRECTOR_MODEL.test(model)) return allow();
+  if (model === null || !DIRECTOR_MODEL.test(model)) return allow();
 
   return deniedByDefault ? denyDefault(toolName) : denyByPolicy(toolName);
 }

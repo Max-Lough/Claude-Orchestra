@@ -31,6 +31,17 @@ const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by the Orchestra installer - do not
 const END = '<!-- ORCHESTRA:END -->';
 const IMPORT_BLOCK = BEGIN + '\n@.claude/ORCHESTRA.md\n' + END;
 
+// Settings-level permission grants for the executor's git workflow. Subagents
+// cannot accept authorization relayed by the Director ("the user said push" in
+// a work order is not a user turn in the subagent's transcript), so the
+// permission classifier denies git commit/push unless the grant lives in
+// settings. These rules make Director-ordered commits and pushes work.
+const GIT_PERMISSIONS = [
+  'Bash(git add:*)',
+  'Bash(git commit:*)',
+  'Bash(git push:*)',
+];
+
 // Empty matcher = the hook fires on every main-session tool call; the guard
 // script is the single source of truth for policy (including orchestra.json
 // MCP patterns). Subagent tool calls never trigger project PreToolUse hooks.
@@ -175,11 +186,28 @@ if (!uninstall) {
   const kept = pre.filter((e) => !isOurHookEntry(e));
   kept.push(HOOK_ENTRY);
   settings.hooks.PreToolUse = kept;
+
+  // Merge git permission grants so the executor can commit/push when a work
+  // order says to (relayed authorization is not enough — see GIT_PERMISSIONS).
+  if (typeof settings.permissions !== 'object' || settings.permissions === null) {
+    settings.permissions = {};
+  }
+  const allow = Array.isArray(settings.permissions.allow) ? settings.permissions.allow : [];
+  const missingPerms = GIT_PERMISSIONS.filter((p) => !allow.includes(p));
+  settings.permissions.allow = allow.concat(missingPerms);
+
   writeJson(settingsFile, settings);
   did(
     'PreToolUse guard merged into .claude/settings.json (' +
       (pre.length - kept.length + 1 > 1 ? 'replaced existing entry' : 'added') +
       ', other settings preserved)'
+  );
+  did(
+    'git permissions for the executor (' +
+      GIT_PERMISSIONS.join(', ') +
+      ') ' +
+      (missingPerms.length ? 'merged into' : 'already present in') +
+      ' .claude/settings.json permissions.allow'
   );
 
   // 3. Ensure CLAUDE.md imports the protocol, inside managed markers.
@@ -225,16 +253,28 @@ if (!uninstall) {
 
   if (fs.existsSync(settingsFile)) {
     const settings = readJson(settingsFile);
+    let settingsChanged = false;
     if (settings.hooks && Array.isArray(settings.hooks.PreToolUse)) {
       const kept = settings.hooks.PreToolUse.filter((e) => !isOurHookEntry(e));
       if (kept.length !== settings.hooks.PreToolUse.length) {
         if (kept.length > 0) settings.hooks.PreToolUse = kept;
         else delete settings.hooks.PreToolUse;
         if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
-        writeJson(settingsFile, settings);
+        settingsChanged = true;
         did('removed guard entry from .claude/settings.json (other settings preserved)');
       }
     }
+    if (settings.permissions && Array.isArray(settings.permissions.allow)) {
+      const keptPerms = settings.permissions.allow.filter((p) => !GIT_PERMISSIONS.includes(p));
+      if (keptPerms.length !== settings.permissions.allow.length) {
+        if (keptPerms.length > 0) settings.permissions.allow = keptPerms;
+        else delete settings.permissions.allow;
+        if (Object.keys(settings.permissions).length === 0) delete settings.permissions;
+        settingsChanged = true;
+        did('removed Orchestra git permission grants from .claude/settings.json (re-add manually if you want them without the harness)');
+      }
+    }
+    if (settingsChanged) writeJson(settingsFile, settings);
   }
 
   if (fs.existsSync(claudeMd)) {

@@ -224,6 +224,9 @@ if (!uninstall) {
   console.log(
     '  - Pause anytime: create .claude/orchestra.pause (delete it to resume), or ORCHESTRA_PAUSE=1.'
   );
+  console.log(
+    '  - The Director may write plan files (.claude/plans/*.md) itself; everything else stays delegated.'
+  );
   console.log('  - Update later by re-running this installer; remove with --uninstall.');
   const avail = availableSpecialists();
   if (avail.length && specialists.length === 0) {

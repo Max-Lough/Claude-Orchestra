@@ -19,7 +19,7 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
    └───────────────┘     └───────────────┘     └───────────────┘
 ```
 
-The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code.
+The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. One authoring carve-out: the Director may write **plan files** — markdown under `.claude/plans/` — itself; plans are Director thinking, not execution (see "Plan files" below).
 
 ## Two modes, selected automatically
 
@@ -144,7 +144,19 @@ New-Item -ItemType File .claude\orchestra.pause
 Remove-Item .claude\orchestra.pause
 ```
 
-Or launch with the env var: `ORCHESTRA_PAUSE=1 claude`. You can also ask the Director to pause — creating that one file is the only write the hook permits it, and only at your explicit request. The Director is instructed never to pause on its own initiative.
+Or launch with the env var: `ORCHESTRA_PAUSE=1 claude`. You can also ask the Director to pause — creating that file is permitted by the hook (its only write exception besides plan files), and only at your explicit request. The Director is instructed never to pause on its own initiative.
+
+## Plan files
+
+The plan is the one artifact the Director authors itself — routing "write my own plan to disk" through an executor wastes a subagent and loses fidelity. So the guard carves out **`.claude/plans/`**: the Director may `Write`/`Edit` markdown files there directly (that directory, `.md` only, path-traversal checked — it can't become a general write loophole). Everything else remains delegated.
+
+If your project keeps plans elsewhere (say `docs/plans/`), add `directorPlanPatterns` to `.claude/orchestra.json` — regexes over the project-relative path, additive to the default location:
+
+```json
+{
+  "directorPlanPatterns": ["^docs/plans/.+\\.md$"]
+}
+```
 
 ## Specialists & hands-on skills
 
@@ -172,6 +184,7 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 
 - `directorBlockedPatterns` — regexes over tool names, denied to the Director (subagents unaffected). Pattern-match whole servers, or just mutating verbs: `"^mcp__blender__(create|set|modify|delete|execute)"`.
 - `directorAllowedTools` — exact built-in names to *remove* from the default blocklist (e.g. `["Glob"]` if you want the Director to glob), so you can loosen the law per project without editing the guard.
+- `directorPlanPatterns` — regexes over project-relative file paths (forward-slash form) that count as plan files the Director may write directly, in addition to the built-in `.claude/plans/*.md` (see "Plan files").
 - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
 
 **Working rhythm for iterative pipelines** (also in §7): iteration loops live *inside* one work order ("iterate until it matches the ref or 4 rounds, report best"); long campaigns keep one specialist warm via SendMessage instead of respawning; renders/screenshots/logs are the review artifacts — both the Director and the reviewer can Read images; asset batches go to the reviewer as one checklist pass with one verdict.

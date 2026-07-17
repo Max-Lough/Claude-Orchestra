@@ -26,15 +26,28 @@
  *   - the current turn is flushed only after it completes, so a mid-session
  *     /model switch is picked up one turn late.
  *
+ * Two writes are exempt from Director law:
+ *   - the pause file (.claude/orchestra.pause), at the user's request (§6);
+ *   - plan files: Write/Edit/MultiEdit of markdown under .claude/plans/
+ *     (ORCHESTRA.md §4 PLAN). Plans are Director thinking, not execution —
+ *     the plan is the one artifact the Director authors itself. The carve-out
+ *     is deliberately narrow (that directory, .md only, traversal-checked) so
+ *     it cannot become a general write loophole.
+ *
  * Optional per-project policy — .claude/orchestra.json:
  *   {
  *     "directorBlockedPatterns": ["^mcp__blender__", "^mcp__godot__"],
- *     "directorAllowedTools": ["Glob"]
+ *     "directorAllowedTools": ["Glob"],
+ *     "directorPlanPatterns": ["^docs/plans/.+\\.md$"]
  *   }
  * directorBlockedPatterns: regexes tested against tool names; matches are
  *   denied to the Director (use for MCP tools that mutate external state).
  * directorAllowedTools: exact built-in names to REMOVE from the default
  *   blocklist below (loosen the law for this project without editing code).
+ * directorPlanPatterns: regexes tested against the project-relative path
+ *   (forward-slash form) of Write/Edit/MultiEdit targets; matches are
+ *   treated as plan files in ADDITION to the default .claude/plans/*.md.
+ *   Paths outside the project directory never match.
  *
  * Fail-open by design: any unexpected input, config error, or internal error
  * allows the call rather than bricking the session. A broken orchestra.json
@@ -67,6 +80,10 @@ const DIRECTOR_MODEL = /opus|fable/i;
 
 const PAUSE_BASENAME = 'orchestra.pause';
 const CONFIG_BASENAME = 'orchestra.json';
+const PLANS_DIRNAME = 'plans'; // .claude/plans — the Director's own notebook
+
+// Tools whose calls can qualify for the plan-file exception.
+const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
 
 function projectDir() {
   return process.env.CLAUDE_PROJECT_DIR || process.cwd();
@@ -90,10 +107,14 @@ function deny(reason) {
 }
 
 function denyDefault(toolName) {
+  const planHint = FILE_WRITE_TOOLS.has(toolName)
+    ? 'Exception: plan files — the Director may write markdown under .claude/' +
+      PLANS_DIRNAME + '/ itself. '
+    : '';
   deny(
     'Orchestra: the Director does not use ' + toolName + '. Delegate instead — ' +
       'searches/reading the terrain -> scout agent; file edits and commands -> executor ' +
-      'or a domain specialist agent; verification -> reviewer agent. ' +
+      'or a domain specialist agent; verification -> reviewer agent. ' + planHint +
       '(User-only pause switch: create .claude/' + PAUSE_BASENAME + ' or set ORCHESTRA_PAUSE=1.)'
   );
 }
@@ -111,26 +132,29 @@ function denyByPolicy(toolName) {
 // Per-project policy. Any failure here returns the empty policy — the default
 // blocklist above is never weakened by a broken config.
 function loadPolicy() {
-  const empty = { patterns: [], allowed: [] };
+  const empty = { patterns: [], allowed: [], planPatterns: [] };
   try {
     const p = path.join(projectDir(), '.claude', CONFIG_BASENAME);
     if (!fs.existsSync(p)) return empty;
     const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
     if (!cfg || typeof cfg !== 'object') return empty;
-    const patterns = (Array.isArray(cfg.directorBlockedPatterns) ? cfg.directorBlockedPatterns : [])
-      .filter((s) => typeof s === 'string')
-      .map((s) => {
-        try {
-          return new RegExp(s);
-        } catch (_) {
-          return null; // bad regex — skip it, keep the rest
-        }
-      })
-      .filter(Boolean);
+    const toRegexes = (arr) =>
+      (Array.isArray(arr) ? arr : [])
+        .filter((s) => typeof s === 'string')
+        .map((s) => {
+          try {
+            return new RegExp(s);
+          } catch (_) {
+            return null; // bad regex — skip it, keep the rest
+          }
+        })
+        .filter(Boolean);
+    const patterns = toRegexes(cfg.directorBlockedPatterns);
+    const planPatterns = toRegexes(cfg.directorPlanPatterns);
     const allowed = (Array.isArray(cfg.directorAllowedTools) ? cfg.directorAllowedTools : []).filter(
       (s) => typeof s === 'string'
     );
-    return { patterns, allowed };
+    return { patterns, allowed, planPatterns };
   } catch (_) {
     return empty;
   }
@@ -175,8 +199,38 @@ function latestMainModel(input) {
   }
 }
 
-// The one mutation the Director is permitted: creating/removing the pause file
-// itself, at the user's explicit request (see ORCHESTRA.md §6).
+// Plan-file exception (ORCHESTRA.md §4 PLAN): the Director may author plan
+// files itself — markdown inside <project>/.claude/plans/ by default, plus any
+// project-relative path matching directorPlanPatterns from orchestra.json.
+// Containment is checked on the resolved path so "../" cannot escape, and the
+// default carve-out requires a .md extension so it can't smuggle code.
+function isPlanFileOperation(toolName, toolInput, planPatterns) {
+  if (!FILE_WRITE_TOOLS.has(toolName)) return false;
+  if (!toolInput || typeof toolInput !== 'object') return false;
+  if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '') return false;
+  const root = projectDir();
+  const resolved = path.resolve(root, toolInput.file_path);
+
+  const relToProject = path.relative(root, resolved);
+  if (relToProject === '' || relToProject.startsWith('..') || path.isAbsolute(relToProject)) {
+    return false; // outside the project — never a plan file
+  }
+
+  // Default carve-out: .claude/plans/**/*.md
+  const plansRoot = path.join(root, '.claude', PLANS_DIRNAME);
+  const relToPlans = path.relative(plansRoot, resolved);
+  const inPlansDir =
+    relToPlans !== '' && !relToPlans.startsWith('..') && !path.isAbsolute(relToPlans);
+  if (inPlansDir && /\.md$/i.test(resolved)) return true;
+
+  // Project-configured plan locations (regexes over the forward-slash
+  // project-relative path).
+  const posixRel = relToProject.split(path.sep).join('/');
+  return planPatterns.some((re) => re.test(posixRel));
+}
+
+// The one mutation the Director is permitted regardless of location: the
+// pause file itself, at the user's explicit request (see ORCHESTRA.md §6).
 function isPauseFileOperation(toolName, toolInput) {
   if (!toolInput || typeof toolInput !== 'object') return false;
   if (toolName === 'Write' || toolName === 'Edit') {
@@ -218,10 +272,13 @@ function main(raw) {
   const toolName = input.tool_name;
   if (typeof toolName !== 'string') return allow();
 
-  // The one mutation the Director may perform: the pause-file toggle (§6).
+  // Exempt mutations: the pause-file toggle (§6) and plan-file authorship
+  // (§4 PLAN — .claude/plans/*.md plus any directorPlanPatterns matches).
   if (isPauseFileOperation(toolName, input.tool_input)) return allow();
 
   const policy = loadPolicy();
+
+  if (isPlanFileOperation(toolName, input.tool_input, policy.planPatterns)) return allow();
 
   const deniedByDefault = BLOCKED.has(toolName) && !policy.allowed.includes(toolName);
   const deniedByPolicy = policy.patterns.some((re) => re.test(toolName));

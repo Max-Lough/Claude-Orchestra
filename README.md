@@ -81,12 +81,20 @@ Orchestra/
 │   ├── executor.md        ← Sonnet · all edits and commands
 │   ├── reviewer.md        ← Opus · fresh-context adversarial review (default engine)
 │   ├── reviewer-codex.md  ← Haiku launcher · optional cross-vendor (OpenAI/Codex) engine
+│   ├── planner-gpt.md     ← Haiku launcher · ultra-plan counterpart (OpenAI API)
 │   └── specialists/       ← domain executors, installed on request (--specialists)
 │       ├── _TEMPLATE.md   ← copy this to mint a new specialist
 │       └── modeler.md     ← Sonnet · Blender/Godot 3D asset pipeline
-└── hooks/
-    ├── orchestra-guard.js  ← PreToolUse hook enforcing Director law
-    └── orchestra-review.js ← cross-vendor review runner (drives Codex CLI)
+├── hooks/
+│   ├── orchestra-guard.js     ← PreToolUse hook enforcing Director law
+│   ├── orchestra-review.js    ← cross-vendor review runner (drives Codex CLI)
+│   └── orchestra-ultraplan.js ← plan-roundabout runner (calls the OpenAI API)
+└── skills/                 ← bundled skills, stamped into .claude/skills/
+    ├── _TEMPLATE/          ← copy this directory to mint a new bundled skill
+    ├── orchestra-status/   ← /orchestra-status · live harness state report
+    ├── orchestra-plan/     ← /orchestra-plan · §8-sized plans into .claude/plans/
+    ├── orchestra-review/   ← /orchestra-review · on-demand adversarial review
+    └── ultra-plan/         ← /ultra-plan · two-model plan roundabout (GPT-5.6 Sol)
 ```
 
 This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
@@ -119,11 +127,12 @@ git clone https://github.com/Max-Lough/Claude-Orchestra.git && cd Claude-Orchest
 The installer is **idempotent** — run it again anytime to update a project to the latest master. It:
 
 1. Copies `agents/*.md` → `<project>/.claude/agents/`
-2. Copies `hooks/orchestra-guard.js` and `hooks/orchestra-review.js` → `<project>/.claude/hooks/`
-3. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
-4. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
-5. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
-6. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
+2. Copies each bundled skill `skills/<name>/` → `<project>/.claude/skills/<name>/` (stamped wholesale — local edits to those directories are overwritten on update; see "Bundled skills")
+3. Copies `hooks/orchestra-guard.js`, `hooks/orchestra-review.js`, and `hooks/orchestra-ultraplan.js` → `<project>/.claude/hooks/`
+4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
+5. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
+6. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
+7. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
 
 **First launch after install:** Claude Code will ask you to approve the hook that project settings define — approve it once and it sticks. If teammates shouldn't inherit the harness, move the hook entry from `settings.json` to `settings.local.json` (git-ignored).
 
@@ -135,7 +144,7 @@ The installer is **idempotent** — run it again anytime to update a project to 
 node install.js "C:\path\to\your\project" --uninstall
 ```
 
-Removes the copied files, the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else in your settings and CLAUDE.md is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
+Removes the copied files (agents, hooks, protocol, and the bundled `orchestra-*` skills), the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else — including skills you authored under other names — is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
 
 ## Using it
 
@@ -144,6 +153,8 @@ Nothing to invoke — just start Claude Code in the project. The protocol loads 
 **INTAKE → RECON → PLAN → EXECUTE → REVIEW → REPORT**
 
 You'll see the Director narrate phase transitions and spawn agents; the agents' raw reports stay behind the curtain, and the Director gives you the synthesized picture with evidence (tests run, review verdicts).
+
+Four slash commands ship with the harness: `/orchestra-status` (live harness state), `/orchestra-plan` (a §8-sized plan written to `.claude/plans/`), `/orchestra-review` (on-demand adversarial review of any diff), and `/ultra-plan` (a two-model planning roundabout with GPT-5.6 Sol) — see "Bundled skills".
 
 ## Pausing the harness
 
@@ -203,6 +214,42 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 
 **Working rhythm for iterative pipelines** (also in §7): iteration loops live *inside* one work order ("iterate until it matches the ref or 4 rounds, report best"); long campaigns keep one specialist warm via SendMessage instead of respawning; renders/screenshots/logs are the review artifacts — both the Director and the reviewer can Read images; asset batches go to the reviewer as one checklist pass with one verdict.
 
+## Bundled skills
+
+The harness ships skills of its own and stamps them into `<project>/.claude/skills/` on every install — they ride the installer exactly like agents and hooks: installed automatically, updated by re-running the installer, removed by `--uninstall`. Claude Code discovers project skills from that directory, so they're live as slash commands (and as auto-triggered skills) with nothing else to configure.
+
+| Skill | Invoke | Does |
+|---|---|---|
+| `orchestra-status` | `/orchestra-status` — or ask "is the orchestra on?" | One compact report: mode, pause/enforcement state, review engine (+ Codex availability), company roster, policy, verification manifest, plans/ledger — plus one-line fixes for any inconsistency it finds. |
+| `orchestra-plan` | `/orchestra-plan` — or ask to plan before building | Walks the §8 sizing gate and writes a durable plan file — work orders with scope, acceptance criteria, verification tier, cadence clauses — to `.claude/plans/<slug>.md`, the one directory the Director may write itself. |
+| `orchestra-review` | `/orchestra-review` — or ask for a review / second opinion | Runs the loop's REVIEW phase on demand against arbitrary existing changes — working tree, branch, commit range — through the configured engine, with the standard verdict format. Works on changes the harness never authored. |
+| `ultra-plan` | `/ultra-plan <goal>` — or ask for maximum-rigor / cross-vendor planning | Two-model planning roundabout: the Director drafts a full plan, GPT-5.6 Sol (via API, `max` effort by default) critiques and counter-drafts, and the plan ping-pongs until either model approves it unchanged. See "Ultra-plan" below; requires `OPENAI_API_KEY`. |
+
+Design constraints (these are also the rules for bundling your own — see `skills/_TEMPLATE/SKILL.md`):
+
+- **Orchestration-class only.** Bundled skills load into the main session — the Director, whom the guard blocks from editing, running commands, and searching. So their steps dispatch scouts, executors, and reviewers rather than assuming the session's own hands (ORCHESTRA.md §7). Hands-on playbooks belong to executors and specialists, never in the bundle.
+- **All modes.** Each skill forks once at the top: under a director model it delegates; in a dormant or paused session the same procedure runs directly. The skills stay useful in plain sessions.
+- **Stamped wholesale.** The installer replaces each stamped skill directory completely on update, so stale files never linger — edit the master and re-run the installer rather than editing stamped copies. The installer owns exactly the master-known skill names (currently the `orchestra-*` set and `ultra-plan`); skills under any other name are yours, and the installer never touches them.
+- **To bundle a new skill:** copy `skills/_TEMPLATE/` to `skills/<name>/`, make the frontmatter `name` match the directory, re-run the installer per project. Supporting files beside `SKILL.md` are stamped too (the copy is recursive); underscore-prefixed directories are skipped. Fresh sessions pick up new skills at launch.
+
+### Ultra-plan: the two-model planning roundabout
+
+`/ultra-plan <goal>` puts the plan itself through cross-vendor adversarial review before any work order is cut. The Director drafts a complete plan (full `orchestra-plan` discipline: recon scouts, §8.1 sizing, tiers) into `.claude/plans/`, then hands it to an **OpenAI counterpart** — the `planner-gpt` launcher drives `hooks/orchestra-ultraplan.js`, which calls the Responses API. The counterpart returns either `VERDICT: APPROVE` (proceed, no changes) or `VERDICT: REVISE` with a numbered critique plus a **complete counter-drafted plan**. The Director arbitrates — adopts, rebuts (with reasons the counterpart must respect next round), or merges — and the plan ping-pongs until **either model approves the standing plan without changes**: the counterpart answering APPROVE, or the Director adopting the counterpart's version verbatim. A round cap (default 4 consultations) ends stalemates by escalating the surviving disagreements to you; every run appends an `## Ultra-plan log` to the plan file recording verdicts and dispositions.
+
+Skill arguments: `effort=<none|low|medium|high|xhigh|max>` (counterpart reasoning effort — default `max`, GPT-5.6's tier above `xhigh`), `model=<id>` (default `gpt-5.6-sol`), `rounds=<n>` (consultation cap). Example: `/ultra-plan effort=high rounds=3 migrate the auth layer to sessions v2`.
+
+**Setup.** Export `OPENAI_API_KEY` in the environment where Claude Code runs — consultations bill to it (and `max` effort is deliberately the expensive, slow, thorough setting; dial `effort=` down for routine plans). If the key is missing or the call fails, the runner returns `VERDICT: ULTRAPLAN_UNAVAILABLE` with the reason — never a fake approval — and the Director offers to proceed with the solo plan explicitly marked as not cross-examined.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ORCHESTRA_ULTRAPLAN_MODEL` | `gpt-5.6-sol` | Counterpart model id (`model=` argument overrides per run). |
+| `ORCHESTRA_ULTRAPLAN_EFFORT` | `max` | Reasoning effort (`effort=` argument overrides per run). |
+| `ORCHESTRA_ULTRAPLAN_TIMEOUT_MS` | `900000` | Wall-clock cap per consultation — max-effort reasoning is slow. |
+| `ORCHESTRA_ULTRAPLAN_MAX_TOKENS` | `64000` | `max_output_tokens` (includes the model's reasoning budget). |
+| `OPENAI_BASE_URL` | `https://api.openai.com` | Alternate endpoint (gateways); a `/v1` suffix is tolerated. |
+
+Unlike the Codex review engine, the counterpart has **no repository access**: it judges coherence, completeness, sequencing, risk coverage, and testability from the brief and plan text alone, and is instructed to raise unverifiable assumptions as critique questions instead of inventing facts. Requests are sent with `store: false`.
+
 ## Sizing, cadence, and the verification tax
 
 `ORCHESTRA.md` §8 governs how big a work order gets and what a long one owes the Director while it runs. The short version:
@@ -219,6 +266,7 @@ This trades tokens for quality and control, deliberately:
 
 - **Recon is cheap** (Haiku) and **execution is mid-priced** (Sonnet) — the volume work runs on the economical models.
 - **Review runs on Opus** by default — deliberately the most capable regular call in the company, because verdict quality is what the harness optimizes for. The optional `reviewer-codex` engine is billed to your **OpenAI** account (a separate meter); its Claude side is just a negligible Haiku launcher. Pick the OpenAI review model with `ORCHESTRA_REVIEW_MODEL`.
+- **`/ultra-plan` consultations are likewise OpenAI-billed** — GPT-5.6 Sol at `max` effort by default, deliberate overkill for the one artifact where errors compound (the plan). Each roundabout is a handful of such calls at most (default cap 4); use `effort=high` or lower when that rigor isn't warranted.
 - The Director's own turns are decision-dense and short; the expensive model at the top writes the least text.
 
 ## Troubleshooting
@@ -237,6 +285,7 @@ This trades tokens for quality and control, deliberately:
 | `REVIEW_UNAVAILABLE: Codex exited with status …` | Usually auth — export `OPENAI_API_KEY` or run `codex login`. Can also be an unsupported flag on your Codex version (check `codex exec --help`, then adjust via `ORCHESTRA_REVIEW_ARGS`) or a sandbox restriction. The DETAIL block quotes Codex's stderr. |
 | Reviewer runs but the tests don't execute | (`reviewer-codex`) Codex's `read-only` sandbox can't run commands that write. Leave `ORCHESTRA_REVIEW_SANDBOX` at its `workspace-write` default so the suite can run. |
 | Verdict carries an `⚠ INTEGRITY WARNING` | The cross-vendor reviewer (`reviewer-codex`) modified the working tree while running. Have the scout diff the tree against the intended change; the reviewer isn't supposed to write. Set `ORCHESTRA_REVIEW_SANDBOX=read-only` if you need to forbid it outright. |
+| `/ultra-plan` returns `VERDICT: ULTRAPLAN_UNAVAILABLE` | The DETAIL block states why: `OPENAI_API_KEY` not set, HTTP 401 (bad key), HTTP 400/404 (model or effort not available to your key — override with `model=`/`effort=` or the `ORCHESTRA_ULTRAPLAN_*` env vars), a timeout (raise `ORCHESTRA_ULTRAPLAN_TIMEOUT_MS` or lower the effort), or truncation (raise `ORCHESTRA_ULTRAPLAN_MAX_TOKENS`). Until fixed, the Director proceeds solo and marks the plan as not cross-examined. |
 
 ## Design notes
 

@@ -32,11 +32,19 @@ ORCHESTRA_EXECREPORT_EOF
 
 node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-review.js" \
   --work-order "$WO" --executor-report "$ER"
+# If (and only if) the Director's order declares TIER: inert, add: --tier inert
 ```
 
 The runner builds the adversarial review brief, drives `codex exec` in a
 sandbox (it reads the diff and runs the tests itself), captures the verdict,
 and prints a complete review report to stdout in the Orchestra format.
+
+**Tier pass-through.** If the Director's review order explicitly declares
+`TIER: inert` (a docs/comments/formatting-only round), append `--tier inert`
+to the runner command; otherwise pass no tier flag — full depth is the
+default. You never decide the tier yourself: it comes from the order or not
+at all, and the cross-family reviewer independently verifies the inertness
+claim against the diff either way.
 
 ## Relaying the result
 

@@ -41,6 +41,14 @@ Review has two engines, both under one identical contract — adversarial brief,
 - **`reviewer` (Opus, fresh context) — the default, both modes.** A different model from the Sonnet executor that authored the change, sharing none of the author's context, re-running the tests itself. Fresh eyes plus independent verification is where most of review's value lives.
 - **`reviewer-codex` (OpenAI via Codex CLI) — the optional cross-vendor layer.** Models from one vendor share training lineage and some error modes; a different-vendor reviewer breaks that residual correlation. It is deliberately optional rather than default: the marginal independence is real but incremental over a fresh-context Opus review, and it adds an external dependency (Codex CLI installed and authenticated, separate billing, its own failure modes). Recommended as a second-opinion pass at gate-class reviews (integration gates, a chain's final review) — or as a project's primary engine if you prefer; tell the Director. Mechanically it's a thin Claude launcher (Haiku) driving Codex, which is agentic: it reads the actual diff and the surrounding code, **re-runs the tests itself** in a sandbox, and returns a verdict the launcher relays verbatim — the launcher never reviews the code itself, and the Director (blocked from Bash) can't invoke Codex directly, so review stays delegated.
 
+**Hot-swapping engines.** The engine is a config value, not an install choice — both engines are always installed and run under the same contract, so swapping changes who judges, never what gets checked. Set `reviewEngine` in `.claude/orchestra.json`:
+
+```json
+{ "reviewEngine": "codex" }
+```
+
+`"opus"` (default) — fresh-context Opus `reviewer`; `"codex"` — cross-vendor primary via `reviewer-codex`, with the Opus `reviewer` as its automatic fallback when Codex is unavailable; `"dual"` — both engines review every substantive change and the Director arbitrates. The next review routes accordingly; no reinstall. Ad-hoc, just tell the Director ("run this review through codex") — an in-conversation instruction overrides the config for the session.
+
 **Setup (only needed for `reviewer-codex`).** In the environment where Orchestra runs, install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it — either export `OPENAI_API_KEY` or run `codex login`. Nothing else is required; the runner ships with the harness (`.claude/hooks/orchestra-review.js`).
 
 **Configuration** (all optional, via environment):
@@ -189,6 +197,7 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 - `directorBlockedPatterns` — regexes over tool names, denied to the Director (subagents unaffected). Pattern-match whole servers, or just mutating verbs: `"^mcp__blender__(create|set|modify|delete|execute)"`.
 - `directorAllowedTools` — exact built-in names to *remove* from the default blocklist (e.g. `["Glob"]` if you want the Director to glob), so you can loosen the law per project without editing the guard.
 - `directorPlanPatterns` — regexes over project-relative file paths (forward-slash form) that count as plan files the Director may write directly, in addition to the built-in `.claude/plans/*.md` (see "Plan files").
+- `reviewEngine` — review engine selection: `"opus"` (default — the fresh-context Opus `reviewer`), `"codex"` (cross-vendor primary via `reviewer-codex`; the Opus `reviewer` is its unavailable-fallback), or `"dual"` (both engines on every substantive review, Director arbitrates). Hot-swappable — edit the value and the next review routes accordingly (see "Review engines").
 - `verification` — optional verification manifest: `{ "full": "<command>", "lint": "<command>", "shards": ["<command>", …], "protected": ["<suite>", …] }`. It is the canonical command set for every verifier: executors run it, the review runner injects it into the Codex brief, and a fallback review judges pasted verification against it. The Director uses it to declare review tiers, scope mid-chain verification to touched + protected shards, and brief executors on concurrent shard runs (`ORCHESTRA.md` §8.3). Typically written once by a verification-profile micro-order that times the tree and maps its seams.
 - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
 

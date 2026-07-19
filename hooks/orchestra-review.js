@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 /**
- * Orchestra cross-family review runner.
+ * Orchestra cross-vendor review runner (the OPTIONAL review engine).
  *
  * Drives an OpenAI model through the Codex CLI to review a change produced by
- * the Claude executor. Review lives in a DIFFERENT model family from the
- * Director and executor on purpose: same-family reviewers share blind spots,
- * so a Claude change reviewed only by Claude tends to miss the same bugs the
- * Claude that wrote it missed. Codex re-reads the diff, runs the tests itself,
- * and hunts for concrete failure scenarios — independent in the ways that
- * matter and independent in model, too.
+ * the Claude executor. The default Orchestra reviewer is the fresh-context
+ * Opus `reviewer` agent; this engine adds a further layer of independence —
+ * a DIFFERENT VENDOR, decorrelating training-lineage blind spots that Claude
+ * models share — for gate-class second opinions or projects that prefer
+ * cross-vendor primary review. Codex re-reads the diff, runs the tests
+ * itself, and hunts for concrete failure scenarios.
  *
- * The `reviewer` subagent (a thin Claude launcher) invokes this. The Director
- * itself cannot — the guard blocks its Bash — so review stays delegated.
+ * The `reviewer-codex` subagent (a thin Claude launcher) invokes this. The
+ * Director itself cannot — the guard blocks its Bash — so review stays
+ * delegated.
  *
  * Usage:
  *   node orchestra-review.js --work-order <file> --executor-report <file> \
@@ -279,9 +280,10 @@ function printUnavailable(reason, detail) {
     'DETAIL',
     detail ? detail.split('\n').map((l) => '  ' + l).join('\n') : '  (none)',
     '',
-    'The cross-family reviewer did not run. Do NOT treat this change as',
-    'reviewed. The Director decides: retry once conditions are fixed, fall back',
-    'to in-context review for a small low-risk change, or hold and ask the user.',
+    'The cross-vendor reviewer did not run. Do NOT treat this change as',
+    'reviewed. The Director routes this review to the default Opus reviewer',
+    'and notes the cross-vendor pass did not run (retry once conditions are',
+    'fixed, if the user wants the cross-vendor opinion).',
   ].join('\n');
   process.stdout.write(engineHeader() + '\n\n' + block + '\n');
 }

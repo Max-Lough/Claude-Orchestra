@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC = __dirname;
-const AGENTS = ['scout.md', 'executor.md', 'reviewer.md'];
+const AGENTS = ['scout.md', 'executor.md', 'reviewer.md', 'reviewer-codex.md'];
 const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
 
 function availableSpecialists() {
@@ -26,7 +26,7 @@ function availableSpecialists() {
 }
 const GUARD = 'orchestra-guard.js';
 const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
-const REVIEW_RUNNER = 'orchestra-review.js'; // cross-family review runner (driven by the reviewer agent)
+const REVIEW_RUNNER = 'orchestra-review.js'; // cross-vendor review runner (driven by the reviewer-codex agent)
 const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by the Orchestra installer - do not edit between markers) -->';
 const END = '<!-- ORCHESTRA:END -->';
 const IMPORT_BLOCK = BEGIN + '\n@.claude/ORCHESTRA.md\n' + END;

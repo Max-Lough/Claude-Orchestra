@@ -12,10 +12,10 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
            ┌───────────────┘      │      └───────────────┐
            ▼                      ▼                      ▼
    ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-   │ SCOUT (Haiku) │     │EXECUTOR       │     │REVIEWER       │
-   │ search · map  │     │(Sonnet)       │     │(OpenAI/Codex) │
-   │ read-only     │     │ all edits &   │     │ cross-family  │
-   │ recon         │     │ commands      │     │ adversarial   │
+   │ SCOUT (Haiku) │     │EXECUTOR       │     │REVIEWER (Opus)│
+   │ search · map  │     │(Sonnet)       │     │ fresh-context │
+   │ read-only     │     │ all edits &   │     │ adversarial · │
+   │ recon         │     │ commands      │     │ +Codex option │
    └───────────────┘     └───────────────┘     └───────────────┘
 ```
 
@@ -27,20 +27,29 @@ The Director is **hard-blocked by a PreToolUse hook** from editing files, runnin
 |---|---|---|
 | Session launched as | Fable | Opus (`claude --model opus`) |
 | Director | Fable | Opus |
-| Review | `reviewer` agent → **OpenAI via Codex CLI** (cross-family; runs the tests) | same cross-family `reviewer`; Opus arbitrates the verdict, may self-review small low-risk changes, and falls back per protocol if Codex is unavailable |
+| Review | `reviewer` agent → **Opus, fresh context** (re-runs the tests); optional `reviewer-codex` (OpenAI via Codex CLI) second opinion at gates | same `reviewer` (fresh context — the change's author is Sonnet, not the Director); Opus arbitrates verdicts critically, same optional `reviewer-codex` layer |
 | Scout / Executor | Haiku / Sonnet | Haiku / Sonnet |
 
 Mode detection is automatic and two-layered: the protocol tells the session to identify its own model, and the guard hook independently reads the live model from the session transcript, enforcing only on positive evidence of a director model. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so — the guard stands down too, so a Sonnet/Haiku session is a plain Claude Code session with no denials and no pause file (even on the first turn, before the model reaches the transcript). A mid-session `/model` switch is picked up one turn later; on a director's opening turn, delegation is carried by the protocol instructions until enforcement engages on turn two.
 
 Every **substantive** change (logic, config, dependencies, data, API surface) gets adversarial review before the Director reports it done. Two failed review cycles force a re-plan instead of a third retry.
 
-## Cross-family review
+## Review engines
 
-The `reviewer` runs on a **different model family** from the Director and executor. The Director and executor are Claude models; a Claude reviewer shares their training and their blind spots, so it tends to miss the same bugs the Claude author missed. Correlated errors are the failure mode cross-family review is built to break.
+Review has two engines, both under one identical contract — adversarial brief, tier verification, the `verification` manifest, and the Orchestra verdict format:
 
-So the `reviewer` agent is a thin Claude launcher (Haiku) that drives an **OpenAI** model through the **Codex CLI**. Codex is agentic: it reads the actual diff, reads the surrounding code, and **re-runs the tests itself** in a sandbox, then returns a verdict in the Orchestra reviewer format. The launcher relays that verdict verbatim — it never reviews the code itself. Because it invokes Codex over Bash, the Director (blocked from Bash) can't run it directly; review stays delegated, and the actual judgment comes from outside the Claude family.
+- **`reviewer` (Opus, fresh context) — the default, both modes.** A different model from the Sonnet executor that authored the change, sharing none of the author's context, re-running the tests itself. Fresh eyes plus independent verification is where most of review's value lives.
+- **`reviewer-codex` (OpenAI via Codex CLI) — the optional cross-vendor layer.** Models from one vendor share training lineage and some error modes; a different-vendor reviewer breaks that residual correlation. It is deliberately optional rather than default: the marginal independence is real but incremental over a fresh-context Opus review, and it adds an external dependency (Codex CLI installed and authenticated, separate billing, its own failure modes). Recommended as a second-opinion pass at gate-class reviews (integration gates, a chain's final review) — or as a project's primary engine if you prefer; tell the Director. Mechanically it's a thin Claude launcher (Haiku) driving Codex, which is agentic: it reads the actual diff and the surrounding code, **re-runs the tests itself** in a sandbox, and returns a verdict the launcher relays verbatim — the launcher never reviews the code itself, and the Director (blocked from Bash) can't invoke Codex directly, so review stays delegated.
 
-**Setup.** In the environment where Orchestra runs, install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it — either export `OPENAI_API_KEY` or run `codex login`. Nothing else is required; the runner ships with the harness (`.claude/hooks/orchestra-review.js`).
+**Hot-swapping engines.** The engine is a config value, not an install choice — both engines are always installed and run under the same contract, so swapping changes who judges, never what gets checked. Set `reviewEngine` in `.claude/orchestra.json`:
+
+```json
+{ "reviewEngine": "codex" }
+```
+
+`"opus"` (default) — fresh-context Opus `reviewer`; `"codex"` — cross-vendor primary via `reviewer-codex`, with the Opus `reviewer` as its automatic fallback when Codex is unavailable; `"dual"` — both engines review every substantive change and the Director arbitrates. The next review routes accordingly; no reinstall. Ad-hoc, just tell the Director ("run this review through codex") — an in-conversation instruction overrides the config for the session.
+
+**Setup (only needed for `reviewer-codex`).** In the environment where Orchestra runs, install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it — either export `OPENAI_API_KEY` or run `codex login`. Nothing else is required; the runner ships with the harness (`.claude/hooks/orchestra-review.js`).
 
 **Configuration** (all optional, via environment):
 
@@ -52,9 +61,11 @@ So the `reviewer` agent is a thin Claude launcher (Haiku) that drives an **OpenA
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec` (escape hatch for flag drift / tuning). |
 | `CODEX_BIN` | `codex` | Path to the Codex executable. |
 
+**Tiered review (`--tier`).** Every review runs at full depth by default — the reviewer re-runs the tests itself. For a round the Director declares **inert** (docs/comments/formatting with zero behavior impact), the review order states `TIER: inert` and the launcher appends `--tier inert`; the runner then instructs the reviewer to *verify the inertness claim from the diff first* — any behavior-bearing line is itself a critical finding and forces a full-depth review — and only a proven-inert diff skips the suite. Effectiveness is never traded for speed: the tier narrows verification only where narrowing provably cannot matter, and the prover is whoever reviews — the Opus `reviewer`, the Codex engine, or the protocol's last-resort fallback — never the author. The tier appears in the `REVIEW ENGINE` header of both engines so every verdict is auditable for the depth it ran at. The tier and the `verification` manifest are engine-agnostic review *policy* (`ORCHESTRA.md` §8.3); the Opus `reviewer` enforces them through its own rules, this runner implements them for the Codex engine, and the §5 fallback applies them by hand.
+
 **Why `workspace-write` by default?** The reviewer's whole value is that it runs the real tests, and most test runners write (caches, coverage, build artifacts). This is the same trust model as before — the previous Opus reviewer also had unrestricted shell and was only *told* not to edit — but the runner adds a safety net the old design lacked: it fingerprints the working tree before and after, and if the reviewer mutated anything it appends a loud **`⚠ INTEGRITY WARNING`** to the verdict (it never auto-reverts, which could clobber the real change). For a hard guarantee, set `ORCHESTRA_REVIEW_SANDBOX=read-only`.
 
-**Graceful degradation.** If Codex isn't installed, isn't authenticated, times out, or errors, the reviewer returns `VERDICT: REVIEW_UNAVAILABLE` with the reason — never a fake approval. The Director then decides per protocol: fix the setup and retry, fall back to an in-context (same-family) review for a small low-risk change, or hold and ask you. A harnessed project with no Codex simply loses cross-family review and is told so; it never silently ships unreviewed work as reviewed.
+**Graceful degradation.** If Codex isn't installed, isn't authenticated, times out, or errors, `reviewer-codex` returns `VERDICT: REVIEW_UNAVAILABLE` with the reason — never a fake approval. The Director routes that review to the Opus `reviewer` and notes the cross-vendor pass didn't run. A harnessed project with no Codex simply has no cross-vendor option — it still gets full fresh-context adversarial review, and it never silently ships unreviewed work as reviewed.
 
 ## Layout
 
@@ -68,13 +79,14 @@ Orchestra/
 ├── agents/
 │   ├── scout.md           ← Haiku · read-only recon
 │   ├── executor.md        ← Sonnet · all edits and commands
-│   ├── reviewer.md        ← Haiku launcher · drives the cross-family (OpenAI/Codex) reviewer
+│   ├── reviewer.md        ← Opus · fresh-context adversarial review (default engine)
+│   ├── reviewer-codex.md  ← Haiku launcher · optional cross-vendor (OpenAI/Codex) engine
 │   └── specialists/       ← domain executors, installed on request (--specialists)
 │       ├── _TEMPLATE.md   ← copy this to mint a new specialist
 │       └── modeler.md     ← Sonnet · Blender/Godot 3D asset pipeline
 └── hooks/
     ├── orchestra-guard.js  ← PreToolUse hook enforcing Director law
-    └── orchestra-review.js ← cross-family review runner (drives Codex CLI)
+    └── orchestra-review.js ← cross-vendor review runner (drives Codex CLI)
 ```
 
 This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
@@ -185,16 +197,28 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 - `directorBlockedPatterns` — regexes over tool names, denied to the Director (subagents unaffected). Pattern-match whole servers, or just mutating verbs: `"^mcp__blender__(create|set|modify|delete|execute)"`.
 - `directorAllowedTools` — exact built-in names to *remove* from the default blocklist (e.g. `["Glob"]` if you want the Director to glob), so you can loosen the law per project without editing the guard.
 - `directorPlanPatterns` — regexes over project-relative file paths (forward-slash form) that count as plan files the Director may write directly, in addition to the built-in `.claude/plans/*.md` (see "Plan files").
+- `reviewEngine` — review engine selection: `"opus"` (default — the fresh-context Opus `reviewer`), `"codex"` (cross-vendor primary via `reviewer-codex`; the Opus `reviewer` is its unavailable-fallback), or `"dual"` (both engines on every substantive review, Director arbitrates). Hot-swappable — edit the value and the next review routes accordingly (see "Review engines").
+- `verification` — optional verification manifest: `{ "full": "<command>", "lint": "<command>", "shards": ["<command>", …], "protected": ["<suite>", …] }`. It is the canonical command set for every verifier: executors run it, the review runner injects it into the Codex brief, and a fallback review judges pasted verification against it. The Director uses it to declare review tiers, scope mid-chain verification to touched + protected shards, and brief executors on concurrent shard runs (`ORCHESTRA.md` §8.3). Typically written once by a verification-profile micro-order that times the tree and maps its seams.
 - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
 
 **Working rhythm for iterative pipelines** (also in §7): iteration loops live *inside* one work order ("iterate until it matches the ref or 4 rounds, report best"); long campaigns keep one specialist warm via SendMessage instead of respawning; renders/screenshots/logs are the review artifacts — both the Director and the reviewer can Read images; asset batches go to the reviewer as one checklist pass with one verdict.
+
+## Sizing, cadence, and the verification tax
+
+`ORCHESTRA.md` §8 governs how big a work order gets and what a long one owes the Director while it runs. The short version:
+
+- **Sizing gate at PLAN.** One deliverable kind per order; "author a tool" + "migrate its consumers" always splits; >~3 subsystems or >~5 report sections → split. A well-sized order is one executor run (~≤80 tool calls) and one review round. Shipping atomicity lives at the branch and its integration gate — never inside one context window.
+- **Cadence inside long orders.** Any deliberately-bundled order carries heartbeats (per-part checkpoint commit + one-line progress append the Director can poll), a tool-call budget as health telemetry, and the `CHECKPOINT` status — a *successful* stop at a part boundary when the order outgrows its budget or the context compacts. Checkpoints are externalized memory: they survive compaction and turn a late failure into "resume from part N".
+- **The verification tax.** The full test tree is the dominant recurring wall-clock cost, paid at least twice per round by design (executor verifies, reviewer independently re-verifies — that redundancy is never trimmed). The levers: cut *round count*, tier only provably-inert rounds (verified by the reviewer, above), profile the tree once into the `verification` manifest, and commission a verification-speed work order (shard/parallelize/cache the suite) when the ledger shows the tree dominating round latency — per-run duration is a project property, and fixing it pays back on every future round in every future session.
+
+These rules optimize **effectiveness and wall-clock**, not cost — the harness's cost savings are already structural (see below), and effectiveness is never traded away for either.
 
 ## Cost expectations
 
 This trades tokens for quality and control, deliberately:
 
 - **Recon is cheap** (Haiku) and **execution is mid-priced** (Sonnet) — the volume work runs on the economical models.
-- **Review runs on OpenAI** (via Codex, on every substantive change) and is billed to your **OpenAI** account, separate from Claude usage — so review spend shows up on a different meter. The Claude side of review is just the Haiku launcher, which is negligible. For a long session of tiny changes, expect the OpenAI review calls to dominate the review cost; pick the review model with `ORCHESTRA_REVIEW_MODEL` accordingly.
+- **Review runs on Opus** by default — deliberately the most capable regular call in the company, because verdict quality is what the harness optimizes for. The optional `reviewer-codex` engine is billed to your **OpenAI** account (a separate meter); its Claude side is just a negligible Haiku launcher. Pick the OpenAI review model with `ORCHESTRA_REVIEW_MODEL`.
 - The Director's own turns are decision-dense and short; the expensive model at the top writes the least text.
 
 ## Troubleshooting
@@ -209,18 +233,18 @@ This trades tokens for quality and control, deliberately:
 | Session model is Sonnet/Haiku | Orchestra goes dormant by design — protocol and guard both stand down, leaving a normal session. Relaunch as Fable, or `claude --model opus` for MODE B. |
 | Skill/slash-command in a harnessed session wants to edit files | That's a hands-on skill in the Director's context — route it per ORCHESTRA.md §7: a specialist with the skill preloaded, or a work order telling the executor to invoke it. Pausing works too, but forfeits the harness for that stretch. |
 | Director drives MCP tools (Blender, DBs, …) directly | Instruction rule §7 should stop it; to enforce, add the server's pattern to `directorBlockedPatterns` in `.claude/orchestra.json` (see "Specialists & hands-on skills"). |
-| Review comes back `REVIEW_UNAVAILABLE: Codex CLI not found` | Codex isn't installed / not on PATH in this environment. Install the [Codex CLI](https://developers.openai.com/codex/), or set `CODEX_BIN` to its full path. Until then the Director falls back per protocol (see "Cross-family review"). |
+| Review comes back `REVIEW_UNAVAILABLE: Codex CLI not found` | (`reviewer-codex` only) Codex isn't installed / not on PATH in this environment. Install the [Codex CLI](https://developers.openai.com/codex/), or set `CODEX_BIN` to its full path. Until then the Director routes reviews to the default Opus `reviewer` (see "Review engines"). |
 | `REVIEW_UNAVAILABLE: Codex exited with status …` | Usually auth — export `OPENAI_API_KEY` or run `codex login`. Can also be an unsupported flag on your Codex version (check `codex exec --help`, then adjust via `ORCHESTRA_REVIEW_ARGS`) or a sandbox restriction. The DETAIL block quotes Codex's stderr. |
-| Reviewer runs but the tests don't execute | Codex's `read-only` sandbox can't run commands that write. Leave `ORCHESTRA_REVIEW_SANDBOX` at its `workspace-write` default so the suite can run. |
-| Verdict carries an `⚠ INTEGRITY WARNING` | The cross-family reviewer modified the working tree while running. Have the scout diff the tree against the intended change; the reviewer isn't supposed to write. Set `ORCHESTRA_REVIEW_SANDBOX=read-only` if you need to forbid it outright. |
+| Reviewer runs but the tests don't execute | (`reviewer-codex`) Codex's `read-only` sandbox can't run commands that write. Leave `ORCHESTRA_REVIEW_SANDBOX` at its `workspace-write` default so the suite can run. |
+| Verdict carries an `⚠ INTEGRITY WARNING` | The cross-vendor reviewer (`reviewer-codex`) modified the working tree while running. Have the scout diff the tree against the intended change; the reviewer isn't supposed to write. Set `ORCHESTRA_REVIEW_SANDBOX=read-only` if you need to forbid it outright. |
 
 ## Design notes
 
 - **Why a hook and not just instructions?** Under pressure ("just quickly fix the import"), models drift toward doing work themselves. The hook makes drift impossible instead of discouraged; the denial message itself re-points the Director at the right agent.
 - **Why does the guard read the transcript for the model?** The protocol already tells non-director sessions to act normally, but instructions can't unblock a hook — without detection, a Sonnet session would be told "you're dormant" and then denied every Edit. So before denying, the guard tail-reads the session transcript (fixed cost, sub-millisecond, regardless of transcript size), takes the latest non-sidechain assistant turn's model, and stands down for non-directors. An undetermined model resolves to *enforce*: the harness can drop out only on positive evidence of a non-director model, never by accident on a director. Reading the *latest* turn (rather than trusting the session's static self-image) also means mid-session `/model` switches are honored.
 - **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout does all discovery.
-- **Why a cross-family reviewer?** Self-review inside the planning context inherits the planner's blind spots — and so does a same-family reviewer: models from one family share training and error modes, so a Claude reviewer misses much of what a Claude author missed. Routing review to an OpenAI model (via Codex) that *also* re-runs the tests makes it independent in the two ways that matter — fresh context and a different family. This is why "replace the reviewer with OpenAI" is a strict upgrade over a fresh-context Opus reviewer, not a lateral move.
-- **Why is the reviewer a Claude launcher instead of calling OpenAI directly?** The Director is guard-blocked from Bash, so it can't shell out to Codex itself, and there's no OpenAI tool in its toolbox. A thin subagent (exempt from the guard) runs Codex and relays the verdict — which keeps review delegated and keeps the judgment cross-family, without weakening the guard or handing the Director a new way to do work itself.
+- **Why is the default reviewer Opus, with cross-vendor as an option?** Self-review inside the planning context inherits the planner's blind spots — independence starts with a fresh context. The `reviewer` provides that: a fresh Opus context reviewing a Sonnet-authored change, re-running the tests itself, which captures most of what independent review buys. A different-vendor reviewer (OpenAI via Codex) decorrelates one layer further — same-vendor models share training lineage — so `reviewer-codex` exists for gate-class second opinions, or as a primary engine for projects that want it. It is optional rather than default because the residual decorrelation is incremental over fresh-context different-model review, while the dependency it adds (external CLI, auth, separate billing) can leave review unavailable exactly when you need it.
+- **Why is `reviewer-codex` a Claude launcher instead of calling OpenAI directly?** The Director is guard-blocked from Bash, so it can't shell out to Codex itself, and there's no OpenAI tool in its toolbox. A thin subagent (exempt from the guard) runs Codex and relays the verdict — which keeps review delegated and keeps the judgment cross-vendor, without weakening the guard or handing the Director a new way to do work itself.
 
 ## License
 

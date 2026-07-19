@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Orchestra installer — stamps the Orchestra harness into a target project.
+ * Orchestra installer — stamps the Orchestra harness (agents, hooks, the
+ * protocol, and bundled skills) into a target project.
  *
  *   node install.js [targetDir]                        install / update (idempotent)
  *   node install.js [targetDir] --specialists a[,b]    also install domain specialists
@@ -23,6 +24,33 @@ function availableSpecialists() {
     .readdirSync(SPECIALISTS_DIR)
     .filter((f) => f.endsWith('.md') && f !== '_TEMPLATE.md')
     .map((f) => f.slice(0, -3));
+}
+
+const SKILLS_DIR = path.join(SRC, 'skills');
+
+// Bundled skills: every skills/<name>/ directory carrying a SKILL.md, minus
+// underscore-prefixed ones (the authoring template). Always installed — they
+// are part of the harness, not an opt-in like specialists.
+function availableSkills() {
+  if (!fs.existsSync(SKILLS_DIR)) return [];
+  return fs
+    .readdirSync(SKILLS_DIR)
+    .filter((d) => !d.startsWith('_'))
+    .filter((d) => {
+      const p = path.join(SKILLS_DIR, d);
+      return fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'SKILL.md'));
+    })
+    .sort();
+}
+
+function copyDir(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const s = path.join(src, entry);
+    const d = path.join(dest, entry);
+    if (fs.statSync(s).isDirectory()) copyDir(s, d);
+    else fs.copyFileSync(s, d);
+  }
 }
 const GUARD = 'orchestra-guard.js';
 const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
@@ -151,6 +179,7 @@ if (path.resolve(target) === path.resolve(SRC)) {
 const dotClaude = path.join(target, '.claude');
 const agentsDir = path.join(dotClaude, 'agents');
 const hooksDir = path.join(dotClaude, 'hooks');
+const skillsDir = path.join(dotClaude, 'skills');
 const settingsFile = path.join(dotClaude, 'settings.json');
 const claudeMd = path.join(target, 'CLAUDE.md');
 const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
@@ -172,6 +201,15 @@ if (!uninstall) {
     fs.copyFileSync(path.join(SPECIALISTS_DIR, s + '.md'), path.join(agentsDir, s + '.md'));
   }
   if (specialists.length) did('specialists: ' + specialists.join(', ') + ' -> .claude/agents/');
+  const skills = availableSkills();
+  for (const s of skills) {
+    const dest = path.join(skillsDir, s);
+    // Wholesale re-stamp: replace the whole directory so files removed from
+    // the master don't linger in projects.
+    fs.rmSync(dest, { recursive: true, force: true });
+    copyDir(path.join(SKILLS_DIR, s), dest);
+  }
+  if (skills.length) did('skills: ' + skills.join(', ') + ' -> .claude/skills/');
   fs.copyFileSync(path.join(SRC, 'hooks', GUARD), path.join(hooksDir, GUARD));
   did('hook script -> .claude/hooks/' + GUARD);
   fs.copyFileSync(path.join(SRC, 'hooks', REVIEW_RUNNER), path.join(hooksDir, REVIEW_RUNNER));
@@ -227,6 +265,13 @@ if (!uninstall) {
   console.log(
     '  - The Director may write plan files (.claude/plans/*.md) itself; everything else stays delegated.'
   );
+  if (skills.length) {
+    console.log(
+      '  - Bundled skills installed: ' +
+        skills.map((s) => '/' + s).join(', ') +
+        ' (fresh sessions pick them up; see README "Bundled skills").'
+    );
+  }
   console.log('  - Update later by re-running this installer; remove with --uninstall.');
   const avail = availableSpecialists();
   if (avail.length && specialists.length === 0) {
@@ -252,6 +297,21 @@ if (!uninstall) {
       fs.unlinkSync(f);
       did('removed ' + path.relative(target, f).replace(/\\/g, '/'));
     }
+  }
+
+  // Bundled skills: remove master-known names only — skills the user authored
+  // under other names are theirs, not ours.
+  for (const s of availableSkills()) {
+    const dir = path.join(skillsDir, s);
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      did('removed .claude/skills/' + s + '/');
+    }
+  }
+  try {
+    if (fs.existsSync(skillsDir) && fs.readdirSync(skillsDir).length === 0) fs.rmdirSync(skillsDir);
+  } catch (_) {
+    /* leave a non-empty or busy skills dir alone */
   }
 
   if (fs.existsSync(settingsFile)) {

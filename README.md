@@ -84,9 +84,14 @@ Orchestra/
 │   └── specialists/       ← domain executors, installed on request (--specialists)
 │       ├── _TEMPLATE.md   ← copy this to mint a new specialist
 │       └── modeler.md     ← Sonnet · Blender/Godot 3D asset pipeline
-└── hooks/
-    ├── orchestra-guard.js  ← PreToolUse hook enforcing Director law
-    └── orchestra-review.js ← cross-vendor review runner (drives Codex CLI)
+├── hooks/
+│   ├── orchestra-guard.js  ← PreToolUse hook enforcing Director law
+│   └── orchestra-review.js ← cross-vendor review runner (drives Codex CLI)
+└── skills/                 ← bundled skills, stamped into .claude/skills/
+    ├── _TEMPLATE/          ← copy this directory to mint a new bundled skill
+    ├── orchestra-status/   ← /orchestra-status · live harness state report
+    ├── orchestra-plan/     ← /orchestra-plan · §8-sized plans into .claude/plans/
+    └── orchestra-review/   ← /orchestra-review · on-demand adversarial review
 ```
 
 This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
@@ -119,11 +124,12 @@ git clone https://github.com/Max-Lough/Claude-Orchestra.git && cd Claude-Orchest
 The installer is **idempotent** — run it again anytime to update a project to the latest master. It:
 
 1. Copies `agents/*.md` → `<project>/.claude/agents/`
-2. Copies `hooks/orchestra-guard.js` and `hooks/orchestra-review.js` → `<project>/.claude/hooks/`
-3. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
-4. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
-5. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
-6. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
+2. Copies each bundled skill `skills/<name>/` → `<project>/.claude/skills/<name>/` (stamped wholesale — local edits to those directories are overwritten on update; see "Bundled skills")
+3. Copies `hooks/orchestra-guard.js` and `hooks/orchestra-review.js` → `<project>/.claude/hooks/`
+4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
+5. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
+6. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
+7. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
 
 **First launch after install:** Claude Code will ask you to approve the hook that project settings define — approve it once and it sticks. If teammates shouldn't inherit the harness, move the hook entry from `settings.json` to `settings.local.json` (git-ignored).
 
@@ -135,7 +141,7 @@ The installer is **idempotent** — run it again anytime to update a project to 
 node install.js "C:\path\to\your\project" --uninstall
 ```
 
-Removes the copied files, the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else in your settings and CLAUDE.md is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
+Removes the copied files (agents, hooks, protocol, and the bundled `orchestra-*` skills), the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else — including skills you authored under other names — is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
 
 ## Using it
 
@@ -144,6 +150,8 @@ Nothing to invoke — just start Claude Code in the project. The protocol loads 
 **INTAKE → RECON → PLAN → EXECUTE → REVIEW → REPORT**
 
 You'll see the Director narrate phase transitions and spawn agents; the agents' raw reports stay behind the curtain, and the Director gives you the synthesized picture with evidence (tests run, review verdicts).
+
+Three slash commands ship with the harness: `/orchestra-status` (live harness state), `/orchestra-plan` (a §8-sized plan written to `.claude/plans/`), and `/orchestra-review` (on-demand adversarial review of any diff) — see "Bundled skills".
 
 ## Pausing the harness
 
@@ -202,6 +210,23 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
 
 **Working rhythm for iterative pipelines** (also in §7): iteration loops live *inside* one work order ("iterate until it matches the ref or 4 rounds, report best"); long campaigns keep one specialist warm via SendMessage instead of respawning; renders/screenshots/logs are the review artifacts — both the Director and the reviewer can Read images; asset batches go to the reviewer as one checklist pass with one verdict.
+
+## Bundled skills
+
+The harness ships skills of its own and stamps them into `<project>/.claude/skills/` on every install — they ride the installer exactly like agents and hooks: installed automatically, updated by re-running the installer, removed by `--uninstall`. Claude Code discovers project skills from that directory, so they're live as slash commands (and as auto-triggered skills) with nothing else to configure.
+
+| Skill | Invoke | Does |
+|---|---|---|
+| `orchestra-status` | `/orchestra-status` — or ask "is the orchestra on?" | One compact report: mode, pause/enforcement state, review engine (+ Codex availability), company roster, policy, verification manifest, plans/ledger — plus one-line fixes for any inconsistency it finds. |
+| `orchestra-plan` | `/orchestra-plan` — or ask to plan before building | Walks the §8 sizing gate and writes a durable plan file — work orders with scope, acceptance criteria, verification tier, cadence clauses — to `.claude/plans/<slug>.md`, the one directory the Director may write itself. |
+| `orchestra-review` | `/orchestra-review` — or ask for a review / second opinion | Runs the loop's REVIEW phase on demand against arbitrary existing changes — working tree, branch, commit range — through the configured engine, with the standard verdict format. Works on changes the harness never authored. |
+
+Design constraints (these are also the rules for bundling your own — see `skills/_TEMPLATE/SKILL.md`):
+
+- **Orchestration-class only.** Bundled skills load into the main session — the Director, whom the guard blocks from editing, running commands, and searching. So their steps dispatch scouts, executors, and reviewers rather than assuming the session's own hands (ORCHESTRA.md §7). Hands-on playbooks belong to executors and specialists, never in the bundle.
+- **All modes.** Each skill forks once at the top: under a director model it delegates; in a dormant or paused session the same procedure runs directly. The skills stay useful in plain sessions.
+- **Stamped wholesale.** The installer replaces each `.claude/skills/orchestra-*/` directory completely on update, so stale files never linger — edit the master and re-run the installer rather than editing stamped copies. The `orchestra-` prefix is effectively the harness's namespace; skills under other names are yours, and the installer never touches them.
+- **To bundle a new skill:** copy `skills/_TEMPLATE/` to `skills/<name>/`, make the frontmatter `name` match the directory, re-run the installer per project. Supporting files beside `SKILL.md` are stamped too (the copy is recursive); underscore-prefixed directories are skipped. Fresh sessions pick up new skills at launch.
 
 ## Sizing, cadence, and the verification tax
 

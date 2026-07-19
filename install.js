@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC = __dirname;
-const AGENTS = ['scout.md', 'executor.md', 'reviewer.md', 'reviewer-codex.md'];
+const AGENTS = ['scout.md', 'executor.md', 'reviewer.md', 'reviewer-codex.md', 'planner-gpt.md'];
 const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
 
 function availableSpecialists() {
@@ -55,6 +55,7 @@ function copyDir(src, dest) {
 const GUARD = 'orchestra-guard.js';
 const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
 const REVIEW_RUNNER = 'orchestra-review.js'; // cross-vendor review runner (driven by the reviewer-codex agent)
+const ULTRAPLAN_RUNNER = 'orchestra-ultraplan.js'; // plan-roundabout runner (driven by the planner-gpt agent)
 const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by the Orchestra installer - do not edit between markers) -->';
 const END = '<!-- ORCHESTRA:END -->';
 const IMPORT_BLOCK = BEGIN + '\n@.claude/ORCHESTRA.md\n' + END;
@@ -214,6 +215,8 @@ if (!uninstall) {
   did('hook script -> .claude/hooks/' + GUARD);
   fs.copyFileSync(path.join(SRC, 'hooks', REVIEW_RUNNER), path.join(hooksDir, REVIEW_RUNNER));
   did('review runner -> .claude/hooks/' + REVIEW_RUNNER);
+  fs.copyFileSync(path.join(SRC, 'hooks', ULTRAPLAN_RUNNER), path.join(hooksDir, ULTRAPLAN_RUNNER));
+  did('ultra-plan runner -> .claude/hooks/' + ULTRAPLAN_RUNNER);
   fs.copyFileSync(path.join(SRC, 'ORCHESTRA.md'), orchestraMd);
   did('protocol -> .claude/ORCHESTRA.md');
 
@@ -292,7 +295,7 @@ if (!uninstall) {
       did('removed .claude/agents/' + a);
     }
   }
-  for (const f of [path.join(hooksDir, GUARD), path.join(hooksDir, REVIEW_RUNNER), orchestraMd, pauseFile]) {
+  for (const f of [path.join(hooksDir, GUARD), path.join(hooksDir, REVIEW_RUNNER), path.join(hooksDir, ULTRAPLAN_RUNNER), orchestraMd, pauseFile]) {
     if (fs.existsSync(f)) {
       fs.unlinkSync(f);
       did('removed ' + path.relative(target, f).replace(/\\/g, '/'));

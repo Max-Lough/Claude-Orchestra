@@ -16,8 +16,8 @@ Then the facts. Under a director model, dispatch **one scout mission** carrying 
 1. **Pause state** — does `.claude/orchestra.pause` exist? Is `ORCHESTRA_PAUSE=1` set in the environment?
 2. **Guard wiring** — does `.claude/settings.json` contain a PreToolUse entry whose command references `orchestra-guard.js`? Do `.claude/hooks/orchestra-guard.js` and `.claude/hooks/orchestra-review.js` exist?
 3. **Protocol** — does `.claude/ORCHESTRA.md` exist? Does `CLAUDE.md` contain the `<!-- ORCHESTRA:BEGIN` marker?
-4. **Company** — which of `scout.md`, `executor.md`, `reviewer.md`, `reviewer-codex.md` are present in `.claude/agents/`? List any other `.md` files there as specialists.
-5. **Skills** — which skill directories exist under `.claude/skills/`? (Bundled ones are prefixed `orchestra-`.)
+4. **Company** — which of `scout.md`, `executor.md`, `reviewer.md`, `reviewer-codex.md`, `planner-gpt.md` are present in `.claude/agents/`? List any other `.md` files there as specialists.
+5. **Skills** — which skill directories exist under `.claude/skills/`? (Bundled: the `orchestra-*` set and `ultra-plan`.)
 6. **Config** — from `.claude/orchestra.json` (absent = all defaults): `reviewEngine` (default `opus`), counts of `directorBlockedPatterns` and `directorPlanPatterns`, any `directorAllowedTools`, and whether a `verification` manifest exists (quote its `full` command if so).
 7. **Codex availability** — only if the engine is `codex` or `dual`: is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)?
 8. **Plans** — does `.claude/plans/` exist, how many `.md` files does it hold, and is `ledger.md` among them?
@@ -31,7 +31,7 @@ ORCHESTRA STATUS
 Mode:         MODE A (Fable directs) | MODE B (Opus directs) | DORMANT (<model> at the helm)
 Enforcement:  active | paused (.claude/orchestra.pause) | paused (ORCHESTRA_PAUSE=1) | guard not wired
 Protocol:     .claude/ORCHESTRA.md <present|MISSING> · CLAUDE.md import <present|MISSING>
-Company:      scout <✓|✗> executor <✓|✗> reviewer <✓|✗> reviewer-codex <✓|✗> · specialists: <names | none>
+Company:      scout <✓|✗> executor <✓|✗> reviewer <✓|✗> reviewer-codex <✓|✗> planner-gpt <✓|✗> · specialists: <names | none>
 Skills:       <skill names | none>
 Engine:       opus (default) | opus (configured) | codex (Codex CLI <found|NOT FOUND>) | dual (Codex CLI <found|NOT FOUND>)
 Policy:       blocked-patterns <n> · allowed-tools <names | none> · plan-patterns <n>

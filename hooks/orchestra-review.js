@@ -33,6 +33,12 @@
  * "verification": { full, lint, shards[], protected[] }), it is injected into
  * the brief so the reviewer runs the canonical commands instead of guessing.
  *
+ * Both the tier and the manifest are Orchestra review POLICY (ORCHESTRA.md
+ * §8.3), engine-agnostic by design. This runner merely implements that policy
+ * for the Codex engine; when review falls back per ORCHESTRA.md §5 (Codex
+ * unavailable), the fallback reviewer applies the same rules by hand. Any
+ * future review engine must implement them too.
+ *
  * Output: a self-contained review report on stdout, already in the Orchestra
  * reviewer format (VERDICT / FINDINGS / CLAIMS CHECKED / NITS). The launcher
  * relays it verbatim. On any engine failure it prints a VERDICT:

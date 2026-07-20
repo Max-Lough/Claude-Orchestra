@@ -19,7 +19,7 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
    └───────────────┘     └───────────────┘     └───────────────┘
 ```
 
-The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. One authoring carve-out: the Director may write **plan files** — markdown under `.claude/plans/` — itself; plans are Director thinking, not execution (see "Plan files" below).
+The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. Two authoring carve-outs: the Director may write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md` / `CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution (see "Plan files" and "Memory files" below). The managed Orchestra block inside `CLAUDE.md` stays off-limits.
 
 ## Two modes, selected automatically
 
@@ -72,6 +72,7 @@ Review has two engines, both under one identical contract — adversarial brief,
 ```
 Orchestra/
 ├── README.md              ← you are here
+├── VERSION                ← harness version, stamped into installed projects (see "Versioning")
 ├── ORCHESTRA.md           ← the Director protocol (imported into the project's CLAUDE.md)
 ├── install.js             ← idempotent installer/uninstaller (Node)
 ├── install.ps1            ← thin PowerShell wrapper
@@ -98,6 +99,16 @@ Orchestra/
 ```
 
 This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
+
+## Versioning
+
+The master's version lives in the `VERSION` file at the repo root. The installer stamps it into every project it touches — the header comment of `<project>/.claude/ORCHESTRA.md` reads `Installed by the Orchestra harness (vX.Y.Z)` — so any project can answer "what Orchestra version am I on":
+
+```bash
+head -3 .claude/ORCHESTRA.md     # or just ask the session: /orchestra-status
+```
+
+Compare that against the master's `VERSION` and re-run the installer to update (it's idempotent). Installs stamped before versioning existed carry no version — treat "unversioned" as "older than v1.0.0". The number bumps with any change to the stamped files (protocol, guard, hooks, agents, bundled skills): **patch** for fixes and doc-only changes, **minor** for new capabilities (carve-outs, skills, config knobs), **major** for breaking changes to the protocol or the `orchestra.json` format.
 
 ## Install into a project
 
@@ -129,7 +140,7 @@ The installer is **idempotent** — run it again anytime to update a project to 
 1. Copies `agents/*.md` → `<project>/.claude/agents/`
 2. Copies each bundled skill `skills/<name>/` → `<project>/.claude/skills/<name>/` (stamped wholesale — local edits to those directories are overwritten on update; see "Bundled skills")
 3. Copies `hooks/orchestra-guard.js`, `hooks/orchestra-review.js`, and `hooks/orchestra-ultraplan.js` → `<project>/.claude/hooks/`
-4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
+4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`, stamping the harness version into its header
 5. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
 6. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
 7. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
@@ -167,7 +178,7 @@ New-Item -ItemType File .claude\orchestra.pause
 Remove-Item .claude\orchestra.pause
 ```
 
-Or launch with the env var: `ORCHESTRA_PAUSE=1 claude`. You can also ask the Director to pause — creating that file is permitted by the hook (its only write exception besides plan files), and only at your explicit request. The Director is instructed never to pause on its own initiative.
+Or launch with the env var: `ORCHESTRA_PAUSE=1 claude`. You can also ask the Director to pause — creating that file is permitted by the hook (its only write exception besides plan and memory files), and only at your explicit request. The Director is instructed never to pause on its own initiative.
 
 ## Plan files
 
@@ -178,6 +189,23 @@ If your project keeps plans elsewhere (say `docs/plans/`), add `directorPlanPatt
 ```json
 {
   "directorPlanPatterns": ["^docs/plans/.+\\.md$"]
+}
+```
+
+## Memory files
+
+Memory is the other artifact the Director authors itself. A memory entry distills the *current conversation* — which only the Director holds — so routing "append one line to CLAUDE.md" through an executor adds a subagent round-trip and zero judgment: the work order would have to contain the exact text anyway, and the executor would just transcribe it. Blocking it also breaks Claude Code's own auto-memory, which writes from the main session. So the guard treats these as Director-editable:
+
+- `CLAUDE.md` and `CLAUDE.local.md` anywhere inside the project (root, `.claude/`, subdirectories);
+- user-level memory under Claude's config dir (`~/.claude`, or `$CLAUDE_CONFIG_DIR`): its `CLAUDE.md`, and markdown inside `memory`/`memories` directories — Claude Code's auto-memory notebook.
+
+**The one fence:** the `<!-- ORCHESTRA:BEGIN/END -->` block the installer stamps into `CLAUDE.md` is not memory — it's the harness's own wiring, and disabling the harness belongs to you (ORCHESTRA.md §6). The guard simulates each memory write and denies any edit whose result doesn't carry that block through verbatim, whatever else the edit does. Everything around the block is fair game.
+
+If your project keeps memory elsewhere (say `.claude/rules/`), add `directorMemoryPatterns` to `.claude/orchestra.json` — regexes over the project-relative path, additive to the defaults (marker-block protection applies to matched files too):
+
+```json
+{
+  "directorMemoryPatterns": ["^\\.claude/rules/.+\\.md$"]
 }
 ```
 
@@ -208,6 +236,7 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 - `directorBlockedPatterns` — regexes over tool names, denied to the Director (subagents unaffected). Pattern-match whole servers, or just mutating verbs: `"^mcp__blender__(create|set|modify|delete|execute)"`.
 - `directorAllowedTools` — exact built-in names to *remove* from the default blocklist (e.g. `["Glob"]` if you want the Director to glob), so you can loosen the law per project without editing the guard.
 - `directorPlanPatterns` — regexes over project-relative file paths (forward-slash form) that count as plan files the Director may write directly, in addition to the built-in `.claude/plans/*.md` (see "Plan files").
+- `directorMemoryPatterns` — same shape: paths that count as memory files the Director may edit directly, in addition to the built-in `CLAUDE.md` / `CLAUDE.local.md` and auto-memory locations; the CLAUDE.md marker block stays protected either way (see "Memory files").
 - `reviewEngine` — review engine selection: `"opus"` (default — the fresh-context Opus `reviewer`), `"codex"` (cross-vendor primary via `reviewer-codex`; the Opus `reviewer` is its unavailable-fallback), or `"dual"` (both engines on every substantive review, Director arbitrates). Hot-swappable — edit the value and the next review routes accordingly (see "Review engines").
 - `verification` — optional verification manifest: `{ "full": "<command>", "lint": "<command>", "shards": ["<command>", …], "protected": ["<suite>", …] }`. It is the canonical command set for every verifier: executors run it, the review runner injects it into the Codex brief, and a fallback review judges pasted verification against it. The Director uses it to declare review tiers, scope mid-chain verification to touched + protected shards, and brief executors on concurrent shard runs (`ORCHESTRA.md` §8.3). Typically written once by a verification-profile micro-order that times the tree and maps its seams.
 - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
@@ -274,6 +303,7 @@ This trades tokens for quality and control, deliberately:
 | Symptom | Cause / fix |
 |---|---|
 | "Orchestra: the Director does not use X" denials | Working as intended on Fable/Opus — the session should delegate. On Sonnet/Haiku the guard stands down automatically, including on a fresh session's first turn (the guard enforces only on positive evidence of a director model). Any denial on Sonnet/Haiku means model detection failed — pause (above) and file a bug against the master. |
+| "…would alter or remove the managed Orchestra block" denial | Working as intended — memory files are Director-editable, but the `<!-- ORCHESTRA:BEGIN/END -->` import block in `CLAUDE.md` is harness wiring and yours alone. The Director edits around it; removing the harness is `--uninstall`, pausing is `.claude/orchestra.pause`. |
 | Hook seems inactive | Did you approve project hooks at first launch? Check `/hooks` in Claude Code; confirm `.claude/settings.json` has the `orchestra-guard` entry. |
 | Executor/scout getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |
 | Executor denied on `git commit` / `git push` | The permission classifier won't accept user authorization relayed through a work order — it needs a settings-level grant. Re-run the installer: it now merges `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)` into `permissions.allow` in `.claude/settings.json`. Check those entries survived if you've hand-edited settings. |
@@ -291,6 +321,7 @@ This trades tokens for quality and control, deliberately:
 
 - **Why a hook and not just instructions?** Under pressure ("just quickly fix the import"), models drift toward doing work themselves. The hook makes drift impossible instead of discouraged; the denial message itself re-points the Director at the right agent.
 - **Why does the guard read the transcript for the model?** The protocol already tells non-director sessions to act normally, but instructions can't unblock a hook — without detection, a Sonnet session would be told "you're dormant" and then denied every Edit. So before denying, the guard tail-reads the session transcript (fixed cost, sub-millisecond, regardless of transcript size), takes the latest non-sidechain assistant turn's model, and stands down for non-directors. An undetermined model resolves to *enforce*: the harness can drop out only on positive evidence of a non-director model, never by accident on a director. Reading the *latest* turn (rather than trusting the session's static self-image) also means mid-session `/model` switches are honored.
+- **Why can the Director write plans and memory itself?** Both are the Director's own thinking: a plan decomposes the work, a memory entry distills the conversation, and only the Director holds either. Delegating them buys no independence — the executor would transcribe text the Director composed — and costs a subagent round-trip per write; blocking memory even broke Claude Code's built-in auto-memory. The guard still fences the one dangerous inch of those files: the managed Orchestra block in `CLAUDE.md`, which stays user-only because it's the harness's own wiring (§6 reserves disabling the harness for you).
 - **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout does all discovery.
 - **Why is the default reviewer Opus, with cross-vendor as an option?** Self-review inside the planning context inherits the planner's blind spots — independence starts with a fresh context. The `reviewer` provides that: a fresh Opus context reviewing a Sonnet-authored change, re-running the tests itself, which captures most of what independent review buys. A different-vendor reviewer (OpenAI via Codex) decorrelates one layer further — same-vendor models share training lineage — so `reviewer-codex` exists for gate-class second opinions, or as a primary engine for projects that want it. It is optional rather than default because the residual decorrelation is incremental over fresh-context different-model review, while the dependency it adds (external CLI, auth, separate billing) can leave review unavailable exactly when you need it.
 - **Why is `reviewer-codex` a Claude launcher instead of calling OpenAI directly?** The Director is guard-blocked from Bash, so it can't shell out to Codex itself, and there's no OpenAI tool in its toolbox. A thin subagent (exempt from the guard) runs Codex and relays the verdict — which keeps review delegated and keeps the judgment cross-vendor, without weakening the guard or handing the Director a new way to do work itself.

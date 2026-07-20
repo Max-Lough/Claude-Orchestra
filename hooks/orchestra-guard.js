@@ -26,19 +26,31 @@
  *   - the current turn is flushed only after it completes, so a mid-session
  *     /model switch is picked up one turn late.
  *
- * Two writes are exempt from Director law:
+ * Three classes of writes are exempt from Director law:
  *   - the pause file (.claude/orchestra.pause), at the user's request (§6);
  *   - plan files: Write/Edit/MultiEdit of markdown under .claude/plans/
- *     (ORCHESTRA.md §4 PLAN). Plans are Director thinking, not execution —
- *     the plan is the one artifact the Director authors itself. The carve-out
- *     is deliberately narrow (that directory, .md only, traversal-checked) so
- *     it cannot become a general write loophole.
+ *     (ORCHESTRA.md §4 PLAN). Plans are Director thinking, not execution.
+ *     The carve-out is deliberately narrow (that directory, .md only,
+ *     traversal-checked) so it cannot become a general write loophole.
+ *   - memory files: CLAUDE.md / CLAUDE.local.md anywhere in the project, plus
+ *     user-level memory under Claude's config dir ($CLAUDE_CONFIG_DIR or
+ *     ~/.claude): its CLAUDE.md and markdown inside memory/memories
+ *     directories (Claude Code's auto-memory notebook). Memory distills the
+ *     conversation, which only the Director holds — delegating a one-line
+ *     append buys no independence (the executor would transcribe text the
+ *     Director composed) and blocking it breaks Claude Code's own auto-memory.
+ *     One fence: an edit may never alter or remove the managed
+ *     <!-- ORCHESTRA:BEGIN/END --> block in CLAUDE.md — that block wires the
+ *     harness into the project and §6 reserves disabling the harness for the
+ *     user. The guard simulates the write's result and denies any memory edit
+ *     that does not carry the block through verbatim.
  *
  * Optional per-project policy — .claude/orchestra.json:
  *   {
  *     "directorBlockedPatterns": ["^mcp__blender__", "^mcp__godot__"],
  *     "directorAllowedTools": ["Glob"],
- *     "directorPlanPatterns": ["^docs/plans/.+\\.md$"]
+ *     "directorPlanPatterns": ["^docs/plans/.+\\.md$"],
+ *     "directorMemoryPatterns": ["^\\.claude/rules/.+\\.md$"]
  *   }
  * directorBlockedPatterns: regexes tested against tool names; matches are
  *   denied to the Director (use for MCP tools that mutate external state).
@@ -48,6 +60,9 @@
  *   (forward-slash form) of Write/Edit/MultiEdit targets; matches are
  *   treated as plan files in ADDITION to the default .claude/plans/*.md.
  *   Paths outside the project directory never match.
+ * directorMemoryPatterns: same shape as directorPlanPatterns; matches are
+ *   treated as memory files in ADDITION to the defaults above. Marker-block
+ *   protection applies to matched files too.
  *
  * Fail-open by design: any unexpected input, config error, or internal error
  * allows the call rather than bricking the session. A broken orchestra.json
@@ -57,6 +72,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // Tools the Director may not use (default law).
@@ -82,11 +98,31 @@ const PAUSE_BASENAME = 'orchestra.pause';
 const CONFIG_BASENAME = 'orchestra.json';
 const PLANS_DIRNAME = 'plans'; // .claude/plans — the Director's own notebook
 
-// Tools whose calls can qualify for the plan-file exception.
+// Memory files the Director may edit itself (ORCHESTRA.md §3.1).
+const MEMORY_BASENAMES = new Set(['CLAUDE.md', 'CLAUDE.local.md']);
+const MARKER_BEGIN = '<!-- ORCHESTRA:BEGIN'; // loose: matches older stamped variants
+const MARKER_END = '<!-- ORCHESTRA:END -->';
+
+// Tools whose calls can qualify for the plan-file and memory-file exceptions.
 const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
 
 function projectDir() {
   return process.env.CLAUDE_PROJECT_DIR || process.cwd();
+}
+
+// Claude's own config dir — where user-level memory (CLAUDE.md, auto-memory)
+// lives. Empty string when it can't be determined (then only project-level
+// memory files qualify).
+function claudeConfigDir() {
+  if (typeof process.env.CLAUDE_CONFIG_DIR === 'string' && process.env.CLAUDE_CONFIG_DIR !== '') {
+    return process.env.CLAUDE_CONFIG_DIR;
+  }
+  try {
+    const home = os.homedir();
+    return home ? path.join(home, '.claude') : '';
+  } catch (_) {
+    return '';
+  }
 }
 
 function allow() {
@@ -108,8 +144,8 @@ function deny(reason) {
 
 function denyDefault(toolName) {
   const planHint = FILE_WRITE_TOOLS.has(toolName)
-    ? 'Exception: plan files — the Director may write markdown under .claude/' +
-      PLANS_DIRNAME + '/ itself. '
+    ? 'Exceptions: plan files (markdown under .claude/' + PLANS_DIRNAME + '/) and memory ' +
+      'files (CLAUDE.md / CLAUDE.local.md, auto-memory) are Director-authored. '
     : '';
   deny(
     'Orchestra: the Director does not use ' + toolName + '. Delegate instead — ' +
@@ -129,10 +165,21 @@ function denyByPolicy(toolName) {
   );
 }
 
+function denyMarkerBlock(toolName) {
+  deny(
+    'Orchestra: memory files are Director-editable, but this ' + toolName + ' would alter ' +
+      'or remove the managed Orchestra block (' + MARKER_BEGIN + ' ... ' + MARKER_END +
+      ') in CLAUDE.md. That block wires the harness and belongs to the installer and the ' +
+      'user (ORCHESTRA.md §6): edit around it, carrying it through unchanged. If the user ' +
+      'wants the harness disabled, they pause it (.claude/' + PAUSE_BASENAME + ' / ' +
+      'ORCHESTRA_PAUSE=1) or run the installer with --uninstall.'
+  );
+}
+
 // Per-project policy. Any failure here returns the empty policy — the default
 // blocklist above is never weakened by a broken config.
 function loadPolicy() {
-  const empty = { patterns: [], allowed: [], planPatterns: [] };
+  const empty = { patterns: [], allowed: [], planPatterns: [], memoryPatterns: [] };
   try {
     const p = path.join(projectDir(), '.claude', CONFIG_BASENAME);
     if (!fs.existsSync(p)) return empty;
@@ -151,10 +198,11 @@ function loadPolicy() {
         .filter(Boolean);
     const patterns = toRegexes(cfg.directorBlockedPatterns);
     const planPatterns = toRegexes(cfg.directorPlanPatterns);
+    const memoryPatterns = toRegexes(cfg.directorMemoryPatterns);
     const allowed = (Array.isArray(cfg.directorAllowedTools) ? cfg.directorAllowedTools : []).filter(
       (s) => typeof s === 'string'
     );
-    return { patterns, allowed, planPatterns };
+    return { patterns, allowed, planPatterns, memoryPatterns };
   } catch (_) {
     return empty;
   }
@@ -229,6 +277,104 @@ function isPlanFileOperation(toolName, toolInput, planPatterns) {
   return planPatterns.some((re) => re.test(posixRel));
 }
 
+// Memory-file exception (ORCHESTRA.md §3.1): CLAUDE.md / CLAUDE.local.md
+// anywhere inside the project, any project-relative path matching
+// directorMemoryPatterns, and — outside the project — user-level memory under
+// Claude's config dir: its CLAUDE.md, or markdown inside a memory/memories
+// directory (auto-memory). Containment is checked on resolved paths, same as
+// the plan carve-out.
+function isMemoryFileTarget(resolved, memoryPatterns) {
+  const root = projectDir();
+  const relToProject = path.relative(root, resolved);
+  const inProject =
+    relToProject !== '' && !relToProject.startsWith('..') && !path.isAbsolute(relToProject);
+  if (inProject) {
+    if (MEMORY_BASENAMES.has(path.basename(resolved))) return true;
+    const posixRel = relToProject.split(path.sep).join('/');
+    return memoryPatterns.some((re) => re.test(posixRel));
+  }
+  const cfg = claudeConfigDir();
+  if (cfg === '') return false;
+  const relToCfg = path.relative(cfg, resolved);
+  if (relToCfg === '' || relToCfg.startsWith('..') || path.isAbsolute(relToCfg)) return false;
+  if (!/\.md$/i.test(resolved)) return false;
+  const segments = relToCfg.split(path.sep);
+  if (segments.length === 1 && MEMORY_BASENAMES.has(segments[0])) return true;
+  return segments.slice(0, -1).some((s) => s === 'memory' || s === 'memories');
+}
+
+// Predicted file content after the tool call, or null when the input can't be
+// modeled. Mirrors the file tools' semantics: Write replaces wholesale; Edit
+// replaces the first occurrence (all with replace_all); MultiEdit applies its
+// edits in sequence. A no-match old_string is a no-op here — the real tool
+// errors out without writing, so nothing needs protecting.
+function simulateWrite(toolName, toolInput, pre) {
+  if (toolName === 'Write') {
+    return typeof toolInput.content === 'string' ? toolInput.content : null;
+  }
+  const applyOne = (text, e) => {
+    if (!e || typeof e.old_string !== 'string' || typeof e.new_string !== 'string') return null;
+    if (e.old_string === '') return text;
+    if (e.replace_all === true) return text.split(e.old_string).join(e.new_string);
+    const idx = text.indexOf(e.old_string);
+    if (idx === -1) return text;
+    return text.slice(0, idx) + e.new_string + text.slice(idx + e.old_string.length);
+  };
+  if (toolName === 'Edit') return applyOne(pre, toolInput);
+  if (toolName === 'MultiEdit') {
+    if (!Array.isArray(toolInput.edits)) return null;
+    let text = pre;
+    for (const e of toolInput.edits) {
+      text = applyOne(text, e);
+      if (text === null) return null;
+    }
+    return text;
+  }
+  return null;
+}
+
+// The managed Orchestra block must ride through every memory edit verbatim.
+// An unbalanced block (BEGIN without END — a hand-edited file) degrades to
+// requiring the BEGIN marker itself to survive.
+function markerBlockSurvives(pre, post) {
+  const start = pre.indexOf(MARKER_BEGIN);
+  if (start === -1) return true; // nothing managed in this file
+  const endIdx = pre.indexOf(MARKER_END, start);
+  if (endIdx === -1) return post.indexOf(MARKER_BEGIN) !== -1;
+  const block = pre.slice(start, endIdx + MARKER_END.length);
+  return post.indexOf(block) !== -1;
+}
+
+// Classify a tool call against the memory exception:
+//   'none'   — not a memory-file write; default law applies.
+//   'allow'  — memory-file write that leaves any managed block intact.
+//   'marker' — memory-file write that would damage the managed block; deny
+//              with the marker-specific message (still subject to model
+//              dormancy, like every other denial).
+// Internal errors classify as 'none' — no exemption granted, default law and
+// messaging apply, and the guard's global fail-open still backstops crashes.
+function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
+  try {
+    if (!FILE_WRITE_TOOLS.has(toolName)) return 'none';
+    if (!toolInput || typeof toolInput !== 'object') return 'none';
+    if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '') return 'none';
+    const resolved = path.resolve(projectDir(), toolInput.file_path);
+    if (!isMemoryFileTarget(resolved, memoryPatterns)) return 'none';
+    let pre;
+    try {
+      pre = fs.readFileSync(resolved, 'utf8');
+    } catch (_) {
+      return 'allow'; // no existing file — nothing managed to protect
+    }
+    if (pre.indexOf(MARKER_BEGIN) === -1) return 'allow';
+    const post = simulateWrite(toolName, toolInput, pre);
+    if (post === null) return 'marker'; // unmodelable change to a managed file — protect it
+    return markerBlockSurvives(pre, post) ? 'allow' : 'marker';
+  } catch (_) {
+    return 'none';
+  }
+}
+
 // The one mutation the Director is permitted regardless of location: the
 // pause file itself, at the user's explicit request (see ORCHESTRA.md §6).
 function isPauseFileOperation(toolName, toolInput) {
@@ -272,13 +418,18 @@ function main(raw) {
   const toolName = input.tool_name;
   if (typeof toolName !== 'string') return allow();
 
-  // Exempt mutations: the pause-file toggle (§6) and plan-file authorship
-  // (§4 PLAN — .claude/plans/*.md plus any directorPlanPatterns matches).
+  // Exempt mutations: the pause-file toggle (§6), plan-file authorship
+  // (§4 PLAN — .claude/plans/*.md plus any directorPlanPatterns matches), and
+  // memory-file authorship (§3.1 — CLAUDE.md/CLAUDE.local.md, auto-memory,
+  // plus any directorMemoryPatterns matches; marker block protected).
   if (isPauseFileOperation(toolName, input.tool_input)) return allow();
 
   const policy = loadPolicy();
 
   if (isPlanFileOperation(toolName, input.tool_input, policy.planPatterns)) return allow();
+
+  const memory = classifyMemoryOperation(toolName, input.tool_input, policy.memoryPatterns);
+  if (memory === 'allow') return allow();
 
   const deniedByDefault = BLOCKED.has(toolName) && !policy.allowed.includes(toolName);
   const deniedByPolicy = policy.patterns.some((re) => re.test(toolName));
@@ -294,6 +445,7 @@ function main(raw) {
   const model = latestMainModel(input);
   if (model === null || !DIRECTOR_MODEL.test(model)) return allow();
 
+  if (memory === 'marker') return denyMarkerBlock(toolName);
   return deniedByDefault ? denyDefault(toolName) : denyByPolicy(toolName);
 }
 

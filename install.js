@@ -15,6 +15,19 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC = __dirname;
+
+// Harness version — single source of truth is the VERSION file at the master
+// root. Stamped into each installed project's .claude/ORCHESTRA.md header so
+// a project can always answer "what Orchestra version am I on".
+const VERSION = (() => {
+  try {
+    const v = fs.readFileSync(path.join(SRC, 'VERSION'), 'utf8').trim();
+    return /^\d+\.\d+\.\d+$/.test(v) ? v : '';
+  } catch (_) {
+    return '';
+  }
+})();
+
 const AGENTS = ['scout.md', 'executor.md', 'reviewer.md', 'reviewer-codex.md', 'planner-gpt.md'];
 const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
 
@@ -186,8 +199,9 @@ const claudeMd = path.join(target, 'CLAUDE.md');
 const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
 const pauseFile = path.join(dotClaude, 'orchestra.pause');
 
+const vTag = VERSION ? ' v' + VERSION : '';
 console.log(
-  (uninstall ? 'Uninstalling Orchestra from: ' : 'Installing Orchestra into: ') + target
+  (uninstall ? 'Uninstalling Orchestra' + vTag + ' from: ' : 'Installing Orchestra' + vTag + ' into: ') + target
 );
 
 if (!uninstall) {
@@ -217,8 +231,15 @@ if (!uninstall) {
   did('review runner -> .claude/hooks/' + REVIEW_RUNNER);
   fs.copyFileSync(path.join(SRC, 'hooks', ULTRAPLAN_RUNNER), path.join(hooksDir, ULTRAPLAN_RUNNER));
   did('ultra-plan runner -> .claude/hooks/' + ULTRAPLAN_RUNNER);
-  fs.copyFileSync(path.join(SRC, 'ORCHESTRA.md'), orchestraMd);
-  did('protocol -> .claude/ORCHESTRA.md');
+  let protocol = fs.readFileSync(path.join(SRC, 'ORCHESTRA.md'), 'utf8');
+  if (VERSION) {
+    protocol = protocol.replace(
+      'Installed by the Orchestra harness.',
+      'Installed by the Orchestra harness (v' + VERSION + ').'
+    );
+  }
+  fs.writeFileSync(orchestraMd, protocol, 'utf8');
+  did('protocol -> .claude/ORCHESTRA.md' + (VERSION ? ' (v' + VERSION + ')' : ''));
 
   // 2. Merge hook entry into settings.json (replace any stale Orchestra entries).
   const settings = readJson(settingsFile);
@@ -266,8 +287,12 @@ if (!uninstall) {
     '  - Pause anytime: create .claude/orchestra.pause (delete it to resume), or ORCHESTRA_PAUSE=1.'
   );
   console.log(
-    '  - The Director may write plan files (.claude/plans/*.md) itself; everything else stays delegated.'
+    '  - The Director may write plan files (.claude/plans/*.md) and memory files (CLAUDE.md /'
   );
+  console.log(
+    '    CLAUDE.local.md / auto-memory) itself; the CLAUDE.md marker block is protected, and'
+  );
+  console.log('    everything else stays delegated.');
   if (skills.length) {
     console.log(
       '  - Bundled skills installed: ' +

@@ -3,8 +3,8 @@
  * Orchestra director guard — PreToolUse hook.
  *
  * Enforces Director law: the main session (the Director) may not edit files,
- * run commands, or search the codebase — those belong to the executor and
- * scout subagents. Subagent tool calls are exempt.
+ * run commands, or search the codebase — those belong to the scout, detective,
+ * and executor subagents. Subagent tool calls are exempt.
  *
  * The settings.json matcher fires this hook on every main-session tool call;
  * this script is the single source of truth for what the Director may do.
@@ -149,7 +149,8 @@ function denyDefault(toolName) {
     : '';
   deny(
     'Orchestra: the Director does not use ' + toolName + '. Delegate instead — ' +
-      'searches/reading the terrain -> scout agent; file edits and commands -> executor ' +
+      'searches/reading the terrain -> scout agent (causal deep-dives -> detective); ' +
+      'file edits and commands -> executor ' +
       'or a domain specialist agent; verification -> reviewer agent. ' + planHint +
       '(User-only pause switch: create .claude/' + PAUSE_BASENAME + ' or set ORCHESTRA_PAUSE=1.)'
   );

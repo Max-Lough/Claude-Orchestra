@@ -7,16 +7,16 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
                     │   DIRECTOR  (Fable / Opus)  │
                     │  decides · arbitrates ·     │
                     │  synthesizes · talks to you │
-                    └──────┬──────┬──────┬────────┘
-              missions     │      │      │     verdicts
-           ┌───────────────┘      │      └───────────────┐
-           ▼                      ▼                      ▼
-   ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-   │ SCOUT (Haiku) │     │EXECUTOR       │     │REVIEWER (Opus)│
-   │ search · map  │     │(Sonnet)       │     │ fresh-context │
-   │ read-only     │     │ all edits &   │     │ adversarial · │
-   │ recon         │     │ commands      │     │ +Codex option │
-   └───────────────┘     └───────────────┘     └───────────────┘
+                    └──────────────┬──────────────┘
+                        missions   │   verdicts
+        ┌─────────────────┬────────┴────────┬─────────────────┐
+        ▼                 ▼                 ▼                 ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│ SCOUT (Haiku) │ │DETECTIVE(Opus)│ │EXECUTOR       │ │REVIEWER (Opus)│
+│ where / what: │ │ why / how:    │ │(Sonnet)       │ │ fresh-context │
+│ locate · map  │ │ root-cause ·  │ │ all edits &   │ │ adversarial · │
+│ · enumerate   │ │ deep tracing  │ │ commands      │ │ +Codex option │
+└───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
 ```
 
 The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. Two authoring carve-outs: the Director may write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md` / `CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution (see "Plan files" and "Memory files" below). The managed Orchestra block inside `CLAUDE.md` stays off-limits.
@@ -28,11 +28,22 @@ The Director is **hard-blocked by a PreToolUse hook** from editing files, runnin
 | Session launched as | Fable | Opus (`claude --model opus`) |
 | Director | Fable | Opus |
 | Review | `reviewer` agent → **Opus, fresh context** (re-runs the tests); optional `reviewer-codex` (OpenAI via Codex CLI) second opinion at gates | same `reviewer` (fresh context — the change's author is Sonnet, not the Director); Opus arbitrates verdicts critically, same optional `reviewer-codex` layer |
-| Scout / Executor | Haiku / Sonnet | Haiku / Sonnet |
+| Scout / Detective / Executor | Haiku / Opus / Sonnet | Haiku / Opus / Sonnet |
 
 Mode detection is automatic and two-layered: the protocol tells the session to identify its own model, and the guard hook independently reads the live model from the session transcript, enforcing only on positive evidence of a director model. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so — the guard stands down too, so a Sonnet/Haiku session is a plain Claude Code session with no denials and no pause file (even on the first turn, before the model reaches the transcript). A mid-session `/model` switch is picked up one turn later; on a director's opening turn, delegation is carried by the protocol instructions until enforcement engages on turn two.
 
 Every **substantive** change (logic, config, dependencies, data, API surface) gets adversarial review before the Director reports it done. Two failed review cycles force a re-plan instead of a third retry.
+
+## Recon tiers: scout and detective
+
+Recon has two tiers, routed by the shape of the question — the same logic that makes review Opus-first:
+
+- **`scout` (Haiku) — the default, for *where/what* questions.** Locating files and symbols, mapping structure, enumerating usages, git history, web lookups. Mechanical retrieval is high-recall work with self-checkable output (`path:line` citations), and it's deliberately cheap: the Director fans scout missions out in parallel without weighing cost.
+- **`detective` (Opus) — deliberate routing, for *why/how* questions.** Root-cause analysis, tracing a value across subsystems, invariant discovery, judging which of several implementations is load-bearing. These are the missions where fact-gathering can't be separated from reasoning — knowing what to read next depends on understanding what you just read — and where a confidently wrong report misdirects the whole plan. Recon is also the one unreviewed output in the harness (review checks execution, not intelligence), so the recon that steers decisions gets the most capable model, exactly as verdicts do.
+
+The tiers pipeline rather than compete: scouts map the terrain cheaply, then the detective takes one scoped question plus the map, spending its context on reading depth instead of directory walking. Escalation is built in: a scout UNKNOWN that survives one re-probe becomes a detective case — never a third scout mission. The detective is bound by the same read-only law as the scout, chains every conclusion to `path:line` evidence, and grades its own verdict `CONFIRMED / LIKELY / UNCERTAIN` so the Director plans on calibrated intelligence.
+
+Prefer a mid-priced detective? Change `model: opus` to `model: sonnet` in the master's `agents/detective.md` and re-run the installer — the role's prompt is model-agnostic.
 
 ## Review engines
 
@@ -78,7 +89,8 @@ Orchestra/
 ├── install.ps1            ← thin PowerShell wrapper
 ├── install.sh             ← thin POSIX wrapper
 ├── agents/
-│   ├── scout.md           ← Haiku · read-only recon
+│   ├── scout.md           ← Haiku · read-only where/what recon
+│   ├── detective.md       ← Opus · read-only why/how deep investigation
 │   ├── executor.md        ← Sonnet · all edits and commands
 │   ├── reviewer.md        ← Opus · fresh-context adversarial review (default engine)
 │   ├── reviewer-codex.md  ← Haiku launcher · optional cross-vendor (OpenAI/Codex) engine
@@ -293,7 +305,7 @@ These rules optimize **effectiveness and wall-clock**, not cost — the harness'
 
 This trades tokens for quality and control, deliberately:
 
-- **Recon is cheap** (Haiku) and **execution is mid-priced** (Sonnet) — the volume work runs on the economical models.
+- **Recon is cheap** (Haiku) and **execution is mid-priced** (Sonnet) — the volume work runs on the economical models. The **detective** (Opus) is the deliberate exception: routed only to the causal questions where analysis quality steers the plan, and pointed at pre-scouted terrain so its tokens buy reading depth, not directory walking.
 - **Review runs on Opus** by default — deliberately the most capable regular call in the company, because verdict quality is what the harness optimizes for. The optional `reviewer-codex` engine is billed to your **OpenAI** account (a separate meter); its Claude side is just a negligible Haiku launcher. Pick the OpenAI review model with `ORCHESTRA_REVIEW_MODEL`.
 - **`/ultra-plan` consultations are likewise OpenAI-billed** — GPT-5.6 Sol at `max` effort by default, deliberate overkill for the one artifact where errors compound (the plan). Each roundabout is a handful of such calls at most (default cap 4); use `effort=high` or lower when that rigor isn't warranted.
 - The Director's own turns are decision-dense and short; the expensive model at the top writes the least text.
@@ -305,7 +317,7 @@ This trades tokens for quality and control, deliberately:
 | "Orchestra: the Director does not use X" denials | Working as intended on Fable/Opus — the session should delegate. On Sonnet/Haiku the guard stands down automatically, including on a fresh session's first turn (the guard enforces only on positive evidence of a director model). Any denial on Sonnet/Haiku means model detection failed — pause (above) and file a bug against the master. |
 | "…would alter or remove the managed Orchestra block" denial | Working as intended — memory files are Director-editable, but the `<!-- ORCHESTRA:BEGIN/END -->` import block in `CLAUDE.md` is harness wiring and yours alone. The Director edits around it; removing the harness is `--uninstall`, pausing is `.claude/orchestra.pause`. |
 | Hook seems inactive | Did you approve project hooks at first launch? Check `/hooks` in Claude Code; confirm `.claude/settings.json` has the `orchestra-guard` entry. |
-| Executor/scout getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |
+| Executor/scout/detective getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |
 | Executor denied on `git commit` / `git push` | The permission classifier won't accept user authorization relayed through a work order — it needs a settings-level grant. Re-run the installer: it now merges `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)` into `permissions.allow` in `.claude/settings.json`. Check those entries survived if you've hand-edited settings. |
 | `node` not found when hook fires | Claude Code itself runs on Node, but the hook shell needs `node` on PATH. Install Node or add it to PATH. |
 | Session model is Sonnet/Haiku | Orchestra goes dormant by design — protocol and guard both stand down, leaving a normal session. Relaunch as Fable, or `claude --model opus` for MODE B. |
@@ -322,7 +334,8 @@ This trades tokens for quality and control, deliberately:
 - **Why a hook and not just instructions?** Under pressure ("just quickly fix the import"), models drift toward doing work themselves. The hook makes drift impossible instead of discouraged; the denial message itself re-points the Director at the right agent.
 - **Why does the guard read the transcript for the model?** The protocol already tells non-director sessions to act normally, but instructions can't unblock a hook — without detection, a Sonnet session would be told "you're dormant" and then denied every Edit. So before denying, the guard tail-reads the session transcript (fixed cost, sub-millisecond, regardless of transcript size), takes the latest non-sidechain assistant turn's model, and stands down for non-directors. An undetermined model resolves to *enforce*: the harness can drop out only on positive evidence of a non-director model, never by accident on a director. Reading the *latest* turn (rather than trusting the session's static self-image) also means mid-session `/model` switches are honored.
 - **Why can the Director write plans and memory itself?** Both are the Director's own thinking: a plan decomposes the work, a memory entry distills the conversation, and only the Director holds either. Delegating them buys no independence — the executor would transcribe text the Director composed — and costs a subagent round-trip per write; blocking memory even broke Claude Code's built-in auto-memory. The guard still fences the one dangerous inch of those files: the managed Orchestra block in `CLAUDE.md`, which stays user-only because it's the harness's own wiring (§6 reserves disabling the harness for you).
-- **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout does all discovery.
+- **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout and detective do all discovery.
+- **Why a detective role instead of one smarter scout?** Recon quality is asymmetric. Most missions are mechanical retrieval, where Haiku is fast, cheap, and parallel — but the causal minority steers the plan, and recon is the one output no reviewer checks. Splitting the tiers keeps the fan-out economics of cheap scouts while giving *why/how* questions the same treatment as review verdicts: the most capable model, deliberately routed. The prompts genuinely differ too — the scout enumerates facts; the detective kills hypotheses — so this is two roles, not one role with a model knob.
 - **Why is the default reviewer Opus, with cross-vendor as an option?** Self-review inside the planning context inherits the planner's blind spots — independence starts with a fresh context. The `reviewer` provides that: a fresh Opus context reviewing a Sonnet-authored change, re-running the tests itself, which captures most of what independent review buys. A different-vendor reviewer (OpenAI via Codex) decorrelates one layer further — same-vendor models share training lineage — so `reviewer-codex` exists for gate-class second opinions, or as a primary engine for projects that want it. It is optional rather than default because the residual decorrelation is incremental over fresh-context different-model review, while the dependency it adds (external CLI, auth, separate billing) can leave review unavailable exactly when you need it.
 - **Why is `reviewer-codex` a Claude launcher instead of calling OpenAI directly?** The Director is guard-blocked from Bash, so it can't shell out to Codex itself, and there's no OpenAI tool in its toolbox. A thin subagent (exempt from the guard) runs Codex and relays the verdict — which keeps review delegated and keeps the judgment cross-vendor, without weakening the guard or handing the Director a new way to do work itself.
 

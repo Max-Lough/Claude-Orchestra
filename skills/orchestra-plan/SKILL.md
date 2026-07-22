@@ -10,7 +10,7 @@ Turn a goal into a plan file under `.claude/plans/` — the Director's own noteb
 ## Procedure
 
 1. **INTAKE.** Restate the goal; write concrete done-criteria. Genuine ambiguity → AskUserQuestion now, not three phases in. (For large or risky work, plan mode and user sign-off still apply — this skill produces the durable artifact, not the approval.)
-2. **RECON — dispatch scouts, unless this session already mapped the exact territory.** Missions: the files/subsystems the work will touch, existing patterns to follow, test layout and protected suites, mechanical ceilings (lint caps, generated files, line counts), prior art. Independent missions launch together in one message. Under a director model you never explore yourself.
+2. **RECON — dispatch scouts, unless this session already mapped the exact territory.** Missions: the files/subsystems the work will touch, existing patterns to follow, test layout and protected suites, mechanical ceilings (lint caps, generated files, line counts), prior art. Independent missions launch together in one message. Causal *why/how* questions the plan depends on (root-cause a failure, trace a flow end-to-end) become detective cases once the scouts' map is back (ORCHESTRA.md §2). Under a director model you never explore yourself.
 3. **Probes for multi-subsystem work (§8.1.5).** Schedule as the plan's first orders: (a) a scout probe of mechanical ceilings on the files to be touched; (b) a risk-first micro-order that forces the scariest cross-system interaction first, alone.
 4. **Decompose into work orders (§8.1).** Every order passes this gate:
    - **One deliverable kind** — author a tool | migrate consumers | rewrite a suite | fix a bug; pick one ("author + migrate" always splits).

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Orchestra ultra-plan runner — the cross-vendor half of the plan roundabout.
+ * Orchestra deep-plan runner — the cross-vendor half of the plan roundabout.
  *
  * Sends the Director's current plan (plus a per-round brief) to an OpenAI
  * model over the Responses API and prints the counterpart's verdict: either
  * VERDICT: APPROVE (proceed, no changes) or VERDICT: REVISE with a numbered
- * CRITIQUE and a COMPLETE updated plan. The `/ultra-plan` skill loops this
+ * CRITIQUE and a COMPLETE updated plan. The `/deep-plan` skill loops this
  * until either model approves the standing plan unchanged (ORCHESTRA.md §7).
  *
  * The `planner-gpt` subagent (a thin Claude launcher) invokes this. The
@@ -19,7 +19,7 @@
  * unverifiable assumptions as critique points instead of inventing facts.
  *
  * Usage:
- *   node orchestra-ultraplan.js --plan <file> [--brief <file>] [--round <n>]
+ *   node orchestra-deepplan.js --plan <file> [--brief <file>] [--round <n>]
  *     [--effort none|low|medium|high|xhigh|max] [--model <id>]
  *
  * --plan   the current plan markdown (required; normally .claude/plans/<x>.md)
@@ -33,18 +33,18 @@
  * Output: a header line plus the counterpart's response verbatim on stdout.
  * The full response is also saved to a temp file (RESPONSE SAVED: <path> in
  * the header) so the Director can Read the artifact if a relay truncates. On
- * any failure it prints VERDICT: ULTRAPLAN_UNAVAILABLE instead of a fake
+ * any failure it prints VERDICT: DEEPPLAN_UNAVAILABLE instead of a fake
  * verdict — a consultation that could not run must never read as an approval.
  * Exit code is always 0: the status lives in the VERDICT line.
  *
  * Configuration (via environment; flags win over env):
- *   ORCHESTRA_ULTRAPLAN_MODEL       OpenAI model id (default "gpt-5.6-sol").
- *   ORCHESTRA_ULTRAPLAN_EFFORT      reasoning effort (default "max" — the
+ *   ORCHESTRA_DEEPPLAN_MODEL       OpenAI model id (default "gpt-5.6-sol").
+ *   ORCHESTRA_DEEPPLAN_EFFORT      reasoning effort (default "max" — the
  *                                   GPT-5.6 tier above xhigh; dial down for
  *                                   cheaper/faster consultations).
- *   ORCHESTRA_ULTRAPLAN_TIMEOUT_MS  wall-clock cap (default 900000 — max-
+ *   ORCHESTRA_DEEPPLAN_TIMEOUT_MS  wall-clock cap (default 900000 — max-
  *                                   effort reasoning over a long plan is slow).
- *   ORCHESTRA_ULTRAPLAN_MAX_TOKENS  max_output_tokens, which on reasoning
+ *   ORCHESTRA_DEEPPLAN_MAX_TOKENS  max_output_tokens, which on reasoning
  *                                   models includes the thinking budget
  *                                   (default 64000).
  *   OPENAI_API_KEY                  required; the consultation bills to it.
@@ -65,10 +65,10 @@ const path = require('path');
 const KNOWN_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 const CONFIG = {
-  model: (process.env.ORCHESTRA_ULTRAPLAN_MODEL || 'gpt-5.6-sol').trim(),
-  effort: (process.env.ORCHESTRA_ULTRAPLAN_EFFORT || 'max').trim(),
-  timeoutMs: parseInt(process.env.ORCHESTRA_ULTRAPLAN_TIMEOUT_MS || '', 10) || 900000,
-  maxTokens: parseInt(process.env.ORCHESTRA_ULTRAPLAN_MAX_TOKENS || '', 10) || 64000,
+  model: (process.env.ORCHESTRA_DEEPPLAN_MODEL || 'gpt-5.6-sol').trim(),
+  effort: (process.env.ORCHESTRA_DEEPPLAN_EFFORT || 'max').trim(),
+  timeoutMs: parseInt(process.env.ORCHESTRA_DEEPPLAN_TIMEOUT_MS || '', 10) || 900000,
+  maxTokens: parseInt(process.env.ORCHESTRA_DEEPPLAN_MAX_TOKENS || '', 10) || 64000,
   baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com').trim().replace(/\/+$/, ''),
   apiKey: (process.env.OPENAI_API_KEY || '').trim(),
 };
@@ -182,7 +182,7 @@ const RESOLVED = { model: CONFIG.model, effort: CONFIG.effort, round: '1', saved
 
 function engineHeader() {
   return (
-    'ULTRA-PLAN ENGINE: OpenAI ' +
+    'DEEP-PLAN ENGINE: OpenAI ' +
     RESOLVED.model +
     ' (effort: ' +
     RESOLVED.effort +
@@ -199,7 +199,7 @@ function printResponse(body) {
 
 function printUnavailable(reason, detail) {
   const block = [
-    'VERDICT: ULTRAPLAN_UNAVAILABLE',
+    'VERDICT: DEEPPLAN_UNAVAILABLE',
     '',
     'REASON',
     '- ' + reason,
@@ -220,7 +220,7 @@ function printUnavailable(reason, detail) {
 // the file. Failure to save never fails the consultation.
 function saveResponse(text, round) {
   try {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-ultraplan-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-deepplan-'));
     const file = path.join(dir, 'round-' + round + '-response.md');
     fs.writeFileSync(file, text, 'utf8');
     return file;
@@ -234,7 +234,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(
-      'Usage: node orchestra-ultraplan.js --plan <file> [--brief <file>] ' +
+      'Usage: node orchestra-deepplan.js --plan <file> [--brief <file>] ' +
         '[--round <n>] [--effort none|low|medium|high|xhigh|max] [--model <id>]\n'
     );
     return;
@@ -259,7 +259,7 @@ async function main() {
     printUnavailable(
       'OPENAI_API_KEY is not set',
       'Export OPENAI_API_KEY in the environment where Claude Code runs. The ' +
-        'ultra-plan counterpart calls the OpenAI API directly and bills to that key.'
+        'deep-plan counterpart calls the OpenAI API directly and bills to that key.'
     );
     return;
   }
@@ -299,7 +299,7 @@ async function main() {
     if (e && e.name === 'AbortError') {
       printUnavailable(
         'consultation timed out after ' + CONFIG.timeoutMs + 'ms',
-        'Raise ORCHESTRA_ULTRAPLAN_TIMEOUT_MS, or lower the effort level — ' +
+        'Raise ORCHESTRA_DEEPPLAN_TIMEOUT_MS, or lower the effort level — ' +
           RESOLVED.effort + ' effort over a long plan can take many minutes.'
       );
     } else {
@@ -322,8 +322,8 @@ async function main() {
         : res.status === 404 || res.status === 400
           ? 'HTTP ' + res.status + ' often means the model id or effort level is not ' +
             'available to this key. Model requested: ' + RESOLVED.model + ' (effort: ' +
-            RESOLVED.effort + '). Override with ORCHESTRA_ULTRAPLAN_MODEL / ' +
-            'ORCHESTRA_ULTRAPLAN_EFFORT or the skill\'s model=/effort= arguments.'
+            RESOLVED.effort + '). Override with ORCHESTRA_DEEPPLAN_MODEL / ' +
+            'ORCHESTRA_DEEPPLAN_EFFORT or the skill\'s model=/effort= arguments.'
           : 'Model requested: ' + RESOLVED.model + ' (effort: ' + RESOLVED.effort + ').';
     printUnavailable(
       'OpenAI API returned HTTP ' + res.status,
@@ -348,7 +348,7 @@ async function main() {
     printUnavailable(
       'response incomplete (' + why + ')',
       why === 'max_output_tokens'
-        ? 'The reasoning + response exceeded ORCHESTRA_ULTRAPLAN_MAX_TOKENS (' +
+        ? 'The reasoning + response exceeded ORCHESTRA_DEEPPLAN_MAX_TOKENS (' +
             CONFIG.maxTokens + '). Raise it, or lower the effort level — a ' +
             'truncated plan must never be adopted.'
         : 'The model stopped before completing its response.'
@@ -391,8 +391,8 @@ main().catch((e) => {
   // Never throw an unhandled error back at the launcher — that would look
   // like a crash rather than a consultation. Degrade to UNAVAILABLE.
   try {
-    printUnavailable('ultra-plan runner error', String((e && e.stack) || e));
+    printUnavailable('deep-plan runner error', String((e && e.stack) || e));
   } catch (_) {
-    process.stdout.write('VERDICT: ULTRAPLAN_UNAVAILABLE\n');
+    process.stdout.write('VERDICT: DEEPPLAN_UNAVAILABLE\n');
   }
 });

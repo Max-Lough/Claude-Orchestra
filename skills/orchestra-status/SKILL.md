@@ -17,7 +17,7 @@ Then the facts. Under a director model, dispatch **one scout mission** carrying 
 2. **Guard wiring** — does `.claude/settings.json` contain a PreToolUse entry whose command references `orchestra-guard.js`? Do `.claude/hooks/orchestra-guard.js` and `.claude/hooks/orchestra-review.js` exist?
 3. **Protocol** — does `.claude/ORCHESTRA.md` exist? What harness version does its header carry (`Installed by the Orchestra harness (vX.Y.Z)` in the first lines; installs stamped before versioning carry none)? Does `CLAUDE.md` contain the `<!-- ORCHESTRA:BEGIN` marker?
 4. **Company** — which of `scout.md`, `detective.md`, `executor.md`, `reviewer.md`, `reviewer-codex.md`, `planner-gpt.md` are present in `.claude/agents/`? List any other `.md` files there as specialists.
-5. **Skills** — which skill directories exist under `.claude/skills/`? (Bundled: the `orchestra-*` set and `ultra-plan`.)
+5. **Skills** — which skill directories exist under `.claude/skills/`? (Bundled: the `orchestra-*` set and `deep-plan`.)
 6. **Config** — from `.claude/orchestra.json` (absent = all defaults): `reviewEngine` (default `opus`), counts of `directorBlockedPatterns`, `directorPlanPatterns`, and `directorMemoryPatterns`, any `directorAllowedTools`, and whether a `verification` manifest exists (quote its `full` command if so).
 7. **Codex availability** — only if the engine is `codex` or `dual`: is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)?
 8. **Plans** — does `.claude/plans/` exist, how many `.md` files does it hold, and is `ledger.md` among them?

@@ -28,11 +28,11 @@ The Director is **hard-blocked by a PreToolUse hook** from editing files, runnin
 | Session launched as | Fable | Opus (`claude --model opus`) |
 | Director | Fable | Opus |
 | Review | `reviewer` agent → **Opus, fresh context** (re-runs the tests); optional `reviewer-codex` (OpenAI via Codex CLI) second opinion at gates | same `reviewer` (fresh context — the change's author is Sonnet, not the Director); Opus arbitrates verdicts critically, same optional `reviewer-codex` layer |
-| Scout / Detective / Executor | Haiku / Opus / Sonnet | Haiku / Opus / Sonnet |
+| Scout / Detective / Executor / Executor-heavy | Haiku / Opus / Sonnet / Opus | Haiku / Opus / Sonnet / Opus |
 
 Mode detection is automatic and two-layered: the protocol tells the session to identify its own model, and the guard hook independently reads the live model from the session transcript, enforcing only on positive evidence of a director model. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so — the guard stands down too, so a Sonnet/Haiku session is a plain Claude Code session with no denials and no pause file (even on the first turn, before the model reaches the transcript). A mid-session `/model` switch is picked up one turn later; on a director's opening turn, delegation is carried by the protocol instructions until enforcement engages on turn two.
 
-Every **substantive** change (logic, config, dependencies, data, API surface) gets adversarial review before the Director reports it done. Two failed review cycles force a re-plan instead of a third retry.
+Every **substantive** change (logic, config, dependencies, data, API surface) gets adversarial review before the Director reports it done. Two failed review cycles force an escalation — one retry at the heavy execution tier with the findings attached, or a re-plan — never a third identical retry.
 
 ## Recon tiers: scout and detective
 
@@ -62,11 +62,13 @@ Review has two engines, both under one identical contract — adversarial brief,
 
 **Setup (only needed for `reviewer-codex`).** In the environment where Orchestra runs, install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it — either export `OPENAI_API_KEY` or run `codex login`. Nothing else is required; the runner ships with the harness (`.claude/hooks/orchestra-review.js`).
 
+**Recommended pin.** Set `ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol` — it works with either `codex login` (subscription auth, plan-dependent) or an `OPENAI_API_KEY`. `executor-heavy` orders (Opus, high effort) default to adding this cross-vendor pass — a Director-applied convention, not harness automation: the author and the default `reviewer` are both Opus, so without it review would share a model with the change it's checking.
+
 **Configuration** (all optional, via environment):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ORCHESTRA_REVIEW_MODEL` | Codex's own default | Pin a specific OpenAI model for review. |
+| `ORCHESTRA_REVIEW_MODEL` | Codex's own default | Pin a specific OpenAI model for review — recommended: `gpt-5.6-sol` (see "Recommended pin" above). |
 | `ORCHESTRA_REVIEW_SANDBOX` | `workspace-write` | Codex sandbox. `workspace-write` lets the reviewer run the test suite (most runners need to write caches/temp/coverage). Set `read-only` for a hard no-write guarantee — at the cost that many suites won't run under it. |
 | `ORCHESTRA_REVIEW_TIMEOUT_MS` | `600000` | Wall-clock cap for a review (it runs your tests). |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec` (escape hatch for flag drift / tuning). |
@@ -92,6 +94,7 @@ Orchestra/
 │   ├── scout.md           ← Haiku · read-only where/what recon
 │   ├── detective.md       ← Opus · read-only why/how deep investigation
 │   ├── executor.md        ← Sonnet · all edits and commands
+│   ├── executor-heavy.md  ← Opus · high effort · hard-tier work orders
 │   ├── reviewer.md        ← Opus · fresh-context adversarial review (default engine)
 │   ├── reviewer-codex.md  ← Haiku launcher · optional cross-vendor (OpenAI/Codex) engine
 │   ├── planner-gpt.md     ← Haiku launcher · deep-plan counterpart (OpenAI API)
@@ -307,6 +310,7 @@ This trades tokens for quality and control, deliberately:
 
 - **Recon is cheap** (Haiku) and **execution is mid-priced** (Sonnet) — the volume work runs on the economical models. The **detective** (Opus) is the deliberate exception: routed only to the causal questions where analysis quality steers the plan, and pointed at pre-scouted terrain so its tokens buy reading depth, not directory walking.
 - **Review runs on Opus** by default — deliberately the most capable regular call in the company, because verdict quality is what the harness optimizes for. The optional `reviewer-codex` engine is billed to your **OpenAI** account (a separate meter); its Claude side is just a negligible Haiku launcher. Pick the OpenAI review model with `ORCHESTRA_REVIEW_MODEL`.
+- **`executor-heavy` is Opus-billed too, by design** — it's routed only to hard cores (concurrency, numerical code, data-risky migrations), coupled cross-subsystem changes, risk-first probes, and orders that already bounced twice at the default tier. The economics are cost per *task*, not per token: verification is paid per review round, so an order that converges in one round on the capable model is cheaper end-to-end than the same order bouncing through two or three rounds on the cheap one.
 - **`/deep-plan` consultations are likewise OpenAI-billed** — GPT-5.6 Sol at `max` effort by default, deliberate overkill for the one artifact where errors compound (the plan). Each roundabout is a handful of such calls at most (default cap 4); use `effort=high` or lower when that rigor isn't warranted.
 - The Director's own turns are decision-dense and short; the expensive model at the top writes the least text.
 

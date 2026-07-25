@@ -28,7 +28,7 @@ const VERSION = (() => {
   }
 })();
 
-const AGENTS = ['scout.md', 'detective.md', 'executor.md', 'executor-heavy.md', 'reviewer.md', 'reviewer-codex.md', 'planner-gpt.md'];
+const AGENTS = ['scout.md', 'detective.md', 'executor.md', 'executor-heavy.md', 'executor-heavy-xhigh.md', 'reviewer.md', 'reviewer-codex.md', 'planner-gpt.md'];
 const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
 
 function availableSpecialists() {

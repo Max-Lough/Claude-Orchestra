@@ -28,7 +28,7 @@ The Director is **hard-blocked by a PreToolUse hook** from editing files, runnin
 | Session launched as | Fable | Opus (`claude --model opus`) |
 | Director | Fable | Opus |
 | Review | `reviewer` agent → **Opus, fresh context** (re-runs the tests); optional `reviewer-codex` (OpenAI via Codex CLI) second opinion at gates | same `reviewer` (fresh context — the change's author is Sonnet, not the Director); Opus arbitrates verdicts critically, same optional `reviewer-codex` layer |
-| Scout / Detective / Executor / Executor-heavy | Haiku / Opus / Sonnet / Opus | Haiku / Opus / Sonnet / Opus |
+| Scout / Detective / Executor / Executor-heavy (+ xhigh variant) | Haiku / Opus / Sonnet / Opus | Haiku / Opus / Sonnet / Opus |
 
 Mode detection is automatic and two-layered: the protocol tells the session to identify its own model, and the guard hook independently reads the live model from the session transcript, enforcing only on positive evidence of a director model. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so — the guard stands down too, so a Sonnet/Haiku session is a plain Claude Code session with no denials and no pause file (even on the first turn, before the model reaches the transcript). A mid-session `/model` switch is picked up one turn later; on a director's opening turn, delegation is carried by the protocol instructions until enforcement engages on turn two.
 
@@ -95,6 +95,7 @@ Orchestra/
 │   ├── detective.md       ← Opus · read-only why/how deep investigation
 │   ├── executor.md        ← Sonnet · all edits and commands
 │   ├── executor-heavy.md  ← Opus · high effort · hard-tier work orders
+│   ├── executor-heavy-xhigh.md  ← Opus · xhigh effort · the hardest orders, routed at PLAN time
 │   ├── reviewer.md        ← Opus · fresh-context adversarial review (default engine)
 │   ├── reviewer-codex.md  ← Haiku launcher · optional cross-vendor (OpenAI/Codex) engine
 │   ├── planner-gpt.md     ← Haiku launcher · deep-plan counterpart (OpenAI API)

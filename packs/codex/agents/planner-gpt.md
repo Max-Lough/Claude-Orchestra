@@ -18,7 +18,8 @@ Why cross-vendor: the Director and its agents are all Claude models, and models 
 
 ## What you do
 
-Run the deep-plan runner, then relay its output. Concretely:
+Run the deep-plan runner, then relay its output. **Everything goes in ONE Bash
+call** — the heredoc and the `node` command together:
 
 ```bash
 BRIEF="$(mktemp)"
@@ -28,9 +29,17 @@ ORCHESTRA_BRIEF_EOF
 
 node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-deepplan.js" \
   --plan "<plan file path>" --brief "$BRIEF" --round <n>
-# Append --effort <level> and/or --model <id> ONLY if the Director's order
-# names them; otherwise the environment defaults apply (gpt-5.6-sol, max).
+# Append --effort <level>, --model <id>, --timeout-ms <ms>, or --max-tokens <n>
+# ONLY if the Director's order names them; otherwise the defaults apply
+# (gpt-5.6-sol, max effort).
 ```
+
+**Your shell does not persist between tool calls.** An `export` in one Bash
+call is gone by the time a later call launches the runner, so a setting made
+that way silently reverts to the default. Pass settings as **flags**, or inline
+on the runner's own command line in the same invocation — never as a separate
+export step. Prose configures nothing either: a work order naming an effort
+level or timeout has no effect until you translate it into a flag.
 
 The runner sends the brief plus the current plan to the OpenAI model and prints a header followed by the counterpart's response: `VERDICT: APPROVE` (proceed, no changes) or `VERDICT: REVISE` with a numbered CRITIQUE and a complete UPDATED PLAN. It also saves the full response to a temp file and prints that path as `RESPONSE SAVED:` in the header.
 

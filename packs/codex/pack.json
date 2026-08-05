@@ -1,0 +1,14 @@
+{
+  "name": "codex",
+  "title": "Codex / GPT cross-vendor interface",
+  "summary": "Adds the OpenAI-backed half of the harness: cross-vendor code review through the Codex CLI, and the two-model /deep-plan planning roundabout through the OpenAI API.",
+  "requires": {
+    "bin": ["codex (Codex CLI) — for reviewer-codex only"],
+    "env": ["OPENAI_API_KEY or `codex login` — review", "OPENAI_API_KEY — deep-plan"]
+  },
+  "notes": [
+    "Review engine: set \"reviewEngine\": \"codex\" (or \"dual\") in .claude/orchestra.json.",
+    "Recommended pin: ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol.",
+    "Without this pack the harness still gets full fresh-context Opus review; it just has no cross-vendor option."
+  ]
+}

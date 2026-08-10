@@ -21,6 +21,7 @@
  * Usage:
  *   node orchestra-deepplan.js --plan <file> [--brief <file>] [--round <n>]
  *     [--effort none|low|medium|high|xhigh|max] [--model <id>]
+ *     [--timeout-ms <n>] [--max-tokens <n>]
  *
  * --plan   the current plan markdown (required; normally .claude/plans/<x>.md)
  * --brief  the Director's round brief: goal, constraints, recon facts, and —
@@ -28,7 +29,11 @@
  *          REBUTTED with reasons), so the counterpart doesn't re-raise settled
  *          points and the loop converges
  * --round  informational round counter, stamped into the header
- * --effort / --model  override the environment defaults for this call
+ * --effort / --model / --timeout-ms / --max-tokens  override the environment
+ *          defaults for this call. Prefer these flags over exporting the
+ *          variables: a subagent's shell does not persist between tool calls,
+ *          so an `export` in an earlier call never reaches this runner, and
+ *          the consultation silently uses the default instead.
  *
  * Output: a header line plus the counterpart's response verbatim on stdout.
  * The full response is also saved to a temp file (RESPONSE SAVED: <path> in
@@ -83,6 +88,8 @@ function parseArgs(argv) {
     else if (a === '--round') out.round = argv[++i];
     else if (a === '--effort') out.effort = argv[++i];
     else if (a === '--model') out.model = argv[++i];
+    else if (a === '--timeout-ms') out.timeoutMs = argv[++i];
+    else if (a === '--max-tokens') out.maxTokens = argv[++i];
     else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
@@ -235,7 +242,8 @@ async function main() {
   if (args.help) {
     process.stdout.write(
       'Usage: node orchestra-deepplan.js --plan <file> [--brief <file>] ' +
-        '[--round <n>] [--effort none|low|medium|high|xhigh|max] [--model <id>]\n'
+        '[--round <n>] [--effort none|low|medium|high|xhigh|max] [--model <id>] ' +
+        '[--timeout-ms <n>] [--max-tokens <n>]\n'
     );
     return;
   }
@@ -243,6 +251,12 @@ async function main() {
   if (args.model && args.model.trim()) RESOLVED.model = args.model.trim();
   if (args.effort && args.effort.trim()) RESOLVED.effort = args.effort.trim();
   if (args.round && String(args.round).trim()) RESOLVED.round = String(args.round).trim();
+  // Flags beat the environment: a subagent shell forgets exports between tool
+  // calls, so an env var set in an earlier call would silently be the default.
+  const flagTimeout = parseInt(args.timeoutMs == null ? '' : String(args.timeoutMs), 10);
+  if (Number.isFinite(flagTimeout) && flagTimeout > 0) CONFIG.timeoutMs = flagTimeout;
+  const flagTokens = parseInt(args.maxTokens == null ? '' : String(args.maxTokens), 10);
+  if (Number.isFinite(flagTokens) && flagTokens > 0) CONFIG.maxTokens = flagTokens;
 
   const plan = readFileOr(args.plan, '');
   if (!plan.trim()) {

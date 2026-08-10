@@ -15,8 +15,10 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
 │ SCOUT (Haiku) │ │DETECTIVE(Opus)│ │EXECUTOR       │ │REVIEWER (Opus)│
 │ where / what: │ │ why / how:    │ │(Sonnet)       │ │ fresh-context │
 │ locate · map  │ │ root-cause ·  │ │ all edits &   │ │ adversarial · │
-│ · enumerate   │ │ deep tracing  │ │ commands      │ │ +Codex option │
+│ · enumerate   │ │ deep tracing  │ │ commands      │ │ re-runs tests │
 └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
+                                        the optional `codex` pack adds a
+                                        cross-vendor (OpenAI) review layer
 ```
 
 The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. Two authoring carve-outs: the Director may write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md` / `CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution (see "Plan files" and "Memory files" below). The managed Orchestra block inside `CLAUDE.md` stays off-limits.
@@ -27,7 +29,7 @@ The Director is **hard-blocked by a PreToolUse hook** from editing files, runnin
 |---|---|---|
 | Session launched as | Fable | Opus (`claude --model opus`) |
 | Director | Fable | Opus |
-| Review | `reviewer` agent → **Opus, fresh context** (re-runs the tests); optional `reviewer-codex` (OpenAI via Codex CLI) second opinion at gates | same `reviewer` (fresh context — the change's author is Sonnet, not the Director); Opus arbitrates verdicts critically, same optional `reviewer-codex` layer |
+| Review | `reviewer` agent → **Opus, fresh context** (re-runs the tests); with the `codex` pack installed, an optional `reviewer-codex` (OpenAI via Codex CLI) second opinion at gates | same `reviewer` (fresh context — the change's author is Sonnet, not the Director); Opus arbitrates verdicts critically, same optional `reviewer-codex` layer |
 | Scout / Detective / Executor / Executor-heavy (+ xhigh variant) | Haiku / Opus / Sonnet / Opus | Haiku / Opus / Sonnet / Opus |
 
 Mode detection is automatic and two-layered: the protocol tells the session to identify its own model, and the guard hook independently reads the live model from the session transcript, enforcing only on positive evidence of a director model. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so — the guard stands down too, so a Sonnet/Haiku session is a plain Claude Code session with no denials and no pause file (even on the first turn, before the model reaches the transcript). A mid-session `/model` switch is picked up one turn later; on a director's opening turn, delegation is carried by the protocol instructions until enforcement engages on turn two.
@@ -50,29 +52,54 @@ Prefer a mid-priced detective? Change `model: opus` to `model: sonnet` in the ma
 Review has two engines, both under one identical contract — adversarial brief, tier verification, the `verification` manifest, and the Orchestra verdict format:
 
 - **`reviewer` (Opus, fresh context) — the default, both modes.** A different model from the Sonnet executor that authored the change, sharing none of the author's context, re-running the tests itself. Fresh eyes plus independent verification is where most of review's value lives.
-- **`reviewer-codex` (OpenAI via Codex CLI) — the optional cross-vendor layer.** Models from one vendor share training lineage and some error modes; a different-vendor reviewer breaks that residual correlation. It is deliberately optional rather than default: the marginal independence is real but incremental over a fresh-context Opus review, and it adds an external dependency (Codex CLI installed and authenticated, separate billing, its own failure modes). Recommended as a second-opinion pass at gate-class reviews (integration gates, a chain's final review) — or as a project's primary engine if you prefer; tell the Director. Mechanically it's a thin Claude launcher (Haiku) driving Codex, which is agentic: it reads the actual diff and the surrounding code, **re-runs the tests itself** in a sandbox, and returns a verdict the launcher relays verbatim — the launcher never reviews the code itself, and the Director (blocked from Bash) can't invoke Codex directly, so review stays delegated.
+- **`reviewer-codex` (OpenAI via Codex CLI) — the optional cross-vendor layer, from the [`codex` pack](packs/codex/).** Models from one vendor share training lineage and some error modes; a different-vendor reviewer breaks that residual correlation. It is deliberately optional rather than default: the marginal independence is real but incremental over a fresh-context Opus review, and it adds an external dependency (Codex CLI installed and authenticated, separate billing, its own failure modes). Recommended as a second-opinion pass at gate-class reviews (integration gates, a chain's final review) — or as a project's primary engine if you prefer; tell the Director. Mechanically it's a thin Claude launcher (Haiku) driving Codex, which is agentic: it reads the actual diff and the surrounding code, **re-runs the tests itself** in a sandbox, and returns a verdict the launcher relays verbatim — the launcher never reviews the code itself, and the Director (blocked from Bash) can't invoke Codex directly, so review stays delegated.
 
-**Hot-swapping engines.** The engine is a config value, not an install choice — both engines are always installed and run under the same contract, so swapping changes who judges, never what gets checked. Set `reviewEngine` in `.claude/orchestra.json`:
+**Install the pack first.** The second engine is an opt-in module, so a project that never asks for it has no OpenAI surface at all:
+
+```bash
+node install.js /path/to/project --packs codex
+```
+
+**Then swap engines freely.** With the pack installed, the engine is a config value — both engines run under the same contract, so swapping changes who judges, never what gets checked. Set `reviewEngine` in `.claude/orchestra.json`:
 
 ```json
 { "reviewEngine": "codex" }
 ```
 
-`"opus"` (default) — fresh-context Opus `reviewer`; `"codex"` — cross-vendor primary via `reviewer-codex`, with the Opus `reviewer` as its automatic fallback when Codex is unavailable; `"dual"` — both engines review every substantive change and the Director arbitrates. The next review routes accordingly; no reinstall. Ad-hoc, just tell the Director ("run this review through codex") — an in-conversation instruction overrides the config for the session.
+`"opus"` (default) — fresh-context Opus `reviewer`; `"codex"` — cross-vendor primary via `reviewer-codex`, with the Opus `reviewer` as its automatic fallback when Codex is unavailable; `"dual"` — both engines review every substantive change and the Director arbitrates. The next review routes accordingly; no reinstall. Ad-hoc, just tell the Director ("run this review through codex") — an in-conversation instruction overrides the config for the session. Setting `reviewEngine` to `codex` *without* the pack installed can't take effect: the Director reviews on Opus and tells you the pack is missing.
 
-**Setup (only needed for `reviewer-codex`).** In the environment where Orchestra runs, install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it — either export `OPENAI_API_KEY` or run `codex login`. Nothing else is required; the runner ships with the harness (`.claude/hooks/orchestra-review.js`).
+**Setup (only needed for `reviewer-codex`).** Install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it — either export `OPENAI_API_KEY` or run `codex login`. The runner ships with the pack (`.claude/hooks/orchestra-review.js`).
 
 **Recommended pin.** Set `ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol` — it works with either `codex login` (subscription auth, plan-dependent) or an `OPENAI_API_KEY`. `executor-heavy` orders (Opus, high effort) default to adding this cross-vendor pass — a Director-applied convention, not harness automation: the author and the default `reviewer` are both Opus, so without it review would share a model with the change it's checking.
 
-**Configuration** (all optional, via environment):
+**Configuration.** Settings resolve **flag > environment > `.claude/orchestra.json` > default**. Prefer the config file — it is the one layer a forgetful shell can't lose:
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `ORCHESTRA_REVIEW_MODEL` | Codex's own default | Pin a specific OpenAI model for review — recommended: `gpt-5.6-sol` (see "Recommended pin" above). |
-| `ORCHESTRA_REVIEW_SANDBOX` | `workspace-write` | Codex sandbox. `workspace-write` lets the reviewer run the test suite (most runners need to write caches/temp/coverage). Set `read-only` for a hard no-write guarantee — at the cost that many suites won't run under it. |
-| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `600000` | Wall-clock cap for a review (it runs your tests). |
-| `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec` (escape hatch for flag drift / tuning). |
-| `CODEX_BIN` | `codex` | Path to the Codex executable. |
+```json
+{
+  "reviewEngine": "codex",
+  "codex": {
+    "reviewTimeoutMs": 1800000,
+    "reviewModel": "gpt-5.6-sol",
+    "helpersDir": "/path/to/known-good-codex-files",
+    "doNotRun": ["godot"]
+  }
+}
+```
+
+| Variable | `orchestra.json` (`codex` key) | Default | Meaning |
+|---|---|---|---|
+| `ORCHESTRA_REVIEW_MODEL` | `reviewModel` | Codex's own default | Pin a specific OpenAI model for review — recommended: `gpt-5.6-sol`. |
+| `ORCHESTRA_REVIEW_SANDBOX` | `reviewSandbox` | `workspace-write` | Codex sandbox. `workspace-write` lets the reviewer run the test suite (most runners need to write caches/temp/coverage). Set `read-only` for a hard no-write guarantee — at the cost that many suites won't run under it. |
+| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `reviewTimeoutMs` | `600000` | Wall-clock cap for a review (it runs your tests). Also `--timeout-ms`. |
+| `ORCHESTRA_REVIEW_IDLE_MS` | `idleMs` | `1500` | Idle-precheck settle window; `0` disables. |
+| `ORCHESTRA_CODEX_HELPERS` | `helpersDir` | — | Directory of known-good files mirrored into the Codex install before each run. |
+| — | `doNotRun` | — | Commands the reviewer is forbidden to run. Also `--forbid` / `--no-tests`. |
+| `ORCHESTRA_REVIEW_ARGS` | — | — | Extra args appended to `codex exec` (escape hatch for flag drift / tuning). |
+| `CODEX_BIN` | — | `codex` | Path to the Codex executable (resolved through symlinks/junctions automatically). |
+
+**Configure with values, not prose.** A subagent's shell does not persist between tool calls, so an `export` in one call never reaches a runner launched in a later one — and a work order saying "use a 30-minute timeout" or "skip the tests" configures nothing at all. Both failure modes cost real review rounds before the runner was hardened against them. Put durable settings in `.claude/orchestra.json`; the launchers translate per-run instructions into flags on the runner's own command line. Every verdict header reports the value that was actually applied and where it came from — `timeout: 1800000ms (orchestra.json)` — so a setting that failed to land is visible instead of silent.
+
+**Field-hardening.** Four failure modes the runner now handles mechanically: it **resolves `CODEX_BIN` to its real path** (a symlink or Windows junction breaks Codex's own sibling-file resolution); it **restores missing files** into the Codex install from `helpersDir` before each run (a Codex self-update can silently strip them); it **enforces command prohibitions as hard constraints** that explicitly outrank the brief's "re-run the tests" rule, requiring the affected claims to return as `UNVERIFIED (prohibited: …)` so a narrowed review reports itself as narrowed; and it **refuses to review a moving tree**, sampling the working tree twice and returning `REVIEW_UNAVAILABLE: working tree is not idle` if another executor, build, or watch task is still writing.
 
 **Tiered review (`--tier`).** Every review runs at full depth by default — the reviewer re-runs the tests itself. For a round the Director declares **inert** (docs/comments/formatting with zero behavior impact), the review order states `TIER: inert` and the launcher appends `--tier inert`; the runner then instructs the reviewer to *verify the inertness claim from the diff first* — any behavior-bearing line is itself a critical finding and forces a full-depth review — and only a proven-inert diff skips the suite. Effectiveness is never traded for speed: the tier narrows verification only where narrowing provably cannot matter, and the prover is whoever reviews — the Opus `reviewer`, the Codex engine, or the protocol's last-resort fallback — never the author. The tier appears in the `REVIEW ENGINE` header of both engines so every verdict is auditable for the depth it ran at. The tier and the `verification` manifest are engine-agnostic review *policy* (`ORCHESTRA.md` §8.3); the Opus `reviewer` enforces them through its own rules, this runner implements them for the Codex engine, and the §5 fallback applies them by hand.
 
@@ -97,24 +124,34 @@ Orchestra/
 │   ├── executor-heavy.md  ← Opus · high effort · hard-tier work orders
 │   ├── executor-heavy-xhigh.md  ← Opus · xhigh effort · the hardest orders, routed at PLAN time
 │   ├── reviewer.md        ← Opus · fresh-context adversarial review (default engine)
-│   ├── reviewer-codex.md  ← Haiku launcher · optional cross-vendor (OpenAI/Codex) engine
-│   ├── planner-gpt.md     ← Haiku launcher · deep-plan counterpart (OpenAI API)
 │   └── specialists/       ← domain executors, installed on request (--specialists)
 │       ├── _TEMPLATE.md   ← copy this to mint a new specialist
 │       └── modeler.md     ← Sonnet · Blender/Godot 3D asset pipeline
 ├── hooks/
-│   ├── orchestra-guard.js     ← PreToolUse hook enforcing Director law
-│   ├── orchestra-review.js    ← cross-vendor review runner (drives Codex CLI)
-│   └── orchestra-deepplan.js  ← plan-roundabout runner (calls the OpenAI API)
-└── skills/                 ← bundled skills, stamped into .claude/skills/
-    ├── _TEMPLATE/          ← copy this directory to mint a new bundled skill
-    ├── orchestra-status/   ← /orchestra-status · live harness state report
-    ├── orchestra-plan/     ← /orchestra-plan · §8-sized plans into .claude/plans/
-    ├── orchestra-review/   ← /orchestra-review · on-demand adversarial review
-    └── deep-plan/          ← /deep-plan · two-model plan roundabout (GPT-5.6 Sol)
+│   └── orchestra-guard.js ← PreToolUse hook enforcing Director law
+├── skills/                 ← core skills, always stamped into .claude/skills/
+│   ├── _TEMPLATE/          ← copy this directory to mint a new bundled skill
+│   ├── orchestra-status/   ← /orchestra-status · live harness state report
+│   ├── orchestra-plan/     ← /orchestra-plan · §8-sized plans into .claude/plans/
+│   └── orchestra-review/   ← /orchestra-review · on-demand adversarial review
+└── packs/                  ← OPTIONAL modules, installed only when named (--packs)
+    ├── README.md           ← the pack contract
+    ├── _TEMPLATE/          ← copy this directory to mint a new pack
+    └── codex/              ← the OpenAI surface: cross-vendor review + deep-plan
+        ├── pack.json       ← pack metadata
+        ├── agents/
+        │   ├── reviewer-codex.md  ← Haiku launcher · cross-vendor (OpenAI/Codex) review
+        │   └── planner-gpt.md     ← Haiku launcher · deep-plan counterpart (OpenAI API)
+        ├── hooks/
+        │   ├── orchestra-review.js    ← cross-vendor review runner (drives Codex CLI)
+        │   └── orchestra-deepplan.js  ← plan-roundabout runner (calls the OpenAI API)
+        └── skills/
+            └── deep-plan/  ← /deep-plan · two-model plan roundabout (GPT-5.6 Sol)
 ```
 
 This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
+
+Everything above `packs/` is the **core harness** and always installs. Everything under `packs/` is opt-in and installs only when named — so a project that never passes `--packs` has no OpenAI surface, no missing-dependency warnings, and no files it didn't ask for. See [`packs/README.md`](packs/README.md) for the contract, and "Packs" below.
 
 ## Versioning
 
@@ -143,23 +180,31 @@ node "$ORCHESTRA_HOME\install.js" "C:\path\to\your\project"
 
 # or from inside the target project (installs into the current dir):
 node "$ORCHESTRA_HOME\install.js"
+
+# with the optional cross-vendor (OpenAI) pack:
+.\install.ps1 "C:\path\to\your\project" -Packs codex
 ```
 
 ```bash
 # POSIX (macOS/Linux):
 git clone https://github.com/Max-Lough/Claude-Orchestra.git && cd Claude-Orchestra
 ./install.sh /path/to/your/project
+./install.sh /path/to/your/project --packs codex     # with the OpenAI pack
 ```
 
 The installer is **idempotent** — run it again anytime to update a project to the latest master. It:
 
-1. Copies `agents/*.md` → `<project>/.claude/agents/`
-2. Copies each bundled skill `skills/<name>/` → `<project>/.claude/skills/<name>/` (stamped wholesale — local edits to those directories are overwritten on update; see "Bundled skills")
-3. Copies `hooks/orchestra-guard.js`, `hooks/orchestra-review.js`, and `hooks/orchestra-deepplan.js` → `<project>/.claude/hooks/`
-4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`, stamping the harness version into its header
-5. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
-6. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
-7. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
+1. Copies the core `agents/*.md` → `<project>/.claude/agents/`
+2. Copies each core skill `skills/<name>/` → `<project>/.claude/skills/<name>/` (stamped wholesale — local edits to those directories are overwritten on update; see "Bundled skills")
+3. Copies `hooks/orchestra-guard.js` → `<project>/.claude/hooks/`
+4. Copies the agents, hooks, and skills of any pack named with `--packs` into those same directories
+5. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`, stamping the harness version into its header
+6. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
+7. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
+8. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
+9. Records the pack and specialist selection in `<project>/.claude/orchestra-install.json`
+
+**Your selection sticks.** That last file is why a later plain `node install.js` refreshes exactly the packs and specialists you chose rather than silently dropping them. Pass the flags again only to *change* the selection — `--packs codex,other` to add, `--no-packs` to remove (deselected packs have their files deleted), `--no-specialists` likewise.
 
 **First launch after install:** Claude Code will ask you to approve the hook that project settings define — approve it once and it sticks. If teammates shouldn't inherit the harness, move the hook entry from `settings.json` to `settings.local.json` (git-ignored).
 
@@ -171,7 +216,7 @@ The installer is **idempotent** — run it again anytime to update a project to 
 node install.js "C:\path\to\your\project" --uninstall
 ```
 
-Removes the copied files (agents, hooks, protocol, and the bundled `orchestra-*` skills), the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else — including skills you authored under other names — is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
+Removes the copied files (agents, hooks, protocol, the core `orchestra-*` skills, and every pack's files), the install record, the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else — including skills you authored under other names — is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
 
 ## Using it
 
@@ -225,6 +270,29 @@ If your project keeps memory elsewhere (say `.claude/rules/`), add `directorMemo
 }
 ```
 
+## Packs — optional modules
+
+Some capabilities are worth having but not worth imposing: they carry an external dependency, cost money on someone else's meter, or simply don't fit every project. Those live in `packs/`, and **nothing in `packs/` installs unless you name it**:
+
+```bash
+node install.js /path/to/project --packs codex
+```
+
+| Pack | Adds | Needs |
+|---|---|---|
+| `codex` | `reviewer-codex` (cross-vendor review via the Codex CLI), `planner-gpt` + `/deep-plan` (two-model planning via the OpenAI API), and both runners | Codex CLI and/or `OPENAI_API_KEY` |
+
+A harness with no packs is Claude-only and complete: full fresh-context adversarial Opus review, the whole operating loop, every core skill. The `codex` pack adds a *layer* — vendor decorrelation — not a missing floor.
+
+**The selection is remembered.** `.claude/orchestra-install.json` records it, so a later `node install.js` (no flags) refreshes the same packs and specialists instead of dropping them. `--no-packs` removes them; deselected packs have their installed files deleted, not merely skipped.
+
+**Rolling your own.** Copy `packs/_TEMPLATE/` and drop your agents, hooks, and skills into `agents/`, `hooks/`, and `skills/`. The installer discovers files by walking those directories, so nothing needs registering — which is also how `--uninstall` knows what to remove. Four rules apply (full text in [`packs/README.md`](packs/README.md)):
+
+1. **Degrade, never fail** — a missing dependency yields an explicit `*_UNAVAILABLE` verdict, never a crash and never a silent success.
+2. **Nothing outside the pack may hard-depend on it** — the protocol, guard, and core agents must all work with zero packs installed.
+3. **Skills stay orchestration-class** — they load into the Director's context, so they dispatch agents rather than assuming their own hands.
+4. **Names must not collide** with core harness files; the installer refuses rather than clobbering.
+
 ## Specialists & hands-on skills
 
 Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: whoever invokes them is expected to execute their steps with their own tools. If the *Director* invokes one, the knowledge lands in the one head the guard forbids from using it. The extension closes that gap.
@@ -261,37 +329,39 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 
 ## Bundled skills
 
-The harness ships skills of its own and stamps them into `<project>/.claude/skills/` on every install — they ride the installer exactly like agents and hooks: installed automatically, updated by re-running the installer, removed by `--uninstall`. Claude Code discovers project skills from that directory, so they're live as slash commands (and as auto-triggered skills) with nothing else to configure.
+The harness ships skills of its own and stamps them into `<project>/.claude/skills/` on every install — they ride the installer exactly like agents and hooks: installed automatically, updated by re-running the installer, removed by `--uninstall`. Claude Code discovers project skills from that directory, so they're live as slash commands (and as auto-triggered skills) with nothing else to configure. The first three below are core; `deep-plan` arrives only with the `codex` pack.
 
 | Skill | Invoke | Does |
 |---|---|---|
-| `orchestra-status` | `/orchestra-status` — or ask "is the orchestra on?" | One compact report: mode, pause/enforcement state, review engine (+ Codex availability), company roster, policy, verification manifest, plans/ledger — plus one-line fixes for any inconsistency it finds. |
+| `orchestra-status` | `/orchestra-status` — or ask "is the orchestra on?" | One compact report: mode, pause/enforcement state, review engine (+ Codex availability), company roster, installed packs, policy, verification manifest, plans/ledger — plus one-line fixes for any inconsistency it finds. |
 | `orchestra-plan` | `/orchestra-plan` — or ask to plan before building | Walks the §8 sizing gate and writes a durable plan file — work orders with scope, acceptance criteria, verification tier, cadence clauses — to `.claude/plans/<slug>.md`, the one directory the Director may write itself. |
 | `orchestra-review` | `/orchestra-review` — or ask for a review / second opinion | Runs the loop's REVIEW phase on demand against arbitrary existing changes — working tree, branch, commit range — through the configured engine, with the standard verdict format. Works on changes the harness never authored. |
-| `deep-plan` | `/deep-plan <goal>` — or ask for maximum-rigor / cross-vendor planning | Two-model planning roundabout: the Director drafts a full plan, GPT-5.6 Sol (via API, `max` effort by default) critiques and counter-drafts, and the plan ping-pongs until either model approves it unchanged. See "Deep-plan" below; requires `OPENAI_API_KEY`. |
+| `deep-plan` *(codex pack)* | `/deep-plan <goal>` — or ask for maximum-rigor / cross-vendor planning | Two-model planning roundabout: the Director drafts a full plan, GPT-5.6 Sol (via API, `max` effort by default) critiques and counter-drafts, and the plan ping-pongs until either model approves it unchanged. See "Deep-plan" below; requires the `codex` pack and `OPENAI_API_KEY`. |
 
 Design constraints (these are also the rules for bundling your own — see `skills/_TEMPLATE/SKILL.md`):
 
 - **Orchestration-class only.** Bundled skills load into the main session — the Director, whom the guard blocks from editing, running commands, and searching. So their steps dispatch scouts, executors, and reviewers rather than assuming the session's own hands (ORCHESTRA.md §7). Hands-on playbooks belong to executors and specialists, never in the bundle.
 - **All modes.** Each skill forks once at the top: under a director model it delegates; in a dormant or paused session the same procedure runs directly. The skills stay useful in plain sessions.
-- **Stamped wholesale.** The installer replaces each stamped skill directory completely on update, so stale files never linger — edit the master and re-run the installer rather than editing stamped copies. The installer owns exactly the master-known skill names (currently the `orchestra-*` set and `deep-plan`); skills under any other name are yours, and the installer never touches them.
+- **Stamped wholesale.** The installer replaces each stamped skill directory completely on update, so stale files never linger — edit the master and re-run the installer rather than editing stamped copies. The installer owns exactly the master-known skill names (the core `orchestra-*` set, plus any pack's skills such as `deep-plan`); skills under any other name are yours, and the installer never touches them.
 - **To bundle a new skill:** copy `skills/_TEMPLATE/` to `skills/<name>/`, make the frontmatter `name` match the directory, re-run the installer per project. Supporting files beside `SKILL.md` are stamped too (the copy is recursive); underscore-prefixed directories are skipped. Fresh sessions pick up new skills at launch.
 
 ### Deep-plan: the two-model planning roundabout
 
-`/deep-plan <goal>` puts the plan itself through cross-vendor adversarial review before any work order is cut. The Director drafts a complete plan (full `orchestra-plan` discipline: recon scouts, §8.1 sizing, tiers) into `.claude/plans/`, then hands it to an **OpenAI counterpart** — the `planner-gpt` launcher drives `hooks/orchestra-deepplan.js`, which calls the Responses API. The counterpart returns either `VERDICT: APPROVE` (proceed, no changes) or `VERDICT: REVISE` with a numbered critique plus a **complete counter-drafted plan**. The Director arbitrates — adopts, rebuts (with reasons the counterpart must respect next round), or merges — and the plan ping-pongs until **either model approves the standing plan without changes**: the counterpart answering APPROVE, or the Director adopting the counterpart's version verbatim. A round cap (default 4 consultations) ends stalemates by escalating the surviving disagreements to you; every run appends an `## Deep-plan log` to the plan file recording verdicts and dispositions.
+`/deep-plan <goal>` puts the plan itself through cross-vendor adversarial review before any work order is cut. The Director drafts a complete plan (full `orchestra-plan` discipline: recon scouts, §8.1 sizing, tiers) into `.claude/plans/`, then hands it to an **OpenAI counterpart** — the `planner-gpt` launcher drives `.claude/hooks/orchestra-deepplan.js`, which calls the Responses API. The counterpart returns either `VERDICT: APPROVE` (proceed, no changes) or `VERDICT: REVISE` with a numbered critique plus a **complete counter-drafted plan**. The Director arbitrates — adopts, rebuts (with reasons the counterpart must respect next round), or merges — and the plan ping-pongs until **either model approves the standing plan without changes**: the counterpart answering APPROVE, or the Director adopting the counterpart's version verbatim. A round cap (default 4 consultations) ends stalemates by escalating the surviving disagreements to you; every run appends an `## Deep-plan log` to the plan file recording verdicts and dispositions.
 
 Skill arguments: `effort=<none|low|medium|high|xhigh|max>` (counterpart reasoning effort — default `max`, GPT-5.6's tier above `xhigh`), `model=<id>` (default `gpt-5.6-sol`), `rounds=<n>` (consultation cap). Example: `/deep-plan effort=high rounds=3 migrate the auth layer to sessions v2`.
 
-**Setup.** Export `OPENAI_API_KEY` in the environment where Claude Code runs — consultations bill to it (and `max` effort is deliberately the expensive, slow, thorough setting; dial `effort=` down for routine plans). If the key is missing or the call fails, the runner returns `VERDICT: DEEPPLAN_UNAVAILABLE` with the reason — never a fake approval — and the Director offers to proceed with the solo plan explicitly marked as not cross-examined.
+**Setup.** Install the `codex` pack (`--packs codex`) and export `OPENAI_API_KEY` in the environment where Claude Code runs — consultations bill to it (and `max` effort is deliberately the expensive, slow, thorough setting; dial `effort=` down for routine plans). If the key is missing or the call fails, the runner returns `VERDICT: DEEPPLAN_UNAVAILABLE` with the reason — never a fake approval — and the Director offers to proceed with the solo plan explicitly marked as not cross-examined.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `ORCHESTRA_DEEPPLAN_MODEL` | `gpt-5.6-sol` | Counterpart model id (`model=` argument overrides per run). |
-| `ORCHESTRA_DEEPPLAN_EFFORT` | `max` | Reasoning effort (`effort=` argument overrides per run). |
-| `ORCHESTRA_DEEPPLAN_TIMEOUT_MS` | `900000` | Wall-clock cap per consultation — max-effort reasoning is slow. |
-| `ORCHESTRA_DEEPPLAN_MAX_TOKENS` | `64000` | `max_output_tokens` (includes the model's reasoning budget). |
-| `OPENAI_BASE_URL` | `https://api.openai.com` | Alternate endpoint (gateways); a `/v1` suffix is tolerated. |
+| Variable | Flag | Default | Meaning |
+|---|---|---|---|
+| `ORCHESTRA_DEEPPLAN_MODEL` | `--model` | `gpt-5.6-sol` | Counterpart model id (`model=` argument overrides per run). |
+| `ORCHESTRA_DEEPPLAN_EFFORT` | `--effort` | `max` | Reasoning effort (`effort=` argument overrides per run). |
+| `ORCHESTRA_DEEPPLAN_TIMEOUT_MS` | `--timeout-ms` | `900000` | Wall-clock cap per consultation — max-effort reasoning is slow. |
+| `ORCHESTRA_DEEPPLAN_MAX_TOKENS` | `--max-tokens` | `64000` | `max_output_tokens` (includes the model's reasoning budget). |
+| `OPENAI_BASE_URL` | — | `https://api.openai.com` | Alternate endpoint (gateways); a `/v1` suffix is tolerated. |
+
+Prefer the flags over the environment variables: a subagent's shell doesn't persist between tool calls, so a variable exported in one call never reaches a runner launched in a later one — the consultation just runs at the default instead.
 
 Unlike the Codex review engine, the counterpart has **no repository access**: it judges coherence, completeness, sequencing, risk coverage, and testability from the brief and plan text alone, and is instructed to raise unverifiable assumptions as critique questions instead of inventing facts. Requests are sent with `store: false`.
 
@@ -328,8 +398,12 @@ This trades tokens for quality and control, deliberately:
 | Session model is Sonnet/Haiku | Orchestra goes dormant by design — protocol and guard both stand down, leaving a normal session. Relaunch as Fable, or `claude --model opus` for MODE B. |
 | Skill/slash-command in a harnessed session wants to edit files | That's a hands-on skill in the Director's context — route it per ORCHESTRA.md §7: a specialist with the skill preloaded, or a work order telling the executor to invoke it. Pausing works too, but forfeits the harness for that stretch. |
 | Director drives MCP tools (Blender, DBs, …) directly | Instruction rule §7 should stop it; to enforce, add the server's pattern to `directorBlockedPatterns` in `.claude/orchestra.json` (see "Specialists & hands-on skills"). |
+| `reviewer-codex` / `/deep-plan` doesn't exist | The `codex` pack isn't installed in this project. Re-run the installer with `--packs codex`. `/orchestra-status` reports which packs are present. |
 | Review comes back `REVIEW_UNAVAILABLE: Codex CLI not found` | (`reviewer-codex` only) Codex isn't installed / not on PATH in this environment. Install the [Codex CLI](https://developers.openai.com/codex/), or set `CODEX_BIN` to its full path. Until then the Director routes reviews to the default Opus `reviewer` (see "Review engines"). |
-| `REVIEW_UNAVAILABLE: Codex exited with status …` | Usually auth — export `OPENAI_API_KEY` or run `codex login`. Can also be an unsupported flag on your Codex version (check `codex exec --help`, then adjust via `ORCHESTRA_REVIEW_ARGS`) or a sandbox restriction. The DETAIL block quotes Codex's stderr. |
+| `REVIEW_UNAVAILABLE: Codex exited with status …` | Usually auth — export `OPENAI_API_KEY` or run `codex login`. Can also be an unsupported flag on your Codex version (check `codex exec --help`, then adjust via `ORCHESTRA_REVIEW_ARGS`) or a sandbox restriction. The DETAIL block quotes Codex's stderr. If a Codex self-update stripped files the install needs, point `codex.helpersDir` at known-good copies — the runner restores them before each run. |
+| `REVIEW_UNAVAILABLE: review timed out` despite setting a longer timeout | The setting didn't reach the runner. A subagent's shell doesn't persist between tool calls, so an `export` in an earlier call is gone by launch time — and a timeout named only in the work order's prose was never a setting at all. Put it in `.claude/orchestra.json` (`"codex": { "reviewTimeoutMs": 1800000 }`); the verdict header reports the cap actually applied and its source, so check for `(default)` there. |
+| `REVIEW_UNAVAILABLE: working tree is not idle` | Working as intended — an executor, build, or watch task was still writing the tree, and a review of a moving tree reports on a state that no longer exists. Wait for the other work to finish and re-run. Disable with `ORCHESTRA_REVIEW_IDLE_MS=0` if your workflow makes the check impractical. |
+| Reviewer burns the whole timeout running a suite it was told to skip | A polite "skip the tests" in the order gets overridden by the reviewer's own judgment. Forbid it outright instead: `--no-tests`, `--forbid "<command>"`, or `"codex": { "doNotRun": [...] }`. The affected claims come back as `UNVERIFIED (prohibited: …)` so the narrowed review reports itself as narrowed. |
 | Reviewer runs but the tests don't execute | (`reviewer-codex`) Codex's `read-only` sandbox can't run commands that write. Leave `ORCHESTRA_REVIEW_SANDBOX` at its `workspace-write` default so the suite can run. |
 | Verdict carries an `⚠ INTEGRITY WARNING` | The cross-vendor reviewer (`reviewer-codex`) modified the working tree while running. Have the scout diff the tree against the intended change; the reviewer isn't supposed to write. Set `ORCHESTRA_REVIEW_SANDBOX=read-only` if you need to forbid it outright. |
 | `/deep-plan` returns `VERDICT: DEEPPLAN_UNAVAILABLE` | The DETAIL block states why: `OPENAI_API_KEY` not set, HTTP 401 (bad key), HTTP 400/404 (model or effort not available to your key — override with `model=`/`effort=` or the `ORCHESTRA_DEEPPLAN_*` env vars), a timeout (raise `ORCHESTRA_DEEPPLAN_TIMEOUT_MS` or lower the effort), or truncation (raise `ORCHESTRA_DEEPPLAN_MAX_TOKENS`). Until fixed, the Director proceeds solo and marks the plan as not cross-examined. |
@@ -343,6 +417,8 @@ This trades tokens for quality and control, deliberately:
 - **Why a detective role instead of one smarter scout?** Recon quality is asymmetric. Most missions are mechanical retrieval, where Haiku is fast, cheap, and parallel — but the causal minority steers the plan, and recon is the one output no reviewer checks. Splitting the tiers keeps the fan-out economics of cheap scouts while giving *why/how* questions the same treatment as review verdicts: the most capable model, deliberately routed. The prompts genuinely differ too — the scout enumerates facts; the detective kills hypotheses — so this is two roles, not one role with a model knob.
 - **Why is the default reviewer Opus, with cross-vendor as an option?** Self-review inside the planning context inherits the planner's blind spots — independence starts with a fresh context. The `reviewer` provides that: a fresh Opus context reviewing a Sonnet-authored change, re-running the tests itself, which captures most of what independent review buys. A different-vendor reviewer (OpenAI via Codex) decorrelates one layer further — same-vendor models share training lineage — so `reviewer-codex` exists for gate-class second opinions, or as a primary engine for projects that want it. It is optional rather than default because the residual decorrelation is incremental over fresh-context different-model review, while the dependency it adds (external CLI, auth, separate billing) can leave review unavailable exactly when you need it.
 - **Why is `reviewer-codex` a Claude launcher instead of calling OpenAI directly?** The Director is guard-blocked from Bash, so it can't shell out to Codex itself, and there's no OpenAI tool in its toolbox. A thin subagent (exempt from the guard) runs Codex and relays the verdict — which keeps review delegated and keeps the judgment cross-vendor, without weakening the guard or handing the Director a new way to do work itself.
+- **Why are packs opt-in rather than installed-and-idle?** The earlier design installed both review engines everywhere and made the *choice* a config value, on the reasoning that swapping engines shouldn't need a reinstall. That's still true once a pack is present — but it meant every project carried an OpenAI surface it might never use: two agents in the roster, two runners on disk, and a set of failure modes that only matter if you opted in. Packs move the decision to install time without giving up hot-swapping after it, and they generalize: anything with an external dependency (another vendor's CLI, a house toolchain) becomes a directory you drop in rather than a special case in the installer. The cost is honest — selecting an engine whose pack isn't installed is now a configuration error rather than a no-op — which is why the installer records your selection and `/orchestra-status` reports it.
+- **Why does the runner enforce settings mechanically instead of trusting the launcher?** Because prose isn't configuration, and the field proved it twice. A work order asking for a longer timeout changes nothing unless something turns it into a value; a launcher that exports an environment variable in one tool call loses it before the next, since subagent shells don't persist. Both failures look identical from the outside — a review that dies at the default timeout while everyone believes the setting was applied. The fix is layered: durable settings live in a file that no shell can forget, per-run settings ride the runner's own command line, and the verdict header always names the value that was actually applied and where it came from. The same principle covers prohibitions (a hard constraint that outranks the brief's own rules, with an honest place to record what went unverified) and the install itself (resolve the real binary path, restore what a self-update stripped) — every one of them a thing that used to depend on someone remembering.
 
 ## License
 

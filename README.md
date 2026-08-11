@@ -1,6 +1,6 @@
 # Orchestra
 
-A transferable multi-agent harness for Claude Code. It casts the session model as a **Director** who never touches the code, and routes all actual work through a fixed company of specialist subagents:
+A transferable multi-agent harness for Claude Code. It casts the session model as a **Director** who never touches the code, and routes all actual work through a fixed company of specialist subagents. *A separate, self-contained installer (`install-codex.js`) stamps the same operating loop for **Codex CLI** as Director instead — see ["Codex-native harness"](#codex-native-harness-codex-cli-as-director) below; the two installers never touch each other's files, so a project can run either, both, or neither.*
 
 ```
                     ┌─────────────────────────────┐
@@ -217,6 +217,63 @@ node install.js "C:\path\to\your\project" --uninstall
 ```
 
 Removes the copied files (agents, hooks, protocol, the core `orchestra-*` skills, and every pack's files), the install record, the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else — including skills you authored under other names — is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
+
+## Codex-native harness (Codex CLI as Director)
+
+Everything above installs the **Claude-side** harness — Claude Code as Director, `.claude/` + `CLAUDE.md`. A separate, self-contained installer stamps the same operating loop for **Codex CLI as Director** instead: `install-codex.js` writes `.codex/` + the project's `AGENTS.md`. Codex doesn't expand Claude-style `@file` imports, so the protocol is embedded **verbatim** inside a matching `<!-- ORCHESTRA:BEGIN/END -->` block rather than imported by reference.
+
+The two installers never touch each other's files. Run either one, both, or neither — a project with both installed is dual-drivable: Claude Code and Codex CLI can each act as Director under their own copy of the protocol, their own company (GPT-5.6 Sol/Luna/Terra instead of Fable/Opus/Haiku/Sonnet), and their own guard hook.
+
+```
+Orchestra/
+└── codex/
+    ├── ORCHESTRA.md            ← the Codex-side Director protocol
+    ├── config.toml             ← recommended Codex CLI project defaults (scaffold, not managed)
+    ├── hooks.json              ← SessionStart/PreToolUse guard wiring template
+    ├── agents/
+    │   ├── scout.toml          ← GPT-5.6 Luna · read-only where/what recon
+    │   ├── detective.toml      ← GPT-5.6 Sol · read-only why/how investigation
+    │   ├── executor.toml       ← GPT-5.6 Terra · all edits and commands
+    │   └── reviewer.toml       ← GPT-5.6 Sol · fresh-context adversarial review
+    ├── hooks/
+    │   └── orchestra-guard.js  ← Codex hook implementing Director law
+    └── packs/                  ← OPTIONAL modules, installed only when named (--packs)
+        ├── README.md
+        ├── _TEMPLATE/
+        └── claude/             ← the Anthropic surface: cross-vendor review + ultra-plan
+            ├── pack.json
+            ├── agents/
+            │   ├── reviewer-claude.toml  ← launcher · cross-vendor (Claude CLI) review
+            │   └── planner-claude.toml   ← launcher · ultra-plan counterpart (Claude CLI)
+            └── hooks/
+                ├── orchestra-review.js      ← review runner (drives an isolated `claude --print` session)
+                └── orchestra-ultraplan.js   ← ultra-plan runner (drives an isolated `claude --print` session, no repo access)
+```
+
+```bash
+# Install (idempotent, same conventions as install.js):
+node install-codex.js /path/to/your/project
+node install-codex.js /path/to/your/project --packs claude   # with the Claude CLI cross-vendor pack
+
+# Uninstall:
+node install-codex.js /path/to/your/project --uninstall
+```
+
+```powershell
+.\install-codex.ps1 "C:\path\to\your\project"
+.\install-codex.ps1 "C:\path\to\your\project" -Packs claude
+.\install-codex.ps1 "C:\path\to\your\project" -Uninstall
+```
+
+Notable differences from the Claude-side installer, each driven by a real difference between the two products rather than an oversight:
+
+- **No `executor-heavy` tier yet.** The Codex-native company currently mirrors the pre-1.2.0 Claude-side roster (scout/detective/executor/reviewer only). Porting the two-tier execution split is open follow-up work.
+- **No specialists or bundled skills yet.** Neither existed in the hand-built wiring this installer was ported from; both are open follow-ups, not intentional omissions.
+- **`.codex/config.toml` is a one-time scaffold, not a managed file.** It's Codex CLI's own per-project config surface and may hold unrelated settings, and there is no safe generic TOML merge available here — so the installer writes it once on first install and never touches it again. Hand-edit it freely.
+- **`.codex/hooks.json` is merged, not overwritten.** It's likewise Codex CLI's real hook-config surface. The installer only replaces the `SessionStart`/`PreToolUse` entries it owns (matched by `orchestra-guard.js` appearing in the command string), preserving any other event or command a project has added.
+- **`AGENTS.md` carries the full protocol text, not a pointer.** Re-running the installer keeps it in sync with `codex/ORCHESTRA.md`, the same way `CLAUDE.md`'s one-line import stays in sync with `.claude/ORCHESTRA.md` on the Claude side.
+
+See [`codex/packs/README.md`](codex/packs/README.md) for the Codex-side pack contract and [`codex/packs/claude/README.md`](codex/packs/claude/README.md) for the `claude` pack's setup and environment variables — the mirror image of the Claude-side `codex` pack.
 
 ## Using it
 

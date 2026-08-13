@@ -1286,6 +1286,21 @@ function classifyExit(run, elapsedMs) {
       retryable: true,
     };
   }
+  if (st == null) {
+    // No status, no signal, no error: the child ended in a way this platform
+    // did not describe. Say that plainly rather than inventing a status, and
+    // treat it as retryable — an undescribed ending is exactly the shape a
+    // second attempt sometimes resolves.
+    return {
+      kind: 'unknown',
+      headline: 'codex ended without reporting an exit status',
+      killedBy:
+        'unknown — the platform reported no exit status, no signal, and no launch error. ' +
+        'This runner\'s ' + cap + 'ms timer did not fire.',
+      ran,
+      retryable: true,
+    };
+  }
   if (st !== 0) {
     return {
       kind: 'exit',
@@ -1836,9 +1851,12 @@ function main() {
   if (installDir) {
     PREFLIGHT.push(
       'codex install layout: ' + layout.id + ' (' + installDir + ')' +
-        (layout.id === 'unknown'
-          ? ' — not one of the two layouts this runner knows; helper-sibling repair can ' +
-            'only use ORCHESTRA_CODEX_HELPERS here'
+        // The caveat only matters where helper files are actually expected;
+        // on a platform that needs none, an unknown layout is just a package
+        // manager doing its job, and saying more would be noise.
+        (layout.id === 'unknown' && CONFIG.helperSiblings.length
+          ? ' — not one of the two layouts this runner knows, so helper-sibling repair can ' +
+            'only use a directory you name in helpersDir'
           : '')
     );
   }

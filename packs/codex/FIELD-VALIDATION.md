@@ -2,7 +2,7 @@
 
 For the next **gate-class review** run by a project that installed this pack
 (`node install.js <project> --packs codex`). The master's own suite
-(`node tests/review-lane.test.js`, 92 checks) proves the mechanics against a
+(`node tests/review-lane.test.js`, 94 checks) proves the mechanics against a
 stub engine; this checklist proves the round-2 fixes against the real Codex CLI,
 on Windows, where every field failure happened.
 
@@ -17,7 +17,10 @@ this round addresses only appear on real work.
       (`node install.js <project> --packs codex` re-stamps it.)
 - [ ] Optional but recommended for engine projects (Godot, Unity, Unreal): set
       `"codex": { "worktreeWarmupCmd": "<engine headless import command>" }` in
-      `.claude/orchestra.json`.
+      `.claude/orchestra.json`. It runs only in a **pinned** review (a warmup
+      writes, and a live-tree review must not write into the tree it is
+      reviewing), so this pairs with passing `--head-ref` — which a gate-class
+      review of a committed change should be doing anyway.
 
 ## During the gate — read the header
 

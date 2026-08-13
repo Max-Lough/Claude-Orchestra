@@ -2006,8 +2006,22 @@ function main() {
     // Warmup BEFORE the baseline. An engine that imports assets on first open
     // rewrites hundreds of generated files; taking the baseline first turns all
     // of them into evidence that the reviewer mutated the tree.
-    const warm = runWarmup(att.reviewDir);
-    if (warm) PREFLIGHT.push((n > 1 ? 'attempt ' + n + ': ' : '') + warm.note);
+    //
+    // PINNED MODE ONLY, and not as a limitation: the warmup exists because a
+    // FRESH CHECKOUT lacks the generated artifacts a long-lived tree already
+    // has. Running it in LIVE mode would mean the review process writing into
+    // the user's actual working tree — an engine import is not a read — which
+    // is precisely what a review must never do.
+    if (CONFIG.warmupCmd && !CONFIG.headRef) {
+      PREFLIGHT.push(
+        'warmup command NOT run: this is a live-tree review, and the warmup only runs in a ' +
+          'throwaway pinned checkout (it writes, and a review must not write into the tree ' +
+          'it is reviewing). Pass --head-ref to get it.'
+      );
+    } else {
+      const warm = runWarmup(att.reviewDir);
+      if (warm) PREFLIGHT.push((n > 1 ? 'attempt ' + n + ': ' : '') + warm.note);
+    }
 
     // Is anything else still writing the tree? A review of a tree in motion
     // reports on a state that no longer exists. Pinned mode cannot have this
@@ -2188,8 +2202,9 @@ function main() {
     } else if (expected.length) {
       body +=
         '\n\nINTEGRITY NOTE: ' + expected.length + ' path(s) changed while the reviewer ran, ' +
-        'all of them matching the expected build/engine-churn allowlist (e.g. ' +
-        expected.slice(0, 3).map((c) => c.path).join(', ') +
+        'all of them matching the expected build/engine-churn allowlist (' +
+        expected.slice(0, 6).map((c) => c.path).join(', ') +
+        (expected.length > 6 ? ', …' : '') +
         ') — generated artifacts, not source. Not flagged as a reviewer mutation. Tune with ' +
         '"codex": { "integrityIgnore": [...] } / "integrityIgnoreDefaults": false.';
     }

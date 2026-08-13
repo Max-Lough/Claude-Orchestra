@@ -883,6 +883,23 @@ function case16() {
     // integrity finding about it.
     wout.slice(-900)
   );
+  // ...and a warmup is never allowed to run in the user's real working tree:
+  // it writes, and a review must not write into the tree it is reviewing.
+  const fx4b = makeDirtyRepo();
+  const liveWarm = runReview(fx4b, [
+    '--warmup-cmd', 'node -e "require(\'fs\').writeFileSync(\'must-not-exist.txt\',\'x\')"',
+  ]);
+  check(
+    'a warmup is refused in LIVE mode, and says why',
+    /warmup command NOT run: this is a live-tree review/.test(liveWarm.stdout || ''),
+    (liveWarm.stdout || '').slice(0, 900)
+  );
+  check(
+    'the live working tree really was not written to',
+    !fs.existsSync(path.join(fx4b.repo, 'must-not-exist.txt')),
+    'the warmup wrote into the project under review'
+  );
+
   // ...and the same file created by the ENGINE instead is still caught, so the
   // warmup narrows the baseline without blinding the check.
   const fx5 = makeDirtyRepo();

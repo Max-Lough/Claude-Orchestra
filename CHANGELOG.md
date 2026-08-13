@@ -84,7 +84,9 @@ The delta is now compared per path and split: generated build/engine artifacts
 `integrityIgnoreDefaults: false`) become a counted `INTEGRITY NOTE`; anything
 else is the `⚠ INTEGRITY WARNING`, listing the offending paths instead of
 dumping two whole fingerprints. `worktreeWarmupCmd` fixes the class outright by
-taking the baseline *after* an engine's first-open import.
+taking the baseline *after* an engine's first-open import — in the pinned
+throwaway checkout only, because a warmup writes and a live-tree review must
+not write into the tree it is reviewing.
 
 ### A configured scratch root is honoured or refused, never swapped
 
@@ -102,11 +104,11 @@ verdict was printed from a callback deep inside an async chain, so a throw, a
 rejection, or a step that never fired let node drain its event loop and exit 0.
 The suite is now one linear `await` chain, a failure sets `process.exitCode`
 immediately, an `exit` handler enforces it, and a run that recorded no cases at
-all fails on that basis. 92 checks, including new coverage for every item above:
+all fails on that basis. 94 checks, including new coverage for every item above:
 attribution wording for signal-class vs runner-enforced kills, the retry chain
 (fail-then-succeed, and both-fail), the probe, layout detection and helper
-repair from a sibling version, integrity classification and warmup ordering, and
-the mandatory scratch root.
+repair from a sibling version, integrity classification, warmup ordering and its
+refusal to run in a live tree, and the mandatory scratch root.
 
 ### Scope
 

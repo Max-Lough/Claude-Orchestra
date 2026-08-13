@@ -53,7 +53,9 @@ Environment variables override the file; explicit runner flags override both.
     "reviewSandbox": "workspace-write",
     "helpersDir": "C:/tools/codex-helpers",
     "worktreeRoot": "C:/tmp/orchestra-review",
-    "doNotRun": ["godot", "*.exe --headless"]
+    "doNotRun": ["godot", "*.exe --headless"],
+    "worktreeWarmupCmd": "godot --headless --import",
+    "integrityIgnore": ["*.import", ".godot/"]
   }
 }
 ```
@@ -64,8 +66,13 @@ Environment variables override the file; explicit runner flags override both.
 | `reviewModel` / `reviewSandbox` | Same as `ORCHESTRA_REVIEW_MODEL` / `ORCHESTRA_REVIEW_SANDBOX`. |
 | `helpersDir` | A directory of known-good files mirrored into the Codex install directory before each run (see "Helper restore"). |
 | `doNotRun` | Commands the reviewer is forbidden to execute. Injected into the brief as a hard prohibition. |
-| `worktreeRoot` | Where a pinned review materializes its throwaway worktree (default: the OS temp dir). Must be writable and outside the repository. |
+| `worktreeRoot` | Where a pinned review materializes its throwaway worktree (default: the OS temp dir). Must be writable and outside the repository — and if you set it and it is not writable, the review **fails** rather than quietly using somewhere else. |
 | `gitConfigIsolation` | `true` by default; set `false` to let the review use your real global git config. |
+| `reviewRetries` | Extra attempts after a failure that might go differently (default `1`, max `3`). Each retry gets a fresh checkout; the chain reports as one outcome. |
+| `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
+| `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. |
+| `integrityIgnore` / `integrityIgnoreDefaults` | Paths that are expected build/engine churn, added to (or replacing) the built-in list of generated-artifact paths. |
+| `helperSiblings` / `requireHelperSiblings` | Files the Codex install must carry next to its executable (default on Windows: `codex-command-runner.exe`, `codex-resources`). Verified every run; repaired where a known-good copy is locatable; `requireHelperSiblings: true` makes a missing one a hard stop. |
 
 ## Reliability machinery
 
@@ -124,6 +131,60 @@ garbage. The runner samples the working tree twice before launching and refuses
 with `REVIEW_UNAVAILABLE` if it moved in between. Disable with
 `ORCHESTRA_REVIEW_IDLE_MS=0`.
 
+**Failure attribution.** When the engine dies without a verdict, the report says
+*who killed it* — the runner's own timer (node reports its own timeout, so this
+is never a guess), an external signal, or codex choosing to exit — plus how long
+it ran against the cap it was given, and the tail of codex's stderr, stdout, and
+whatever session log it wrote during the attempt. A generic "maybe auth, maybe
+flags, maybe the sandbox" list is printed only for a self-chosen non-zero exit,
+where it is actually a live hypothesis. The field failure it replaces was a bare
+`status 143` under a cause list none of which had ended the process.
+
+**Bounded internal retry.** A signal kill or a zero-output launch gets one
+automatic retry, in a *fresh* scratch directory and a fresh checkout — and the
+whole chain prints as ONE report, headed `ATTEMPT CHAIN: 2 attempts, ONE
+outcome`, with the failed attempt's diagnostics preserved under `ATTEMPT LOG`.
+`REVIEW_UNAVAILABLE` is emitted only when the chain is exhausted, and carries an
+explicit `FINALITY:` line. A runner-enforced timeout is deliberately *not*
+retried: a second full-length timeout costs the same clock to learn the same
+thing. This replaces launcher-improvised retries, which once delivered a
+Director a final-sounding `REVIEW_UNAVAILABLE` and then, later, a real verdict
+for the same review.
+
+**Stage-a auth/exec probe.** Before the real attempt, the runner asks codex to
+echo a single token under a short cap. An unauthenticated install, an
+unavailable model, or a broken binary then fails in seconds instead of after a
+30-minute budget — and the report says the review was never attempted. A probe
+that merely *times out* is a warning, not a refusal: a slow engine is still a
+working engine.
+
+**Install-layout detection and helper-sibling verification.** Codex relocated
+itself from `~/.codex/packages/standalone/current/bin` to
+`%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`, which silently invalidated a repair
+recipe written for the old layout. The runner now names the layout it found in
+the preflight, verifies the helper files that must sit next to the *resolved*
+binary, repairs them from any locatable known-good copy (your `helpersDir`, a
+sibling version directory left by the self-update, or the other known layout),
+and — when it cannot — names exactly which files are missing and exactly where
+it looked.
+
+**Integrity warnings that mean something.** The check exists to catch a reviewer
+editing source. It used to fire on any tree change at all, so a Godot project's
+first import inside a fresh worktree — 180+ `*.import` sidecars rewritten by the
+*engine* — raised the same alarm and dumped two whole fingerprints into the
+verdict. Now the delta is compared per path and split: generated-artifact churn
+(built-in list, extensible via `integrityIgnore`) becomes a counted
+`INTEGRITY NOTE`, and anything else is the `⚠ INTEGRITY WARNING`, listing the
+offending paths. `worktreeWarmupCmd` fixes the class outright by taking the
+baseline *after* the engine's first-open import.
+
+**A configured scratch root is honoured or refused, never swapped.** An
+unwritable `worktreeRoot` that you set fails the review, with the mkdir error
+attached. Falling back to the temp dir would undo the very setting — and
+resurrect the cross-run collisions that setting exists to prevent. Only the
+built-in default is allowed to walk down the candidate list, and it says so
+loudly when it does.
+
 ## Environment reference
 
 | Variable | Default | Purpose |
@@ -132,8 +193,13 @@ with `REVIEW_UNAVAILABLE` if it moved in between. Disable with
 | `ORCHESTRA_REVIEW_SANDBOX` | `workspace-write` | Codex sandbox; `read-only` forbids writes but blocks most test runners. |
 | `ORCHESTRA_REVIEW_TIMEOUT_MS` | `600000` | Wall-clock cap. |
 | `ORCHESTRA_REVIEW_IDLE_MS` | `1500` | Idle-precheck settle window; `0` disables. Live-tree reviews only. |
-| `ORCHESTRA_REVIEW_WORKTREE_ROOT` | OS temp dir | Scratch root for a pinned review's worktree. |
+| `ORCHESTRA_REVIEW_WORKTREE_ROOT` | OS temp dir | Scratch root for a pinned review's worktree. Set-and-unwritable is a hard failure. |
 | `ORCHESTRA_REVIEW_GIT_ISOLATION` | `1` | Isolate git's global config for the review; `0` disables. |
+| `ORCHESTRA_REVIEW_RETRIES` | `1` | Extra attempts after a retryable failure (max 3). |
+| `ORCHESTRA_REVIEW_PROBE` | `1` | Stage-a `codex exec` echo before the real attempt; `0` disables. |
+| `ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS` | `90000` | Cap for that probe. |
+| `ORCHESTRA_REVIEW_WARMUP_CMD` | — | Command run in the checkout before the integrity baseline. |
+| `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `300000` | Cap for the warmup. |
 | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |
 | `CODEX_BIN` | `codex` | Codex executable path. |
@@ -143,3 +209,24 @@ with `REVIEW_UNAVAILABLE` if it moved in between. Disable with
 | `ORCHESTRA_DEEPPLAN_MAX_TOKENS` | `64000` | `max_output_tokens` (includes reasoning). |
 | `OPENAI_API_KEY` | — | Required by deep-plan; one of two auth options for review. |
 | `OPENAI_BASE_URL` | `https://api.openai.com` | Alternate endpoint for deep-plan. |
+
+## What this harness cannot fix (upstream, with mitigations)
+
+Some of what the field reports record is not ours. This pack drives `codex-cli`;
+it does not patch it, and pretending otherwise would mean shipping workarounds
+that quietly rot when upstream changes. Each item below is a fault whose *cause*
+lives in the Codex CLI or the model behind it, paired with what the harness does
+about the symptom.
+
+| Upstream behaviour | Observed | Harness mitigation |
+|---|---|---|
+| A self-update can leave the install without files it needs next to the binary. | 2026-08-08 onward, Windows. | Helper-sibling verification + auto-repair from a locatable known-good copy; `helpersDir` as the user-owned repair kit; the exact missing filenames named when repair is impossible. |
+| The install relocated to a new layout (`%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`), invalidating layout-specific advice. | 2026-08-12, codex-cli ≥ 0.147.0. | Both layouts detected and named in the preflight; repair searches sibling version directories and the other layout. **Unverified upstream:** whether the new layout ships or needs `codex-command-runner.exe` / `codex-resources` at all. The check is therefore a loud warning, not a hard stop, unless you set `requireHelperSiblings`. |
+| `codex exec` exiting 143 (SIGTERM-class) mid-review with no verdict and nothing on stderr. | 2026-08-12 gate, attempt 1. | Full attribution (the runner proves it was not its own timer), plus one automatic retry in a fresh checkout — which is what produced the verdict that round. If the kill originates *inside* codex, only upstream can fix the cause. |
+| The engine explores at length before concluding, so even a trivial diff costs minutes. | Every round. | Timeout floors and honest cap reporting; `doNotRun` / `--no-tests` as hard prohibitions. Not fixable here — it is how the engine works. |
+| Model-side flakiness: an occasional run that produces no final message despite exiting 0. | Occasional. | Classified as a zero-output failure and retried once; reported in the `ATTEMPT LOG` either way, so the lane's real reliability stays visible. |
+
+If you hit one of these, the useful action is an upstream issue with the
+runner's report attached — it now contains the attribution, the elapsed time
+against the cap, the install layout, and the engine's last output, which is most
+of what such a report needs.

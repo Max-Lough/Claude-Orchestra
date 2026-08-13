@@ -13,10 +13,25 @@
  *   STUB_CODEX_SLEEP_MS   busy-wait this long before writing anything (used to
  *                         kill the runner mid-review).
  *   STUB_CODEX_EXIT       exit with this status instead of 0.
- *   STUB_CODEX_TOUCH      relative path to create inside --cd (integrity test).
+ *   STUB_CODEX_TOUCH      relative path(s) to create inside --cd, comma-split
+ *                         (integrity test).
  *   STUB_CODEX_PROBE_PATH repo-relative path the stub tries to read out of the
  *                         checked-out commit — the live-tree failure mode
  *                         ("exists on disk, but not in <sha>").
+ *   STUB_CODEX_SILENT     write no report at all (the zero-output failure).
+ *   STUB_CODEX_STDERR     text to emit on stderr before exiting.
+ *   STUB_CODEX_FAIL_UNTIL_ATTEMPT
+ *                         with STUB_CODEX_ATTEMPT_FILE: fail (per the knobs
+ *                         above) on every invocation up to and including this
+ *                         attempt number, then succeed. This is how the retry
+ *                         chain is tested — the same binary, failing once.
+ *   STUB_CODEX_ATTEMPT_FILE
+ *                         counter file backing the above.
+ *   STUB_CODEX_PROBE_EXIT exit status for a PROBE invocation only (the runner's
+ *                         stage-a echo), leaving real reviews unaffected.
+ *
+ * A probe invocation is recognised by its prompt: the runner asks for a single
+ * token echo. The stub answers it without pretending to review anything.
  */
 'use strict';
 
@@ -42,9 +57,63 @@ try {
   brief = '';
 }
 
+// ------------------------------------------------------------ probe mode
+// The runner's stage-a probe asks for one token and nothing else. Answer it
+// cheaply — a probe that had to run the whole reporting path below would not be
+// testing what the real probe tests.
+if (/ORCHESTRA_PROBE_OK/.test(brief)) {
+  const probeExit = parseInt(process.env.STUB_CODEX_PROBE_EXIT || '', 10);
+  if (Number.isFinite(probeExit) && probeExit !== 0) {
+    process.stderr.write('stub: simulated probe failure\n');
+    process.exit(probeExit);
+  }
+  if (outFile) {
+    try {
+      fs.writeFileSync(outFile, 'ORCHESTRA_PROBE_OK\n', 'utf8');
+    } catch (_) {
+      /* fall through to stdout */
+    }
+  }
+  process.stdout.write('ORCHESTRA_PROBE_OK\n');
+  process.exit(0);
+}
+
 const sleepMs = parseInt(process.env.STUB_CODEX_SLEEP_MS || '', 10);
 if (Number.isFinite(sleepMs) && sleepMs > 0) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleepMs);
+}
+
+// ------------------------------------------------------- attempt bookkeeping
+// Which attempt is this? The runner gives each attempt its own scratch
+// directory but the same executable, so the stub counts invocations itself.
+let attempt = 1;
+const counterFile = process.env.STUB_CODEX_ATTEMPT_FILE || '';
+if (counterFile) {
+  try {
+    attempt = (parseInt(fs.readFileSync(counterFile, 'utf8').trim(), 10) || 0) + 1;
+  } catch (_) {
+    attempt = 1;
+  }
+  try {
+    fs.writeFileSync(counterFile, String(attempt), 'utf8');
+  } catch (_) {
+    /* best effort — the test asserts on the report, which still says which */
+  }
+}
+
+const failUntil = parseInt(process.env.STUB_CODEX_FAIL_UNTIL_ATTEMPT || '', 10);
+const failingThisAttempt = Number.isFinite(failUntil) && attempt <= failUntil;
+
+if (process.env.STUB_CODEX_STDERR) {
+  process.stderr.write(process.env.STUB_CODEX_STDERR + '\n');
+}
+
+// A failure that produces NOTHING — the field's exit-143 shape — is the case
+// the retry chain exists for.
+if (failingThisAttempt || process.env.STUB_CODEX_SILENT) {
+  process.stderr.write('stub: attempt ' + attempt + ' producing no verdict\n');
+  const failExit = parseInt(process.env.STUB_CODEX_EXIT || '', 10);
+  process.exit(Number.isFinite(failExit) ? failExit : 143);
 }
 
 function git(args) {
@@ -73,9 +142,11 @@ const ignoreProbe = git(['check-ignore', '--no-index', '-q', 'some/probe/path.tx
 const base = /BASE REF: (\S+)/.exec(brief);
 const diff = base ? git(['diff', '--stat', base[1] + '..HEAD']) : null;
 
-if (process.env.STUB_CODEX_TOUCH) {
+for (const rel of (process.env.STUB_CODEX_TOUCH || '').split(',').map((s) => s.trim()).filter(Boolean)) {
   try {
-    fs.writeFileSync(path.join(cd, process.env.STUB_CODEX_TOUCH), 'stub was here\n');
+    const dest = path.join(cd, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, 'stub was here\n');
   } catch (_) {
     /* best effort */
   }
@@ -86,6 +157,7 @@ const report = [
   '',
   'STUB REPORT',
   'CWD: ' + cd,
+  'ATTEMPT: ' + attempt,
   'MODEL: ' + (model || '(none)'),
   'HEAD: ' + head.stdout,
   'DIRTY_COUNT: ' + dirtyLines.length,

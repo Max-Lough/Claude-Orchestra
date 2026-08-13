@@ -95,7 +95,16 @@
  *       "idleMs": 1500,
  *       "worktreeRoot": "/path/to/writable/scratch",
  *       "gitConfigIsolation": true,
- *       "doNotRun": ["godot"]
+ *       "doNotRun": ["godot"],
+ *       "reviewRetries": 1,
+ *       "authProbe": true,
+ *       "probeTimeoutMs": 90000,
+ *       "worktreeWarmupCmd": "godot --headless --import",
+ *       "worktreeWarmupTimeoutMs": 300000,
+ *       "integrityIgnore": ["*.import", ".godot/"],
+ *       "integrityIgnoreDefaults": true,
+ *       "requireHelperSiblings": false,
+ *       "helperSiblings": ["codex-command-runner.exe", "codex-resources"]
  *   } }
  *
  *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin (e.g. gpt-5-codex). Unset →
@@ -124,7 +133,35 @@
  *   ORCHESTRA_REVIEW_WORKTREE_ROOT
  *                               Parent directory for the pinned-review scratch
  *                               worktree (default: the OS temp dir). Must be
- *                               writable by this process; never the repo.
+ *                               writable by this process; never the repo. A root
+ *                               you SET and this process cannot write is a hard
+ *                               failure, not a silent fall back to the temp dir —
+ *                               the fallback is what the setting exists to avoid.
+ *   ORCHESTRA_REVIEW_RETRIES    Extra attempts after a failed one (default 1, max
+ *                               3). A retry costs a fresh scratch directory and a
+ *                               fresh checkout, and only happens when the failure
+ *                               could plausibly differ next time (a signal kill,
+ *                               an engine that produced nothing) — never after a
+ *                               timeout the runner itself enforced, and never
+ *                               after a missing binary. The whole chain reports
+ *                               as ONE outcome; REVIEW_UNAVAILABLE is emitted
+ *                               only when the chain is exhausted.
+ *   ORCHESTRA_REVIEW_PROBE      1 (default) runs a cheap `codex exec` echo before
+ *                               the real attempt, so an unauthenticated or
+ *                               broken install fails in seconds instead of after
+ *                               a full review budget. 0 disables.
+ *   ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS
+ *                               Cap for that probe (default 90000). A probe that
+ *                               merely times out is a warning, not a refusal — a
+ *                               slow engine is still a working engine.
+ *   ORCHESTRA_REVIEW_WARMUP_CMD Shell command run inside the review checkout
+ *                               BEFORE the integrity baseline is taken (default
+ *                               none). Engines that import assets on first open
+ *                               (Godot writes 180+ `*.import` sidecars) otherwise
+ *                               make every first review look like the reviewer
+ *                               mutated the tree.
+ *   ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS
+ *                               Cap for the warmup (default 300000).
  *   ORCHESTRA_REVIEW_GIT_ISOLATION
  *                               1 (default) runs every git the review touches —
  *                               the runner's own and the engine's — against a
@@ -165,6 +202,41 @@ const { spawnSync } = require('child_process');
 // flag or the built-in default.
 const INERT_FLOOR_MS = 600000;
 
+// A retry is a bet that the same configuration behaves differently the second
+// time. That bet is worth one round — a signal kill, a launch that produced
+// nothing — and is worthless past that: an install that is broken is broken
+// every time, and each attempt costs a full review budget. Bounded here rather
+// than left to a launcher, because a launcher improvising retries is how one
+// gate produced two "final" reports for one review.
+const MAX_RETRIES = 3;
+
+// Files the reviewer is expected to churn while doing its job. A reviewer that
+// runs the suite writes caches, build outputs, and coverage; an engine that
+// opens a project imports its assets. None of that is the thing the integrity
+// check exists to catch (a reviewer EDITING SOURCE), and flagging it makes the
+// warning meaningless on exactly the projects that need it most — a Godot
+// review rewrote 180+ `*.import` sidecars on first import and cried wolf.
+// Extend per project with "integrityIgnore"; drop the list entirely with
+// "integrityIgnoreDefaults": false.
+const DEFAULT_INTEGRITY_IGNORE = [
+  // engines / asset importers
+  '.godot/', '*.import', '.import/', '.mono/', '.godot-*/', 'Library/', 'Temp/',
+  // language + package caches
+  'node_modules/', '.venv/', 'venv/', '__pycache__/', '*.pyc', '.pytest_cache/',
+  '.mypy_cache/', '.ruff_cache/', '.tox/', '.gradle/', '.m2/', '.cargo/',
+  // build outputs and test artifacts
+  'target/', 'build/', 'dist/', 'out/', 'obj/', '.next/', '.nuxt/', '.turbo/',
+  '.cache/', 'coverage/', '.coverage', '.nyc_output/', '*.log', '*.tmp',
+];
+
+// Files a Codex install needs NEXT TO its executable. A self-update can drop
+// them, and the failure is far downstream of the cause: the binary launches,
+// then dies without a verdict. Windows-only by observation — this is where the
+// field failures happened, and naming files that do not exist on a platform
+// would turn preflight into noise.
+const DEFAULT_HELPER_SIBLINGS =
+  process.platform === 'win32' ? ['codex-command-runner.exe', 'codex-resources'] : [];
+
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
 const CONFIG = {
@@ -182,7 +254,21 @@ const CONFIG = {
   baseRef: '',
   headRef: '',
   worktreeRoot: (process.env.ORCHESTRA_REVIEW_WORKTREE_ROOT || '').trim(),
+  // Where the scratch root came from. A root the USER named and this process
+  // cannot write is a hard failure; the built-in default falling back to $HOME
+  // is merely a loud note. Silently swapping a configured root for the temp dir
+  // resurrects the cross-run brief collisions worktreeRoot exists to prevent.
+  worktreeRootSource: process.env.ORCHESTRA_REVIEW_WORKTREE_ROOT ? 'env' : 'default',
   gitIsolation: process.env.ORCHESTRA_REVIEW_GIT_ISOLATION !== '0',
+  retries: Math.min(MAX_RETRIES, intOr(process.env.ORCHESTRA_REVIEW_RETRIES, 1)),
+  probe: process.env.ORCHESTRA_REVIEW_PROBE !== '0',
+  probeTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS, 90000),
+  warmupCmd: (process.env.ORCHESTRA_REVIEW_WARMUP_CMD || '').trim(),
+  warmupTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS, 300000),
+  integrityIgnore: [],
+  integrityIgnoreDefaults: true,
+  helperSiblings: DEFAULT_HELPER_SIBLINGS.slice(),
+  requireHelperSiblings: false,
   // The directory the engine is actually pointed at: the project itself in LIVE
   // mode, the pinned worktree in PINNED mode. Header-visible either way, so a
   // verdict always records which tree produced it.
@@ -209,6 +295,10 @@ function parseArgs(argv) {
     else if (a === '--base-ref') out.baseRef = argv[++i];
     else if (a === '--head-ref') out.headRef = argv[++i];
     else if (a === '--worktree-root') out.worktreeRoot = argv[++i];
+    else if (a === '--retries') out.retries = argv[++i];
+    else if (a === '--no-retry') out.retries = '0';
+    else if (a === '--no-probe') out.noProbe = true;
+    else if (a === '--warmup-cmd') out.warmupCmd = argv[++i];
     else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
@@ -232,6 +322,91 @@ function tail(text, n) {
 
 function stringList(value) {
   return Array.isArray(value) ? value.filter((s) => typeof s === 'string' && s.trim()) : [];
+}
+
+// Indent a block so it reads as detail under a heading rather than as prose
+// competing with it.
+function indent(text, pad) {
+  if (!text) return '';
+  return String(text)
+    .replace(/\s+$/, '')
+    .split('\n')
+    .map((l) => pad + l)
+    .join('\n');
+}
+
+function ms(n) {
+  return n >= 10000 ? Math.round(n / 1000) + 's' : n + 'ms';
+}
+
+// POSIX signal numbers we can meet in an exit status. Windows has no signals,
+// but a process terminated there frequently still surfaces as 128+N, because
+// the thing that died was a POSIX-shaped child (a shell, a node, a rust binary
+// that re-raised) — which is exactly how the field's "status 143" arrived.
+const SIGNAL_NAMES = {
+  1: 'SIGHUP', 2: 'SIGINT', 3: 'SIGQUIT', 4: 'SIGILL', 6: 'SIGABRT', 8: 'SIGFPE',
+  9: 'SIGKILL', 11: 'SIGSEGV', 13: 'SIGPIPE', 14: 'SIGALRM', 15: 'SIGTERM',
+  24: 'SIGXCPU', 25: 'SIGXFSZ', 31: 'SIGSYS',
+};
+
+// A tiny glob: `*` matches within a segment, `**` across segments, a trailing
+// `/` matches the directory and everything under it. Enough for the integrity
+// allowlist, which names artifact paths, not arbitrary patterns — and small
+// enough to be obviously correct, which a full glob implementation here would
+// not be.
+function globToRegExp(pattern) {
+  const dirOnly = pattern.endsWith('/');
+  const p = dirOnly ? pattern.slice(0, -1) : pattern;
+  let re = '';
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === '*') {
+      if (p[i + 1] === '*') {
+        re += '.*';
+        i++;
+      } else {
+        re += '[^/]*';
+      }
+    } else if ('\\^$.|?+()[]{}'.includes(c)) {
+      re += '\\' + c;
+    } else {
+      re += c;
+    }
+  }
+  // Anchored at either the whole path or any path segment boundary, so
+  // `.godot/` matches `.godot/x` and `sub/.godot/x` alike.
+  return new RegExp('(^|/)' + re + (dirOnly ? '(/|$)' : '$'));
+}
+
+function matchesAny(rel, patterns) {
+  const norm = String(rel).replace(/\\/g, '/');
+  for (const pat of patterns) {
+    try {
+      if (globToRegExp(pat).test(norm)) return true;
+    } catch (_) {
+      /* a pattern that will not compile simply matches nothing */
+    }
+  }
+  return false;
+}
+
+// Copy a file or a whole directory. Used by the helper repair, where the thing
+// that went missing may be either (`codex-command-runner.exe` is a file,
+// `codex-resources` a directory).
+function copyInto(src, dest) {
+  const st = fs.statSync(src);
+  if (st.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src)) copyInto(path.join(src, entry), path.join(dest, entry));
+    return;
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+  try {
+    fs.chmodSync(dest, st.mode);
+  } catch (_) {
+    /* mode is best-effort (and meaningless on Windows) */
+  }
 }
 
 // Blocking sleep — this runner is synchronous end to end, and the idle
@@ -268,12 +443,15 @@ function loadVerification(projectCfg) {
 
 const SCRATCH_PREFIX = 'orchestra-review-';
 
-// One scratch directory per run, holding the verdict file, the isolated git
-// config, and (in pinned mode) the review worktree. Torn down on every exit.
+// One scratch directory per run, holding the isolated git config and one
+// subdirectory per ATTEMPT (its verdict file and, in pinned mode, its own
+// worktree). Torn down on every exit. Attempts get separate directories so a
+// retry is a genuinely fresh checkout — whatever the first attempt did to its
+// tree, including whatever a half-dead engine left behind, is not inherited.
 const SCRATCH = {
   dir: '',
   gitConfigFile: '',
-  worktreeDir: '',
+  worktrees: [],
   repoTop: '',
   torndown: false,
 };
@@ -293,18 +471,50 @@ function scratchRootCandidates(configured) {
 // Create the run's scratch directory in the first candidate root that actually
 // accepts a mkdir. Probing by creating is the only honest test — a stat says
 // nothing about whether this process may write there.
-function makeScratchDir(configured) {
+//
+// FIX: the fallback used to be silent-ish and unconditional, which quietly
+// undid the setting it fell back from. A project sets worktreeRoot for a
+// REASON — most often that the OS temp dir is shared, small, or on another
+// volume — and a review that ignores it lands its briefs and worktrees exactly
+// where the configuration said not to. So: a root the user NAMED is mandatory
+// (its failure is the review's failure, with the mkdir error attached), and
+// only the built-in default is allowed to walk down the candidate list, loudly.
+function makeScratchDir(configured, configuredSource) {
+  const userSet = !!configured && configuredSource !== 'default';
   const tried = [];
-  for (const root of scratchRootCandidates(configured)) {
+  const roots = userSet ? [configured] : scratchRootCandidates(configured);
+  for (const root of roots) {
     try {
       fs.mkdirSync(root, { recursive: true });
       const dir = fs.mkdtempSync(path.join(root, SCRATCH_PREFIX));
-      return { dir, note: tried.length ? 'scratch root fell back to ' + root : '' };
+      return {
+        dir,
+        note: tried.length
+          ? 'scratch root ' + tried[0].split(' (')[0] + ' was unusable — FELL BACK to ' + root +
+            '. Pinned worktrees and briefs are landing somewhere other than configured.'
+          : '',
+      };
     } catch (e) {
       tried.push(root + ' (' + ((e && e.message) || e) + ')');
     }
   }
-  return { dir: '', note: '', error: 'no writable scratch root — tried: ' + tried.join('; ') };
+  return {
+    dir: '',
+    note: '',
+    error:
+      (userSet
+        ? 'the configured scratch root (' + configuredSource + ') is not writable by this ' +
+          'process, and a configured root is never silently swapped for another — ' +
+          'tried: '
+        : 'no writable scratch root — tried: ') + tried.join('; '),
+  };
+}
+
+// One directory per attempt, under the run's scratch root.
+function makeAttemptDir(n) {
+  const dir = path.join(SCRATCH.dir, 'attempt-' + n);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 // Git's global config is read on EVERY invocation, and a sandboxed process
@@ -401,8 +611,19 @@ function sweepStaleScratch(root, repoTop) {
         if (e && e.code === 'EPERM') continue; // exists, someone else's — leave it
       }
     }
-    const wt = path.join(dir, 'wt');
-    if (repoTop && fs.existsSync(wt)) runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
+    // Worktrees live at <scratch>/attempt-<n>/wt; older runs put a single one
+    // at <scratch>/wt, and an orphan from either shape has to be reclaimable.
+    const stale = [path.join(dir, 'wt')];
+    try {
+      for (const sub of fs.readdirSync(dir)) {
+        if (sub.startsWith('attempt-')) stale.push(path.join(dir, sub, 'wt'));
+      }
+    } catch (_) {
+      /* unreadable — the prune below still tidies git's records */
+    }
+    for (const wt of stale) {
+      if (repoTop && fs.existsSync(wt)) runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
+    }
     try {
       fs.rmSync(dir, { recursive: true, force: true });
       reclaimed++;
@@ -418,12 +639,12 @@ function sweepStaleScratch(root, repoTop) {
 // repository's object database, so the base ref is reachable from inside it and
 // `git diff <base>..HEAD` resolves exactly as it would in the main checkout —
 // minus every file the session created after the commit.
-function createPinnedWorktree(repoTop, headRef) {
+function createPinnedWorktree(repoTop, headRef, attemptDir) {
   const resolved = gitOut(['-C', repoTop, 'rev-parse', '--verify', headRef + '^{commit}']);
   if (!resolved) {
     return { error: 'cannot resolve --head-ref "' + headRef + '" to a commit in ' + repoTop };
   }
-  const dir = path.join(SCRATCH.dir, 'wt');
+  const dir = path.join(attemptDir, 'wt');
   const add = runGit(['-C', repoTop, 'worktree', 'add', '--detach', dir, resolved]);
   if (add.status !== 0) {
     return {
@@ -432,7 +653,7 @@ function createPinnedWorktree(repoTop, headRef) {
         (tail(add.stderr || '', 10) || 'exit ' + add.status),
     };
   }
-  SCRATCH.worktreeDir = dir;
+  SCRATCH.worktrees.push(dir);
   SCRATCH.repoTop = repoTop;
   return { dir, sha: resolved };
 }
@@ -444,8 +665,10 @@ function createPinnedWorktree(repoTop, headRef) {
 function teardownScratch() {
   if (SCRATCH.torndown) return;
   SCRATCH.torndown = true;
-  if (SCRATCH.worktreeDir && SCRATCH.repoTop) {
-    runGit(['-C', SCRATCH.repoTop, 'worktree', 'remove', '--force', SCRATCH.worktreeDir]);
+  if (SCRATCH.repoTop) {
+    for (const wt of SCRATCH.worktrees) {
+      runGit(['-C', SCRATCH.repoTop, 'worktree', 'remove', '--force', wt]);
+    }
   }
   if (SCRATCH.dir) {
     try {
@@ -518,6 +741,121 @@ function resolveCodexBin(bin) {
   } catch (_) {
     return { path: located, real: false, note: '' };
   }
+}
+
+// Codex has moved its install layout at least once, and the repair recipes
+// written for one layout are not automatically right for the next. Naming the
+// layout in the preflight is what makes a future move visible in the FIRST
+// report that hits it, instead of discovered a round later from a puzzling
+// failure.
+//
+// Known layouts:
+//   appdata-versioned  <LOCALAPPDATA>/OpenAI/Codex/bin/<hash>/codex.exe
+//                      (observed 2026-08-12, codex-cli >= 0.147.0)
+//   codex-standalone   <home>/.codex/packages/standalone/<version|current>/bin/codex
+//                      (the layout the documented helper repair was derived on)
+// Anything else is 'unknown', which is a fact worth printing rather than an
+// error: package managers, Homebrew, and hand-built installs are all legitimate.
+function detectInstallLayout(binPath) {
+  const p = String(binPath || '').replace(/\\/g, '/');
+  const lower = p.toLowerCase();
+  if (/\/openai\/codex\/bin\/[^/]+\/[^/]+$/.test(lower)) {
+    return { id: 'appdata-versioned', binRoot: path.dirname(path.dirname(p)) };
+  }
+  if (/\/\.codex\/packages\/standalone\/[^/]+\/bin\/[^/]+$/.test(lower)) {
+    return { id: 'codex-standalone', binRoot: path.dirname(path.dirname(path.dirname(p))) };
+  }
+  return { id: 'unknown', binRoot: '' };
+}
+
+// Directories that might hold a known-good copy of a helper the install is
+// missing: the user's repair kit, sibling versions of the SAME layout (a
+// self-update leaves the previous version's directory behind, complete), and
+// the other known layout entirely.
+function helperSourceCandidates(installDir, layout) {
+  const dirs = [];
+  if (CONFIG.helpersDir) dirs.push(CONFIG.helpersDir);
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
+
+  // Sibling version directories under the same bin root, newest first — the
+  // self-update case, where the previous install is still intact next door.
+  if (layout.binRoot) {
+    try {
+      const subs = fs
+        .readdirSync(layout.binRoot, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => path.join(layout.binRoot, e.name))
+        .filter((d) => path.resolve(d) !== path.resolve(installDir));
+      subs.sort((a, b) => {
+        try {
+          return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
+        } catch (_) {
+          return 0;
+        }
+      });
+      for (const d of subs) dirs.push(d, path.join(d, 'bin'));
+    } catch (_) {
+      /* no siblings readable — the list below still has candidates */
+    }
+  }
+
+  // The other known layout, whichever one we are not in.
+  if (codexHome) {
+    const standalone = path.join(codexHome, 'packages', 'standalone');
+    dirs.push(path.join(standalone, 'current', 'bin'));
+    try {
+      for (const e of fs.readdirSync(standalone, { withFileTypes: true })) {
+        if (e.isDirectory()) dirs.push(path.join(standalone, e.name, 'bin'));
+      }
+    } catch (_) {
+      /* not this layout */
+    }
+    dirs.push(path.join(codexHome, 'bin'));
+  }
+  return dirs.filter((d, i) => d && dirs.indexOf(d) === i);
+}
+
+// FIX: the documented repair for a self-update that strips helper files was
+// "copy them back next to the resolved binary" — a recipe a human had to
+// remember, derived on a layout Codex has since abandoned, and verified by
+// nothing. Verify it instead: check the files are actually there, repair from
+// any locatable known-good copy, and when they cannot be found say exactly what
+// is missing and exactly where we looked. The alternative is the observed
+// failure: the binary launches, produces no verdict, and the report guesses.
+function verifyHelperSiblings(installDir, layout) {
+  const wanted = CONFIG.helperSiblings;
+  if (!wanted.length || !installDir) return { checked: false, missing: [], restored: [], searched: [] };
+  const missing = wanted.filter((name) => !fs.existsSync(path.join(installDir, name)));
+  if (!missing.length) return { checked: true, missing: [], restored: [], searched: [] };
+
+  const searched = helperSourceCandidates(installDir, layout);
+  const restored = [];
+  const problems = [];
+  const stillMissing = [];
+  for (const name of missing) {
+    const src = searched
+      .map((d) => path.join(d, name))
+      .find((p) => {
+        try {
+          return fs.existsSync(p);
+        } catch (_) {
+          return false;
+        }
+      });
+    if (!src) {
+      stillMissing.push(name);
+      continue;
+    }
+    try {
+      copyInto(src, path.join(installDir, name));
+      restored.push(name + ' (from ' + path.dirname(src) + ')');
+    } catch (e) {
+      stillMissing.push(name);
+      problems.push(name + ': ' + ((e && e.message) || e));
+    }
+  }
+  return { checked: true, missing: stillMissing, restored, searched, problems };
 }
 
 // FIX: a Codex self-update can silently remove files a working install needs.
@@ -617,22 +955,54 @@ function porcelainPath(line) {
 // modified leaves `git status` byte-identical, so a tree being actively
 // written would read as idle. Annotate each dirty path with its size and
 // mtime, which moves on every write.
+// Returns { text, map } — the same information twice: `text` for the idle
+// precheck, which only asks "did anything move?", and `map` (path → annotated
+// line) for the integrity comparison, which has to say WHICH paths moved so
+// engine churn can be told from a reviewer editing source.
 function treeFingerprint(dir) {
   const r = runGit(['-C', dir, 'status', '--porcelain=v1', '--untracked-files=all']);
   if (r.error || r.status !== 0) return null;
   const lines = (r.stdout || '').split('\n').filter((l) => l.trim());
-  return lines
-    .map((line) => {
-      const rel = porcelainPath(line);
-      if (!rel) return line;
+  const map = new Map();
+  const annotated = lines.map((line) => {
+    const rel = porcelainPath(line);
+    let out = line;
+    if (rel) {
       try {
         const st = fs.statSync(path.join(dir, rel));
-        return line + ' [' + st.size + '@' + st.mtimeMs + ']';
+        out = line + ' [' + st.size + '@' + st.mtimeMs + ']';
       } catch (_) {
-        return line; // deleted, unreadable, or quoted — the line still counts
+        /* deleted, unreadable, or quoted — the line still counts */
       }
-    })
-    .join('\n');
+    }
+    map.set(rel || line, out);
+    return out;
+  });
+  return { text: annotated.join('\n'), map };
+}
+
+// Which paths differ between two fingerprints, split into the ones a project
+// has declared expected churn and the ones it has not. The split is the whole
+// point: an integrity warning that fires on 180 asset-import sidecars teaches
+// the reader to ignore integrity warnings.
+function fingerprintDelta(before, after, ignore) {
+  const changed = [];
+  const keys = new Set([...before.map.keys(), ...after.map.keys()]);
+  for (const key of keys) {
+    const b = before.map.get(key);
+    const a = after.map.get(key);
+    if (b === a) continue;
+    changed.push({
+      path: key,
+      how: b === undefined ? 'appeared' : a === undefined ? 'reverted' : 'changed',
+      line: (a || b || '').trim(),
+    });
+  }
+  changed.sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+  return {
+    suspect: changed.filter((c) => !matchesAny(c.path, ignore)),
+    expected: changed.filter((c) => matchesAny(c.path, ignore)),
+  };
 }
 
 // ------------------------------------------------------------------ brief
@@ -835,6 +1205,336 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
   ].join('\n');
 }
 
+// --------------------------------------------------- engine attempts (A + B)
+//
+// Everything in this section exists because of one field report: `codex exec`
+// exited 143 with no verdict, and the review said only that the cause might be
+// auth, or flags, or the sandbox, or a missing install file. None of those was
+// checkable from the report, and one of them — "the runner's own timeout killed
+// it" — the runner could have answered with certainty and did not. A failure
+// report that lists causes it did not test is not a diagnosis; it is a shrug
+// with citations.
+
+// Who ended the child, and may a second attempt plausibly go differently?
+//
+// The distinction that matters most is the cheapest one to get right: node
+// sets error.code ETIMEDOUT when ITS OWN timer fired, so the runner never has
+// to guess about its own kill. Everything else is either a signal from outside
+// (someone else killed it) or codex deciding to stop (its own exit status),
+// and those are very different bugs.
+function classifyExit(run, elapsedMs) {
+  const cap = CONFIG.timeoutMs;
+  const ran =
+    'ran for ' + ms(elapsedMs) + ' of the ' + cap + 'ms cap' +
+    (cap > 0 ? ' (' + Math.round((elapsedMs / cap) * 100) + '%)' : '');
+
+  if (run.error && run.error.code === 'ENOENT') {
+    return {
+      kind: 'not-found',
+      headline: "Codex CLI not found (tried '" + (CONFIG.resolvedBin || CONFIG.bin) + "')",
+      killedBy: 'nothing ran — the executable could not be launched',
+      ran,
+      retryable: false,
+    };
+  }
+  if (run.error && run.error.code === 'ETIMEDOUT') {
+    return {
+      kind: 'runner-timeout',
+      headline:
+        'review timed out after ' + cap + 'ms (cap from: ' + CONFIG.timeoutSource + ')',
+      killedBy:
+        'THIS RUNNER — its own ' + cap + 'ms timer fired and terminated codex. ' +
+        'Nothing about codex, your auth, or your flags is implicated by this exit.',
+      ran,
+      retryable: false, // a second full timeout costs the same clock to learn nothing
+    };
+  }
+  if (run.signal) {
+    return {
+      kind: 'signal',
+      headline: 'codex was killed by ' + run.signal + ' before producing a verdict',
+      killedBy:
+        'an EXTERNAL signal (' + run.signal + ') — NOT this runner: its ' + cap +
+        'ms timer had not fired when the child died.',
+      ran,
+      retryable: true,
+    };
+  }
+  const st = run.status;
+  if (typeof st === 'number' && st > 128 && st < 192) {
+    const num = st - 128;
+    const name = SIGNAL_NAMES[num] || 'signal ' + num;
+    return {
+      kind: 'signal-status',
+      headline: 'codex exited with status ' + st + ' (' + name + '-class: 128+' + num + ')',
+      killedBy:
+        'NOT this runner — its ' + cap + 'ms timer had not fired. A 128+N status means ' +
+        'something inside the codex process tree was terminated by ' + name + ': an ' +
+        'external kill (a task manager, an antivirus, a CI reaper, a parent shell ' +
+        'timing out), or codex terminating one of its own children and propagating ' +
+        'the status.',
+      ran,
+      retryable: true,
+    };
+  }
+  if (run.error) {
+    return {
+      kind: 'spawn-error',
+      headline: 'failed to launch Codex: ' + String(run.error.message || run.error),
+      killedBy: 'the launch itself failed (' + (run.error.code || 'no code') + ')',
+      ran,
+      retryable: true,
+    };
+  }
+  if (st !== 0) {
+    return {
+      kind: 'exit',
+      headline: 'Codex exited with status ' + st,
+      killedBy:
+        'nobody — codex chose to exit with status ' + st + ' while this runner\'s ' + cap +
+        'ms timer was still running.',
+      ran,
+      retryable: false, // a deliberate non-zero exit reproduces; the probe covers auth
+    };
+  }
+  return { kind: 'ok', headline: '', killedBy: '', ran, retryable: false };
+}
+
+// Last bytes of a file, for logs that may be enormous.
+function tailFile(file, bytes, lines) {
+  try {
+    const size = fs.statSync(file).size;
+    const start = Math.max(0, size - bytes);
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(Math.min(bytes, size));
+      fs.readSync(fd, buf, 0, buf.length, start);
+      return tail(buf.toString('utf8'), lines);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (_) {
+    return '';
+  }
+}
+
+// Codex keeps its own session record, and after a kill it is often the only
+// place the engine's last words survive — stderr may be empty precisely
+// because the process never got to flush. Name the files it wrote during THIS
+// attempt (mtime inside the attempt window), newest first.
+function recentSessionLogs(sinceMs, limit) {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
+  if (!codexHome) return [];
+  const found = [];
+  const walk = (dir, depth) => {
+    if (depth > 4 || found.length > 400) return;
+    let list;
+    try {
+      list = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+    for (const e of list) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        walk(p, depth + 1);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      try {
+        const st = fs.statSync(p);
+        if (st.mtimeMs >= sinceMs) found.push({ p, m: st.mtimeMs });
+      } catch (_) {
+        /* raced with a rotation — skip it */
+      }
+    }
+  };
+  for (const sub of ['sessions', 'log', 'logs']) walk(path.join(codexHome, sub), 0);
+  found.sort((a, b) => b.m - a.m);
+  return found.slice(0, limit || 2).map((f) => f.p);
+}
+
+// The per-attempt failure block. This is the thing the field report was missing:
+// who killed it, how long it ran against the cap it was given, and what the
+// engine actually said before it died.
+function attemptDiagnostics(att) {
+  const lines = [
+    'ATTEMPT ' + att.n + ' of ' + att.of + ' — ' + att.class.headline,
+    '  killed by:  ' + att.class.killedBy,
+    '  elapsed:    ' + att.class.ran,
+    '  checkout:   ' + att.reviewDirLabel + ' (' + att.reviewDir + ')',
+  ];
+  const err = tail(att.stderr || '', 25);
+  lines.push('  codex stderr (last 25 lines):');
+  lines.push(err ? indent(err, '    ') : '    (codex wrote nothing to stderr)');
+  const out = tail(att.stdout || '', 10);
+  if (out) {
+    lines.push('  codex stdout (last 10 lines):');
+    lines.push(indent(out, '    '));
+  }
+  for (const log of att.sessionLogs || []) {
+    lines.push('  codex session log written during this attempt: ' + log);
+    const t = tailFile(log, 8192, 6);
+    if (t) lines.push(indent(t, '    '));
+  }
+  // A cause list is a legitimate thing to print ONLY when the runner genuinely
+  // does not know. When the runner sent the kill itself, listing "maybe auth,
+  // maybe flags, maybe the sandbox" is false: none of them ended this process.
+  if (att.class.kind === 'exit') {
+    lines.push(
+      '  candidate causes for a self-chosen non-zero exit: not authenticated (set ' +
+        'OPENAI_API_KEY or run `codex login`), an unsupported flag on this Codex ' +
+        'version (check `codex exec --help`, adjust ORCHESTRA_REVIEW_ARGS), a sandbox ' +
+        'restriction, or an install missing files a self-update removed (see the ' +
+        'helper-sibling preflight above).'
+    );
+  }
+  if (att.class.kind === 'runner-timeout') {
+    lines.push(
+      '  raise the cap where it takes effect — "codex": { "reviewTimeoutMs": <ms> } in ' +
+        '.claude/orchestra.json, ORCHESTRA_REVIEW_TIMEOUT_MS, or --timeout-ms. A timeout ' +
+        'named only in a work order\'s prose does nothing.'
+    );
+    if (CONFIG.forbidden.length === 0) {
+      lines.push(
+        '  if the reviewer burned the clock on a suite it did not need, pass --no-tests ' +
+          'or list the commands under "codex": { "doNotRun": [...] } — a prohibition, ' +
+          'not a request.'
+      );
+    }
+    if (!CONFIG.headRef) {
+      lines.push(
+        '  if the change is committed, pass --head-ref <sha>: reviewing a DIRTY tree ' +
+          'against a pinned SHA is a known clock-burner.'
+      );
+    }
+    if (RESOLVED_TIER === 'inert') {
+      lines.push(
+        '  an inert tier does not make the engine faster — it still explores before it ' +
+          'concludes. Budget minutes.'
+      );
+    }
+  }
+  return lines.join('\n');
+}
+
+// A project whose engine imports assets on first open rewrites hundreds of
+// files the moment anything looks at a fresh checkout — and every one of them
+// lands between the integrity baseline and the integrity check unless the
+// warmup happens FIRST. Running it here, before the baseline, is what keeps
+// the integrity warning about the reviewer rather than about the engine.
+function runWarmup(dir) {
+  if (!CONFIG.warmupCmd) return null;
+  const started = Date.now();
+  const r = spawnSync(CONFIG.warmupCmd, {
+    cwd: dir,
+    shell: true,
+    encoding: 'utf8',
+    timeout: CONFIG.warmupTimeoutMs,
+    maxBuffer: 16 * 1024 * 1024,
+    env: childEnv(),
+  });
+  const elapsed = Date.now() - started;
+  const timedOut = !!(r.error && r.error.code === 'ETIMEDOUT');
+  return {
+    ok: !r.error && r.status === 0,
+    timedOut,
+    status: r.status,
+    elapsed,
+    note:
+      'warmup `' + CONFIG.warmupCmd + '` ' +
+      (timedOut
+        ? 'hit its ' + CONFIG.warmupTimeoutMs + 'ms cap'
+        : r.error
+        ? 'could not run (' + ((r.error && r.error.message) || r.error) + ')'
+        : r.status === 0
+        ? 'completed in ' + ms(elapsed)
+        : 'exited ' + r.status + ' after ' + ms(elapsed)) +
+      ' — integrity baseline taken after it' +
+      (r.status === 0 || timedOut ? '' : '; its output: ' + (tail(r.stderr || r.stdout || '', 3) || '(none)')),
+  };
+}
+
+// STAGE-A PROBE. Field evidence 7: this check lived in Director briefs and
+// memory checklists — "before the real review, run a cheap `codex exec` echo to
+// confirm auth works". A checklist item every caller must remember is a runner
+// feature that has not been written yet. Here it is: a few seconds and a few
+// tokens spent to find out whether the engine can run AT ALL, before committing
+// a thirty-minute budget to finding out the hard way.
+//
+// Deliberately asymmetric: a probe that FAILS is decisive (the engine could not
+// complete a trivial task, so it cannot complete a review), but a probe that
+// merely times out is not — a slow engine is still a working engine, and
+// refusing on that basis would turn the safety net into a new failure mode.
+const PROBE_TOKEN = 'ORCHESTRA_PROBE_OK';
+function runAuthProbe(dir) {
+  const outFile = path.join(SCRATCH.dir, 'probe.txt');
+  // The probe runs under the SAME sandbox the review will use, on purpose: a
+  // sandbox setting the engine cannot start under is exactly the kind of
+  // failure this check should surface, and a probe that passed under different
+  // conditions from the review would be answering a different question.
+  const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
+  if (CONFIG.model) args.push('--model', CONFIG.model);
+  args.push('-');
+  const started = Date.now();
+  const r = spawnSync(CONFIG.resolvedBin || CONFIG.bin, args, {
+    cwd: dir,
+    input:
+      'Reply with exactly this token and nothing else: ' + PROBE_TOKEN + '\n' +
+      'Do not read files, run commands, or explain.',
+    encoding: 'utf8',
+    timeout: CONFIG.probeTimeoutMs,
+    maxBuffer: 8 * 1024 * 1024,
+    env: childEnv(),
+  });
+  const elapsed = Date.now() - started;
+  const said = (readFileOr(outFile, '') || r.stdout || '').trim();
+  if (r.error && r.error.code === 'ETIMEDOUT') {
+    return {
+      ok: true,
+      warn:
+        'auth/exec probe did not finish inside ' + CONFIG.probeTimeoutMs + 'ms — proceeding ' +
+        'anyway (a slow engine is still a working engine; raise probeTimeoutMs, or set ' +
+        '"authProbe": false, if this is normal here)',
+    };
+  }
+  if (r.error && r.error.code === 'ENOENT') {
+    return {
+      ok: false,
+      reason: "Codex CLI not found (tried '" + (CONFIG.resolvedBin || CONFIG.bin) + "')",
+      detail:
+        'Install the Codex CLI and put it on PATH, or set CODEX_BIN to its path. ' +
+        'See https://developers.openai.com/codex/',
+    };
+  }
+  if (r.error || r.status !== 0 || !said) {
+    const cls = classifyExit(r, elapsed);
+    return {
+      ok: false,
+      reason: 'the Codex engine failed a trivial echo before the review was attempted',
+      detail:
+        'A ' + CONFIG.probeTimeoutMs + 'ms stage-a probe asked codex to echo one token and ' +
+        'it did not.\n' +
+        '  outcome:   ' + (cls.kind === 'ok' ? 'exited 0 but produced no output' : cls.headline) + '\n' +
+        '  elapsed:   ' + ms(elapsed) + '\n' +
+        '  model:     ' + (CONFIG.model || 'codex default') + '\n' +
+        '  stderr:\n' + (indent(tail(r.stderr || '', 20), '    ') || '    (nothing)') + '\n' +
+        'Most often this is authentication (set OPENAI_API_KEY or run `codex login`), a ' +
+        'model id this account cannot use, or an install a self-update broke. The review ' +
+        'was NOT attempted, so no review budget was spent finding this out. Disable the ' +
+        'probe with "codex": { "authProbe": false } or ORCHESTRA_REVIEW_PROBE=0 if it is ' +
+        'wrong about your setup.',
+    };
+  }
+  return {
+    ok: true,
+    note:
+      'auth/exec probe: ok in ' + ms(elapsed) +
+      (said.includes(PROBE_TOKEN) ? '' : ' (engine answered, though not with the exact token)'),
+  };
+}
+
 // ------------------------------------------------------------------ output
 // Resolved review tier, stamped into the header so every verdict is auditable
 // for the depth it was requested at. Set once in main(); 'full' before that
@@ -843,6 +1543,9 @@ let RESOLVED_TIER = 'full';
 // Preflight notes (bin resolution, helper restore) — surfaced in the header so
 // a silently-repaired install is visible rather than mysterious.
 const PREFLIGHT = [];
+// Every attempt this run made, in order. The chain is reported as ONE outcome:
+// a retry is an implementation detail of "the review ran", not a second review.
+const ATTEMPTS = [];
 
 // The settings a run actually applied — the audit trail, identical on both the
 // success and the failure path, because a failed run's settings are exactly
@@ -853,10 +1556,30 @@ function settingsBits() {
     'sandbox: ' + CONFIG.sandbox,
     'tier: ' + RESOLVED_TIER,
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
+    // The launcher needs to know the retry policy to know that it has none:
+    // attempts are the runner's business, and this line says how many it may
+    // spend before the outcome it reports is final.
+    'attempts: up to ' + (1 + Math.max(0, CONFIG.retries)),
   ];
   if (CONFIG.forbidden.length) bits.push('prohibited commands: ' + CONFIG.forbidden.length);
   if (CONFIG.reviewDirLabel) bits.push('checkout: ' + CONFIG.reviewDirLabel);
   return bits;
+}
+
+// FIX: the launcher retried by hand, and the Director received two reports for
+// one review — a final-sounding REVIEW_UNAVAILABLE, then, later, a real verdict
+// for the same change. Retries are the runner's business now, and the header
+// states the whole chain in one line so a relayed report can never read as a
+// second, separate review.
+function attemptChainLine() {
+  if (ATTEMPTS.length < 2) return '';
+  const parts = ATTEMPTS.map((a) =>
+    'attempt ' + a.n + ': ' + (a.body ? 'produced this verdict' : a.class.headline)
+  );
+  return (
+    '\nATTEMPT CHAIN: ' + ATTEMPTS.length + ' attempts, ONE outcome — ' + parts.join('; ') +
+    '. (This is a single review. Do not report it as more than one.)'
+  );
 }
 
 function headerTail() {
@@ -865,6 +1588,7 @@ function headerTail() {
     out += '\nCODEX BINARY: ' + CONFIG.resolvedBin;
   }
   for (const note of PREFLIGHT) out += '\nPREFLIGHT: ' + note;
+  out += attemptChainLine();
   return out;
 }
 
@@ -889,11 +1613,27 @@ function unavailableHeader() {
   );
 }
 
+// The diagnostics of every attempt that failed, kept even when a later attempt
+// succeeded: "it worked on the retry" is a fact about the lane's reliability
+// that the next person debugging it needs, and dropping it is how a flaky
+// engine looks healthy.
+function attemptLog() {
+  const failed = ATTEMPTS.filter((a) => !a.body);
+  if (!failed.length) return '';
+  return (
+    '\n\n--- ATTEMPT LOG (diagnostics for the attempt(s) that produced nothing) ---\n' +
+    failed.map(attemptDiagnostics).join('\n\n')
+  );
+}
+
 function printReview(body) {
-  process.stdout.write(engineHeader() + '\n\n' + body.replace(/\s+$/, '') + '\n');
+  process.stdout.write(
+    engineHeader() + '\n\n' + body.replace(/\s+$/, '') + attemptLog() + '\n'
+  );
 }
 
 function printUnavailable(reason, detail) {
+  const tried = ATTEMPTS.length;
   const block = [
     'VERDICT: REVIEW_UNAVAILABLE',
     '',
@@ -903,6 +1643,15 @@ function printUnavailable(reason, detail) {
     'DETAIL',
     detail ? detail.split('\n').map((l) => '  ' + l).join('\n') : '  (none)',
     '',
+    // FIX: a REVIEW_UNAVAILABLE that a launcher then retried into a real
+    // verdict produced two "final" reports for one review, and the books were
+    // closed on the lane in between. The runner owns retries now, so this block
+    // is only ever printed when the chain is exhausted — and says so, in the
+    // report, where the reader is.
+    'FINALITY: this runner made ' + (tried || 'no') + ' engine attempt' +
+      (tried === 1 ? '' : 's') + ' and will make no more. This is the ONE, FINAL',
+    'outcome of this review; there is no later verdict coming from this run.',
+    '',
     'The cross-vendor reviewer did not run, and nothing below this line came',
     'from an OpenAI model. Do NOT treat this change as reviewed, and do not',
     'attribute any later verdict to the cross-vendor engine on the strength of',
@@ -910,7 +1659,7 @@ function printUnavailable(reason, detail) {
     'and notes the cross-vendor pass did not run (retry once conditions are',
     'fixed, if the user wants the cross-vendor opinion).',
   ].join('\n');
-  process.stdout.write(unavailableHeader() + '\n\n' + block + '\n');
+  process.stdout.write(unavailableHeader() + '\n\n' + block + attemptLog() + '\n');
 }
 
 // ------------------------------------------------------------------ main
@@ -921,11 +1670,18 @@ function main() {
       'Usage: node orchestra-review.js --work-order <file> --executor-report <file>\n' +
         '         [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]...\n' +
         '         [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
+        '         [--retries <n>|--no-retry] [--no-probe] [--warmup-cmd <cmd>]\n' +
         '\n' +
         '  --head-ref pins the review to a commit: the runner checks it out in a\n' +
         '  throwaway worktree outside the repo and reviews THAT, so the session\'s\n' +
         '  uncommitted files never enter the engine\'s view. Use it whenever the\n' +
-        '  change under review is committed.\n'
+        '  change under review is committed.\n' +
+        '\n' +
+        '  Retries are the RUNNER\'s job (default: 1 extra attempt, in a fresh\n' +
+        '  checkout, only for failures that could plausibly differ next time).\n' +
+        '  The whole chain reports as one outcome, and REVIEW_UNAVAILABLE is\n' +
+        '  printed only when it is exhausted — so a launcher must never relaunch\n' +
+        '  this runner to "try again".\n'
     );
     return;
   }
@@ -957,11 +1713,39 @@ function main() {
     CONFIG.helpersDir = codexCfg.helpersDir.trim();
   }
   if (!process.env.ORCHESTRA_REVIEW_WORKTREE_ROOT && typeof codexCfg.worktreeRoot === 'string') {
-    CONFIG.worktreeRoot = codexCfg.worktreeRoot.trim();
+    if (codexCfg.worktreeRoot.trim()) {
+      CONFIG.worktreeRoot = codexCfg.worktreeRoot.trim();
+      CONFIG.worktreeRootSource = 'orchestra.json';
+    }
   }
   if (!process.env.ORCHESTRA_REVIEW_GIT_ISOLATION && codexCfg.gitConfigIsolation != null) {
     CONFIG.gitIsolation = codexCfg.gitConfigIsolation !== false;
   }
+  if (!process.env.ORCHESTRA_REVIEW_RETRIES && codexCfg.reviewRetries != null) {
+    CONFIG.retries = Math.min(MAX_RETRIES, intOr(codexCfg.reviewRetries, CONFIG.retries));
+  }
+  if (!process.env.ORCHESTRA_REVIEW_PROBE && codexCfg.authProbe != null) {
+    CONFIG.probe = codexCfg.authProbe !== false;
+  }
+  if (!process.env.ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS && codexCfg.probeTimeoutMs != null) {
+    CONFIG.probeTimeoutMs = intOr(codexCfg.probeTimeoutMs, CONFIG.probeTimeoutMs);
+  }
+  if (!process.env.ORCHESTRA_REVIEW_WARMUP_CMD && typeof codexCfg.worktreeWarmupCmd === 'string') {
+    CONFIG.warmupCmd = codexCfg.worktreeWarmupCmd.trim();
+  }
+  if (
+    !process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS &&
+    codexCfg.worktreeWarmupTimeoutMs != null
+  ) {
+    CONFIG.warmupTimeoutMs = intOr(codexCfg.worktreeWarmupTimeoutMs, CONFIG.warmupTimeoutMs);
+  }
+  if (codexCfg.integrityIgnoreDefaults === false) CONFIG.integrityIgnoreDefaults = false;
+  CONFIG.integrityIgnore = (CONFIG.integrityIgnoreDefaults ? DEFAULT_INTEGRITY_IGNORE : [])
+    .concat(stringList(codexCfg.integrityIgnore).map((s) => s.trim()));
+  if (Array.isArray(codexCfg.helperSiblings)) {
+    CONFIG.helperSiblings = stringList(codexCfg.helperSiblings).map((s) => s.trim());
+  }
+  if (codexCfg.requireHelperSiblings === true) CONFIG.requireHelperSiblings = true;
 
   // FIX: the timeout has to be a VALUE, not a sentence in a work order. The
   // launcher passes --timeout-ms; the header reports which layer supplied the
@@ -976,7 +1760,11 @@ function main() {
   }
   if (args.worktreeRoot && args.worktreeRoot.trim()) {
     CONFIG.worktreeRoot = args.worktreeRoot.trim();
+    CONFIG.worktreeRootSource = 'flag';
   }
+  if (args.retries != null) CONFIG.retries = Math.min(MAX_RETRIES, intOr(args.retries, CONFIG.retries));
+  if (args.noProbe) CONFIG.probe = false;
+  if (args.warmupCmd && args.warmupCmd.trim()) CONFIG.warmupCmd = args.warmupCmd.trim();
   CONFIG.baseRef = (args.baseRef || '').trim();
   CONFIG.headRef = (args.headRef || '').trim();
 
@@ -1038,6 +1826,23 @@ function main() {
   CONFIG.resolvedBin = resolved.path;
   if (resolved.note) PREFLIGHT.push(resolved.note);
   const installDir = resolved.real ? path.dirname(resolved.path) : '';
+
+  // Which install layout are we looking at? Codex has relocated itself once
+  // already (from <home>/.codex/packages/standalone/current/bin to
+  // <LOCALAPPDATA>/OpenAI/Codex/bin/<hash>), and the repair recipe written for
+  // the old one was never verified against the new one. Print the layout so the
+  // NEXT relocation is visible immediately instead of inferred from a failure.
+  const layout = detectInstallLayout(resolved.path);
+  if (installDir) {
+    PREFLIGHT.push(
+      'codex install layout: ' + layout.id + ' (' + installDir + ')' +
+        (layout.id === 'unknown'
+          ? ' — not one of the two layouts this runner knows; helper-sibling repair can ' +
+            'only use ORCHESTRA_CODEX_HELPERS here'
+          : '')
+    );
+  }
+
   if (CONFIG.helpersDir) {
     const restore = restoreHelpers(CONFIG.helpersDir, installDir);
     if (restore.restored.length) {
@@ -1049,11 +1854,41 @@ function main() {
     if (restore.note) PREFLIGHT.push(restore.note);
   }
 
+  // Helper siblings: the files a self-update strips, verified next to the
+  // RESOLVED binary rather than assumed present.
+  const siblings = verifyHelperSiblings(installDir, layout);
+  if (siblings.restored.length) {
+    PREFLIGHT.push(
+      'helper siblings repaired next to the resolved binary: ' + siblings.restored.join(', ')
+    );
+  }
+  for (const p of siblings.problems || []) PREFLIGHT.push('helper repair problem — ' + p);
+  if (siblings.missing.length) {
+    const detail =
+      'MISSING FROM THE CODEX INSTALL: ' + siblings.missing.join(', ') + ' (expected in ' +
+      installDir + '). A Codex self-update removes these, and the install then launches ' +
+      'but dies without a verdict. Searched for known-good copies in: ' +
+      (siblings.searched.length ? siblings.searched.join('; ') : '(nowhere — no candidates)') +
+      '. Fix by copying them there by hand, or point "codex": { "helpersDir": "<dir>" } at ' +
+      'a directory holding known-good copies.';
+    if (CONFIG.requireHelperSiblings) {
+      printUnavailable('the Codex install is missing required helper files', detail);
+      return;
+    }
+    PREFLIGHT.push(
+      detail +
+        ' Proceeding anyway — whether this layout needs them is unverified upstream; set ' +
+        '"requireHelperSiblings": true to make it a hard stop.'
+    );
+  } else if (siblings.checked) {
+    PREFLIGHT.push('helper siblings present: ' + CONFIG.helperSiblings.join(', '));
+  }
+
   // --- scratch: one directory per run, outside the repo, holding the verdict
   // file, the isolated git config, and (pinned mode) the review worktree.
   // Created before anything else runs git, because the isolation has to be in
   // place for the FIRST git call, not the second.
-  const scratch = makeScratchDir(CONFIG.worktreeRoot);
+  const scratch = makeScratchDir(CONFIG.worktreeRoot, CONFIG.worktreeRootSource);
   if (!scratch.dir) {
     printUnavailable(
       'no writable scratch directory',
@@ -1101,62 +1936,9 @@ function main() {
     PREFLIGHT.push('reclaimed ' + reclaimed + ' abandoned review worktree(s) from a prior run');
   }
 
-  // --- which tree does the engine read?
-  CONFIG.reviewDir = CONFIG.projectDir;
-  CONFIG.reviewDirLabel = 'live working tree';
-  if (CONFIG.headRef) {
-    if (!repoTop) {
-      printUnavailable(
-        'cannot pin the review to ' + CONFIG.headRef,
-        CONFIG.projectDir + ' is not inside a git repository (or git is unavailable), ' +
-          'so there is no commit to check out. Drop --head-ref to review the working ' +
-          'tree as-is.'
-      );
-      return;
-    }
-    const wt = createPinnedWorktree(repoTop, CONFIG.headRef);
-    if (wt.error) {
-      printUnavailable('cannot pin the review to ' + CONFIG.headRef, wt.error);
-      return;
-    }
-    // Keep the engine at the same position within the repo the caller was in,
-    // so relative paths in the work order still mean what they meant.
-    const rel = path.relative(repoTop, path.resolve(CONFIG.projectDir));
-    const target = rel && !rel.startsWith('..') ? path.join(wt.dir, rel) : wt.dir;
-    CONFIG.reviewDir = fs.existsSync(target) ? target : wt.dir;
-    CONFIG.reviewDirLabel = 'pinned worktree @ ' + wt.sha.slice(0, 12);
-    PREFLIGHT.push(
-      'pinned review: checked out ' + wt.sha.slice(0, 12) + ' into a throwaway worktree (' +
-        CONFIG.reviewDir + '); the session\'s uncommitted files are not visible to the engine'
-    );
-  }
-
-  // --- preflight: is anything else still writing the tree? A review of a tree
-  // in motion produces findings about a state that no longer exists. Pinned
-  // mode cannot have this problem — the worktree is a fresh checkout of an
-  // immutable commit — so the check (and its settle delay) is skipped there.
-  const before = treeFingerprint(CONFIG.reviewDir);
-  if (!CONFIG.headRef && CONFIG.idleMs > 0 && before !== null) {
-    sleepSync(CONFIG.idleMs);
-    const settled = treeFingerprint(CONFIG.reviewDir);
-    if (settled !== null && settled !== before) {
-      printUnavailable(
-        'working tree is not idle',
-        'The tree changed during a ' + CONFIG.idleMs + 'ms settle window, so something ' +
-          'else is still writing it (a running executor, a build, a watch task). A ' +
-          'review of a moving tree reports on a state that no longer exists.\n' +
-          'Wait for the other work to finish and re-run this review. If the change is ' +
-          'already committed, pass --head-ref <sha> instead: the review then runs in a ' +
-          'clean checkout of that commit and the live tree cannot affect it.\n' +
-          'To disable the check, set ORCHESTRA_REVIEW_IDLE_MS=0 (or "codex": ' +
-          '{ "idleMs": 0 } in .claude/orchestra.json).\n' +
-          'git status delta:\n--- first sample ---\n' + before.trim() +
-          '\n--- second sample ---\n' + settled.trim()
-      );
-      return;
-    }
-  }
-
+  // --- the brief is identical for every attempt: same intent, same claim, same
+  // rules. A retry that changed the brief would be a different review wearing
+  // the same report.
   const brief = buildBrief(
     workOrder,
     executorReport,
@@ -1166,90 +1948,203 @@ function main() {
     { baseRef: CONFIG.baseRef, headRef: CONFIG.headRef, pinned: !!CONFIG.headRef }
   );
 
-  // Where Codex writes its final message. Read this rather than parsing the
-  // streamed session on stdout.
-  const lastMsgFile = path.join(SCRATCH.dir, 'verdict.txt');
-
-  const codexArgs = ['exec', '--sandbox', CONFIG.sandbox, '--cd', CONFIG.reviewDir];
-  if (CONFIG.model) codexArgs.push('--model', CONFIG.model);
-  codexArgs.push('--output-last-message', lastMsgFile);
-  if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
-  codexArgs.push('-'); // read the prompt from stdin
-
-  const run = spawnSync(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
-    cwd: CONFIG.reviewDir,
-    input: brief,
-    encoding: 'utf8',
-    timeout: CONFIG.timeoutMs,
-    maxBuffer: 64 * 1024 * 1024,
-    // The engine runs far more git than this runner does, so the isolated
-    // config has to reach IT, not just us — otherwise every command it issues
-    // still warns about a global config path the sandbox cannot read.
-    env: childEnv(),
-  });
-
-  // Engine could not be launched at all (usually: codex not installed / not on
-  // PATH). This is the "you chose the OpenAI reviewer but Codex isn't here" case.
-  if (run.error && run.error.code === 'ENOENT') {
-    printUnavailable(
-      "Codex CLI not found (tried '" + (CONFIG.resolvedBin || CONFIG.bin) + "')",
-      'Install the Codex CLI and put it on PATH, or set CODEX_BIN to its path. ' +
-        'See https://developers.openai.com/codex/'
-    );
-    return;
+  // --- stage-a probe: can this install run codex at all? Cheap, and it runs
+  // before any worktree is materialized, so a broken engine costs seconds
+  // rather than the review budget. (Runs once for the whole chain — a retry
+  // does not re-probe: the answer cannot have changed.)
+  if (CONFIG.probe) {
+    const probe = runAuthProbe(CONFIG.projectDir);
+    if (!probe.ok) {
+      printUnavailable(probe.reason, probe.detail);
+      return;
+    }
+    if (probe.note) PREFLIGHT.push(probe.note);
+    if (probe.warn) PREFLIGHT.push(probe.warn);
   }
-  if (run.error && (run.error.code === 'ETIMEDOUT' || run.signal === 'SIGTERM')) {
+
+  // --- ONE attempt: its own scratch directory, its own checkout, its own
+  // engine run. Returns either a body (the verdict), a classification of why
+  // there is none, or a `fatal` — a setup failure no retry can fix.
+  function runAttempt(n, of) {
+    const attemptDir = makeAttemptDir(n);
+    const att = { n, of, reviewDir: CONFIG.projectDir, reviewDirLabel: 'live working tree' };
+
+    // Which tree does the engine read? A retry gets a BRAND-NEW checkout, not
+    // the previous attempt's: whatever a half-dead engine left behind in there
+    // is exactly what a retry must not inherit.
+    if (CONFIG.headRef) {
+      if (!repoTop) {
+        att.fatal = {
+          reason: 'cannot pin the review to ' + CONFIG.headRef,
+          detail:
+            CONFIG.projectDir + ' is not inside a git repository (or git is unavailable), ' +
+            'so there is no commit to check out. Drop --head-ref to review the working ' +
+            'tree as-is.',
+        };
+        return att;
+      }
+      const wt = createPinnedWorktree(repoTop, CONFIG.headRef, attemptDir);
+      if (wt.error) {
+        att.fatal = { reason: 'cannot pin the review to ' + CONFIG.headRef, detail: wt.error };
+        return att;
+      }
+      // Keep the engine at the same position within the repo the caller was in,
+      // so relative paths in the work order still mean what they meant.
+      const rel = path.relative(repoTop, path.resolve(CONFIG.projectDir));
+      const target = rel && !rel.startsWith('..') ? path.join(wt.dir, rel) : wt.dir;
+      att.reviewDir = fs.existsSync(target) ? target : wt.dir;
+      att.reviewDirLabel = 'pinned worktree @ ' + wt.sha.slice(0, 12);
+      PREFLIGHT.push(
+        (n === 1 ? 'pinned review: checked out ' : 'attempt ' + n + ': re-checked out ') +
+          wt.sha.slice(0, 12) + ' into a throwaway worktree (' + att.reviewDir +
+          '); the session\'s uncommitted files are not visible to the engine'
+      );
+    }
+    CONFIG.reviewDir = att.reviewDir;
+    CONFIG.reviewDirLabel = att.reviewDirLabel;
+
+    // Warmup BEFORE the baseline. An engine that imports assets on first open
+    // rewrites hundreds of generated files; taking the baseline first turns all
+    // of them into evidence that the reviewer mutated the tree.
+    const warm = runWarmup(att.reviewDir);
+    if (warm) PREFLIGHT.push((n > 1 ? 'attempt ' + n + ': ' : '') + warm.note);
+
+    // Is anything else still writing the tree? A review of a tree in motion
+    // reports on a state that no longer exists. Pinned mode cannot have this
+    // problem — the worktree is a fresh checkout of an immutable commit — so
+    // the check (and its settle delay) is skipped there.
+    const before = treeFingerprint(att.reviewDir);
+    if (!CONFIG.headRef && CONFIG.idleMs > 0 && before !== null) {
+      sleepSync(CONFIG.idleMs);
+      const settled = treeFingerprint(att.reviewDir);
+      if (settled !== null && settled.text !== before.text) {
+        att.fatal = {
+          reason: 'working tree is not idle',
+          detail:
+            'The tree changed during a ' + CONFIG.idleMs + 'ms settle window, so something ' +
+            'else is still writing it (a running executor, a build, a watch task). A ' +
+            'review of a moving tree reports on a state that no longer exists.\n' +
+            'Wait for the other work to finish and re-run this review. If the change is ' +
+            'already committed, pass --head-ref <sha> instead: the review then runs in a ' +
+            'clean checkout of that commit and the live tree cannot affect it.\n' +
+            'To disable the check, set ORCHESTRA_REVIEW_IDLE_MS=0 (or "codex": ' +
+            '{ "idleMs": 0 } in .claude/orchestra.json).\n' +
+            'git status delta:\n--- first sample ---\n' + before.text.trim() +
+            '\n--- second sample ---\n' + settled.text.trim(),
+        };
+        return att;
+      }
+    }
+
+    // Where Codex writes its final message. Read this rather than parsing the
+    // streamed session on stdout.
+    const lastMsgFile = path.join(attemptDir, 'verdict.txt');
+    const codexArgs = ['exec', '--sandbox', CONFIG.sandbox, '--cd', att.reviewDir];
+    if (CONFIG.model) codexArgs.push('--model', CONFIG.model);
+    codexArgs.push('--output-last-message', lastMsgFile);
+    if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+    codexArgs.push('-'); // read the prompt from stdin
+
+    const startedAt = Date.now();
+    const run = spawnSync(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
+      cwd: att.reviewDir,
+      input: brief,
+      encoding: 'utf8',
+      timeout: CONFIG.timeoutMs,
+      maxBuffer: 64 * 1024 * 1024,
+      // The engine runs far more git than this runner does, so the isolated
+      // config has to reach IT, not just us — otherwise every command it issues
+      // still warns about a global config path the sandbox cannot read.
+      env: childEnv(),
+    });
+    const elapsed = Date.now() - startedAt;
+
+    att.elapsed = elapsed;
+    att.stderr = run.stderr || '';
+    att.stdout = run.stdout || '';
+    att.class = classifyExit(run, elapsed);
+
+    // Prefer the clean final-message file; fall back to stdout if the flag was
+    // a no-op on this version. A body is a verdict even when the exit status
+    // was non-zero — the engine's output is the product, not its exit code.
+    const verdict = readFileOr(lastMsgFile, '').trim();
+    att.body = verdict || (att.class.kind === 'ok' ? tail(att.stdout, 400).trim() : '');
+    if (att.body && att.class.kind !== 'ok') {
+      // The engine's output is the product; a bad exit status after it has
+      // already written a verdict is worth recording, not worth discarding a
+      // real review over.
+      PREFLIGHT.push(
+        'attempt ' + n + ': ' + att.class.headline + ', but a verdict had already been ' +
+          'written — using it (' + att.class.ran + ')'
+      );
+    }
+    if (!att.body && att.class.kind === 'ok') {
+      // Exited cleanly and said nothing: nothing to report and nothing to
+      // explain, which is precisely the shape a retry sometimes fixes.
+      att.class = {
+        kind: 'empty',
+        headline: 'codex exited 0 but produced no output',
+        killedBy: 'nobody — codex exited cleanly, having written no final message',
+        ran: att.class.ran,
+        retryable: true,
+      };
+    }
+
+    // Only a failed attempt needs the engine's own session record, and finding
+    // it means walking the Codex home — not work a healthy review should pay
+    // for.
+    if (!att.body) att.sessionLogs = recentSessionLogs(startedAt - 1000, 1);
+
+    // Integrity: did the reviewer, which is read-only in intent, change the
+    // tree it was reading? Compare per PATH so engine churn can be told from
+    // the thing this check exists to catch.
+    if (att.body && before !== null) {
+      const after = treeFingerprint(att.reviewDir);
+      if (after !== null) att.integrity = fingerprintDelta(before, after, CONFIG.integrityIgnore);
+    }
+    return att;
+  }
+
+  const maxAttempts = 1 + Math.max(0, CONFIG.retries);
+  let outcome = null;
+  for (let n = 1; n <= maxAttempts; n++) {
+    const att = runAttempt(n, maxAttempts);
+    // A setup failure is not an engine attempt: it never reached codex, no
+    // retry changes it, and it must not be counted in the chain.
+    if (att.fatal) {
+      printUnavailable(att.fatal.reason, att.fatal.detail);
+      return;
+    }
+    ATTEMPTS.push(att);
+    outcome = att;
+    if (att.body) break;
+    if (!att.class.retryable) break;
+    if (n === maxAttempts) break;
+    // The retry is announced where the reader will see it, so "it worked the
+    // second time" is never mistaken for "it worked".
+    PREFLIGHT.push(
+      'attempt ' + n + ' produced no verdict (' + att.class.headline + ') — retrying once in ' +
+        'a fresh scratch directory; this remains ONE review with ONE outcome'
+    );
+  }
+
+  if (!outcome || !outcome.body) {
+    // The chain is exhausted. Only NOW may a REVIEW_UNAVAILABLE be printed:
+    // emitting one while an attempt is still possible is what handed a Director
+    // two "final" reports for a single review.
+    const last = outcome ? outcome.class : null;
     printUnavailable(
-      'review timed out after ' + CONFIG.timeoutMs + 'ms (cap from: ' + CONFIG.timeoutSource + ')',
-      'Raise the cap where it actually takes effect — "codex": { "reviewTimeoutMs": ' +
-        '<ms> } in .claude/orchestra.json, ORCHESTRA_REVIEW_TIMEOUT_MS, or --timeout-ms. ' +
-        'A timeout named only in the work order\'s prose does nothing.\n' +
-        'If the reviewer is burning the clock running a suite it did not need to run, ' +
-        'pass --no-tests (or list the offending commands under "codex": { "doNotRun": ' +
-        '[...] }), which forbids it outright instead of asking politely.\n' +
-        (CONFIG.headRef
-          ? ''
-          : 'If the change is committed, pass --head-ref <sha>: the review then runs in ' +
-            'a clean checkout of that commit. Reviewing a DIRTY tree against a pinned ' +
-            'SHA is a known clock-burner — the engine keeps hitting files that exist on ' +
-            'disk but not in the commit, and tries to reconcile a contradiction that has ' +
-            'nothing to do with the change.\n') +
-        (RESOLVED_TIER === 'inert'
-          ? 'An inert tier does not make the engine faster — it still explores before it ' +
-            'concludes. Budget minutes.\n'
+      last ? last.headline : 'the review engine produced nothing',
+      'No attempt produced a verdict. Per-attempt attribution — who killed the engine, how ' +
+        'long it ran against its cap, and what it last wrote — is in the ATTEMPT LOG below.' +
+        (last && last.kind === 'runner-timeout' && CONFIG.retries > 0
+          ? '\nThis failure was NOT retried: the runner\'s own timer ended it, and a second ' +
+            'full-length timeout costs the same clock to learn the same thing.'
           : '') +
-        tail(run.stderr || '', 20)
-    );
-    return;
-  }
-  if (run.error) {
-    printUnavailable('failed to launch Codex', String(run.error.message || run.error));
-    return;
-  }
-
-  const verdict = readFileOr(lastMsgFile, '').trim();
-
-  if (run.status !== 0 && !verdict) {
-    // Non-zero exit with nothing usable — most often auth (no OPENAI_API_KEY
-    // and no stored `codex login`) or a rejected flag on this Codex version.
-    printUnavailable(
-      'Codex exited with status ' + run.status,
-      'Common causes: not authenticated (set OPENAI_API_KEY or run `codex ' +
-        'login`), an unsupported flag on this Codex version (check `codex exec ' +
-        '--help` and adjust ORCHESTRA_REVIEW_ARGS), a sandbox restriction, or an ' +
-        'install missing files a self-update removed (see ORCHESTRA_CODEX_HELPERS).\n' +
-        'stderr:\n' + tail(run.stderr || '', 25)
-    );
-    return;
-  }
-
-  // Prefer the clean final-message file; fall back to stdout if the flag was a
-  // no-op on this version.
-  let body = verdict || tail(run.stdout || '', 400).trim();
-  if (!body) {
-    printUnavailable(
-      'Codex produced no output',
-      'Exit status ' + run.status + '. stderr:\n' + tail(run.stderr || '', 25)
+        (last && last.kind === 'not-found'
+          ? '\nInstall the Codex CLI and put it on PATH, or set CODEX_BIN to its path. ' +
+            'See https://developers.openai.com/codex/'
+          : '')
     );
     return;
   }
@@ -1260,22 +2155,44 @@ function main() {
   // the drift is confined to a throwaway worktree — the project is untouched by
   // construction — but a reviewer that writes is still a reviewer that writes,
   // and the Director should hear about it.
-  const after = treeFingerprint(CONFIG.reviewDir);
-  if (before !== null && after !== null && before !== after) {
-    body +=
-      '\n\n⚠ INTEGRITY WARNING: the ' +
-      (CONFIG.headRef ? 'pinned review worktree' : 'working tree') +
-      ' changed while the reviewer ran. The reviewer is supposed to be read-only;' +
-      (CONFIG.headRef
-        ? ' the project itself was not exposed to this (the review ran in a throwaway ' +
-          'checkout, now removed), but treat findings that depend on tree state with ' +
-          'suspicion, and'
-        : ' inspect the tree before trusting it, and') +
-      ' consider ORCHESTRA_REVIEW_SANDBOX=read-only.\n' +
-      'git status delta (before → after):\n--- before ---\n' +
-      before.trim() +
-      '\n--- after ---\n' +
-      after.trim();
+  //
+  // FIX: the check used to compare whole fingerprints, so a Godot project's
+  // first import inside a fresh worktree — 180+ `*.import` sidecars rewritten
+  // by the ENGINE, before the reviewer had done anything — raised the same
+  // alarm as a reviewer editing source, and dumped both fingerprints into the
+  // verdict. A warning that fires on every first run of a whole class of
+  // project is a warning nobody reads.
+  let body = outcome.body;
+  if (outcome.integrity) {
+    const { suspect, expected } = outcome.integrity;
+    if (suspect.length) {
+      const shown = suspect.slice(0, 40);
+      body +=
+        '\n\n⚠ INTEGRITY WARNING: the ' +
+        (CONFIG.headRef ? 'pinned review worktree' : 'working tree') +
+        ' changed while the reviewer ran, in ' + suspect.length + ' path(s) that are NOT ' +
+        'expected build/engine churn. The reviewer is supposed to be read-only;' +
+        (CONFIG.headRef
+          ? ' the project itself was not exposed to this (the review ran in a throwaway ' +
+            'checkout, now removed), but treat findings that depend on tree state with ' +
+            'suspicion, and'
+          : ' inspect the tree before trusting it, and') +
+        ' consider ORCHESTRA_REVIEW_SANDBOX=read-only.\n' +
+        'Changed paths (' + shown.length + ' of ' + suspect.length + '):\n' +
+        shown.map((c) => '  ' + c.how + ': ' + c.path).join('\n') +
+        (suspect.length > shown.length ? '\n  …and ' + (suspect.length - shown.length) + ' more' : '') +
+        (expected.length
+          ? '\n' + expected.length + ' further changed path(s) matched the expected-churn ' +
+            'allowlist and are not counted above.'
+          : '');
+    } else if (expected.length) {
+      body +=
+        '\n\nINTEGRITY NOTE: ' + expected.length + ' path(s) changed while the reviewer ran, ' +
+        'all of them matching the expected build/engine-churn allowlist (e.g. ' +
+        expected.slice(0, 3).map((c) => c.path).join(', ') +
+        ') — generated artifacts, not source. Not flagged as a reviewer mutation. Tune with ' +
+        '"codex": { "integrityIgnore": [...] } / "integrityIgnoreDefaults": false.';
+    }
   }
 
   printReview(body);

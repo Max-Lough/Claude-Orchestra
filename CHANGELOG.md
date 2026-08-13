@@ -9,6 +9,113 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.4.0 — cross-vendor review lane: attribution, retry, and honest signals
+
+Prompted by a live gate on 2026-08-12 (Windows 11, codex-cli ≥ 0.147.0, harness
+v1.3.0). The v1.3.0 fixes held — the pinned worktree materialized, the briefs
+survived, the lane produced a high-quality verdict — but it took two attempts,
+and everything the round exposed was about what the runner *said* rather than
+what it did.
+
+### A failure now names its own cause
+
+Attempt 1 ended as `codex exec` exit **143** with no verdict, under a DETAIL
+block listing generic causes (auth / flags / sandbox / missing install files),
+none of which had ended the process. The one thing the runner could have known
+for certain — whether its OWN timeout timer sent the kill — it never said.
+
+On any exit without a verdict, the report now states who killed it (the runner's
+own timer, an external signal, or codex choosing to exit — node reports its own
+timeout, so this is never a guess), how long the child ran against the cap it
+was given, and the tail of codex's stderr, stdout, and any session log written
+during that attempt. The generic cause list survives in exactly one place: a
+self-chosen non-zero exit, where it is a live hypothesis rather than a shrug.
+
+### Retry is the runner's job, and the chain is one outcome
+
+Attempt 2 succeeded — but as an *emergent launcher behavior*, so the Director
+received two task reports for one review: a final-sounding `REVIEW_UNAVAILABLE`,
+the books correctly closed on the lane per §5, and then a real verdict for the
+same change.
+
+The runner now retries internally: one extra attempt (`reviewRetries`, max 3) in
+a fresh scratch directory and a fresh checkout, for failures that could
+plausibly differ — a signal kill, a launch that produced nothing. A
+runner-enforced timeout is deliberately *not* retried. The whole chain prints as
+ONE report (`ATTEMPT CHAIN: 2 attempts, ONE outcome`), the failed attempt's
+diagnostics are preserved under `ATTEMPT LOG` even when a later attempt
+succeeded, and `REVIEW_UNAVAILABLE` is emitted only once the chain is exhausted
+— carrying an explicit `FINALITY:` line. Launcher profiles now forbid
+relaunching the runner at all, with one narrow exception for a Bash call that
+never started it.
+
+### Preflight: probe, layout, helper siblings
+
+- **Stage-a auth/exec probe** (`authProbe`, on by default): a cheap `codex exec`
+  echo under a short cap, before the real attempt. An unauthenticated install or
+  an unusable model now costs seconds instead of a 30-minute budget, and the
+  report says the review was never attempted. A probe that merely times out is a
+  warning, not a refusal. This check previously lived in Director briefs and
+  memory checklists — a checklist item every caller must remember is a runner
+  feature that has not been written yet.
+- **Install-layout detection.** Codex relocated itself from
+  `~/.codex/packages/standalone/current/bin` to
+  `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`, which silently invalidated the
+  documented repair recipe. Both layouts are detected and named in the
+  preflight, so the next relocation is visible in the first report that hits it.
+- **Helper-sibling verification.** The files that must sit next to the resolved
+  binary are checked every run and repaired from any locatable known-good copy
+  (`helpersDir`, a sibling version directory the self-update left behind, or the
+  other known layout). When repair is impossible the report names the exact
+  missing files and every directory searched. It stays a loud warning rather
+  than a hard stop by default: whether the new layout needs those files at all
+  is unverified upstream. `requireHelperSiblings: true` makes it fatal.
+
+### The integrity warning means something again
+
+The successful verdict carried `⚠ INTEGRITY WARNING` because Godot's first
+import inside the fresh worktree rewrote 180+ `*.import` sidecars — engine
+churn, indistinguishable from reviewer mutation to a whole-fingerprint
+comparison, and guaranteed to fire on every Godot project's first run. A warning
+that cries wolf teaches its reader to skip it.
+
+The delta is now compared per path and split: generated build/engine artifacts
+(built-in list, extended by `integrityIgnore`, dropped by
+`integrityIgnoreDefaults: false`) become a counted `INTEGRITY NOTE`; anything
+else is the `⚠ INTEGRITY WARNING`, listing the offending paths instead of
+dumping two whole fingerprints. `worktreeWarmupCmd` fixes the class outright by
+taking the baseline *after* an engine's first-open import.
+
+### A configured scratch root is honoured or refused, never swapped
+
+`makeScratchDir` used to fall back to the OS temp dir whenever the configured
+root was unwritable — quietly undoing the setting, and resurrecting the
+cross-run brief collisions that `worktreeRoot` exists to prevent. A root the
+user set (flag, env, or `orchestra.json`) is now mandatory: unwritable means the
+review fails, with the `mkdir` error attached. Only the built-in default may
+walk the candidate list, and it says so loudly when it does.
+
+### The test suite can no longer pass by not running
+
+`tests/review-lane.test.js` exited 0 on Windows even with failing cases: its
+verdict was printed from a callback deep inside an async chain, so a throw, a
+rejection, or a step that never fired let node drain its event loop and exit 0.
+The suite is now one linear `await` chain, a failure sets `process.exitCode`
+immediately, an `exit` handler enforces it, and a run that recorded no cases at
+all fails on that basis. 92 checks, including new coverage for every item above:
+attribution wording for signal-class vs runner-enforced kills, the retry chain
+(fail-then-succeed, and both-fail), the probe, layout detection and helper
+repair from a sibling version, integrity classification and warmup ordering, and
+the mandatory scratch root.
+
+### Scope
+
+Codex-internal faults are not patched here — see "What this harness cannot fix"
+in `packs/codex/README.md`, which pairs each upstream behaviour with the
+harness's mitigation and says plainly what remains unverified.
+`packs/codex/FIELD-VALIDATION.md` is the checklist the next gate-class review
+runs to confirm this round landed.
+
 ## 1.3.0 — cross-vendor review lane hardening
 
 Prompted by a live gate on 2026-08-11: a 2-file, 9-line docs diff, reviewed at

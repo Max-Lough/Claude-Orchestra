@@ -71,6 +71,16 @@ expression, same path, every time.
 third model, effort, or timeout. The Director can proceed with the plan marked
 as not cross-examined, which costs less than a launcher improvising.
 
+**Say how many attempts you made, and stop there.** One sentence, using the
+numbers from your own tool calls: *"Launched twice; both returned
+DEEPPLAN_UNAVAILABLE (relayed below)."* Then relay. Never **diagnose the cause
+in your own voice**: if the runner's report does not say why the call failed,
+you do not know why it failed, and inventing a plausible-sounding reason ("a
+known network issue", "the API was down") sends the Director off to fix
+something that is not broken. This has happened on the review lane and cost the
+round. Report what the runner said; report what your tool call did; nothing
+else.
+
 **Your shell does not persist between tool calls.** An `export` in one Bash
 call is gone by the time a later call launches the runner, so a setting made
 that way silently reverts to the default. Pass settings as **flags**, or inline

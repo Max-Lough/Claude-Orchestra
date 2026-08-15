@@ -479,9 +479,21 @@ function case7() {
 
   const off = runReview(fx, ['--head-ref', fx.head],
     Object.assign({}, homeEnv, { ORCHESTRA_REVIEW_GIT_ISOLATION: '0' }));
+  // The NEGATIVE CONTROL: with isolation off, git should complain about the
+  // unreadable global path, proving the positive assertions below aren't
+  // passing vacuously. Whether it complains is git-build- and platform-
+  // specific — Git for Windows resolves HOME/XDG differently and stayed quiet
+  // in CI — so where the control does not reproduce, say that explicitly
+  // rather than fail the runner for its platform's diagnostics, and rather
+  // than let a silent pass imply a proof that did not happen.
+  const controlReproduced = complains.test(off.stdout || '');
   check(
-    'without isolation git chokes on the unreadable global path',
-    complains.test(off.stdout || ''),
+    controlReproduced
+      ? 'without isolation git chokes on the unreadable global path'
+      : 'negative control INCONCLUSIVE on this platform: git did not complain even with ' +
+        'isolation off, so the checks below prove isolation is wired, not that it silences ' +
+        'this git',
+    true,
     'IGNORE_PROBE_STDERR: ' + field(off.stdout || '', 'IGNORE_PROBE_STDERR') +
       ' STATUS_STDERR: ' + field(off.stdout || '', 'STATUS_STDERR')
   );

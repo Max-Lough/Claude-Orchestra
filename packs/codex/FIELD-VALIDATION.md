@@ -2,7 +2,7 @@
 
 For the next **gate-class review** run by a project that installed this pack
 (`node install.js <project> --packs codex`). The master's own suite
-(`node tests/review-lane.test.js`, 94 checks) proves the mechanics against a
+(`node tests/review-lane.test.js`, 96 checks) proves the mechanics against a
 stub engine; this checklist proves the round-2 fixes against the real Codex CLI,
 on Windows, where every field failure happened.
 
@@ -43,6 +43,12 @@ The first lines of the relayed report are the evidence. Record them.
 - [ ] **The cap and the checkout are what the order asked for.**
       `timeout: <ms> (<source>)` and `checkout: pinned worktree @ <sha>`. A
       `(default)` where the order named a cap means the setting did not land.
+- [ ] **If `CODEX_BIN` points at a `.cmd`/`.bat` shim** (the usual shape of an
+      npm-installed `codex` on Windows), confirm the engine actually launches.
+      CI proved this path works; a real npm shim in a real user's `PATH` is the
+      case CI cannot stage. A launch failure here reports as
+      `the Codex CLI could not be launched (<code>)` — distinct from an auth
+      failure, on purpose.
 
 ## During the gate — what happens on failure
 

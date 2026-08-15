@@ -104,7 +104,7 @@ verdict was printed from a callback deep inside an async chain, so a throw, a
 rejection, or a step that never fired let node drain its event loop and exit 0.
 The suite is now one linear `await` chain, a failure sets `process.exitCode`
 immediately, an `exit` handler enforces it, and a run that recorded no cases at
-all fails on that basis. 94 checks, including new coverage for every item above:
+all fails on that basis. 96 checks, including new coverage for every item above:
 attribution wording for signal-class vs runner-enforced kills, the retry chain
 (fail-then-succeed, and both-fail), the probe, layout detection and helper
 repair from a sibling version, integrity classification, warmup ordering and its
@@ -115,13 +115,51 @@ refusal to run in a live tree, and the mandatory scratch root.
 `.github/workflows/test.yml` runs the suite on Linux, Windows, and macOS across
 Node 20/22/24, for every push and pull request. Windows is the reason it exists:
 every field failure in this lane has happened there, the exit-code bug above hid
-there, and no session working on this repo has a Windows machine. Two platform
-truths the matrix forced into the open — Windows cannot `CreateProcess` a `.js`
-file (so the tests hand the runner a `.cmd` shim for the stub engine), and
-`kill('SIGTERM')` there is `TerminateProcess`, which runs no handler, so on
-Windows the next run's sweep is the *only* thing that reclaims an orphaned
-worktree. Both are now asserted rather than assumed. There is no CD: the harness
-ships by `git pull` + `node install.js`.
+there, and no session working on this repo has a Windows machine. There is no
+CD: the harness ships by `git pull` + `node install.js`.
+
+**It found four runner defects in its first hour**, none of which any amount of
+Linux testing would have surfaced:
+
+1. **Windows could not launch the documented install at all.** Node has refused
+   to spawn `.cmd`/`.bat` directly since the BatBadBut fix (CVE-2024-27980) —
+   and on Windows a `codex` installed through npm IS a `.cmd` shim, which is
+   exactly what this runner's own PATH resolution finds first (`whichSync`
+   searches `PATHEXT`, and `PATHEXT` lists `.CMD`). Engine launches now route
+   those through `cmd.exe` with each argument quoted individually — not
+   `shell: true`, which does not quote and would split the first path
+   containing a space.
+2. **"Scratch must be outside the repository" did not hold wherever the repo
+   path contains a symlink or a short name.** git reports resolved paths; the
+   runner built its own from unresolved ones. macOS reports `/private/var/…`
+   against a held `/var/…`; Windows reports the 8.3 `C:\Users\RUNNER~1\…`
+   against a realpath'd `C:\Users\runneradmin\…`. A directory plainly inside
+   the repository compared as outside, and the review would have materialized
+   its worktree into the tree under review — the exact condition pinned mode
+   exists to remove. The check now runs `rev-parse --show-toplevel` from BOTH
+   locations and compares git's two answers, which are in the same form by
+   construction.
+3. **The refusal wrote first and objected afterwards.** A configured scratch
+   root inside the repo was created, THEN refused, leaving the directory behind
+   as precisely the session dirt it was objecting to. Configured roots are now
+   validated before anything is created in them.
+4. **The orphan sweep under-reported its own work.** It counted only successful
+   directory deletions — but a killed runner's engine child outlives it with
+   the worktree as its working directory, which on Windows locks that directory
+   against deletion. The sweep cleaned up and reported `reclaimed 0`. It now
+   counts what it found and acted on, and names separately anything the
+   filesystem would not release.
+
+Two platform truths the matrix also forced into the open, now asserted rather
+than assumed: Windows cannot `CreateProcess` a `.js` file (so the tests hand the
+runner a `.cmd` shim for the stub engine), and `kill('SIGTERM')` there is
+`TerminateProcess`, which runs no handler — so on Windows the next run's sweep
+is the *only* thing that ever reclaims an orphaned worktree, and the runner's
+signal handlers are decorative. One test's negative control (git complaining
+about an unreadable global config path with isolation off) does not reproduce
+under Git for Windows; rather than fail the runner for its platform's
+diagnostics, or let a silent pass imply a proof that did not happen, it reports
+itself INCONCLUSIVE by name there and still proves itself on Linux and macOS.
 
 `ORCHESTRA_CODEX_HELPER_SIBLINGS` was added alongside, for config symmetry —
 every other `codex` setting already had an environment form, and a machine whose

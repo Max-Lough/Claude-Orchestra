@@ -741,28 +741,25 @@ function sweepStaleScratch(root, repoTop) {
     } catch (_) {
       /* unreadable — the prune below still tidies git's records */
     }
-    let deregistered = false;
+    // FIX: this used to count only what the OS let us DELETE, so a sweep that
+    // had done its job reported "reclaimed 0". A killed runner's engine child
+    // outlives it, and on Windows that child's working directory IS the review
+    // worktree — which locks the directory against deletion, so both the
+    // `worktree remove` and the `rmSync` fail while `prune` still reconciles
+    // git's records. Count what was FOUND and acted on: this directory's owner
+    // is gone, so it is an abandoned review being reclaimed, whether or not the
+    // filesystem lets go of it this second. What could not be deleted is
+    // reported separately rather than folded into silence.
+    reclaimed++;
     for (const wt of stale) {
-      if (repoTop && fs.existsSync(wt)) {
-        const rm = runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
-        if (rm.status === 0) deregistered = true;
-      }
+      if (repoTop && fs.existsSync(wt)) runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
     }
-    let removed = false;
     try {
       fs.rmSync(dir, { recursive: true, force: true });
-      removed = true;
     } catch (_) {
-      /* busy or not ours — see below; the prune still tidies git's records */
+      /* busy or not ours — the prune below still tidies git's records */
     }
-    // FIX: this used to count ONLY a successful directory removal, so a sweep
-    // that did its real work — reconciling git's records — reported nothing.
-    // On Windows that is the normal case, not the exception: a killed runner's
-    // engine child outlives it and holds the directory open, so the rmSync
-    // fails while the deregistration succeeds. Reporting "reclaimed 0" there
-    // described a sweep that had in fact just cleaned up.
-    if (deregistered || removed) reclaimed++;
-    if (!removed && (deregistered || fs.existsSync(dir))) stuck.push(dir);
+    if (fs.existsSync(dir)) stuck.push(dir);
   }
   if (repoTop) runGit(['-C', repoTop, 'worktree', 'prune']);
   return { reclaimed, stuck };

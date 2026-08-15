@@ -570,6 +570,40 @@ function case11() {
   );
   check('no engine attribution on that refusal', !/^REVIEW ENGINE: OpenAI/m.test(out), out.split('\n')[0]);
   check('no worktree was created', worktreeLines(fx.repo).length === 1, worktreeLines(fx.repo).join('\n'));
+
+  // ...and the same refusal must survive a SYMLINKED path to the same place.
+  // This is the macOS shape, found by CI the hour it existed: `os.tmpdir()`
+  // there is `/var/folders/…`, a symlink to `/private/var/folders/…`, so git
+  // reports the repository at one string and the runner built its scratch path
+  // from another. Compared raw, a directory plainly inside the repository
+  // answered "outside" — and the review wrote its worktree into the tree it was
+  // reviewing, which is the exact condition pinned mode exists to remove.
+  // Reproduced here on every platform rather than left to one runner's quirk.
+  const fx2 = makeDirtyRepo();
+  const link = path.join(fx2.root, 'link-to-root');
+  let linked = true;
+  try {
+    fs.symlinkSync(fx2.root, link, 'dir');
+  } catch (_) {
+    linked = false; // Windows without developer mode / privilege
+  }
+  if (!linked) {
+    check('symlinked-path refusal (SKIPPED — this platform would not create a symlink)', true);
+  } else {
+    const viaLink = path.join(link, 'project', 'scratch');
+    const r2 = runReview(fx2, ['--head-ref', fx2.head, '--worktree-root', viaLink]);
+    const out2 = r2.stdout || '';
+    check(
+      'a scratch root reached through a symlink is still recognised as inside the repo',
+      /VERDICT: REVIEW_UNAVAILABLE/.test(out2) && /scratch directory is inside the repository/.test(out2),
+      out2.slice(0, 500)
+    );
+    check(
+      'and nothing was written into the repository under review',
+      !fs.existsSync(path.join(fx2.repo, 'scratch')),
+      'the review created ' + path.join(fx2.repo, 'scratch')
+    );
+  }
 }
 
 // -------------------------------------------------- round 2 (2026-08-12 gate)

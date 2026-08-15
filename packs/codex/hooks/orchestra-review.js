@@ -405,6 +405,62 @@ function matchesAny(rel, patterns) {
   return false;
 }
 
+// Resolve symlinks where we can, fall back to the path as given. Every
+// path COMPARISON in this runner has to go through here, because git reports
+// resolved paths and the caller's own paths usually are not: on macOS
+// os.tmpdir() is `/var/folders/…`, a symlink to `/private/var/folders/…`, so
+// `git rev-parse --show-toplevel` and a path we built ourselves describe the
+// same directory with different strings. Comparing them raw makes "is this
+// inside the repository?" answer NO for a directory that plainly is.
+function realOrSelf(p) {
+  const abs = path.resolve(p);
+  try {
+    return fs.realpathSync(abs);
+  } catch (_) {
+    /* does not exist yet — resolve as much of it as does */
+  }
+  // A path we are about to CREATE still has to be compared honestly, and
+  // realpath refuses paths that do not exist. Resolve the deepest ancestor that
+  // does exist and re-attach the rest: that is what makes it possible to answer
+  // "would creating this write inside the repository?" BEFORE creating it.
+  const parent = path.dirname(abs);
+  if (parent === abs) return abs;
+  return path.join(realOrSelf(parent), path.basename(abs));
+}
+
+// Is `child` the same directory as `parent`, or inside it? Symlink-resolved on
+// both sides — see realOrSelf.
+function isInside(parent, child) {
+  const rel = path.relative(realOrSelf(parent), realOrSelf(child));
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+// Launch the engine. Node refuses to spawn `.cmd`/`.bat` directly since the
+// BatBadBut fix (CVE-2024-27980) — it throws EINVAL unless you opt into a
+// shell — and on Windows a `codex` installed through npm IS a `.cmd` shim, the
+// exact thing PATH resolution finds first (whichSync searches PATHEXT, which
+// lists .CMD). So the documented install path was unlaunchable here.
+//
+// Route those through cmd.exe explicitly rather than passing `shell: true`:
+// `shell: true` does not quote the arguments, so the first path containing a
+// space (`C:\Program Files\…`, and this runner passes several paths) would be
+// split into pieces. Quoting each argument ourselves and handing cmd.exe one
+// verbatim command line is what npm's own shims do.
+function spawnEngine(bin, args, opts) {
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(bin))) {
+    const line = [bin]
+      .concat(args)
+      .map((a) => '"' + String(a).replace(/"/g, '""') + '"')
+      .join(' ');
+    return spawnSync(
+      process.env.ComSpec || 'cmd.exe',
+      ['/d', '/s', '/c', '"' + line + '"'],
+      Object.assign({}, opts, { windowsVerbatimArguments: true })
+    );
+  }
+  return spawnSync(bin, args, opts);
+}
+
 // Copy a file or a whole directory. Used by the helper repair, where the thing
 // that went missing may be either (`codex-command-runner.exe` is a file,
 // `codex-resources` a directory).
@@ -1515,7 +1571,7 @@ function runAuthProbe(dir) {
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
-  const r = spawnSync(CONFIG.resolvedBin || CONFIG.bin, args, {
+  const r = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, args, {
     cwd: dir,
     input:
       'Reply with exactly this token and nothing else: ' + PROBE_TOKEN + '\n' +
@@ -1545,7 +1601,22 @@ function runAuthProbe(dir) {
         'See https://developers.openai.com/codex/',
     };
   }
-  if (r.error || r.status !== 0 || !said) {
+  // A launch that never happened is not an engine that failed a task, and
+  // saying "it failed an echo" for an EINVAL/EACCES would send the reader
+  // looking at their auth instead of at their install.
+  if (r.error) {
+    return {
+      ok: false,
+      reason: 'the Codex CLI could not be launched (' + (r.error.code || 'spawn error') + ')',
+      detail:
+        'Launching ' + (CONFIG.resolvedBin || CONFIG.bin) + ' failed before any review was ' +
+        'attempted:\n  ' + String(r.error.message || r.error) + '\n' +
+        'This is the executable or the platform refusing the launch — not authentication, ' +
+        'and not the model. Check that the path is the real executable (a .cmd/.bat shim is ' +
+        'handled, a directory or a broken link is not) and that it is runnable by this user.',
+    };
+  }
+  if (r.status !== 0 || !said) {
     const cls = classifyExit(r, elapsed);
     return {
       ok: false,
@@ -1927,6 +1998,29 @@ function main() {
     PREFLIGHT.push('helper siblings present: ' + CONFIG.helperSiblings.join(', '));
   }
 
+  // A configured scratch root is validated BEFORE anything is created in it.
+  // The post-creation check further down is the backstop for the roots we pick
+  // ourselves; this one exists because "a review must not write into the tree
+  // it is reviewing" is broken by the `mkdir` itself, not only by the worktree
+  // that lands in it — the old order created `<repo>/scratch/…`, refused, and
+  // left the directory behind as exactly the session dirt it was objecting to.
+  // The cost is one git call outside the isolated config, whose stderr is
+  // discarded here and never reaches the engine.
+  if (CONFIG.worktreeRoot) {
+    const earlyTop = gitOut(['-C', CONFIG.projectDir, 'rev-parse', '--show-toplevel']);
+    if (earlyTop && isInside(earlyTop, CONFIG.worktreeRoot)) {
+      printUnavailable(
+        'scratch directory is inside the repository',
+        CONFIG.worktreeRoot + ' is under ' + earlyTop + ' (' + CONFIG.worktreeRootSource +
+          '). The review\'s scratch directory must live outside the repository — inside ' +
+          'it, the review writes into the tree it is reviewing. Nothing was created. ' +
+          'Point --worktree-root (or ORCHESTRA_REVIEW_WORKTREE_ROOT, or "codex": ' +
+          '{ "worktreeRoot": "<dir>" }) somewhere outside the project.'
+      );
+      return;
+    }
+  }
+
   // --- scratch: one directory per run, outside the repo, holding the verdict
   // file, the isolated git config, and (pinned mode) the review worktree.
   // Created before anything else runs git, because the isolation has to be in
@@ -1961,8 +2055,7 @@ function main() {
   // own scratch files into the tree under review, which is precisely the
   // condition pinned mode exists to eliminate.
   if (repoTop) {
-    const inside = path.relative(path.resolve(repoTop), SCRATCH.dir);
-    if (inside && !inside.startsWith('..') && !path.isAbsolute(inside)) {
+    if (isInside(repoTop, SCRATCH.dir)) {
       printUnavailable(
         'scratch directory is inside the repository',
         SCRATCH.dir + ' is under ' + repoTop + '. The review\'s scratch directory must ' +
@@ -2033,7 +2126,7 @@ function main() {
       }
       // Keep the engine at the same position within the repo the caller was in,
       // so relative paths in the work order still mean what they meant.
-      const rel = path.relative(repoTop, path.resolve(CONFIG.projectDir));
+      const rel = path.relative(realOrSelf(repoTop), realOrSelf(CONFIG.projectDir));
       const target = rel && !rel.startsWith('..') ? path.join(wt.dir, rel) : wt.dir;
       att.reviewDir = fs.existsSync(target) ? target : wt.dir;
       att.reviewDirLabel = 'pinned worktree @ ' + wt.sha.slice(0, 12);
@@ -2103,7 +2196,7 @@ function main() {
     codexArgs.push('-'); // read the prompt from stdin
 
     const startedAt = Date.now();
-    const run = spawnSync(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
+    const run = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
       cwd: att.reviewDir,
       input: brief,
       encoding: 'utf8',

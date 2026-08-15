@@ -152,9 +152,13 @@ function runReview(fx, extraArgs, extraEnv, opts) {
       process.env,
       {
         CLAUDE_PROJECT_DIR: fx.repo,
-        CODEX_BIN: STUB,
+        CODEX_BIN: STUB_BIN,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
+        // Expect no helper siblings unless a case says otherwise, so the same
+        // assertions hold on Windows (where the default list is non-empty) as
+        // everywhere else. Case 15 sets this explicitly and tests the machinery.
+        ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
         STUB_CODEX_PROBE_PATH: '.claude/plans/toon-conversion-campaign.md',
       },
       extraEnv || {}
@@ -176,6 +180,43 @@ function worktreeLines(repo) {
 function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
+
+// The runner spawns the engine binary DIRECTLY — no shell, deliberately, since
+// a shell would change quoting and argument handling. Windows cannot
+// CreateProcess a `.js` file, so there the "codex binary" handed to the runner
+// is a `.cmd` shim that invokes node on the stub. Everywhere else the stub is
+// executable and is handed over as-is. Same stub, same behaviour, one layer of
+// platform plumbing.
+function makeStubBin(dir, base) {
+  fs.mkdirSync(dir, { recursive: true });
+  if (process.platform !== 'win32') {
+    const dest = path.join(dir, base + '.js');
+    fs.copyFileSync(STUB, dest);
+    fs.chmodSync(dest, 0o755);
+    return dest;
+  }
+  const dest = path.join(dir, base + '.cmd');
+  fs.writeFileSync(
+    dest,
+    '@echo off\r\nnode "' + STUB + '" %*\r\nexit /b %ERRORLEVEL%\r\n',
+    'utf8'
+  );
+  return dest;
+}
+
+// The default engine binary for every test that doesn't build its own install.
+const STUB_BIN = (() => {
+  if (process.platform !== 'win32') return STUB;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-stubbin-'));
+  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return makeStubBin(dir, 'codex');
+})();
+
+// On Windows a "graceful" kill is not graceful: child.kill('SIGTERM') maps to
+// TerminateProcess, so no handler in the target runs, whatever it registered.
+// Every kill there is therefore the SIGKILL case, and the sweep — not the
+// runner's own teardown — is what reclaims the worktree.
+const KILL_RUNS_HANDLERS = process.platform !== 'win32';
 
 // ---------------------------------------------------------------- the tests
 
@@ -258,7 +299,7 @@ async function case4() {
       cwd: fx.repo,
       env: Object.assign({}, process.env, {
         CLAUDE_PROJECT_DIR: fx.repo,
-        CODEX_BIN: STUB,
+        CODEX_BIN: STUB_BIN,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         STUB_CODEX_SLEEP_MS: '60000',
       }),
@@ -277,11 +318,29 @@ async function case4() {
   child.kill('SIGTERM');
   await new Promise((res) => child.on('exit', res));
   await sleep(300);
-  check(
-    'SIGTERM: git worktree list is clean',
-    worktreeLines(fx.repo).length === 1,
-    worktreeLines(fx.repo).join('\n')
-  );
+  if (KILL_RUNS_HANDLERS) {
+    check(
+      'SIGTERM: the runner\'s own handler cleaned up — git worktree list is clean',
+      worktreeLines(fx.repo).length === 1,
+      worktreeLines(fx.repo).join('\n')
+    );
+  } else {
+    // Windows has no POSIX signals: kill('SIGTERM') is TerminateProcess, so no
+    // handler in the runner can possibly run. Asserting a clean list here would
+    // be asserting something the platform makes impossible; the honest property
+    // is that the orphan survives and the sweep (below) is what reclaims it.
+    check(
+      'SIGTERM on Windows terminates outright, leaving the orphan for the sweep',
+      worktreeLines(fx.repo).length > 1,
+      worktreeLines(fx.repo).join('\n')
+    );
+    const swept = runReview(fx, ['--head-ref', fx.head]);
+    check(
+      'and a later run reclaims it',
+      worktreeLines(fx.repo).length === 1,
+      (swept.stdout || '').slice(0, 400) + '\n' + worktreeLines(fx.repo).join('\n')
+    );
+  }
 
   // SIGKILL runs no handler by design — the next run's sweep is what reclaims
   // the orphan, so that is what gets tested.
@@ -293,7 +352,7 @@ async function case4() {
       cwd: fx2.repo,
       env: Object.assign({}, process.env, {
         CLAUDE_PROJECT_DIR: fx2.repo,
-        CODEX_BIN: STUB,
+        CODEX_BIN: STUB_BIN,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         STUB_CODEX_SLEEP_MS: '60000',
       }),
@@ -717,14 +776,12 @@ function case15() {
   const fx = makeDirtyRepo();
   const binRoot = path.join(fx.root, 'AppData', 'Local', 'OpenAI', 'Codex', 'bin');
   const installDir = path.join(binRoot, 'a1b2c3d4');
-  fs.mkdirSync(installDir, { recursive: true });
-  const fakeBin = path.join(installDir, 'codex-stub.js');
-  fs.copyFileSync(STUB, fakeBin);
-  fs.chmodSync(fakeBin, 0o755);
+  const fakeBin = makeStubBin(installDir, 'codex-stub');
 
   writeProjectConfig(fx, { helperSiblings: ['codex-command-runner.exe', 'codex-resources'] });
 
-  const missing = runReview(fx, ['--head-ref', fx.head], { CODEX_BIN: fakeBin });
+  const wantHelpers = { ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' };
+  const missing = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
   const mout = missing.stdout || '';
   check(
     'the new install layout is detected and named',
@@ -754,7 +811,7 @@ function case15() {
   fs.writeFileSync(path.join(oldVersion, 'codex-command-runner.exe'), 'MZ fake\n');
   fs.writeFileSync(path.join(oldVersion, 'codex-resources', 'r.dat'), 'resource\n');
 
-  const repaired = runReview(fx, ['--head-ref', fx.head], { CODEX_BIN: fakeBin });
+  const repaired = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
   const rout = repaired.stdout || '';
   check(
     'helpers are repaired from a sibling version of the same layout',
@@ -767,7 +824,7 @@ function case15() {
       fs.existsSync(path.join(installDir, 'codex-resources', 'r.dat')),
     fs.readdirSync(installDir).join(', ')
   );
-  const after = runReview(fx, ['--head-ref', fx.head], { CODEX_BIN: fakeBin });
+  const after = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
   check(
     'a complete install reports the siblings as present',
     /helper siblings present: codex-command-runner\.exe, codex-resources/.test(after.stdout || ''),
@@ -777,15 +834,15 @@ function case15() {
   // Projects that know they need the helpers can make it a hard stop.
   const fx2 = makeDirtyRepo();
   const installDir2 = path.join(fx2.root, 'OpenAI', 'Codex', 'bin', 'ffff0000');
-  fs.mkdirSync(installDir2, { recursive: true });
-  const fakeBin2 = path.join(installDir2, 'codex-stub.js');
-  fs.copyFileSync(STUB, fakeBin2);
-  fs.chmodSync(fakeBin2, 0o755);
+  const fakeBin2 = makeStubBin(installDir2, 'codex-stub');
   writeProjectConfig(fx2, {
     helperSiblings: ['codex-command-runner.exe'],
     requireHelperSiblings: true,
   });
-  const hard = runReview(fx2, ['--head-ref', fx2.head], { CODEX_BIN: fakeBin2 });
+  const hard = runReview(fx2, ['--head-ref', fx2.head], {
+    CODEX_BIN: fakeBin2,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe',
+  });
   check(
     'requireHelperSiblings turns a missing helper into a refusal',
     /VERDICT: REVIEW_UNAVAILABLE/.test(hard.stdout || '') &&
@@ -796,10 +853,7 @@ function case15() {
   // The old layout still resolves as a known layout, not as "unknown".
   const fx3 = makeDirtyRepo();
   const oldDir = path.join(fx3.root, '.codex', 'packages', 'standalone', 'current', 'bin');
-  fs.mkdirSync(oldDir, { recursive: true });
-  const oldBin = path.join(oldDir, 'codex-stub.js');
-  fs.copyFileSync(STUB, oldBin);
-  fs.chmodSync(oldBin, 0o755);
+  const oldBin = makeStubBin(oldDir, 'codex-stub');
   const oldRun = runReview(fx3, ['--head-ref', fx3.head], { CODEX_BIN: oldBin });
   check(
     'the previous install layout is still recognised',

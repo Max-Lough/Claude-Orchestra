@@ -110,6 +110,24 @@ attribution wording for signal-class vs runner-enforced kills, the retry chain
 repair from a sibling version, integrity classification, warmup ordering and its
 refusal to run in a live tree, and the mandatory scratch root.
 
+### CI
+
+`.github/workflows/test.yml` runs the suite on Linux, Windows, and macOS across
+Node 20/22/24, for every push and pull request. Windows is the reason it exists:
+every field failure in this lane has happened there, the exit-code bug above hid
+there, and no session working on this repo has a Windows machine. Two platform
+truths the matrix forced into the open — Windows cannot `CreateProcess` a `.js`
+file (so the tests hand the runner a `.cmd` shim for the stub engine), and
+`kill('SIGTERM')` there is `TerminateProcess`, which runs no handler, so on
+Windows the next run's sweep is the *only* thing that reclaims an orphaned
+worktree. Both are now asserted rather than assumed. There is no CD: the harness
+ships by `git pull` + `node install.js`.
+
+`ORCHESTRA_CODEX_HELPER_SIBLINGS` was added alongside, for config symmetry —
+every other `codex` setting already had an environment form, and a machine whose
+Codex install legitimately differs should not need an edit to a project's
+committed config.
+
 ### Scope
 
 Codex-internal faults are not patched here — see "What this harness cannot fix"

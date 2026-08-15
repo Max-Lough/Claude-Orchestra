@@ -176,6 +176,14 @@
  *                               Codex install directory before each run. A
  *                               Codex self-update can silently drop files a
  *                               working install needs; this restores them.
+ *   ORCHESTRA_CODEX_HELPER_SIBLINGS
+ *                               Comma-separated names the Codex install must
+ *                               carry NEXT TO its executable (default on
+ *                               Windows: codex-command-runner.exe,
+ *                               codex-resources; none elsewhere). Empty string
+ *                               expects none. Overrides the project config, so
+ *                               a machine whose install legitimately differs
+ *                               does not need a committed-config edit.
  *   ORCHESTRA_REVIEW_ARGS       Extra args appended to `codex exec`, space-split
  *                               (escape hatch for flag drift / tuning).
  *   CODEX_BIN                   Codex executable (default "codex"). Resolved to
@@ -267,7 +275,14 @@ const CONFIG = {
   warmupTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS, 300000),
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
-  helperSiblings: DEFAULT_HELPER_SIBLINGS.slice(),
+  // Env override exists for the same reason every other setting here has one:
+  // the machine, not the project, is what varies. A shared box or a CI image
+  // whose Codex install legitimately ships different files should be fixable
+  // without editing a project's committed config. Empty string = expect none.
+  helperSiblings:
+    process.env.ORCHESTRA_CODEX_HELPER_SIBLINGS != null
+      ? process.env.ORCHESTRA_CODEX_HELPER_SIBLINGS.split(',').map((s) => s.trim()).filter(Boolean)
+      : DEFAULT_HELPER_SIBLINGS.slice(),
   requireHelperSiblings: false,
   // The directory the engine is actually pointed at: the project itself in LIVE
   // mode, the pinned worktree in PINNED mode. Header-visible either way, so a
@@ -684,6 +699,13 @@ function teardownScratch() {
 // has to clean by hand, so cover every exit path a process can actually run
 // code on. SIGKILL runs nothing, by definition — that case is covered by the
 // next run's sweep, not by hope.
+//
+// WINDOWS: there are no POSIX signals there. `child.kill('SIGTERM')` becomes
+// TerminateProcess, which is SIGKILL's semantics — no handler runs, whatever
+// this registers. So on Windows EVERY kill is the SIGKILL case, and the next
+// run's sweep is the only mechanism that reclaims the worktree. That is not a
+// gap to fix here (nothing can run in a terminated process); it is a reason the
+// sweep exists and must keep working.
 let signalsArmed = false;
 function armTeardown() {
   if (signalsArmed) return;
@@ -1757,7 +1779,10 @@ function main() {
   if (codexCfg.integrityIgnoreDefaults === false) CONFIG.integrityIgnoreDefaults = false;
   CONFIG.integrityIgnore = (CONFIG.integrityIgnoreDefaults ? DEFAULT_INTEGRITY_IGNORE : [])
     .concat(stringList(codexCfg.integrityIgnore).map((s) => s.trim()));
-  if (Array.isArray(codexCfg.helperSiblings)) {
+  if (
+    process.env.ORCHESTRA_CODEX_HELPER_SIBLINGS == null &&
+    Array.isArray(codexCfg.helperSiblings)
+  ) {
     CONFIG.helperSiblings = stringList(codexCfg.helperSiblings).map((s) => s.trim());
   }
   if (codexCfg.requireHelperSiblings === true) CONFIG.requireHelperSiblings = true;

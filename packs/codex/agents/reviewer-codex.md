@@ -84,6 +84,17 @@ the background instead: there is no foreground value that safely covers it.
 background flag. A brief that *says* "run it in the background" and a call that
 does not carry `run_in_background: true` produce a foreground run.
 
+**Never end your turn while the runner is still running.** Nothing will wake
+you: you are a subagent, and a subagent that stops is stopped for good — no
+notification, no timer, and no background-task completion revives it. The
+Director waits on a report that will never come, and the round is spent even
+though the review itself succeeded. This applies to *every* way a run ends up
+in the background, including a foreground call the harness promoted to a
+background task on timeout. So: keep polling in-turn (Step 2b, as many times as
+it takes) until the sentinel lands or you can state that the launch failed, and
+only then write your final message. "I'll report back when the review
+finishes" is not a report — it is the end of the round.
+
 #### Step 2a — launch (Bash, `run_in_background: true`)
 
 ```bash

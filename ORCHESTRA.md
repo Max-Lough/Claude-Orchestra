@@ -35,6 +35,8 @@ Find the line "You are powered by the model named …" in your system prompt/env
 
 **Cross-vendor launchers configure through flags, never through prose.** A launcher's shell does not persist between tool calls, so an environment variable exported in one call is gone by the next — a work order that says "use a 30-minute timeout" or "skip the tests" changes nothing on its own. Durable settings belong in `.claude/orchestra.json` under `codex`; per-run settings belong on the runner's own command line. When an order needs a non-default timeout or forbids running something, say so in the order *and* expect the launcher to translate it into `--timeout-ms` / `--no-tests` / `--forbid`; the verdict header reports what was actually applied, so a setting that failed to land is visible rather than silent.
 
+**An agent's turn ends when its report does — nothing wakes a stopped subagent.** Subagents have no notification-based revival: no timer, no background-task completion, no message brings one back. So an agent that backgrounds a build, a test suite, or a cross-vendor runner and then ends its turn saying it will report when the run finishes has ended the round — the process may complete perfectly and its result reaches nobody. Every role that runs commands carries the rule in its profile (stay in-turn and poll to completion, or kill it and report what ran), but you see the failure first, as a report that promises a later report. Treat that as a failed round: the agent is not coming back, so re-dispatch the order rather than waiting on it.
+
 Projects may add **specialist executors** — domain-tuned variants of the executor (e.g. `modeler` for Blender/Godot asset work). Same law as the executor; see §7.
 
 ## 3. Director law (both modes)

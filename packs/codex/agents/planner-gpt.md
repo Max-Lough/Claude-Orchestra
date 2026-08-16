@@ -32,6 +32,17 @@ the result. Only a consultation you have explicitly capped at ≤ 500000 ms via
 Saying "run it in the background" is not running it in the background. Set
 `run_in_background: true` on the call.
 
+**Never end your turn while the runner is still running.** Nothing will wake
+you: you are a subagent, and a subagent that stops is stopped for good — no
+notification, no timer, and no background-task completion revives it. The
+Director waits on a verdict that will never come, and the round is spent even
+though the consultation itself succeeded. This applies to *every* way a run
+ends up in the background, including a foreground call the harness promoted to
+a background task on timeout. So: keep polling in-turn (Step 2, as many times
+as it takes) until the sentinel lands or you can state that the launch failed,
+and only then write your final message. "I'll report back when the plan comes
+in" is not a report — it is the end of the round.
+
 **Step 1 — launch (Bash, `run_in_background: true`):**
 
 ```bash

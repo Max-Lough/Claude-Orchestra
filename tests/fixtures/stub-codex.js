@@ -162,6 +162,11 @@ const report = [
   'HEAD: ' + head.stdout,
   'DIRTY_COUNT: ' + dirtyLines.length,
   'DIRTY_PATHS: ' + (dirtyLines.join(' | ') || '(none)'),
+  // First PATH entry the engine was launched with. Some Codex helpers are
+  // resolved by NAME rather than relative to the binary, so "the install
+  // directory is on PATH" is part of what the engine sees.
+  'PATH_FIRST: ' +
+    ((process.env.PATH || process.env.Path || '').split(path.delimiter)[0] || '(empty)'),
   'GIT_CONFIG_GLOBAL: ' + (process.env.GIT_CONFIG_GLOBAL || '(unset)'),
   'GIT_CONFIG_NOSYSTEM: ' + (process.env.GIT_CONFIG_NOSYSTEM || '(unset)'),
   'PROBE_PATH: ' + (probePath || '(none)'),

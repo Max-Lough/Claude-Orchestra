@@ -104,7 +104,8 @@
  *       "integrityIgnore": ["*.import", ".godot/"],
  *       "integrityIgnoreDefaults": true,
  *       "requireHelperSiblings": false,
- *       "helperSiblings": ["codex-command-runner.exe", "codex-resources"]
+ *       "helperSiblings": ["codex-command-runner.exe", "codex-resources",
+ *                          "codex-windows-sandbox-setup.exe"]
  *   } }
  *
  *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin (e.g. gpt-5-codex). Unset →
@@ -178,12 +179,16 @@
  *                               working install needs; this restores them.
  *   ORCHESTRA_CODEX_HELPER_SIBLINGS
  *                               Comma-separated names the Codex install must
- *                               carry NEXT TO its executable (default on
- *                               Windows: codex-command-runner.exe,
- *                               codex-resources; none elsewhere). Empty string
- *                               expects none. Overrides the project config, so
- *                               a machine whose install legitimately differs
- *                               does not need a committed-config edit.
+ *                               carry DIRECTLY NEXT TO its executable (default
+ *                               on Windows: codex-command-runner.exe,
+ *                               codex-resources, codex-windows-sandbox-setup.exe;
+ *                               none elsewhere). Empty string expects none.
+ *                               Overrides the project config, so a machine whose
+ *                               install legitimately differs does not need a
+ *                               committed-config edit. "Directly" is the whole
+ *                               point: a helper Codex resolves by name is not
+ *                               found one directory down, and the review then
+ *                               fails by producing nothing.
  *   ORCHESTRA_REVIEW_ARGS       Extra args appended to `codex exec`, space-split
  *                               (escape hatch for flag drift / tuning).
  *   CODEX_BIN                   Codex executable (default "codex"). Resolved to
@@ -192,6 +197,11 @@
  *                               resolution, because it looks for its helpers
  *                               next to the link rather than the install.
  *   CLAUDE_PROJECT_DIR          Project root Codex reviews (default: cwd).
+ *
+ *   --doctor runs the install check alone — no work order, no review, no engine
+ *   launch. Same code path as the review preflight, so it cannot drift from what
+ *   a review actually verifies; exit 1 means a review would not find a complete
+ *   install. The installer runs it when the codex pack is selected.
  */
 'use strict';
 
@@ -243,7 +253,28 @@ const DEFAULT_INTEGRITY_IGNORE = [
 // field failures happened, and naming files that do not exist on a platform
 // would turn preflight into noise.
 const DEFAULT_HELPER_SIBLINGS =
-  process.platform === 'win32' ? ['codex-command-runner.exe', 'codex-resources'] : [];
+  process.platform === 'win32'
+    ? ['codex-command-runner.exe', 'codex-resources', 'codex-windows-sandbox-setup.exe']
+    : [];
+
+// Helper siblings whose ABSENCE has a known, specific consequence — worth
+// naming in the report rather than leaving as one more filename in a list.
+//
+// FIX (2026-08-18): `codex-windows-sandbox-setup.exe` cost a lane. An earlier
+// repair session had copied it INTO `codex-resources\` instead of beside
+// `codex.exe`. Codex resolves that helper by NAME, so a copy one directory down
+// is not a copy at all: the sandbox was never established, and every
+// runner-mediated review no-opped while the preflight cheerfully reported the
+// two siblings it did check as present. Naming the file is half the fix; the
+// other half is checking the right place and repairing a misplaced copy (see
+// installSubdirs / verifyHelperSiblings below).
+const HELPER_CONSEQUENCE = {
+  'codex-windows-sandbox-setup.exe':
+    'Codex resolves this helper BY NAME, so it must sit directly beside the codex ' +
+    'executable — a copy nested one level down (inside codex-resources\\, where a hand ' +
+    'repair naturally puts it) is never found, the sandbox is silently never set up, and ' +
+    'reviews return nothing while looking healthy.',
+};
 
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
@@ -257,6 +288,11 @@ const CONFIG = {
   extraArgs: (process.env.ORCHESTRA_REVIEW_ARGS || '').trim(),
   bin: (process.env.CODEX_BIN || 'codex').trim(),
   resolvedBin: '',
+  // Directory of the resolved binary. Filled in by the install inspection and
+  // then prepended to the engine's PATH — some Codex helpers are resolved by
+  // name, and an install directory that is not itself on PATH makes them
+  // unfindable even when they sit exactly where they belong.
+  installDir: '',
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   forbidden: [],
   baseRef: '',
@@ -314,6 +350,7 @@ function parseArgs(argv) {
     else if (a === '--no-retry') out.retries = '0';
     else if (a === '--no-probe') out.noProbe = true;
     else if (a === '--warmup-cmd') out.warmupCmd = argv[++i];
+    else if (a === '--doctor') out.doctor = true;
     else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
@@ -672,6 +709,87 @@ function setupGitIsolation() {
   }
 }
 
+// `--doctor`: the install check on its own, for a human, at a moment of their
+// choosing — at install time (the installer runs it), or the first time a
+// review comes back empty.
+//
+// It exists because the alternative is what actually happened: a helper file
+// misplaced by one directory produced reviews that returned nothing, for days,
+// with no line anywhere saying the install was wrong. The check was already in
+// the runner; it was only reachable by running a whole review.
+function runDoctor() {
+  const install = inspectCodexInstall();
+  const out = [];
+  out.push('ORCHESTRA — Codex install check');
+  out.push('');
+  out.push('codex binary (CODEX_BIN=' + CONFIG.bin + '): ' +
+    (install.resolved.real
+      ? install.resolved.path
+      : 'NOT FOUND on PATH — install the Codex CLI, or set CODEX_BIN to its full path'));
+  for (const line of install.lines) out.push('  ' + line);
+  if (!CONFIG.helperSiblings.length) {
+    out.push('  helper siblings: none expected on this platform');
+  } else if (!install.installDir) {
+    out.push('  helper siblings: NOT CHECKED — the install directory is unknown until the ' +
+      'binary resolves');
+  }
+
+  // A binary the runner cannot find is a failed check, not a clean bill of
+  // health with a note attached: a review on this machine would end at
+  // "the Codex CLI could not be launched".
+  if (!install.installDir) {
+    out.push('');
+    out.push('NEEDS ATTENTION');
+    out.push('  The Codex CLI could not be resolved, so no review can run and the install ' +
+      'cannot be inspected. Install it (https://developers.openai.com/codex/cli), or set ' +
+      'CODEX_BIN to the executable\'s full path — on Windows that is usually ' +
+      '%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>\\codex.exe.');
+    process.stdout.write(out.join('\n') + '\n');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (install.missing.length) {
+    out.push('');
+    out.push('NEEDS ATTENTION');
+    out.push('  ' + install.detail);
+    out.push('');
+    // installDir is known here — the unresolved-binary case returned above.
+    out.push('  Fix it by putting each missing name DIRECTLY in ' + install.installDir + ':');
+    for (const name of install.missing) {
+      // Where a stray copy is somewhere on this machine, name it — the copy
+      // command is then a fact rather than a template to fill in.
+      const found = (install.siblings.searched || []).find((d) => {
+        try {
+          return fs.existsSync(path.join(d, name));
+        } catch (_) {
+          return false;
+        }
+      });
+      out.push(
+        process.platform === 'win32'
+          ? '    copy "' + (found ? path.join(found, name) : '<known-good ' + name + '>') +
+            '" "' + path.join(install.installDir, name) + '"'
+          : '    cp -R "' + (found ? path.join(found, name) : '<known-good ' + name + '>') +
+            '" "' + path.join(install.installDir, name) + '"'
+      );
+    }
+    out.push('');
+    out.push('  Then re-run this check. If your install legitimately does not carry these');
+    out.push('  files, set ORCHESTRA_CODEX_HELPER_SIBLINGS (comma-separated, empty for none)');
+    out.push('  or "codex": { "helperSiblings": [...] } in .claude/orchestra.json.');
+  } else {
+    out.push('');
+    out.push('OK — a review would find this install complete.');
+    out.push('  (Auth is not checked here: run `codex login`, or export OPENAI_API_KEY.');
+    out.push('   The review runner probes auth itself before every review.)');
+  }
+  process.stdout.write(out.join('\n') + '\n');
+  // A non-zero exit is what lets a wrapper — the installer, CI, a shell script —
+  // act on the result without parsing prose.
+  process.exitCode = install.missing.length ? 1 : 0;
+}
+
 // Environment for every git the review touches — the runner's own calls and the
 // engine's alike. Without both halves the isolation is decorative: the engine
 // runs far more git than the runner does.
@@ -680,6 +798,34 @@ function childEnv(extra) {
   if (SCRATCH.gitConfigFile) {
     env.GIT_CONFIG_GLOBAL = SCRATCH.gitConfigFile;
     env.GIT_CONFIG_NOSYSTEM = '1';
+  }
+  // FIX: not every helper Codex needs is resolved relative to its own binary —
+  // `codex-windows-sandbox-setup.exe` is resolved by NAME. Putting the install
+  // directory FIRST on the engine's PATH makes a correctly-placed helper
+  // findable regardless of how the user's PATH is arranged (a shim directory,
+  // a package-manager wrapper, or nothing at all). It cannot mask a missing
+  // file — an empty directory adds no names — so this is a cheap widening of
+  // where a present helper can be found, not a substitute for the check.
+  if (CONFIG.installDir) {
+    // Windows environment blocks are case-insensitive and the real key is
+    // usually `Path`; adding a second `PATH` key would be a coin flip over
+    // which one the child sees.
+    const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
+    const cur = String(env[key] || '');
+    const same = (a, b) =>
+      process.platform === 'win32'
+        ? a.toLowerCase() === b.toLowerCase()
+        : a === b;
+    let already = false;
+    for (const part of cur.split(path.delimiter)) {
+      if (!part) continue;
+      try {
+        if (same(path.resolve(part), path.resolve(CONFIG.installDir))) already = true;
+      } catch (_) {
+        /* an unresolvable PATH entry is simply not a match */
+      }
+    }
+    if (!already) env[key] = CONFIG.installDir + (cur ? path.delimiter + cur : '');
   }
   return env;
 }
@@ -905,13 +1051,45 @@ function detectInstallLayout(binPath) {
   return { id: 'unknown', binRoot: '' };
 }
 
+// Directories INSIDE the install itself, which is where a hand repair puts a
+// helper when it guesses wrong: the 2026-08-18 failure was
+// `codex-windows-sandbox-setup.exe` sitting in `codex-resources\`, one level
+// below the only place that resolves it. Bounded to two levels — deep enough
+// for the observed case and anything shaped like it, shallow enough that a
+// large resource bundle cannot turn preflight into a filesystem crawl.
+function installSubdirs(installDir, depth) {
+  const out = [];
+  const walk = (dir, left) => {
+    if (left <= 0) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return; // unreadable subtree: not a candidate, not an error
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const sub = path.join(dir, e.name);
+      out.push(sub);
+      walk(sub, left - 1);
+    }
+  };
+  walk(installDir, depth);
+  return out;
+}
+
 // Directories that might hold a known-good copy of a helper the install is
-// missing: the user's repair kit, sibling versions of the SAME layout (a
+// missing: the user's repair kit, the install's own subdirectories (a misplaced
+// copy of exactly the right version), sibling versions of the SAME layout (a
 // self-update leaves the previous version's directory behind, complete), and
 // the other known layout entirely.
 function helperSourceCandidates(installDir, layout) {
   const dirs = [];
   if (CONFIG.helpersDir) dirs.push(CONFIG.helpersDir);
+  // Before reaching for another install's copy, look inside this one: a helper
+  // that is present but misplaced is the same version the binary shipped with,
+  // and flattening it up is the whole repair.
+  if (installDir) dirs.push(...installSubdirs(installDir, 2));
   const home = process.env.HOME || process.env.USERPROFILE || '';
   const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
 
@@ -953,6 +1131,21 @@ function helperSourceCandidates(installDir, layout) {
   return dirs.filter((d, i) => d && dirs.indexOf(d) === i);
 }
 
+// Is this sibling actually present, in a form that can serve? `fs.existsSync`
+// alone answers a weaker question than the one that matters: a DIRECTORY named
+// `codex-windows-sandbox-setup.exe` satisfies it and launches nothing. Names
+// that are executables must be files; `codex-resources` is a directory and any
+// entry of that name is accepted.
+function siblingPresent(dir, name) {
+  let st;
+  try {
+    st = fs.statSync(path.join(dir, name));
+  } catch (_) {
+    return false;
+  }
+  return /\.(exe|cmd|bat|com|dll)$/i.test(name) ? st.isFile() : true;
+}
+
 // FIX: the documented repair for a self-update that strips helper files was
 // "copy them back next to the resolved binary" — a recipe a human had to
 // remember, derived on a layout Codex has since abandoned, and verified by
@@ -960,33 +1153,59 @@ function helperSourceCandidates(installDir, layout) {
 // any locatable known-good copy, and when they cannot be found say exactly what
 // is missing and exactly where we looked. The alternative is the observed
 // failure: the binary launches, produces no verdict, and the report guesses.
+//
+// "Actually there" means BESIDE the binary and of the right kind — the two
+// weaker questions (does the name exist anywhere in the install, does anything
+// by that name exist here) each have a false-positive that reads as healthy.
 function verifyHelperSiblings(installDir, layout) {
   const wanted = CONFIG.helperSiblings;
-  if (!wanted.length || !installDir) return { checked: false, missing: [], restored: [], searched: [] };
-  const missing = wanted.filter((name) => !fs.existsSync(path.join(installDir, name)));
-  if (!missing.length) return { checked: true, missing: [], restored: [], searched: [] };
+  if (!wanted.length || !installDir) {
+    return { checked: false, missing: [], restored: [], searched: [] };
+  }
+  const missing = wanted.filter((name) => !siblingPresent(installDir, name));
+  if (!missing.length) {
+    return { checked: true, missing: [], restored: [], searched: [] };
+  }
 
   const searched = helperSourceCandidates(installDir, layout);
   const restored = [];
   const problems = [];
   const stillMissing = [];
+  const under = (parent, child) => {
+    try {
+      const rel = path.relative(path.resolve(parent), path.resolve(child));
+      return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+    } catch (_) {
+      return false;
+    }
+  };
+  const insideInstall = (dir) => under(installDir, dir);
   for (const name of missing) {
-    const src = searched
-      .map((d) => path.join(d, name))
-      .find((p) => {
-        try {
-          return fs.existsSync(p);
-        } catch (_) {
-          return false;
-        }
-      });
-    if (!src) {
+    const dest = path.join(installDir, name);
+    const srcDir = searched.find(
+      // Never copy a directory into its own ancestor: `codex-resources` missing
+      // at the top level while a `codex-resources/codex-resources` exists would
+      // otherwise ask copyInto to walk into the tree it is writing.
+      (d) => !under(dest, d) && siblingPresent(d, name)
+    );
+    if (!srcDir) {
       stillMissing.push(name);
       continue;
     }
+    const src = path.join(srcDir, name);
     try {
-      copyInto(src, path.join(installDir, name));
-      restored.push(name + ' (from ' + path.dirname(src) + ')');
+      copyInto(src, dest);
+      // A copy that came from INSIDE the install is a different story from a
+      // copy pulled off another version, and the report should not blur them:
+      // this one was never missing, only unreachable — which is precisely the
+      // failure mode that reads as healthy right up until the review no-ops.
+      if (insideInstall(srcDir)) {
+        restored.push(
+          name + ' (was MISPLACED inside the install at ' + srcDir + ' — copied up beside the binary)'
+        );
+      } else {
+        restored.push(name + ' (from ' + srcDir + ')');
+      }
     } catch (e) {
       stillMissing.push(name);
       problems.push(name + ': ' + ((e && e.message) || e));
@@ -1067,6 +1286,96 @@ function restoreHelpers(helpersDir, installDir) {
   return {
     restored,
     note: problems.length ? 'helper restore had problems — ' + problems.join('; ') : '',
+  };
+}
+
+// Everything the runner knows how to learn about the local Codex install,
+// gathered in one place so the review preflight and `--doctor` cannot drift
+// apart: a doctor that checks something other than what the review checks is a
+// second opinion about the wrong install.
+//
+// Returns the preflight lines to print, the siblings that are still missing
+// after repair, and the detail paragraph that explains them. Nothing here
+// prints, exits, or decides — the callers do that, differently.
+function inspectCodexInstall() {
+  const lines = [];
+  const resolved = resolveCodexBin(CONFIG.bin);
+  CONFIG.resolvedBin = resolved.path;
+  if (resolved.note) lines.push(resolved.note);
+  const installDir = resolved.real ? path.dirname(resolved.path) : '';
+  // Every child process the review launches inherits this, so a helper Codex
+  // resolves by name is findable wherever the user's PATH happens to point.
+  CONFIG.installDir = installDir;
+
+  // Which install layout are we looking at? Codex has relocated itself once
+  // already (from <home>/.codex/packages/standalone/current/bin to
+  // <LOCALAPPDATA>/OpenAI/Codex/bin/<hash>), and the repair recipe written for
+  // the old one was never verified against the new one. Print the layout so the
+  // NEXT relocation is visible immediately instead of inferred from a failure.
+  const layout = detectInstallLayout(resolved.path);
+  if (installDir) {
+    lines.push(
+      'codex install layout: ' + layout.id + ' (' + installDir + ')' +
+        // The caveat only matters where helper files are actually expected;
+        // on a platform that needs none, an unknown layout is just a package
+        // manager doing its job, and saying more would be noise.
+        (layout.id === 'unknown' && CONFIG.helperSiblings.length
+          ? ' — not one of the two layouts this runner knows, so helper-sibling repair can ' +
+            'only use a directory you name in helpersDir'
+          : '')
+    );
+  }
+
+  if (CONFIG.helpersDir) {
+    const restore = restoreHelpers(CONFIG.helpersDir, installDir);
+    if (restore.restored.length) {
+      lines.push(
+        'restored ' + restore.restored.length + ' file(s) into the Codex install from ' +
+          CONFIG.helpersDir + ': ' + restore.restored.join(', ')
+      );
+    }
+    if (restore.note) lines.push(restore.note);
+  }
+
+  // Helper siblings: the files a self-update strips — or a hand repair files in
+  // the wrong place — verified next to the RESOLVED binary rather than assumed.
+  const siblings = verifyHelperSiblings(installDir, layout);
+  if (siblings.restored.length) {
+    lines.push(
+      'helper siblings repaired next to the resolved binary: ' + siblings.restored.join(', ')
+    );
+  }
+  for (const p of siblings.problems || []) lines.push('helper repair problem — ' + p);
+
+  let detail = '';
+  if (siblings.missing.length) {
+    detail =
+      'MISSING FROM THE CODEX INSTALL: ' + siblings.missing.join(', ') + ' (expected in ' +
+      (installDir || '(the Codex install directory, which could not be resolved)') +
+      '). A Codex self-update removes these, and a hand repair can file them one ' +
+      'directory too deep; either way the install launches and then dies without a ' +
+      'verdict. Searched for known-good copies in: ' +
+      (siblings.searched.length ? siblings.searched.join('; ') : '(nowhere — no candidates)') +
+      '. Fix by copying them there by hand, or point "codex": { "helpersDir": "<dir>" } at ' +
+      'a directory holding known-good copies.';
+    // Where a specific absence has a specific, known consequence, say it. The
+    // generic sentence above is true of every name in the list and therefore
+    // tells a reader nothing about which one just cost them a review.
+    for (const name of siblings.missing) {
+      if (HELPER_CONSEQUENCE[name]) detail += ' ' + name + ': ' + HELPER_CONSEQUENCE[name];
+    }
+  } else if (siblings.checked) {
+    lines.push('helper siblings present: ' + CONFIG.helperSiblings.join(', '));
+  }
+
+  return {
+    lines,
+    resolved,
+    installDir,
+    layout,
+    siblings,
+    missing: siblings.missing,
+    detail,
   };
 }
 
@@ -1838,6 +2147,13 @@ function main() {
         '         [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]...\n' +
         '         [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
         '         [--retries <n>|--no-retry] [--no-probe] [--warmup-cmd <cmd>]\n' +
+        '       node orchestra-review.js --doctor\n' +
+        '\n' +
+        '  --doctor checks the local Codex install the way a review does — real\n' +
+        '  binary, install layout, the helper files that must sit BESIDE it —\n' +
+        '  repairs what it can, and prints the exact command for what it cannot.\n' +
+        '  Exit 0 means a review would find a complete install. It reviews\n' +
+        '  nothing and needs no work order.\n' +
         '\n' +
         '  --head-ref pins the review to a commit: the runner checks it out in a\n' +
         '  throwaway worktree outside the repo and reviews THAT, so the session\'s\n' +
@@ -1980,6 +2296,14 @@ function main() {
     }
   }
 
+  // The doctor runs AFTER project config and env are folded in, so it checks
+  // the install with exactly the settings a review would use — a helperSiblings
+  // list the project overrode is the list the doctor verifies.
+  if (args.doctor) {
+    runDoctor();
+    return;
+  }
+
   const workOrder = readFileOr(args.workOrder, '');
   const executorReport = readFileOr(args.executorReport, '');
   if (!workOrder.trim() && !executorReport.trim()) {
@@ -1992,69 +2316,18 @@ function main() {
   }
 
   // --- preflight: resolve the real binary, then repair the install.
-  const resolved = resolveCodexBin(CONFIG.bin);
-  CONFIG.resolvedBin = resolved.path;
-  if (resolved.note) PREFLIGHT.push(resolved.note);
-  const installDir = resolved.real ? path.dirname(resolved.path) : '';
-
-  // Which install layout are we looking at? Codex has relocated itself once
-  // already (from <home>/.codex/packages/standalone/current/bin to
-  // <LOCALAPPDATA>/OpenAI/Codex/bin/<hash>), and the repair recipe written for
-  // the old one was never verified against the new one. Print the layout so the
-  // NEXT relocation is visible immediately instead of inferred from a failure.
-  const layout = detectInstallLayout(resolved.path);
-  if (installDir) {
-    PREFLIGHT.push(
-      'codex install layout: ' + layout.id + ' (' + installDir + ')' +
-        // The caveat only matters where helper files are actually expected;
-        // on a platform that needs none, an unknown layout is just a package
-        // manager doing its job, and saying more would be noise.
-        (layout.id === 'unknown' && CONFIG.helperSiblings.length
-          ? ' — not one of the two layouts this runner knows, so helper-sibling repair can ' +
-            'only use a directory you name in helpersDir'
-          : '')
-    );
-  }
-
-  if (CONFIG.helpersDir) {
-    const restore = restoreHelpers(CONFIG.helpersDir, installDir);
-    if (restore.restored.length) {
-      PREFLIGHT.push(
-        'restored ' + restore.restored.length + ' file(s) into the Codex install from ' +
-          CONFIG.helpersDir + ': ' + restore.restored.join(', ')
-      );
-    }
-    if (restore.note) PREFLIGHT.push(restore.note);
-  }
-
-  // Helper siblings: the files a self-update strips, verified next to the
-  // RESOLVED binary rather than assumed present.
-  const siblings = verifyHelperSiblings(installDir, layout);
-  if (siblings.restored.length) {
-    PREFLIGHT.push(
-      'helper siblings repaired next to the resolved binary: ' + siblings.restored.join(', ')
-    );
-  }
-  for (const p of siblings.problems || []) PREFLIGHT.push('helper repair problem — ' + p);
-  if (siblings.missing.length) {
-    const detail =
-      'MISSING FROM THE CODEX INSTALL: ' + siblings.missing.join(', ') + ' (expected in ' +
-      installDir + '). A Codex self-update removes these, and the install then launches ' +
-      'but dies without a verdict. Searched for known-good copies in: ' +
-      (siblings.searched.length ? siblings.searched.join('; ') : '(nowhere — no candidates)') +
-      '. Fix by copying them there by hand, or point "codex": { "helpersDir": "<dir>" } at ' +
-      'a directory holding known-good copies.';
+  const install = inspectCodexInstall();
+  for (const line of install.lines) PREFLIGHT.push(line);
+  if (install.missing.length) {
     if (CONFIG.requireHelperSiblings) {
-      printUnavailable('the Codex install is missing required helper files', detail);
+      printUnavailable('the Codex install is missing required helper files', install.detail);
       return;
     }
     PREFLIGHT.push(
-      detail +
+      install.detail +
         ' Proceeding anyway — whether this layout needs them is unverified upstream; set ' +
         '"requireHelperSiblings": true to make it a hard stop.'
     );
-  } else if (siblings.checked) {
-    PREFLIGHT.push('helper siblings present: ' + CONFIG.helperSiblings.join(', '));
   }
 
   // A configured scratch root is validated BEFORE anything is created in it.

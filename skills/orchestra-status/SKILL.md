@@ -20,7 +20,7 @@ Then the facts. Under a director model, dispatch **one scout mission** carrying 
 5. **Packs** — what does `.claude/orchestra-install.json` record under `packs` and `specialists` (absent = a pre-packs install, or none selected)? For the `codex` pack, do `.claude/hooks/orchestra-review.js` and `.claude/hooks/orchestra-deepplan.js` exist?
 6. **Skills** — which skill directories exist under `.claude/skills/`? (Core: the `orchestra-*` set. From the `codex` pack: `deep-plan`.)
 7. **Config** — from `.claude/orchestra.json` (absent = all defaults): `reviewEngine` (default `opus`), counts of `directorBlockedPatterns`, `directorPlanPatterns`, and `directorMemoryPatterns`, any `directorAllowedTools`, whether a `verification` manifest exists (quote its `full` command if so), and any `codex` block (report `reviewTimeoutMs`, `reviewModel`, `helpersDir`, `worktreeRoot`, `worktreeWarmupCmd`, and the counts of `doNotRun` and `integrityIgnore` entries; note explicitly when `authProbe` or `reviewRetries` has been turned off, since both are on by default and disabling them removes a reliability net).
-8. **Codex availability** — only if the engine is `codex` or `dual`: is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)?
+8. **Codex availability** — only if the engine is `codex` or `dual`: is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)? Do **not** run `orchestra-review.js --doctor` for this report: the doctor repairs the Codex install (it copies files into it), and this report changes nothing. Name it as a fix instead.
 9. **Plans** — does `.claude/plans/` exist, how many `.md` files does it hold, and is `ledger.md` among them?
 
 ## Report
@@ -50,4 +50,5 @@ Below the block add a single `FINDINGS:` line ONLY for inconsistencies, each wit
 - DORMANT model yet the user reports denials → model detection failed: pause the harness (§6) and file a bug against the master.
 - Engine `codex`/`dual` but the `codex` pack is not installed → the engine setting cannot take effect; re-run the installer with `--packs codex`, or set `reviewEngine` back to `opus`.
 - Engine `codex`/`dual` with the pack installed but the Codex CLI missing → reviews fall back to the Opus `reviewer`; expected behavior, note it only.
+- Engine `codex`/`dual`, the CLI present, and the user reports reviews that run and return nothing → the install may be incomplete or a helper misplaced. One command answers it and repairs what it can: `node .claude/hooks/orchestra-review.js --doctor`.
 - Pack files present but unrecorded in `.claude/orchestra-install.json` (a pre-packs install) → re-run the installer with `--packs <names>` so later updates keep them.

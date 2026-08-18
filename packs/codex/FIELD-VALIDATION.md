@@ -1,20 +1,26 @@
-# Field-validation checklist — cross-vendor review lane, v1.4.0
+# Field-validation checklist — cross-vendor review lane, v1.5.0
 
 For the next **gate-class review** run by a project that installed this pack
 (`node install.js <project> --packs codex`). The master's own suite
-(`node tests/review-lane.test.js`, 96 checks) proves the mechanics against a
-stub engine; this checklist proves the round-2 fixes against the real Codex CLI,
-on Windows, where every field failure happened.
+(`node tests/review-lane.test.js`, 108 checks) proves the mechanics against a
+stub engine; this checklist proves the fixes against the real Codex CLI, on
+Windows, where every field failure happened.
 
 Run it as part of a real gate — do not stage a synthetic review. The failures
 this round addresses only appear on real work.
 
 ## Before the gate
 
-- [ ] Confirm the installed runner is v1.4.0, not a stale copy:
-      `.claude/hooks/orchestra-review.js` contains `ATTEMPT CHAIN` and
-      `attempts: up to`.
+- [ ] Confirm the installed runner is v1.5.0, not a stale copy:
+      `.claude/hooks/orchestra-review.js` contains `ATTEMPT CHAIN`,
+      `attempts: up to`, and `--doctor`.
       (`node install.js <project> --packs codex` re-stamps it.)
+- [ ] **`node .claude/hooks/orchestra-review.js --doctor` exits 0.** The
+      installer runs it when the pack is selected; run it again here, and after
+      any Codex update. A non-zero exit names exactly what to copy where — fix
+      that before spending a review budget discovering it. On Windows this is
+      the check that catches `codex-windows-sandbox-setup.exe` sitting anywhere
+      other than directly beside `codex.exe`.
 - [ ] Optional but recommended for engine projects (Godot, Unity, Unreal): set
       `"codex": { "worktreeWarmupCmd": "<engine headless import command>" }` in
       `.claude/orchestra.json`. It runs only in a **pinned** review (a warmup
@@ -31,12 +37,18 @@ The first lines of the relayed report are the evidence. Record them.
       — if it says `unknown`, note the actual path: Codex has moved again and
       the master needs the new pattern.
 - [ ] **Helper siblings are reported one way or the other.** Either
-      `helper siblings present: codex-command-runner.exe, codex-resources`, or a
-      `MISSING FROM THE CODEX INSTALL:` line naming exactly what is absent and
-      where the runner looked. **This is the open question of the round:** if
-      the review then *succeeds* with those files missing, the new layout does
-      not need them, and the repair recipe inherited from the old layout should
-      be retired from the project's memory checklist. Report which.
+      `helper siblings present: codex-command-runner.exe, codex-resources,
+      codex-windows-sandbox-setup.exe`, or a `MISSING FROM THE CODEX INSTALL:`
+      line naming exactly what is absent and where the runner looked. **This is
+      the open question of the round:** if the review then *succeeds* with those
+      files missing, the new layout does not need them, and the repair recipe
+      inherited from the old layout should be retired from the project's memory
+      checklist. Report which.
+- [ ] **A `was MISPLACED inside the install at <dir>` line, if it appears, is
+      the 2026-08-18 failure being repaired in flight** — record the directory
+      it names. That state (a helper present, but one level below where Codex
+      resolves it) previously produced reviews that returned nothing for six
+      days with no line anywhere saying the install was wrong.
 - [ ] **The stage-a probe ran.** `PREFLIGHT: auth/exec probe: ok in <n>s`.
       Confirm it costs seconds, not minutes. (If it is routinely slow here,
       raise `codex.probeTimeoutMs` rather than disabling it.)

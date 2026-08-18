@@ -9,6 +9,34 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.4.1 — a subagent may not end its turn on a running process
+
+Two rounds stalled the same way on 2026-08-16: an agent launched a run in the
+background, then ended its turn saying it would report back when the run
+finished. Nothing reported back. Subagents have no notification-based revival —
+no timer, no background-task completion, no message restarts one — so a stopped
+subagent stays stopped until a human notices the round never returned. Both
+runs completed fine; their results reached nobody.
+
+The defect is narrower than "backgrounding". Backgrounding plus polling in-turn
+is correct, and above the shell tool's 600000 ms maximum it is the only method
+that works for the review and deep-plan runners. Backgrounding plus *ending the
+turn* is the trap — and a completion-notification affordance is what makes
+ending the turn feel safe.
+
+So the rule is drawn at the turn boundary, in every profile that runs commands
+(`executor`, `executor-heavy`, `executor-heavy-xhigh`, `reviewer`, the
+specialist template and `modeler`, and both cross-vendor launchers): never end
+your turn while a process you started is still running — poll it in-turn until
+it resolves, or kill it and report what ran. It is written to cover the case no
+hook can catch, because the agent never chose it: a foreground command the
+harness promotes to a background task on timeout is also a running process you
+started.
+
+The protocol (§2) states the underlying fact for the Director, which sees this
+failure first and can act on it immediately: a report that promises a later
+report is a finished round — re-dispatch the order rather than wait on it.
+
 ## 1.4.0 — cross-vendor review lane: attribution, retry, and honest signals
 
 Prompted by a live gate on 2026-08-12 (Windows 11, codex-cli ≥ 0.147.0, harness

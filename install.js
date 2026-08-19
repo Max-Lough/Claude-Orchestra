@@ -8,6 +8,8 @@
  *   node install.js [targetDir] --no-packs             install with no packs
  *   node install.js [targetDir] --specialists a[,b]    also install domain specialists
  *   node install.js [targetDir] --uninstall            remove cleanly
+ *   node install.js --scan <dir> [--depth n]           report which installs are behind
+ *   node install.js --scan <dir> --update              ...and bring the stale ones up
  *
  * targetDir defaults to the current working directory.
  *
@@ -232,6 +234,19 @@ function readJson(file) {
   }
 }
 
+function readJsonSafe(file) {
+  try {
+    const raw = fs.readFileSync(file, 'utf8').trim();
+    if (!raw) return {};
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch (_) {
+    // A scan reads many projects and must not die on one bad file: an
+    // unreadable record simply means "version unknown" for that row.
+    return {};
+  }
+}
+
 function writeJson(file, obj) {
   fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', 'utf8');
 }
@@ -269,6 +284,256 @@ function parseList(value) {
     .filter(Boolean);
 }
 
+// ------------------------------------------------------------------ scan
+//
+// Updating ONE project has always been easy: `node install.js <project>`, no
+// flags, idempotent, and it re-reads orchestra-install.json so the project's
+// own pack and specialist selection survives. What was missing is knowing
+// WHICH projects need it. Nothing recorded where the installs are, so the
+// documented upgrade path was "run `head -3 .claude/ORCHESTRA.md` in each
+// project you remember harnessing, compare it against the master's VERSION by
+// eye, and re-run the installer" — a manual diff across an unknown set.
+//
+// That gap has teeth: v1.5.0 fixed a Codex helper that had left the review
+// lane silently dead for six days. A project still on 1.4.1 carries that bug
+// and has no way to find out except by hitting it. `--scan` answers "which of
+// my projects are behind?" in one command, and `--update` acts on the answer.
+
+// Ordered comparison of two dotted versions. Returns <0, 0, or >0. A missing
+// or unparseable version sorts oldest — an install stamped before versioning
+// existed IS older than every released version, which is exactly the answer a
+// scan should give rather than an error.
+function compareVersions(a, b) {
+  const parse = (v) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(v || '').trim());
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (!pa && !pb) return 0;
+  if (!pa) return -1;
+  if (!pb) return 1;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+// What version is installed in a project, and what does it carry?
+//
+// Two sources, in order: orchestra-install.json (written since packs existed,
+// and machine-readable) and the version stamped into the ORCHESTRA.md header.
+// Older installs have only the header; the oldest have neither, and report as
+// unversioned rather than as a failure to read.
+function readInstall(projectDir) {
+  const dot = path.join(projectDir, '.claude');
+  const state = readJsonSafe(path.join(dot, STATE_FILE));
+  let version = typeof state.version === 'string' ? state.version.trim() : '';
+  if (!version) {
+    try {
+      const head = fs.readFileSync(path.join(dot, 'ORCHESTRA.md'), 'utf8').slice(0, 2048);
+      const m = /Installed by the Orchestra harness \(v(\d+\.\d+\.\d+)\)/.exec(head);
+      if (m) version = m[1];
+    } catch (_) {
+      /* no header to read — stays unversioned */
+    }
+  }
+  return {
+    dir: projectDir,
+    version,
+    packs: stringList(state.packs),
+    specialists: stringList(state.specialists),
+    // Whether the selection is RECORDED, not whether it is empty: a pre-packs
+    // install has no record, so a plain re-run cannot restore a selection it
+    // was never told about. Worth saying out loud before updating one.
+    hasState: Object.keys(state).length > 0,
+  };
+}
+
+// A project is an Orchestra install if the protocol was stamped into it. That
+// file is what the installer writes and `--uninstall` removes, so it is the
+// honest marker — orchestra-install.json alone would miss every pre-packs
+// install, and a stray .claude/ directory (every Claude Code project has one)
+// would over-match.
+function isInstall(dir) {
+  try {
+    return fs.statSync(path.join(dir, '.claude', 'ORCHESTRA.md')).isFile();
+  } catch (_) {
+    return false;
+  }
+}
+
+// Directories never worth walking into. Cheap to skip and expensive not to:
+// one node_modules can hold more directories than the rest of a tree combined.
+const SCAN_SKIP = new Set([
+  'node_modules', '.git', '.hg', '.svn', 'vendor', 'venv', '.venv', '__pycache__',
+  'target', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.cache',
+  'Library', '.godot', 'coverage', '.gradle', '.m2', '.cargo', '.tox',
+]);
+
+// Every Orchestra install under `root`, breadth-first to a depth limit.
+//
+// Symlinked directories are skipped for free: a Dirent reports a symlink as a
+// symlink, not a directory, so `isDirectory()` is false and the walk cannot
+// loop through one. An install is not descended into — a harnessed project
+// does not contain other harnessed projects, and stopping there keeps the
+// scan proportional to the number of repositories rather than their contents.
+function findInstalls(root, maxDepth) {
+  const found = [];
+  const walk = (dir, depth) => {
+    if (isInstall(dir)) {
+      found.push(readInstall(dir));
+      return;
+    }
+    if (depth >= maxDepth) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return; // unreadable directory — not a scan failure, just not searchable
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (SCAN_SKIP.has(e.name)) continue;
+      const child = path.join(dir, e.name);
+      // Never report the master as one of its own installs.
+      if (path.resolve(child) === path.resolve(SRC)) continue;
+      walk(child, depth + 1);
+    }
+  };
+  walk(path.resolve(root), 0);
+  found.sort((a, b) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
+  return found;
+}
+
+// A project is updated by spawning the installer against it, exactly as a
+// person would run it by hand. That is deliberate: this mode adds discovery,
+// it does not add a second way to install. Each project therefore gets the
+// identical code path, its own recorded pack/specialist selection, and its own
+// pack self-check output — and a failure in one cannot corrupt the state of
+// the next, because nothing is shared but a fresh process.
+function updateInstall(projectDir) {
+  const r = spawnSync(process.execPath, [path.join(SRC, 'install.js'), projectDir], {
+    cwd: SRC,
+    encoding: 'utf8',
+    timeout: 120000,
+  });
+  return {
+    ok: !r.error && r.status === 0,
+    status: r.status,
+    output: ((r.stdout || '') + (r.stderr || '')).replace(/\s+$/, ''),
+    error: r.error ? String(r.error.message || r.error) : '',
+  };
+}
+
+function runScan(root, doUpdate, maxDepth) {
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    fail('Scan directory does not exist: ' + root);
+  }
+  console.log(
+    'Orchestra ' + (VERSION || '(unversioned master)') + ' — master: ' + SRC
+  );
+  console.log('Scanning ' + path.resolve(root) + ' (max depth ' + maxDepth + ')\n');
+
+  const installs = findInstalls(root, maxDepth);
+  if (!installs.length) {
+    console.log('  No Orchestra installs found.');
+    console.log(
+      '\n  A project counts as an install when it has .claude/ORCHESTRA.md. If you\n' +
+      '  expected one here, it may be deeper than the depth limit (--depth <n>).'
+    );
+    return 0;
+  }
+
+  // Classify first, print second: the summary line and the exit code both need
+  // the whole picture, and a reader wants the counts to agree with the rows.
+  const rows = installs.map((i) => {
+    const cmp = compareVersions(i.version, VERSION);
+    let state;
+    if (!i.version) state = 'BEHIND';
+    else if (cmp < 0) state = 'BEHIND';
+    else if (cmp > 0) state = 'ahead';
+    else state = 'up to date';
+    return { install: i, state };
+  });
+
+  const stale = rows.filter((r) => r.state === 'BEHIND');
+  const ahead = rows.filter((r) => r.state === 'ahead');
+
+  for (const row of rows) {
+    const i = row.install;
+    const bits = [];
+    if (i.packs.length) bits.push('packs: ' + i.packs.join(', '));
+    if (i.specialists.length) bits.push('specialists: ' + i.specialists.join(', '));
+    if (!i.hasState) bits.push('no install record — a pre-packs install');
+    if (row.state === 'ahead') bits.push('NEWER than this master — not updated');
+    console.log(
+      '  ' + (i.version || 'unversioned').padEnd(12) +
+      row.state.padEnd(12) +
+      i.dir +
+      (bits.length ? '\n' + ' '.repeat(26) + bits.join(' · ') : '')
+    );
+  }
+
+  console.log(
+    '\n' + installs.length + ' install(s) · ' + stale.length + ' behind · ' +
+    ahead.length + ' ahead of this master'
+  );
+  if (ahead.length) {
+    console.log(
+      '  An install ahead of this master is never touched — `git pull` the master first.'
+    );
+  }
+
+  if (!stale.length) {
+    console.log('  Everything reachable is on ' + (VERSION || 'this master') + '.');
+    return 0;
+  }
+
+  if (!doUpdate) {
+    console.log('\n  Update them: node install.js --scan ' + path.resolve(root) + ' --update');
+    return 1; // "something is behind" is a reportable state, usable in a check
+  }
+
+  console.log('');
+  let failed = 0;
+  for (const row of stale) {
+    const i = row.install;
+    console.log(
+      '  Updating ' + i.dir + ' (' + (i.version || 'unversioned') + ' -> ' + VERSION + ')'
+    );
+    if (!i.hasState && (i.packs.length === 0)) {
+      // Said before the run, not after: a pre-packs install has no recorded
+      // selection to inherit, so packs it may have had are not restored by a
+      // plain re-run. Better a warning the user can act on than a silent
+      // downgrade of their harness.
+      console.log(
+        '    note: no install record — any packs/specialists this project had are NOT\n' +
+        '          restored automatically. Re-add them with:\n' +
+        '            node install.js "' + i.dir + '" --packs <names> --specialists <names>'
+      );
+    }
+    const res = updateInstall(i.dir);
+    if (res.ok) {
+      console.log('    updated to ' + VERSION);
+    } else {
+      failed++;
+      console.log(
+        '    FAILED (' + (res.error || 'exit ' + res.status) + ')' +
+        (res.output ? '\n' + res.output.split(/\r?\n/).map((l) => '      ' + l).join('\n') : '')
+      );
+    }
+  }
+
+  console.log(
+    '\n' + (stale.length - failed) + ' updated, ' + failed + ' failed.' +
+    (failed
+      ? ' Re-run the installer on the failed project(s) directly to see the full output.'
+      : '')
+  );
+  return failed ? 1 : 0;
+}
+
 // ---------------------------------------------------------------- main
 
 const args = process.argv.slice(2);
@@ -276,6 +541,9 @@ let uninstall = false;
 let specialistsArg = null; // null = not given (inherit the recorded selection)
 let packsArg = null;
 let dirArg = '';
+let scanArg = null; // null = not scanning
+let updateFlag = false;
+let depthArg = null;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--uninstall') uninstall = true;
@@ -285,14 +553,62 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--packs') packsArg = args[++i] || '';
   else if (a.startsWith('--packs=')) packsArg = a.slice('--packs='.length);
   else if (a === '--no-packs') packsArg = '';
+  else if (a === '--scan') scanArg = args[++i] || '';
+  else if (a.startsWith('--scan=')) scanArg = a.slice('--scan='.length);
+  else if (a === '--update') updateFlag = true;
+  else if (a === '--depth') depthArg = args[++i] || '';
+  else if (a.startsWith('--depth=')) depthArg = a.slice('--depth='.length);
   else if (a.startsWith('--')) {
     fail(
       'Unknown flag: ' + a +
-        ' (expected --uninstall, --packs <names>, --no-packs, --specialists <names>, or --no-specialists)'
+        ' (expected --uninstall, --packs <names>, --no-packs, --specialists <names>,' +
+        ' --no-specialists, --scan <dir>, --update, or --depth <n>)'
     );
   } else if (!dirArg) dirArg = a;
   else fail('Unexpected extra argument: ' + a);
 }
+
+// --- scan mode: a different job from installing into one target, so it is
+// handled here and returns; nothing below this block runs.
+if (scanArg !== null) {
+  if (!scanArg.trim()) fail('--scan needs a directory to search: --scan <dir>');
+  if (dirArg) {
+    fail(
+      '--scan takes the directory to search and nothing else — got an extra target ' +
+        '("' + dirArg + '"). To install into one project, drop --scan.'
+    );
+  }
+  // Refused rather than supported. A scan spans projects that made DIFFERENT
+  // choices, and the recorded selection is what a plain re-run preserves;
+  // applying one --packs/--specialists set across all of them would silently
+  // rewrite those choices — adding an OpenAI surface to projects that never
+  // asked for one, or dropping a specialist a project depends on.
+  if (packsArg !== null || specialistsArg !== null) {
+    fail(
+      '--scan cannot be combined with --packs/--specialists. A scan updates each ' +
+        'project to its OWN recorded selection; one selection applied across many ' +
+        'projects would silently rewrite choices they made deliberately. Change a ' +
+        "project's selection by installing into it directly."
+    );
+  }
+  // Mass uninstall is not a convenience worth building. One project at a time
+  // is the honest interface for removing a harness.
+  if (uninstall) {
+    fail(
+      '--scan cannot be combined with --uninstall. Removing the harness is per ' +
+        'project on purpose: node install.js <project> --uninstall'
+    );
+  }
+  let maxDepth = 6;
+  if (depthArg !== null) {
+    const n = parseInt(depthArg, 10);
+    if (!Number.isFinite(n) || n < 1) fail('--depth needs a positive whole number');
+    maxDepth = n;
+  }
+  process.exit(runScan(scanArg, updateFlag, maxDepth));
+}
+if (updateFlag) fail('--update only means something with --scan <dir>');
+if (depthArg !== null) fail('--depth only means something with --scan <dir>');
 const target = path.resolve(dirArg || process.cwd());
 
 if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {

@@ -67,6 +67,12 @@ jobs:
         # git, no dependencies.
         run: node tests/review-lane.test.js
 
+      - name: Scan-lane suite
+        # Exercises install.js --scan / --update against real installs the
+        # installer itself produced, then aged. Nothing is stubbed: the point
+        # is that the scan reads what the installer actually writes.
+        run: node tests/scan-lane.test.js
+
       - name: Exec-lane suite
         # Same shape for the execution runner: the stub reports what the engine
         # saw (model, sandbox, effort, identity, brief markers), and the suite

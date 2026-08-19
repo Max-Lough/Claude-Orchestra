@@ -213,6 +213,7 @@ Orchestra/
 ├── tests/                  ← harness tests (master-only; never stamped into projects)
 │   ├── review-lane.test.js ← the cross-vendor review lane, end to end
 │   ├── exec-lane.test.js   ← the cross-vendor execution lane, end to end
+│   ├── scan-lane.test.js   ← install.js --scan / --update, against real installs
 │   └── fixtures/           ← a stub Codex CLI that reports what the engine saw
 └── packs/                  ← OPTIONAL modules, installed only when named (--packs)
     ├── README.md           ← the pack contract
@@ -245,6 +246,46 @@ head -3 .claude/ORCHESTRA.md     # or just ask the session: /orchestra-status
 ```
 
 Compare that against the master's `VERSION` and re-run the installer to update (it's idempotent). Installs stamped before versioning existed carry no version — treat "unversioned" as "older than v1.0.0". The number bumps with any change to the stamped files (protocol, guard, hooks, agents, bundled skills): **patch** for fixes and doc-only changes, **minor** for new capabilities (carve-outs, skills, config knobs), **major** for breaking changes to the protocol or the `orchestra.json` format. [`CHANGELOG.md`](CHANGELOG.md) records what each version changed and which field failure prompted it.
+
+### Finding and updating installs across repos — `--scan`
+
+Updating one project was always easy; knowing *which* projects needed it was not. Nothing recorded where the installs were, so the upgrade path above had to be walked by hand, per project, from memory of which repos you'd harnessed. That gap has teeth: v1.5.0 fixed a Codex helper that had left the review lane silently dead for six days, and a project still on v1.4.1 carries that bug with no way to find out except by hitting it.
+
+Run the scan **from the master**, which is the only place that knows the current `VERSION` and holds the files to stamp — so it's where you already are after a `git pull`:
+
+```bash
+node install.js --scan ~/code             # report: which installs are behind?
+node install.js --scan ~/code --update    # ...and bring the stale ones up
+```
+
+```
+Orchestra 1.7.0 — master: /home/you/Claude-Orchestra
+Scanning /home/you/code (max depth 6)
+
+  1.7.0       up to date  /home/you/code/project-a
+                          packs: codex
+  1.4.1       BEHIND      /home/you/code/project-b
+                          packs: codex · specialists: modeler
+  unversioned BEHIND      /home/you/code/project-c
+                          no install record — a pre-packs install
+
+3 install(s) · 2 behind · 0 ahead of this master
+
+  Update them: node install.js --scan /home/you/code --update
+```
+
+A project counts as an install when it has `.claude/ORCHESTRA.md` — the file the installer writes and `--uninstall` removes. The version comes from `.claude/orchestra-install.json`, falling back to the `ORCHESTRA.md` header stamp, so pre-packs installs are still found and classified rather than skipped.
+
+What it does *not* do is as deliberate as what it does:
+
+- **Each project updates to its own recorded selection.** An update spawns a plain `node install.js <project>` per project — the identical code path you'd run by hand — so packs and specialists survive. That's also why `--scan` **refuses** `--packs`/`--specialists`: one selection applied across many projects would silently rewrite choices they made separately, adding an OpenAI surface to projects that never asked for one. Change a project's selection by installing into it directly.
+- **An install ahead of the master is never touched.** If a project was stamped by a newer master than the one you're scanning from, it's reported and skipped — downgrading it would be data loss wearing an update's name. `git pull` the master first.
+- **`--scan` refuses `--uninstall`.** Removing the harness stays per project on purpose; mass uninstall isn't a convenience worth building.
+- **A pre-versioning install warns before it's updated.** With no recorded selection, a plain re-run can't restore packs it was never told about — the scan says so, with the command to re-add them, rather than quietly shipping a downgraded harness.
+
+Exit codes make it usable as a check: **0** when nothing reachable is behind, **1** when something is (or when an update failed). `--depth <n>` bounds the walk (default 6); `node_modules`, `.git`, build outputs and caches are skipped, symlinked directories are never followed, and a directory that is itself an install is not descended into.
+
+PowerShell users get the same modes through the wrapper: `.\install.ps1 -Scan "C:\code"` and `-Scan "C:\code" -Update`.
 
 ## Install into a project
 

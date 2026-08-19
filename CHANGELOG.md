@@ -9,6 +9,61 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.7.0 — finding the installs that are behind
+
+Updating one project was already easy: `node install.js <project>`, no flags,
+idempotent, and it re-reads `orchestra-install.json` so the project's own pack
+and specialist selection survives. What was missing was knowing *which*
+projects needed it. Nothing recorded where the installs were, so the documented
+upgrade path was: run `head -3 .claude/ORCHESTRA.md` in each project you
+remember harnessing, compare it against the master's `VERSION` by eye, and
+re-run the installer. A manual diff across a set nobody was tracking.
+
+That gap has teeth. v1.5.0 fixed a Codex helper that had left the review lane
+silently dead for six days — reviews that launched, ran, and returned nothing
+under a preflight reporting a healthy install. A project still on v1.4.1
+carries that bug and has no way to find out except by hitting it, and the
+harness had no answer to "which of my projects are affected?"
+
+`node install.js --scan <dir>` answers it, and `--update` acts on the answer.
+A project counts as an install when it has `.claude/ORCHESTRA.md` — what the
+installer writes and `--uninstall` removes — with the version read from
+`orchestra-install.json`, falling back to the `ORCHESTRA.md` header stamp so
+pre-packs installs are classified rather than skipped. Exit `1` when something
+is behind makes it usable as a check rather than only as a report.
+
+The restraint is the design:
+
+- **An update spawns a plain per-project re-run**, the identical code path a
+  person runs by hand. This mode adds discovery, not a second way to install —
+  so each project keeps its own recorded selection, gets its own pack
+  self-check, and a failure in one cannot corrupt the next.
+- **`--scan` refuses `--packs`/`--specialists`.** A scan spans projects that
+  made different choices; one selection applied across all of them would
+  silently rewrite those choices — adding an OpenAI surface to projects that
+  never asked for one, or dropping a specialist another depends on.
+- **`--scan` refuses `--uninstall`.** Mass removal is not a convenience worth
+  building; one project at a time is the honest interface.
+- **An install ahead of the master is reported and skipped.** Downgrading a
+  project stamped by a newer master would be data loss wearing an update's
+  name.
+- **A pre-versioning install is warned about before it is updated.** With no
+  recorded selection, a plain re-run cannot restore packs it was never told
+  about, so the scan says so — with the command to re-add them — instead of
+  quietly shipping a downgraded harness.
+
+The walk skips `node_modules`, VCS directories, build outputs and caches, never
+follows symlinked directories (a Dirent reports a symlink as a symlink, so the
+walk cannot loop), stops at a directory that is itself an install, and bounds
+depth at 6 by default (`--depth <n>`). A malformed `orchestra-install.json`
+degrades that one row to its header stamp rather than taking the scan down.
+
+Tested in `tests/scan-lane.test.js` (41 checks, in CI on all three platforms)
+against installs the installer itself produced and then aged — nothing is
+stubbed, because the property under test is whether the scan reads what the
+installer actually writes. `install.ps1` gained `-Scan`/`-Update`/`-Depth`;
+`install.sh` already forwarded its arguments verbatim.
+
 ## 1.6.0 — cross-vendor execution: OpenAI executors (Sol / Terra) in the codex pack
 
 Until now the codex pack's OpenAI surface covered judgment (review, deep-plan)

@@ -4,12 +4,17 @@
 #   .\install.ps1 "C:\path\to\project" -Specialists modeler
 #   .\install.ps1 "C:\path\to\project" -NoPacks
 #   .\install.ps1 "C:\path\to\project" -Uninstall
+#   .\install.ps1 -Scan "C:\code"                 report which installs are behind
+#   .\install.ps1 -Scan "C:\code" -Update         ...and bring the stale ones up
 param(
     [string]$Target = ".",
     [string]$Packs = "",
     [string]$Specialists = "",
     [switch]$NoPacks,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [string]$Scan = "",
+    [switch]$Update,
+    [int]$Depth = 0
 )
 
 $node = Get-Command node -ErrorAction SilentlyContinue
@@ -18,10 +23,18 @@ if ($null -eq $node) {
     exit 1
 }
 
-$installArgs = @((Join-Path $PSScriptRoot "install.js"), $Target)
-if ($Packs -ne "") { $installArgs += @("--packs", $Packs) }
-if ($NoPacks) { $installArgs += "--no-packs" }
-if ($Specialists -ne "") { $installArgs += @("--specialists", $Specialists) }
-if ($Uninstall) { $installArgs += "--uninstall" }
+if ($Scan -ne "") {
+    # Scan mode searches a directory instead of installing into one, so the
+    # target is deliberately omitted — the installer refuses both at once.
+    $installArgs = @((Join-Path $PSScriptRoot "install.js"), "--scan", $Scan)
+    if ($Update) { $installArgs += "--update" }
+    if ($Depth -gt 0) { $installArgs += @("--depth", "$Depth") }
+} else {
+    $installArgs = @((Join-Path $PSScriptRoot "install.js"), $Target)
+    if ($Packs -ne "") { $installArgs += @("--packs", $Packs) }
+    if ($NoPacks) { $installArgs += "--no-packs" }
+    if ($Specialists -ne "") { $installArgs += @("--specialists", $Specialists) }
+    if ($Uninstall) { $installArgs += "--uninstall" }
+}
 & node @installArgs
 exit $LASTEXITCODE

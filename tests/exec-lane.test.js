@@ -565,6 +565,54 @@ function case12() {
   );
 }
 
+function case13() {
+  section('13. The Codex install directory leads the engine\'s PATH');
+
+  // Both lanes drive the SAME Codex install, and the failure this guards is
+  // silent in both: `codex-windows-sandbox-setup.exe` is resolved by NAME, so
+  // an install directory that is not itself on PATH can leave the sandbox
+  // unestablished — the engine runs and produces nothing (the review lane lost
+  // six days to exactly that, 2026-08-12 → 08-18). Carried into the exec
+  // runner in v1.6.0; asserted here so it cannot regress independently.
+  const fx = makeRepo();
+  const installDir = path.join(fx.root, 'OpenAI', 'Codex', 'bin', 'abc123');
+  const fakeBin = makeStubBin(installDir, 'codex-stub');
+  const r = runExec(fx, [], { CODEX_BIN: fakeBin });
+  const out = r.stdout || '';
+  const first = field(out, 'PATH_FIRST');
+  const same = (a, b) =>
+    process.platform === 'win32'
+      ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
+      : path.resolve(a) === path.resolve(b);
+  check(
+    'the resolved install directory is FIRST on the engine\'s PATH',
+    first && same(first, installDir),
+    'PATH_FIRST: ' + first + '\ninstall dir: ' + installDir
+  );
+
+  // ...and it is not added twice when it is already leading — a PATH that
+  // grows by one copy of the same directory per run is its own bug.
+  const already = runExec(fx, [], {
+    CODEX_BIN: fakeBin,
+    PATH: installDir + path.delimiter + (process.env.PATH || ''),
+    Path: installDir + path.delimiter + (process.env.PATH || ''),
+  });
+  const aout = already.stdout || '';
+  const parts = (field(aout, 'PATH_FULL') || '').split(path.delimiter).filter(Boolean);
+  const dupes = parts.filter((p) => {
+    try {
+      return same(p, installDir);
+    } catch (_) {
+      return false;
+    }
+  });
+  check(
+    'an install directory already on PATH is not prepended a second time',
+    dupes.length === 1,
+    'occurrences: ' + dupes.length + ' in ' + parts.slice(0, 4).join(path.delimiter)
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -592,6 +640,7 @@ async function main() {
   case10();
   case11();
   case12();
+  case13();
 }
 
 main().then(finish, (e) => {

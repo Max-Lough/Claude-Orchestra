@@ -57,6 +57,42 @@ called directly — the Codex CLI is not involved.
 Recommended pin for review: `ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol`. Execution
 defaults to `gpt-5.6-terra` (standard) and `gpt-5.6-sol` (heavy) out of the box.
 
+## Checking the install — `--doctor`
+
+```bash
+node .claude/hooks/orchestra-review.js --doctor
+```
+
+The installer runs this for you when the pack is selected, and it is worth
+re-running after any Codex update, the first time a review comes back empty, or
+the first time an ordered execution reports it changed nothing. It lives in the
+review runner but checks the **install**, which both lanes drive — one check,
+not two to keep in step.
+It reviews nothing and needs no work order: it resolves the real `codex` binary,
+names the install layout, verifies the helper files that must sit **directly
+beside** that binary, repairs what it can (including a helper that is present
+but one directory too deep), and prints the exact copy command for anything it
+cannot. Exit `0` means a review would find a complete install; exit `1` means it
+would not, and the output says why.
+
+**Windows, specifically.** Three names must sit directly next to `codex.exe`:
+`codex-command-runner.exe`, `codex-resources`, and
+`codex-windows-sandbox-setup.exe`. The last one is resolved **by name**, not
+relative to the binary, so a copy nested inside `codex-resources\` — the
+natural place for a hand repair to put it — is never found. The sandbox is then
+never established and reviews return nothing, while every other preflight line
+reports a healthy install. That state cost a lane for six days (2026-08-12 →
+08-18) and is exactly what `--doctor` exists to make a ten-second question. Both
+runners also put the install directory first on the engine's `PATH`, so a
+correctly-placed helper is findable however the user's `PATH` is arranged.
+
+**It fails the execution lane the same silent way.** `orchestra-exec.js` drives
+the same binary in the same sandbox, so an unestablished sandbox there means an
+engine that runs, exits, and changes nothing — an order reported as attempted
+with an empty `TREE AUDIT`. The exec runner names `--doctor` on exactly that
+failure shape; the launchers relay the line and never run it themselves (it
+repairs the install, which is the user's machine and the Director's call).
+
 ## Project configuration
 
 Per-project settings live under a `codex` key in `.claude/orchestra.json`, so
@@ -91,7 +127,7 @@ Environment variables override the file; explicit runner flags override both.
 | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
 | `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
 | `integrityIgnore` / `integrityIgnoreDefaults` | Paths that are expected build/engine churn, added to (or replacing) the built-in list of generated-artifact paths. |
-| `helperSiblings` / `requireHelperSiblings` | Files the Codex install must carry next to its executable (default on Windows: `codex-command-runner.exe`, `codex-resources`). Verified every run; repaired where a known-good copy is locatable; `requireHelperSiblings: true` makes a missing one a hard stop. |
+| `helperSiblings` / `requireHelperSiblings` | Files the Codex install must carry next to its executable (default on Windows: `codex-command-runner.exe`, `codex-resources`, `codex-windows-sandbox-setup.exe`). Verified every run — as files where the name says executable, so a directory of the right name does not pass; repaired where a known-good copy is locatable, including one misplaced inside the install itself; `requireHelperSiblings: true` makes a missing one a hard stop. |
 
 ## Reliability machinery
 
@@ -182,10 +218,22 @@ itself from `~/.codex/packages/standalone/current/bin` to
 `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`, which silently invalidated a repair
 recipe written for the old layout. The runner now names the layout it found in
 the preflight, verifies the helper files that must sit next to the *resolved*
-binary, repairs them from any locatable known-good copy (your `helpersDir`, a
-sibling version directory left by the self-update, or the other known layout),
-and — when it cannot — names exactly which files are missing and exactly where
-it looked.
+binary, repairs them from any locatable known-good copy (your `helpersDir`, the
+install's own subdirectories, a sibling version directory left by the
+self-update, or the other known layout), and — when it cannot — names exactly
+which files are missing and exactly where it looked.
+
+**Present, but misplaced.** The check asks whether the helper is *beside the
+binary*, not whether it exists somewhere: a copy sitting one directory down is
+not a copy at all for a helper Codex resolves by name. The runner searches the
+install's own subdirectories first (a misplaced copy is the right version, and
+flattening it up is the whole repair), reports it as `was MISPLACED inside the
+install at <dir>` rather than as a restore, and refuses to count a *directory*
+named `something.exe` as the executable. Where a specific absence has a specific
+consequence — `codex-windows-sandbox-setup.exe` means the sandbox is silently
+never set up — the report says so instead of listing one more filename. This is
+the 2026-08-18 failure: one file, one directory too deep, six days of reviews
+that no-opped while looking healthy.
 
 **Integrity warnings that mean something.** The check exists to catch a reviewer
 editing source. It used to fire on any tree change at all, so a Godot project's
@@ -220,7 +268,7 @@ loudly when it does.
 | `ORCHESTRA_REVIEW_WARMUP_CMD` | — | Command run in the checkout before the integrity baseline. |
 | `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `300000` | Cap for the warmup. |
 | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
-| `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
+| `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |
 | `ORCHESTRA_EXEC_MODEL` | `gpt-5.6-terra` | Standard-tier execution model (`codex.execModel`). |
 | `ORCHESTRA_EXEC_HEAVY_MODEL` | `gpt-5.6-sol` | Heavy-tier execution model (`codex.execHeavyModel`). |
@@ -252,6 +300,7 @@ about the symptom.
 |---|---|---|
 | A self-update can leave the install without files it needs next to the binary. | 2026-08-08 onward, Windows. | Helper-sibling verification + auto-repair from a locatable known-good copy; `helpersDir` as the user-owned repair kit; the exact missing filenames named when repair is impossible. |
 | The install relocated to a new layout (`%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`), invalidating layout-specific advice. | 2026-08-12, codex-cli ≥ 0.147.0. | Both layouts detected and named in the preflight; repair searches sibling version directories and the other layout. **Unverified upstream:** whether the new layout ships or needs `codex-command-runner.exe` / `codex-resources` at all. The check is therefore a loud warning, not a hard stop, unless you set `requireHelperSiblings`. |
+| `codex-windows-sandbox-setup.exe` is resolved by name rather than relative to the binary, so an install whose directory is not on `PATH` cannot find its own sandbox helper — and fails silently rather than saying so. | 2026-08-12 → 08-18, Windows. | The name is in the default sibling list, verified beside the resolved binary, and repaired from a misplaced copy; the install directory is prepended to the engine's `PATH`; `--doctor` answers the question without running a review. The silence itself is upstream. |
 | `codex exec` exiting 143 (SIGTERM-class) mid-review with no verdict and nothing on stderr. | 2026-08-12 gate, attempt 1. | Full attribution (the runner proves it was not its own timer), plus one automatic retry in a fresh checkout — which is what produced the verdict that round. If the kill originates *inside* codex, only upstream can fix the cause. |
 | The engine explores at length before concluding, so even a trivial diff costs minutes. | Every round. | Timeout floors and honest cap reporting; `doNotRun` / `--no-tests` as hard prohibitions. Not fixable here — it is how the engine works. |
 | Model-side flakiness: an occasional run that produces no final message despite exiting 0. | Occasional. | Classified as a zero-output failure and retried once; reported in the `ATTEMPT LOG` either way, so the lane's real reliability stays visible. |

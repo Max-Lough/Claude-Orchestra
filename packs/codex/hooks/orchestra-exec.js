@@ -183,6 +183,10 @@ const CONFIG = {
   extraArgs: (process.env.ORCHESTRA_EXEC_ARGS || '').trim(),
   bin: (process.env.CODEX_BIN || 'codex').trim(),
   resolvedBin: '',
+  // Directory the resolved binary lives in, prepended to the engine's PATH —
+  // some Codex helpers are resolved by NAME rather than relative to the
+  // binary. See childEnv().
+  installDir: '',
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   execDir: '',
   execDirLabel: '',
@@ -424,6 +428,38 @@ function childEnv(extra) {
   if (SCRATCH.gitConfigFile) {
     env.GIT_CONFIG_GLOBAL = SCRATCH.gitConfigFile;
     env.GIT_CONFIG_NOSYSTEM = '1';
+  }
+  // Carried from the review runner (v1.5.0), because both lanes drive the SAME
+  // Codex install and the failure it fixes is silent in both: not every helper
+  // Codex needs is resolved relative to its own binary —
+  // `codex-windows-sandbox-setup.exe` is resolved by NAME, and without it the
+  // sandbox is never established, so the engine runs and produces nothing while
+  // every other preflight line reports a healthy install. That cost the review
+  // lane six days (2026-08-12 → 08-18); an execution lane failing the same way
+  // would report an order as attempted and changed nothing. Putting the install
+  // directory FIRST on the engine's PATH makes a correctly-placed helper
+  // findable however the user's PATH is arranged. It cannot mask a missing file
+  // — an empty directory adds no names — so this widens where a present helper
+  // is found, never substituting for the check (`--doctor` on the review
+  // runner is that check, and it covers this install for both lanes).
+  if (CONFIG.installDir) {
+    // Windows environment blocks are case-insensitive and the real key is
+    // usually `Path`; adding a second `PATH` key would be a coin flip over
+    // which one the child sees.
+    const key = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'PATH';
+    const cur = String(env[key] || '');
+    const same = (a, b) =>
+      process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+    let already = false;
+    for (const part of cur.split(path.delimiter)) {
+      if (!part) continue;
+      try {
+        if (same(path.resolve(part), path.resolve(CONFIG.installDir))) already = true;
+      } catch (_) {
+        /* an unresolvable PATH entry is simply not a match */
+      }
+    }
+    if (!already) env[key] = CONFIG.installDir + (cur ? path.delimiter + cur : '');
   }
   return env;
 }
@@ -789,7 +825,9 @@ function failureDiagnostics(att) {
         'OPENAI_API_KEY or run `codex login`), a model id this account cannot use ' +
         '(model: ' + (CONFIG.model || 'codex default') + '), an unsupported flag on this ' +
         'Codex version (check `codex exec --help`, adjust ORCHESTRA_EXEC_ARGS), or a ' +
-        'sandbox restriction.'
+        'sandbox restriction — including an install missing a helper the sandbox ' +
+        'needs. Both lanes share one Codex install; inspect and repair it with ' +
+        '`node .claude/hooks/orchestra-review.js --doctor`.'
     );
   }
   if (att.class.kind === 'runner-timeout') {
@@ -1147,12 +1185,12 @@ function main() {
   // --- preflight: resolve the real binary, mirror the repair kit.
   const resolved = resolveCodexBin(CONFIG.bin);
   CONFIG.resolvedBin = resolved.path;
+  // Set before the probe: childEnv() puts this first on the engine's PATH, and
+  // the probe must run under the same conditions the real attempt will.
+  CONFIG.installDir = resolved.real ? path.dirname(resolved.path) : '';
   if (resolved.note) PREFLIGHT.push(resolved.note);
   if (CONFIG.helpersDir) {
-    const restore = restoreHelpers(
-      CONFIG.helpersDir,
-      resolved.real ? path.dirname(resolved.path) : ''
-    );
+    const restore = restoreHelpers(CONFIG.helpersDir, CONFIG.installDir);
     if (restore.restored.length) {
       PREFLIGHT.push(
         'restored ' + restore.restored.length + ' file(s) into the Codex install from ' +
@@ -1255,7 +1293,15 @@ function main() {
       att.class.headline || 'the engine produced nothing',
       'The engine died (or said nothing) before reporting. Attribution — who killed ' +
         'it, how long it ran against its cap, and what it last wrote — is in the ' +
-        'ATTEMPT LOG below. The TREE AUDIT records what the attempt left behind.',
+        'ATTEMPT LOG below. The TREE AUDIT records what the attempt left behind.' +
+        (att.class.kind === 'ok' || att.class.kind === 'exit'
+          ? '\nAn engine that runs, exits, and changes nothing is also the signature of ' +
+            'an incomplete Codex install: the sandbox helper is resolved by NAME, so a ' +
+            'copy that is missing — or merely one directory too deep — leaves the sandbox ' +
+            'unestablished and the run a no-op. Both lanes share one install; check and ' +
+            'repair it with `node .claude/hooks/orchestra-review.js --doctor` before ' +
+            're-dispatching.'
+          : ''),
       att,
       audit
     );

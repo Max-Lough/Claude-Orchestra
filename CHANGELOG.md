@@ -9,7 +9,7 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
-## 1.5.0 — cross-vendor execution: OpenAI executors (Sol / Terra) in the codex pack
+## 1.6.0 — cross-vendor execution: OpenAI executors (Sol / Terra) in the codex pack
 
 Until now the codex pack's OpenAI surface covered judgment (review, deep-plan)
 but never hands: every edit ran on a Claude executor, and a project that wanted
@@ -61,10 +61,70 @@ so such changes take the default reviewer — the add-a-`reviewer-codex`-pass
 convention on heavy orders exists precisely because author and reviewer would
 otherwise share a vendor, which no longer holds there.
 
-Tested like the review lane: `tests/exec-lane.test.js` (51 checks against the
+Tested like the review lane: `tests/exec-lane.test.js` (53 checks against the
 same stub Codex, extended to report sandbox, config overrides, git identity,
 and brief markers, and to model an engine that mutates the tree and then dies),
 in CI on all three platforms.
+
+**Carried over from 1.5.0's fix, because both lanes drive one Codex install.**
+The helper that cost the review lane six days — `codex-windows-sandbox-setup.exe`,
+resolved by NAME, so a copy one directory too deep is no copy at all — fails the
+execution lane the same silent way: the sandbox is never established and the
+engine runs, exits, and changes nothing. The exec runner therefore prepends the
+resolved install directory to the engine's `PATH` exactly as the review runner
+does (asserted in the suite, including that an already-leading directory is not
+prepended twice), and its failure paths name
+`node .claude/hooks/orchestra-review.js --doctor` — the one install check, shared
+by both lanes — where an engine that produced nothing is the symptom. The doctor
+itself stays in the review runner rather than being duplicated: two copies of an
+install check are two things to drift.
+## 1.5.0 — a helper file that is present, but one directory too deep
+
+The cross-vendor review lane was dead from 2026-08-12 to 08-18 and said nothing.
+Every runner-mediated review launched, ran, and returned no verdict; the
+preflight reported the install as healthy each time. The cause was one file: an
+earlier repair session had put `codex-windows-sandbox-setup.exe` **inside**
+`codex-resources\` instead of directly beside `codex.exe`. Codex resolves that
+helper by name, so a copy one directory down is not a copy at all — the sandbox
+was never established, and the reviews no-opped. One file copy fixed it.
+
+Three separate things had to be true for six days of silence:
+
+1. The helper-sibling list did not name the file. It checked
+   `codex-command-runner.exe` and `codex-resources`, found both, and said so.
+2. The presence check asked `existsSync(installDir + name)` — the right
+   question, asked only of names nobody had thought to add.
+3. Nothing looked *inside* the install. A misplaced copy is the easiest repair
+   there is (it is the right version, already on the machine), and it was the
+   one place the search never went.
+
+So: `codex-windows-sandbox-setup.exe` joins the Windows default sibling list;
+the search for a known-good copy now covers the install's own subdirectories
+first and reports a find there as `was MISPLACED inside the install at <dir>`
+rather than as a restore; a *directory* named `something.exe` no longer counts
+as the executable; the install directory is prepended to the engine's `PATH`,
+because not every Codex helper resolves relative to the binary; and where an
+absence has a specific known consequence, the report states it instead of
+listing one more filename.
+
+**`--doctor`.** All of that was already reachable only by running a whole
+review. `node .claude/hooks/orchestra-review.js --doctor` runs the same
+inspection alone — no work order, no engine launch — repairs what it can, prints
+the exact copy command for what it cannot, and exits non-zero when a review
+would not find a complete install. It shares one code path with the review
+preflight on purpose: a doctor that checks something other than what the review
+checks is a second opinion about the wrong install.
+
+**Carried in with the install.** A pack may now declare a `selfCheck` in its
+`pack.json`, which the installer runs and prints at the end of an install. The
+`codex` pack declares `--doctor`, so a broken Codex install is reported at the
+moment the person is already reading the output, next to the instructions for
+fixing it — rather than days later, as a review that returns nothing.
+
+Tests: 96 → 108 checks. The new case reproduces the failure first (a sibling
+list that omits the sandbox helper calls the broken install healthy) before
+proving the fix, per the suite's rule that a checker which cannot fail is
+decoration.
 
 ## 1.4.1 — a subagent may not end its turn on a running process
 

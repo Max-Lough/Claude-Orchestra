@@ -187,6 +187,26 @@ function sleep(ms) {
 // is a `.cmd` shim that invokes node on the stub. Everywhere else the stub is
 // executable and is handed over as-is. Same stub, same behaviour, one layer of
 // platform plumbing.
+// `--doctor` takes no work order — that is half its point, so the helper does
+// not pass one.
+function runDoctor(fx, extraEnv) {
+  return spawnSync(process.execPath, [RUNNER, '--doctor'], {
+    cwd: fx.repo,
+    encoding: 'utf8',
+    timeout: 60000,
+    env: Object.assign(
+      {},
+      process.env,
+      {
+        CLAUDE_PROJECT_DIR: fx.repo,
+        CODEX_BIN: STUB_BIN,
+        ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
+      },
+      extraEnv || {}
+    ),
+  });
+}
+
 function makeStubBin(dir, base) {
   fs.mkdirSync(dir, { recursive: true });
   if (process.platform !== 'win32') {
@@ -1082,6 +1102,145 @@ function case18() {
   );
 }
 
+function case19() {
+  section('19. A helper that is present but MISPLACED is found, named, and repaired');
+
+  // The 2026-08-18 field failure, exactly: a repair session put
+  // codex-windows-sandbox-setup.exe INSIDE codex-resources\\ instead of beside
+  // codex.exe. Codex resolves that helper by name, so the review no-opped —
+  // while the preflight reported the install as healthy, because the two names
+  // it checked were both there.
+  const SIBS = 'codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe';
+  const nest = (installDir) => {
+    fs.mkdirSync(path.join(installDir, 'codex-resources'), { recursive: true });
+    fs.writeFileSync(path.join(installDir, 'codex-command-runner.exe'), 'MZ fake\n');
+    fs.writeFileSync(
+      path.join(installDir, 'codex-resources', 'codex-windows-sandbox-setup.exe'),
+      'MZ fake sandbox setup\n'
+    );
+  };
+
+  // (a) THE OLD BEHAVIOUR, reproduced: a check that never names the sandbox
+  // helper calls this install complete. This is the report the broken lane got.
+  const fx0 = makeDirtyRepo();
+  const install0 = path.join(fx0.root, 'OpenAI', 'Codex', 'bin', 'aaaa1111');
+  const bin0 = makeStubBin(install0, 'codex-stub');
+  nest(install0);
+  const blind = runReview(fx0, ['--head-ref', fx0.head], {
+    CODEX_BIN: bin0,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources',
+  });
+  check(
+    'a sibling list that omits the sandbox helper calls the broken install healthy',
+    /helper siblings present: codex-command-runner\.exe, codex-resources/.test(blind.stdout || '') &&
+      !fs.existsSync(path.join(install0, 'codex-windows-sandbox-setup.exe')),
+    (blind.stdout || '').slice(0, 800)
+  );
+
+  // (b) THE FIX: named in the list, found where it actually is, copied up.
+  const fx = makeDirtyRepo();
+  const installDir = path.join(fx.root, 'OpenAI', 'Codex', 'bin', 'bbbb2222');
+  const fakeBin = makeStubBin(installDir, 'codex-stub');
+  nest(installDir);
+  const fixed = runReview(fx, ['--head-ref', fx.head], {
+    CODEX_BIN: fakeBin,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: SIBS,
+  });
+  const fout = fixed.stdout || '';
+  check(
+    'the misplaced helper is repaired, not merely reported',
+    fs.existsSync(path.join(installDir, 'codex-windows-sandbox-setup.exe')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    'the report says it was MISPLACED, not that it was missing',
+    /codex-windows-sandbox-setup\.exe \(was MISPLACED inside the install at /.test(fout) &&
+      !/MISSING FROM THE CODEX INSTALL/.test(fout),
+    fout.slice(0, 1200)
+  );
+  check(
+    'the repair does not cost the review',
+    /VERDICT: APPROVE/.test(fout),
+    fout.slice(0, 400)
+  );
+  const again = runReview(fx, ['--head-ref', fx.head], {
+    CODEX_BIN: fakeBin,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: SIBS,
+  });
+  check(
+    'the next run finds a complete install (the repair persisted)',
+    /helper siblings present: .*codex-windows-sandbox-setup\.exe/.test(again.stdout || ''),
+    (again.stdout || '').slice(0, 900)
+  );
+
+  // (c) A DIRECTORY named like the executable satisfies existsSync and launches
+  // nothing — the presence check has to be about kind, not just name.
+  const fx2 = makeDirtyRepo();
+  const installDir2 = path.join(fx2.root, 'OpenAI', 'Codex', 'bin', 'cccc3333');
+  const bin2 = makeStubBin(installDir2, 'codex-stub');
+  fs.mkdirSync(path.join(installDir2, 'codex-windows-sandbox-setup.exe'), { recursive: true });
+  const wrongKind = runReview(fx2, ['--head-ref', fx2.head], {
+    CODEX_BIN: bin2,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-windows-sandbox-setup.exe',
+  });
+  const wout = wrongKind.stdout || '';
+  check(
+    'a directory of the right name does not count as the executable',
+    /MISSING FROM THE CODEX INSTALL: codex-windows-sandbox-setup\.exe/.test(wout),
+    wout.slice(0, 900)
+  );
+  check(
+    'the report explains what this particular absence costs',
+    /resolves this helper BY NAME/.test(wout),
+    wout.slice(0, 1400)
+  );
+
+  // (d) The install directory is on the engine's PATH, because that is how
+  // Codex finds the helper it resolves by name. Compared case-insensitively on
+  // Windows, where realpath may hand back a different case than the caller used.
+  const mentions = (text, dir) =>
+    process.platform === 'win32'
+      ? String(text).toLowerCase().includes(String(dir).toLowerCase())
+      : String(text).includes(String(dir));
+  check(
+    'the engine is launched with the Codex install directory first on PATH',
+    mentions(again.stdout || '', 'PATH_FIRST: ' + fs.realpathSync(installDir)),
+    (again.stdout || '').split('\n').filter((l) => /PATH_FIRST/.test(l)).join(' | ')
+  );
+
+  // (e) --doctor: the same check, reachable without running a review.
+  const broken = runDoctor(fx2, {
+    CODEX_BIN: bin2,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-windows-sandbox-setup.exe',
+  });
+  const bout = broken.stdout || '';
+  check(
+    'the doctor reports a broken install with a non-zero exit',
+    broken.status === 1 && /NEEDS ATTENTION/.test(bout),
+    'status=' + broken.status + '\n' + bout.slice(0, 900)
+  );
+  check(
+    'the doctor prints a copy command for the file to place, in the right directory',
+    new RegExp('(cp -R|copy) "').test(bout) && mentions(bout, fs.realpathSync(installDir2)),
+    bout.slice(0, 1400)
+  );
+  const healthy = runDoctor(fx, {
+    CODEX_BIN: fakeBin,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: SIBS,
+  });
+  check(
+    'a complete install passes the doctor with exit 0, and no work order was needed',
+    healthy.status === 0 && /OK — a review would find this install complete/.test(healthy.stdout || ''),
+    'status=' + healthy.status + '\n' + (healthy.stdout || '').slice(0, 900)
+  );
+  const noCodex = runDoctor(fx, { CODEX_BIN: path.join(fx.root, 'no-such-codex') });
+  check(
+    'a Codex that cannot be resolved is a failed check, not a clean bill of health',
+    noCodex.status === 1 && /could not be resolved/.test(noCodex.stdout || ''),
+    'status=' + noCodex.status + '\n' + (noCodex.stdout || '').slice(0, 700)
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1114,6 +1273,7 @@ async function main() {
   case16();
   case17();
   case18();
+  case19();
 }
 
 main().then(finish, (e) => {

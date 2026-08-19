@@ -22,6 +22,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const SRC = __dirname;
 
@@ -503,6 +504,55 @@ if (!uninstall) {
     const req = (m.requires && typeof m.requires === 'object') ? m.requires : {};
     for (const b of stringList(req.bin)) console.log('      needs executable: ' + b);
     for (const e of stringList(req.env)) console.log('      needs env: ' + e);
+  }
+
+  // A pack may declare a self-check the installer runs on the spot. The codex
+  // pack does, and it earns its keep: the review lane's worst failure mode is a
+  // Codex install that LOOKS fine — one helper file present but one directory
+  // too deep — and produces reviews that quietly return nothing. That state is
+  // discoverable in milliseconds and was, in the field, discovered days later.
+  // Running the check here puts the answer next to the instructions for fixing
+  // it, at the one moment the person is already looking at this output.
+  //
+  // Never fatal: the harness installs fine on a machine with no Codex at all,
+  // and the pack is optional in the first place.
+  for (const name of packs) {
+    const m = packManifest(name);
+    const cmd = m.selfCheck;
+    if (!cmd || typeof cmd !== 'object' || !Array.isArray(cmd.args)) continue;
+    if (typeof cmd.script !== 'string' || !cmd.script.trim()) continue;
+    // A pack's self-check runs a file the pack itself just installed, and
+    // nothing outside .claude/ — a manifest is data, not a licence to run
+    // arbitrary paths on the user's machine.
+    const script = path.resolve(dotClaude, cmd.script);
+    const inside = path.relative(dotClaude, script);
+    if (inside.startsWith('..') || path.isAbsolute(inside)) continue;
+    if (!fs.existsSync(script) || !fs.statSync(script).isFile()) continue;
+    let r = null;
+    try {
+      r = spawnSync(process.execPath, [script].concat(cmd.args), {
+        cwd: target,
+        encoding: 'utf8',
+        timeout: 60000,
+      });
+    } catch (_) {
+      r = null;
+    }
+    const text = r ? (r.stdout || '') + (r.stderr || '') : '';
+    console.log('');
+    console.log('  Pack "' + name + '" self-check (re-run anytime: node .claude/' +
+      cmd.script + ' ' + cmd.args.join(' ') + '):');
+    if (!text.trim()) {
+      console.log('    (the check produced no output — run it yourself to see why)');
+      continue;
+    }
+    for (const line of text.replace(/\s+$/, '').split(/\r?\n/)) {
+      console.log(line.trim() ? '    ' + line : '');
+    }
+    if (r && r.status !== 0) {
+      console.log('    ^ the check above did NOT pass. The harness is installed either way;');
+      console.log('      this pack\'s lane will not work until the lines above are addressed.');
+    }
   }
   console.log('  - Update later by re-running this installer; remove with --uninstall.');
   const availPacks = availablePacks().filter((p) => !packs.includes(p));

@@ -10,6 +10,11 @@
     "Review engine: set \"reviewEngine\": \"codex\" (or \"dual\") in .claude/orchestra.json.",
     "Executor engine: set \"executorEngine\": \"codex\" to route execution to the OpenAI executors (Terra/Sol); the Claude executors remain the fallback and escalation rung.",
     "Recommended pin for review: ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol. Execution defaults: gpt-5.6-terra (standard), gpt-5.6-sol (heavy).",
+    "Windows: codex-command-runner.exe, codex-resources AND codex-windows-sandbox-setup.exe must sit DIRECTLY beside codex.exe. Codex resolves the sandbox helper by name, so a copy one directory down (inside codex-resources\\) is never found — the sandbox is never set up and BOTH lanes (review and execution) return nothing while looking healthy. The self-check below finds that state and repairs it where it can.",
     "Without this pack the harness still gets full fresh-context Opus review and Claude execution; it just has no cross-vendor option."
-  ]
+  ],
+  "selfCheck": {
+    "script": "hooks/orchestra-review.js",
+    "args": ["--doctor"]
+  }
 }

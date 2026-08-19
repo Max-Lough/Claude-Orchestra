@@ -9,6 +9,63 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.5.0 — cross-vendor execution: OpenAI executors (Sol / Terra) in the codex pack
+
+Until now the codex pack's OpenAI surface covered judgment (review, deep-plan)
+but never hands: every edit ran on a Claude executor, and a project that wanted
+to offload workhorse implementation to OpenAI models had no route that kept the
+harness's guarantees — no idle precheck, no standard report the Director can
+parse, no automatic review pairing. The informal alternative (run Codex by hand,
+then `/orchestra-review` the diff) works, but makes the user the transport and
+takes the Director out of the loop it exists to run.
+
+So the pack now carries an **execution lane**, mirroring the review lane's
+shape exactly: two thin Haiku launchers — `executor-codex` (default tier,
+GPT-5.6 **Terra**, OpenAI's everyday workhorse) and `executor-codex-heavy`
+(hard tier, GPT-5.6 **Sol**, the flagship, at high reasoning effort) — driving
+a new runner, `hooks/orchestra-exec.js`, that enforces the Orchestra executor
+law in its brief, runs `codex exec` in a `workspace-write` sandbox in the live
+tree, and relays the engine's report in the executor format the loop already
+parses. Routing is opt-in and mirrors `reviewEngine`: `"executorEngine":
+"codex"` in `.claude/orchestra.json`, or an in-conversation request; the
+Claude executors stay the default, the fallback, and the escalation rung.
+
+Three deliberate asymmetries with the review lane, each a property of
+execution rather than an omission:
+
+- **No auto-retry.** A review is idempotent — reading the same commit twice is
+  the same review — so its runner retries a flaky engine. Execution is not: a
+  half-dead engine may have half-edited the tree, and a blind second attempt
+  starts from a state the work order never described. One attempt; on failure,
+  `STATUS: EXEC_UNAVAILABLE` with the review lane's full attribution (who
+  killed the engine, elapsed against the cap, last words) and the Director
+  decides what a re-dispatch starts from.
+- **A tree audit instead of an integrity warning.** The reviewer is read-only
+  in intent, so any mutation is an alarm. The executor exists to mutate — the
+  question is *what*. The runner fingerprints the tree before and after and
+  appends a `TREE AUDIT`: every changed source path listed, generated
+  build/engine churn counted separately (same allowlist as the integrity
+  check), a moved HEAD called out. The report's CHANGES section becomes a
+  checkable claim — on the failure path too, where the audit is precisely the
+  debris inventory the Director needs.
+- **Git isolation that carries identity.** The review lane's scratch git
+  config silences the sandboxed `unable to access .../git/ignore` noise, but
+  dropping the global config also drops `user.name`/`user.email` — and an
+  executor whose order says "checkpoint-commit each part" would fail every
+  commit with "Please tell me who you are". The exec runner copies the user's
+  identity into the scratch config.
+
+Review pairing inverts for codex-authored changes, and the protocol says so
+(§2): the Opus `reviewer` is already cross-vendor relative to an OpenAI author,
+so such changes take the default reviewer — the add-a-`reviewer-codex`-pass
+convention on heavy orders exists precisely because author and reviewer would
+otherwise share a vendor, which no longer holds there.
+
+Tested like the review lane: `tests/exec-lane.test.js` (51 checks against the
+same stub Codex, extended to report sandbox, config overrides, git identity,
+and brief markers, and to model an engine that mutates the tree and then dies),
+in CI on all three platforms.
+
 ## 1.4.1 — a subagent may not end its turn on a running process
 
 Two rounds stalled the same way on 2026-08-16: an agent launched a run in the

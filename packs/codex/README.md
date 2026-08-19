@@ -7,16 +7,19 @@ node install.js /path/to/project --packs codex
 ```
 
 Without it, the harness is Claude-only: reviews run on the fresh-context Opus
-`reviewer`, and `/deep-plan` does not exist. Nothing degrades — the cross-vendor
-*layer* is simply absent.
+`reviewer`, execution runs on the Claude executors, and `/deep-plan` does not
+exist. Nothing degrades — the cross-vendor *layer* is simply absent.
 
 ## What it installs
 
 | File | Role |
 |---|---|
 | `agents/reviewer-codex.md` | Thin Haiku launcher; drives the review runner and relays the OpenAI verdict verbatim. Never reviews the code itself. |
+| `agents/executor-codex.md` | Thin Haiku launcher; drives the exec runner at the standard tier (OpenAI Terra) and relays the report + tree audit verbatim. Never edits anything itself. |
+| `agents/executor-codex-heavy.md` | Same launcher shape at the heavy tier (OpenAI Sol, high reasoning effort) — the OpenAI mirror of `executor-heavy`. |
 | `agents/planner-gpt.md` | Thin Haiku launcher for the `/deep-plan` roundabout; relays the counterpart's critique verbatim. |
 | `hooks/orchestra-review.js` | Review runner — builds the adversarial brief, drives `codex exec` in a sandbox (optionally in a clean worktree pinned to the commit under review), prints an Orchestra-format verdict. |
+| `hooks/orchestra-exec.js` | Execution runner — builds the Orchestra executor-law brief, drives `codex exec` in a `workspace-write` sandbox in the LIVE tree, audits which paths actually changed, prints an Orchestra-format executor report. One attempt, never auto-retried. |
 | `hooks/orchestra-deepplan.js` | Deep-plan runner — sends plan + brief to the OpenAI Responses API. |
 | `skills/deep-plan/` | The `/deep-plan` two-model planning roundabout. |
 
@@ -33,10 +36,26 @@ select the engine in `.claude/orchestra.json`:
 `"opus"` (default) · `"codex"` (cross-vendor primary, Opus as fallback) ·
 `"dual"` (both, Director arbitrates).
 
+**Execution** (`executor-codex` / `executor-codex-heavy`): same Codex CLI +
+auth as review. Route per order by asking the Director ("run this order
+through the OpenAI executor"), or durably:
+
+```json
+{ "executorEngine": "codex" }
+```
+
+`"claude"` (default) · `"codex"` (both execution tiers route to the OpenAI
+executors — Terra standard, Sol heavy — with the Claude tiers as their
+unavailable-fallback and escalation rung). A codex-authored change is then
+reviewed by the Opus `reviewer` by default: author and reviewer already sit on
+different vendors, so the cross-vendor decorrelation is preserved without a
+same-vendor `reviewer-codex` pass.
+
 **Deep-plan** (`planner-gpt`): export `OPENAI_API_KEY`. The Responses API is
 called directly — the Codex CLI is not involved.
 
-Recommended pin for review: `ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol`.
+Recommended pin for review: `ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol`. Execution
+defaults to `gpt-5.6-terra` (standard) and `gpt-5.6-sol` (heavy) out of the box.
 
 ## Project configuration
 
@@ -203,7 +222,17 @@ loudly when it does.
 | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
 | `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |
-| `CODEX_BIN` | `codex` | Codex executable path. |
+| `ORCHESTRA_EXEC_MODEL` | `gpt-5.6-terra` | Standard-tier execution model (`codex.execModel`). |
+| `ORCHESTRA_EXEC_HEAVY_MODEL` | `gpt-5.6-sol` | Heavy-tier execution model (`codex.execHeavyModel`). |
+| `ORCHESTRA_EXEC_EFFORT` | Codex's default | Standard-tier reasoning effort (`codex.execEffort`), sent as `-c model_reasoning_effort=`. |
+| `ORCHESTRA_EXEC_HEAVY_EFFORT` | `high` | Heavy-tier reasoning effort (`codex.execHeavyEffort`). |
+| `ORCHESTRA_EXEC_TIMEOUT_MS` | `1800000` | Wall-clock cap for an execution run (`codex.execTimeoutMs`; also `--timeout-ms`). It runs your verification — budget a build plus a suite. |
+| `ORCHESTRA_EXEC_SANDBOX` | `workspace-write` | Codex sandbox for execution (`codex.execSandbox`). `read-only` = dry run; the runner warns that no edit can land. |
+| `ORCHESTRA_EXEC_IDLE_MS` | `1500` | Idle-precheck settle window before executing; `0` disables. Shares `codex.idleMs` with review. |
+| `ORCHESTRA_EXEC_GIT_ISOLATION` | `1` | Git-config isolation for the run, with the user's `user.name`/`user.email` copied into the scratch config so ordered commits still work. Shares `codex.gitConfigIsolation`. |
+| `ORCHESTRA_EXEC_PROBE` | `1` | Stage-a echo before the real attempt (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_EXEC_PROBE_TIMEOUT_MS` caps it. |
+| `ORCHESTRA_EXEC_ARGS` | — | Extra args appended to the execution `codex exec`. |
+| `CODEX_BIN` | `codex` | Codex executable path (shared by all runners). |
 | `ORCHESTRA_DEEPPLAN_MODEL` | `gpt-5.6-sol` | Deep-plan counterpart model. |
 | `ORCHESTRA_DEEPPLAN_EFFORT` | `max` | Deep-plan reasoning effort. |
 | `ORCHESTRA_DEEPPLAN_TIMEOUT_MS` | `900000` | Deep-plan wall-clock cap. |

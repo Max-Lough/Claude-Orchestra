@@ -1,14 +1,15 @@
 {
   "name": "codex",
   "title": "Codex / GPT cross-vendor interface",
-  "summary": "Adds the OpenAI-backed half of the harness: cross-vendor code review through the Codex CLI, and the two-model /deep-plan planning roundabout through the OpenAI API.",
+  "summary": "Adds the OpenAI-backed half of the harness: cross-vendor code review through the Codex CLI, opt-in OpenAI executors (Terra standard tier, Sol heavy tier) through the same CLI, and the two-model /deep-plan planning roundabout through the OpenAI API.",
   "requires": {
-    "bin": ["codex (Codex CLI) — for reviewer-codex only"],
-    "env": ["OPENAI_API_KEY or `codex login` — review", "OPENAI_API_KEY — deep-plan"]
+    "bin": ["codex (Codex CLI) — for reviewer-codex and the executor-codex tiers"],
+    "env": ["OPENAI_API_KEY or `codex login` — review and execution", "OPENAI_API_KEY — deep-plan"]
   },
   "notes": [
     "Review engine: set \"reviewEngine\": \"codex\" (or \"dual\") in .claude/orchestra.json.",
-    "Recommended pin: ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol.",
-    "Without this pack the harness still gets full fresh-context Opus review; it just has no cross-vendor option."
+    "Executor engine: set \"executorEngine\": \"codex\" to route execution to the OpenAI executors (Terra/Sol); the Claude executors remain the fallback and escalation rung.",
+    "Recommended pin for review: ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol. Execution defaults: gpt-5.6-terra (standard), gpt-5.6-sol (heavy).",
+    "Without this pack the harness still gets full fresh-context Opus review and Claude execution; it just has no cross-vendor option."
   ]
 }

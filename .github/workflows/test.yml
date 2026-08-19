@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  review-lane:
-    name: review lane · ${{ matrix.os }} · node ${{ matrix.node }}
+  codex-lanes:
+    name: codex lanes · ${{ matrix.os }} · node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -66,3 +66,9 @@ jobs:
         # what the engine was handed. It needs no install step: plain node, plain
         # git, no dependencies.
         run: node tests/review-lane.test.js
+
+      - name: Exec-lane suite
+        # Same shape for the execution runner: the stub reports what the engine
+        # saw (model, sandbox, effort, identity, brief markers), and the suite
+        # asserts on settings resolution, the tree audit, and the no-retry law.
+        run: node tests/exec-lane.test.js

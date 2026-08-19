@@ -18,7 +18,8 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
 │ · enumerate   │ │ deep tracing  │ │ commands      │ │ re-runs tests │
 └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
                                         the optional `codex` pack adds a
-                                        cross-vendor (OpenAI) review layer
+                                        cross-vendor (OpenAI) review layer —
+                                        and opt-in OpenAI executors (Sol/Terra)
 ```
 
 The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. Two authoring carve-outs: the Director may write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md` / `CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution (see "Plan files" and "Memory files" below). The managed Orchestra block inside `CLAUDE.md` stays off-limits.
@@ -127,13 +128,59 @@ The worktree root is deliberately outside the repo (OS temp dir by default; `wor
 
 **Field-hardening.** Six further failure modes the runner handles mechanically: it **resolves `CODEX_BIN` to its real path** (a symlink or Windows junction breaks Codex's own sibling-file resolution); it **restores missing files** into the Codex install from `helpersDir` before each run (a Codex self-update can silently strip them); it **enforces command prohibitions as hard constraints** that explicitly outrank the brief's "re-run the tests" rule, requiring the affected claims to return as `UNVERIFIED (prohibited: …)` so a narrowed review reports itself as narrowed; it **refuses to review a moving tree**, sampling the working tree twice and returning `REVIEW_UNAVAILABLE: working tree is not idle` if another executor, build, or watch task is still writing; it **isolates git's global config** for every git the review touches, its own and the engine's, because a sandboxed process often cannot read the user's real one and git then complains on *every* invocation (`unable to access '<home>/.config/git/ignore'`) — noise an agentic reviewer treats as a lead; and it **fails honestly on a bad ref** rather than silently falling back to the live tree. Two more since: it **names the Codex install layout** it found and **verifies the helper files that must sit next to the resolved binary**, repairing them from any locatable known-good copy and naming exactly what is missing when it cannot (Codex relocated its install once already, which silently invalidated a repair recipe written for the old layout); it **checks a helper is beside the binary rather than merely present somewhere**, repairing a copy misplaced inside the install (`codex-windows-sandbox-setup.exe` nested in `codex-resources\` is resolved by nothing, and cost six days of reviews that returned nothing while every preflight line looked healthy) and putting the install directory first on the engine's `PATH`, since not every Codex helper resolves relative to the binary; and a **`worktreeRoot` you set is honoured or refused, never swapped** — an unwritable configured root fails the review with the `mkdir` error attached, because falling back to the temp dir would undo the very setting that exists to prevent cross-run collisions.
 
-**Tested, not asserted.** `node tests/review-lane.test.js` in the master exercises the lane end to end against a stub Codex that reports what the engine actually saw — 108 checks. Each fix is checked twice — once showing the failure mode reproduces, once showing it's gone — including worktree teardown after a successful run, after `SIGTERM`, and after `SIGKILL` (where the next run's sweep is what reclaims the orphan). The suite's own exit code is pinned three ways (a failure sets it immediately, an `exit` handler enforces it, and a suite that recorded no cases fails on that basis), because it previously exited 0 on Windows even with failing cases: the verdict was printed from deep inside an async chain that a throw or a hang simply skipped, and a green run that proves nothing is worse than no suite at all. CI runs it on **Linux, Windows, and macOS** across Node 20/22/24 for every push and pull request (`.github/workflows/test.yml`) — Windows above all, because that is where every field failure in this lane has happened and where the exit-code bug hid, and no session working on this repo has a Windows machine to check by hand.
+**Tested, not asserted.** `node tests/review-lane.test.js` in the master exercises the lane end to end against a stub Codex that reports what the engine actually saw — 108 checks. Each fix is checked twice — once showing the failure mode reproduces, once showing it's gone — including worktree teardown after a successful run, after `SIGTERM`, and after `SIGKILL` (where the next run's sweep is what reclaims the orphan). The suite's own exit code is pinned three ways (a failure sets it immediately, an `exit` handler enforces it, and a suite that recorded no cases fails on that basis), because it previously exited 0 on Windows even with failing cases: the verdict was printed from deep inside an async chain that a throw or a hang simply skipped, and a green run that proves nothing is worse than no suite at all. The execution lane has its own suite, `node tests/exec-lane.test.js` — 53 checks against the same stub, covering settings resolution (flag > env > config > default, with the header crediting the layer that supplied each value), the tree audit on both the success and the failure path, the no-auto-retry law, identity-carrying git isolation, install-directory PATH precedence, and honest `EXEC ENGINE: NONE` attribution. CI runs both on **Linux, Windows, and macOS** across Node 20/22/24 for every push and pull request (`.github/workflows/test.yml`) — Windows above all, because that is where every field failure in these lanes has happened and where the exit-code bug hid, and no session working on this repo has a Windows machine to check by hand.
 
 **Tiered review (`--tier`).** Every review runs at full depth by default — the reviewer re-runs the tests itself. For a round the Director declares **inert** (docs/comments/formatting with zero behavior impact), the review order states `TIER: inert` and the launcher appends `--tier inert`; the runner then instructs the reviewer to *verify the inertness claim from the diff first* — any behavior-bearing line is itself a critical finding and forces a full-depth review — and only a proven-inert diff skips the suite. Effectiveness is never traded for speed: the tier narrows verification only where narrowing provably cannot matter, and the prover is whoever reviews — the Opus `reviewer`, the Codex engine, or the protocol's last-resort fallback — never the author. The tier appears in the `REVIEW ENGINE` header of both engines so every verdict is auditable for the depth it ran at. The tier and the `verification` manifest are engine-agnostic review *policy* (`ORCHESTRA.md` §8.3); the Opus `reviewer` enforces them through its own rules, this runner implements them for the Codex engine, and the §5 fallback applies them by hand.
 
 **Why `workspace-write` by default?** The reviewer's whole value is that it runs the real tests, and most test runners write (caches, coverage, build artifacts). This is the same trust model as before — the previous Opus reviewer also had unrestricted shell and was only *told* not to edit — but the runner adds a safety net the old design lacked: it fingerprints the working tree before and after, and if the reviewer mutated anything it appends a loud **`⚠ INTEGRITY WARNING`** to the verdict (it never auto-reverts, which could clobber the real change). For a hard guarantee, set `ORCHESTRA_REVIEW_SANDBOX=read-only`.
 
 **Graceful degradation.** If Codex isn't installed, isn't authenticated, times out, or errors, `reviewer-codex` returns `VERDICT: REVIEW_UNAVAILABLE` with the reason — never a fake approval. The Director routes that review to the Opus `reviewer` and notes the cross-vendor pass didn't run. A harnessed project with no Codex simply has no cross-vendor option — it still gets full fresh-context adversarial review, and it never silently ships unreviewed work as reviewed.
+
+## OpenAI executors
+
+The `codex` pack also carries an **execution lane**: two opt-in executors that offload workhorse implementation to OpenAI models while Claude keeps directing, scouting, and reviewing. They mirror the Claude execution tiers exactly — same law, same report format, same PLAN-time routing by hardness:
+
+| Agent | Default model | Mirrors | For |
+|---|---|---|---|
+| `executor-codex` | `gpt-5.6-terra` (Terra — OpenAI's everyday workhorse tier) | `executor` (Sonnet) | well-scoped default-tier orders |
+| `executor-codex-heavy` | `gpt-5.6-sol` (Sol — the flagship tier), reasoning effort `high` | `executor-heavy` (Opus) | hard-tier orders: algorithmically hard cores, split-resistant cross-subsystem changes, risk-first probes |
+
+Each is a thin Haiku launcher driving `.claude/hooks/orchestra-exec.js`, which enforces the Orchestra executor law in its brief, runs `codex exec` in a `workspace-write` sandbox **in the live working tree** (the edits are the deliverable), and relays the engine's report verbatim. The Director — blocked from Bash — cannot invoke Codex directly, so execution stays delegated.
+
+**Selecting the engine.** The default is Claude. Route per order by asking ("run this order through the OpenAI executor"), or durably via `.claude/orchestra.json`:
+
+```json
+{ "executorEngine": "codex" }
+```
+
+`"claude"` (default) — the Sonnet/Opus executors; `"codex"` — both tiers route to the OpenAI executors, with the Claude tiers as their unavailable-fallback and escalation rung. Setting it without the pack installed can't take effect: the Director executes on Claude and tells you the pack is missing.
+
+**What the runner adds beyond a bare `codex exec`:**
+
+- **Idle precheck.** The tree is sampled twice before launch and the run is refused (`EXEC_UNAVAILABLE: working tree is not idle`) if anything else is still writing it — two agents interleaving edits into one tree produces a state neither of them made.
+- **Tree audit.** The tree is fingerprinted before and after, and every path that changed while the engine ran is listed in a `TREE AUDIT` section under the report (generated build/engine churn counted separately, same allowlist as the review lane's integrity check; a moved `HEAD` is called out when the order had the engine commit). The engine's `CHANGES` section is a claim; the audit is the measurement the Director and the reviewer hold it against.
+- **No auto-retry — by design.** The review runner retries a flaky engine because reviews are idempotent; execution is not. A half-dead engine may have half-edited the tree, so the exec runner makes exactly **one** attempt and, on failure, prints `STATUS: EXEC_UNAVAILABLE` with full attribution (who killed the engine, how long it ran against its cap, what it last wrote) *plus* the tree audit of whatever the attempt left behind. The Director then decides: clean up and re-dispatch, or route the order to a Claude executor.
+- **Git identity that survives isolation.** The same git-config isolation as the review lane (a sandboxed process often can't read the real global config, and git then warns on every command), with the user's `user.name`/`user.email` copied into the scratch config — so an order that says "commit" still can.
+- **The shared reliability net.** Real-path `CODEX_BIN` resolution, the stage-a auth/exec probe, `helpersDir` restore, honest headers (`EXEC ENGINE: OpenAI via Codex CLI (…)` on success, `EXEC ENGINE: NONE` + `ATTEMPTED:` on failure — a failed run never wears the engine's name), and hard command prohibitions (`--forbid` / `doNotRun`). The install directory also leads the engine's `PATH`, for the same reason the review runner does it: `codex-windows-sandbox-setup.exe` is resolved by *name*, and without it the sandbox is never established — which in this lane means an engine that runs, exits, and changes nothing. Both lanes drive one Codex install, so one check covers them: `node .claude/hooks/orchestra-review.js --doctor`, which the exec runner names on exactly that failure shape.
+
+**Review pairing inverts.** A codex-authored change is reviewed by the Opus `reviewer` by default — author and reviewer already sit on different vendors, so the decorrelation that the "add a `reviewer-codex` pass on heavy orders" convention exists to buy is already present. Adding a same-vendor `reviewer-codex` pass on top needs a stated reason; `reviewEngine: "dual"` still runs both.
+
+**Configuration** (`.claude/orchestra.json` `codex` key; flag > env > config > default — `idleMs`, `gitConfigIsolation`, `doNotRun`, `authProbe`, `probeTimeoutMs`, `helpersDir`, and the integrity-ignore keys are shared with the review lane):
+
+| Variable | `orchestra.json` (`codex` key) | Default | Meaning |
+|---|---|---|---|
+| `ORCHESTRA_EXEC_MODEL` | `execModel` | `gpt-5.6-terra` | Standard-tier model. |
+| `ORCHESTRA_EXEC_HEAVY_MODEL` | `execHeavyModel` | `gpt-5.6-sol` | Heavy-tier model. |
+| `ORCHESTRA_EXEC_EFFORT` | `execEffort` | Codex's own default | Standard-tier reasoning effort (`-c model_reasoning_effort=`). |
+| `ORCHESTRA_EXEC_HEAVY_EFFORT` | `execHeavyEffort` | `high` | Heavy-tier reasoning effort. |
+| `ORCHESTRA_EXEC_TIMEOUT_MS` | `execTimeoutMs` | `1800000` | Wall-clock cap — execution runs the project's verification, so budget a build plus a suite. Also `--timeout-ms`. |
+| `ORCHESTRA_EXEC_SANDBOX` | `execSandbox` | `workspace-write` | Codex sandbox. `read-only` turns the run into a dry run (the runner warns that no edit can land). |
+| `ORCHESTRA_EXEC_IDLE_MS` | `idleMs` | `1500` | Idle-precheck settle window; `0` disables. |
+| `ORCHESTRA_EXEC_GIT_ISOLATION` | `gitConfigIsolation` | `1` / `true` | Git-config isolation, with the user's identity carried into the scratch config. |
+| `ORCHESTRA_EXEC_PROBE` | `authProbe` | `1` / `true` | Stage-a `codex exec` echo before the real attempt. |
+| `ORCHESTRA_EXEC_ARGS` | — | — | Extra args appended to `codex exec`. |
+
+**Graceful degradation, same shape as review.** No Codex, no auth, a dead engine, a moving tree — the lane returns `STATUS: EXEC_UNAVAILABLE` with the reason and the audit, never a fake `DONE`, and the Claude executors carry the order instead.
 
 ## Layout
 
@@ -165,6 +212,7 @@ Orchestra/
 │   └── orchestra-review/   ← /orchestra-review · on-demand adversarial review
 ├── tests/                  ← harness tests (master-only; never stamped into projects)
 │   ├── review-lane.test.js ← the cross-vendor review lane, end to end
+│   ├── exec-lane.test.js   ← the cross-vendor execution lane, end to end
 │   └── fixtures/           ← a stub Codex CLI that reports what the engine saw
 └── packs/                  ← OPTIONAL modules, installed only when named (--packs)
     ├── README.md           ← the pack contract
@@ -172,10 +220,13 @@ Orchestra/
     └── codex/              ← the OpenAI surface: cross-vendor review + deep-plan
         ├── pack.json       ← pack metadata
         ├── agents/
-        │   ├── reviewer-codex.md  ← Haiku launcher · cross-vendor (OpenAI/Codex) review
-        │   └── planner-gpt.md     ← Haiku launcher · deep-plan counterpart (OpenAI API)
+        │   ├── reviewer-codex.md       ← Haiku launcher · cross-vendor (OpenAI/Codex) review
+        │   ├── executor-codex.md       ← Haiku launcher · OpenAI executor (Terra, default tier)
+        │   ├── executor-codex-heavy.md ← Haiku launcher · OpenAI heavy executor (Sol, high effort)
+        │   └── planner-gpt.md          ← Haiku launcher · deep-plan counterpart (OpenAI API)
         ├── hooks/
         │   ├── orchestra-review.js    ← cross-vendor review runner (drives Codex CLI)
+        │   ├── orchestra-exec.js      ← cross-vendor execution runner (drives Codex CLI)
         │   └── orchestra-deepplan.js  ← plan-roundabout runner (calls the OpenAI API)
         └── skills/
             └── deep-plan/  ← /deep-plan · two-model plan roundabout (GPT-5.6 Sol)
@@ -312,7 +363,7 @@ node install.js /path/to/project --packs codex
 
 | Pack | Adds | Needs |
 |---|---|---|
-| `codex` | `reviewer-codex` (cross-vendor review via the Codex CLI), `planner-gpt` + `/deep-plan` (two-model planning via the OpenAI API), and both runners | Codex CLI and/or `OPENAI_API_KEY` |
+| `codex` | `reviewer-codex` (cross-vendor review via the Codex CLI), `executor-codex` / `executor-codex-heavy` (opt-in OpenAI executors — Terra / Sol via the Codex CLI), `planner-gpt` + `/deep-plan` (two-model planning via the OpenAI API), and the three runners | Codex CLI and/or `OPENAI_API_KEY` |
 
 A harness with no packs is Claude-only and complete: full fresh-context adversarial Opus review, the whole operating loop, every core skill. The `codex` pack adds a *layer* — vendor decorrelation — not a missing floor.
 
@@ -354,6 +405,7 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 - `directorPlanPatterns` — regexes over project-relative file paths (forward-slash form) that count as plan files the Director may write directly, in addition to the built-in `.claude/plans/*.md` (see "Plan files").
 - `directorMemoryPatterns` — same shape: paths that count as memory files the Director may edit directly, in addition to the built-in `CLAUDE.md` / `CLAUDE.local.md` and auto-memory locations; the CLAUDE.md marker block stays protected either way (see "Memory files").
 - `reviewEngine` — review engine selection: `"opus"` (default — the fresh-context Opus `reviewer`), `"codex"` (cross-vendor primary via `reviewer-codex`; the Opus `reviewer` is its unavailable-fallback), or `"dual"` (both engines on every substantive review, Director arbitrates). Hot-swappable — edit the value and the next review routes accordingly (see "Review engines").
+- `executorEngine` — execution engine selection (requires the `codex` pack): `"claude"` (default — the Sonnet `executor` / Opus `executor-heavy`) or `"codex"` (both execution tiers route to the OpenAI executors, `executor-codex` on Terra and `executor-codex-heavy` on Sol, with the Claude tiers as their unavailable-fallback and escalation rung). Hot-swappable, and an in-conversation instruction ("run this order through codex") overrides it for the session (see "OpenAI executors").
 - `verification` — optional verification manifest: `{ "full": "<command>", "lint": "<command>", "shards": ["<command>", …], "protected": ["<suite>", …] }`. It is the canonical command set for every verifier: executors run it, the review runner injects it into the Codex brief, and a fallback review judges pasted verification against it. The Director uses it to declare review tiers, scope mid-chain verification to touched + protected shards, and brief executors on concurrent shard runs (`ORCHESTRA.md` §8.3). Typically written once by a verification-profile micro-order that times the tree and maps its seams.
 - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
 

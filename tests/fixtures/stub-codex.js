@@ -29,6 +29,9 @@
  *                         counter file backing the above.
  *   STUB_CODEX_PROBE_EXIT exit status for a PROBE invocation only (the runner's
  *                         stage-a echo), leaving real reviews unaffected.
+ *   STUB_CODEX_FIRST_LINE override the report's first line (default
+ *                         "VERDICT: APPROVE") — the exec-lane tests use
+ *                         "STATUS: DONE", the executor report shape.
  *
  * A probe invocation is recognised by its prompt: the runner asks for a single
  * token echo. The stub answers it without pretending to review anything.
@@ -48,6 +51,13 @@ function flag(name) {
 const cd = flag('--cd') || process.cwd();
 const outFile = flag('--output-last-message');
 const model = flag('--model');
+const sandbox = flag('--sandbox');
+// Every `-c key=value` config override the runner passed (the exec runner
+// carries reasoning effort this way).
+const configOverrides = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === '-c' && argv[i + 1]) configOverrides.push(argv[i + 1]);
+}
 
 // Read the brief off stdin so the runner's write side completes.
 let brief = '';
@@ -108,6 +118,19 @@ if (process.env.STUB_CODEX_STDERR) {
   process.stderr.write(process.env.STUB_CODEX_STDERR + '\n');
 }
 
+// Touch BEFORE any simulated death, so a failing invocation can model an
+// engine that mutated the tree and then died — the exact debris shape the
+// exec runner's tree audit exists to report.
+for (const rel of (process.env.STUB_CODEX_TOUCH || '').split(',').map((s) => s.trim()).filter(Boolean)) {
+  try {
+    const dest = path.join(cd, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, 'stub was here\n');
+  } catch (_) {
+    /* best effort */
+  }
+}
+
 // A failure that produces NOTHING — the field's exit-143 shape — is the case
 // the retry chain exists for.
 if (failingThisAttempt || process.env.STUB_CODEX_SILENT) {
@@ -142,23 +165,27 @@ const ignoreProbe = git(['check-ignore', '--no-index', '-q', 'some/probe/path.tx
 const base = /BASE REF: (\S+)/.exec(brief);
 const diff = base ? git(['diff', '--stat', base[1] + '..HEAD']) : null;
 
-for (const rel of (process.env.STUB_CODEX_TOUCH || '').split(',').map((s) => s.trim()).filter(Boolean)) {
-  try {
-    const dest = path.join(cd, rel);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, 'stub was here\n');
-  } catch (_) {
-    /* best effort */
-  }
-}
+// The identity git would commit with, resolved from wherever the environment
+// points (an isolated GIT_CONFIG_GLOBAL included) — how the exec-lane tests
+// prove the runner's identity seeding without the stub actually committing.
+const userName = git(['config', 'user.name']);
+
+// Which known brief sections reached the engine — checkable without dumping
+// the whole brief into the report.
+const briefMarkers = ['PROHIBITED COMMANDS', 'VERIFICATION MANIFEST', 'WORK ORDER']
+  .filter((m) => brief.includes(m));
 
 const report = [
-  'VERDICT: APPROVE',
+  process.env.STUB_CODEX_FIRST_LINE || 'VERDICT: APPROVE',
   '',
   'STUB REPORT',
   'CWD: ' + cd,
   'ATTEMPT: ' + attempt,
   'MODEL: ' + (model || '(none)'),
+  'SANDBOX: ' + (sandbox || '(none)'),
+  'CONFIG_OVERRIDES: ' + (configOverrides.join(' | ') || '(none)'),
+  'GIT_USER_NAME: ' + (userName.status === 0 && userName.stdout ? userName.stdout : '(unset)'),
+  'BRIEF_MARKERS: ' + (briefMarkers.join(' | ') || '(none)'),
   'HEAD: ' + head.stdout,
   'DIRTY_COUNT: ' + dirtyLines.length,
   'DIRTY_PATHS: ' + (dirtyLines.join(' | ') || '(none)'),
@@ -167,6 +194,10 @@ const report = [
   // directory is on PATH" is part of what the engine sees.
   'PATH_FIRST: ' +
     ((process.env.PATH || process.env.Path || '').split(path.delimiter)[0] || '(empty)'),
+  // The whole PATH, so a caller can also assert what is NOT there — e.g. that
+  // a directory already leading it was not prepended a second time. Single
+  // line by construction: PATH cannot contain a newline.
+  'PATH_FULL: ' + ((process.env.PATH || process.env.Path || '').replace(/[\r\n]/g, ' ') || '(empty)'),
   'GIT_CONFIG_GLOBAL: ' + (process.env.GIT_CONFIG_GLOBAL || '(unset)'),
   'GIT_CONFIG_NOSYSTEM: ' + (process.env.GIT_CONFIG_NOSYSTEM || '(unset)'),
   'PROBE_PATH: ' + (probePath || '(none)'),

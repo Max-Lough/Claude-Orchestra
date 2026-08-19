@@ -1,6 +1,6 @@
 ---
 name: executor-codex-heavy
-description: Orchestra cross-vendor heavy executor (optional; OpenAI Sol via Codex CLI). Use when the Director routes a HARD-TIER execution work order to the OpenAI engine — algorithmically hard cores, coupled cross-subsystem changes, risk-first probes — under "executorEngine":"codex" or an explicit request. Delegates the actual edits, commands, builds, and tests to OpenAI's flagship-tier model (default gpt-5.6-sol, high reasoning effort) driven by the Codex CLI in the live working tree. This agent is a thin launcher: it runs the exec runner with --tier heavy and relays the report verbatim. Never edits anything itself. Routine well-scoped orders go to executor-codex instead.
+description: Orchestra cross-vendor heavy executor (optional; OpenAI Sol via Codex CLI). Use when the Director routes a HARD-TIER execution work order to the OpenAI engine — algorithmically hard cores, coupled cross-subsystem changes, risk-first probes — under "executorEngine":"codex" or an explicit request. Delegates the actual edits, commands, builds, and tests to OpenAI's flagship-tier model (default gpt-5.6-sol, high reasoning effort) driven by the Codex CLI in the live working tree. This agent is a thin launcher that runs the exec runner with --tier heavy and relays the report verbatim. Never edits anything itself. Routine well-scoped orders go to executor-codex instead.
 tools: Bash, Read
 model: haiku
 color: cyan

@@ -1,6 +1,6 @@
 ---
 name: executor-codex
-description: Orchestra cross-vendor executor (optional; OpenAI Terra via Codex CLI). Use when the Director routes a default-tier execution work order to the OpenAI engine — a project running "executorEngine":"codex", or an explicit in-conversation request to offload workhorse execution cross-vendor. Delegates the actual edits, commands, builds, and tests to an OpenAI model driven by the Codex CLI in the live working tree. This agent is a thin launcher: it runs the exec runner and relays the report verbatim. Never edits anything itself. Hard-tier orders go to executor-codex-heavy instead.
+description: Orchestra cross-vendor executor (optional; OpenAI Terra via Codex CLI). Use when the Director routes a default-tier execution work order to the OpenAI engine — a project running "executorEngine":"codex", or an explicit in-conversation request to offload workhorse execution cross-vendor. Delegates the actual edits, commands, builds, and tests to an OpenAI model driven by the Codex CLI in the live working tree. This agent is a thin launcher that runs the exec runner and relays the report verbatim. Never edits anything itself. Hard-tier orders go to executor-codex-heavy instead.
 tools: Bash, Read
 model: haiku
 color: green

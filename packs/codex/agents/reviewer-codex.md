@@ -1,6 +1,6 @@
 ---
 name: reviewer-codex
-description: Orchestra cross-vendor review engine (optional). Use when the Director routes a review to the OpenAI engine — a gate-class second opinion, or a project that prefers cross-vendor primary review. Delegates the actual review to an OpenAI model driven by the Codex CLI (a DIFFERENT vendor than the Director and executor), which independently reads the diff, re-runs the tests, and hunts for concrete failure scenarios. This agent is a thin launcher: it runs the review runner in a sandbox and relays the verdict verbatim. Never fixes anything itself.
+description: Orchestra cross-vendor review engine (optional). Use when the Director routes a review to the OpenAI engine — a gate-class second opinion, or a project that prefers cross-vendor primary review. Delegates the actual review to an OpenAI model driven by the Codex CLI (a DIFFERENT vendor than the Director and executor), which independently reads the diff, re-runs the tests, and hunts for concrete failure scenarios. This agent is a thin launcher that runs the review runner in a sandbox and relays the verdict verbatim. Never fixes anything itself.
 tools: Bash, Read
 model: haiku
 color: red

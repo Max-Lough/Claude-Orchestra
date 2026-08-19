@@ -574,42 +574,57 @@ function case13() {
   // unestablished — the engine runs and produces nothing (the review lane lost
   // six days to exactly that, 2026-08-12 → 08-18). Carried into the exec
   // runner in v1.6.0; asserted here so it cannot regress independently.
+  //
+  // Compare SYMLINK-RESOLVED, and note why: the runner resolves CODEX_BIN to
+  // its real path on purpose (a link breaks Codex's own sibling lookup), so
+  // the directory it hands the engine is the realpath. On macOS `os.tmpdir()`
+  // is `/var/folders/…`, a symlink to `/private/var/folders/…` — so a fixture
+  // path and the runner's answer are the same directory spelled two ways, and
+  // `path.resolve`, which does not follow links, calls them different. That is
+  // what failed this case on all three macOS runners while Linux and Windows
+  // passed; the runner was right and the assertion was wrong.
+  const real = (p) => {
+    try {
+      return fs.realpathSync(p);
+    } catch (_) {
+      return path.resolve(p); // not on disk — compare as written
+    }
+  };
+  const same = (a, b) =>
+    process.platform === 'win32'
+      ? real(a).toLowerCase() === real(b).toLowerCase()
+      : real(a) === real(b);
+
   const fx = makeRepo();
   const installDir = path.join(fx.root, 'OpenAI', 'Codex', 'bin', 'abc123');
   const fakeBin = makeStubBin(installDir, 'codex-stub');
   const r = runExec(fx, [], { CODEX_BIN: fakeBin });
   const out = r.stdout || '';
   const first = field(out, 'PATH_FIRST');
-  const same = (a, b) =>
-    process.platform === 'win32'
-      ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
-      : path.resolve(a) === path.resolve(b);
   check(
     'the resolved install directory is FIRST on the engine\'s PATH',
-    first && same(first, installDir),
-    'PATH_FIRST: ' + first + '\ninstall dir: ' + installDir
+    !!first && same(first, installDir),
+    'PATH_FIRST: ' + first + '\ninstall dir: ' + installDir + ' (realpath: ' + real(installDir) + ')'
   );
 
-  // ...and it is not added twice when it is already leading — a PATH that
-  // grows by one copy of the same directory per run is its own bug.
-  const already = runExec(fx, [], {
-    CODEX_BIN: fakeBin,
-    PATH: installDir + path.delimiter + (process.env.PATH || ''),
-    Path: installDir + path.delimiter + (process.env.PATH || ''),
-  });
-  const aout = already.stdout || '';
-  const parts = (field(aout, 'PATH_FULL') || '').split(path.delimiter).filter(Boolean);
-  const dupes = parts.filter((p) => {
-    try {
-      return same(p, installDir);
-    } catch (_) {
-      return false;
-    }
-  });
+  // ...and it is not added twice when it is already leading. The runner
+  // compares PATH entries with `path.resolve`, exactly as the review runner
+  // does — the two copies of this fix are kept identical on purpose — so the
+  // spelling injected here is the RESOLVED one, which is what the runner will
+  // be comparing against. Injecting the unresolved spelling would leave the
+  // dedup branch untaken and the check passing without proving anything.
+  const resolvedInstall = real(installDir);
+  const injected = resolvedInstall + path.delimiter + (process.env.PATH || '');
+  const already = runExec(fx, [], { CODEX_BIN: fakeBin, PATH: injected, Path: injected });
+  const parts = (field(already.stdout || '', 'PATH_FULL') || '')
+    .split(path.delimiter)
+    .filter(Boolean);
+  const dupes = parts.filter((p) => same(p, resolvedInstall));
   check(
-    'an install directory already on PATH is not prepended a second time',
+    'an install directory already leading PATH is not prepended a second time',
     dupes.length === 1,
-    'occurrences: ' + dupes.length + ' in ' + parts.slice(0, 4).join(path.delimiter)
+    'occurrences: ' + dupes.length + ' of ' + resolvedInstall +
+      '\nPATH head: ' + parts.slice(0, 3).join(path.delimiter)
   );
 }
 

@@ -187,16 +187,28 @@ function buildInput(brief, plan, round) {
 // ------------------------------------------------------------------ output
 const RESOLVED = { model: CONFIG.model, effort: CONFIG.effort, round: '1', savedTo: '' };
 
-function engineHeader() {
+function settingsBits() {
   return (
-    'DEEP-PLAN ENGINE: OpenAI ' +
-    RESOLVED.model +
-    ' (effort: ' +
-    RESOLVED.effort +
-    ', round ' +
-    RESOLVED.round +
-    ')' +
-    (RESOLVED.savedTo ? '\nRESPONSE SAVED: ' + RESOLVED.savedTo : '')
+    'OpenAI ' + RESOLVED.model + ' (effort: ' + RESOLVED.effort + ', round ' +
+    RESOLVED.round + ')' + (RESOLVED.savedTo ? '\nRESPONSE SAVED: ' + RESOLVED.savedTo : '')
+  );
+}
+
+// Only ever printed above a response an OpenAI model actually produced.
+function engineHeader() {
+  return 'DEEP-PLAN ENGINE: ' + settingsBits();
+}
+
+// FIX: the failure path used to print the SAME header, so a
+// DEEPPLAN_UNAVAILABLE block arrived under "DEEP-PLAN ENGINE: OpenAI
+// gpt-5.6-sol" and read as though the counterpart had spoken. A header is an
+// attribution; attributing an empty run to the engine converts "no
+// consultation happened" into "the counterpart signed off". Name no engine
+// when none produced anything — the settings still print, as diagnostics.
+function unavailableHeader() {
+  return (
+    'DEEP-PLAN ENGINE: NONE — no cross-vendor consultation was produced.\n' +
+    'ATTEMPTED: ' + settingsBits()
   );
 }
 
@@ -214,13 +226,15 @@ function printUnavailable(reason, detail) {
     'DETAIL',
     detail ? detail.split('\n').map((l) => '  ' + l).join('\n') : '  (none)',
     '',
-    'The cross-vendor planning counterpart did not run. Do NOT treat the plan',
-    'as cross-examined, and do not manufacture a critique in its place. The',
-    'Director reports the reason to the user and either fixes the condition',
-    'and retries, or proceeds with the solo plan explicitly noted as not',
-    'cross-vendor reviewed.',
+    'The cross-vendor planning counterpart did not run, and nothing below this',
+    'line came from an OpenAI model. Do NOT treat the plan as cross-examined,',
+    'do not manufacture a critique in its place, and do not attribute any later',
+    'critique to the counterpart on the strength of this report. The Director',
+    'reports the reason to the user and either fixes the condition and retries,',
+    'or proceeds with the solo plan explicitly noted as not cross-vendor',
+    'reviewed.',
   ].join('\n');
-  process.stdout.write(engineHeader() + '\n\n' + block + '\n');
+  process.stdout.write(unavailableHeader() + '\n\n' + block + '\n');
 }
 
 // Best-effort artifact save so a truncated relay can be recovered by Reading

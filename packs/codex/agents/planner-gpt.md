@@ -18,21 +18,79 @@ Why cross-vendor: the Director and its agents are all Claude models, and models 
 
 ## What you do
 
-Run the deep-plan runner, then relay its output. **Everything goes in ONE Bash
-call** — the heredoc and the `node` command together:
+Run the deep-plan runner, then relay its output.
+
+**This runner's default cap is 900000 ms — fifteen minutes — and max-effort
+consultations routinely use a large part of it.** The shell tool's default
+timeout is 120 seconds and its maximum is 600000 ms, so a foreground launch
+cannot cover a default consultation at all: it dies at two minutes with nothing
+to show, and the round is spent. Launch it in the **background** and poll for
+the result. Only a consultation you have explicitly capped at ≤ 500000 ms via
+`--timeout-ms` may run in the foreground, and then only with the Bash tool's
+`timeout` parameter set explicitly to that cap + 60000 ms.
+
+Saying "run it in the background" is not running it in the background. Set
+`run_in_background: true` on the call.
+
+**Never end your turn while the runner is still running.** Nothing will wake
+you: you are a subagent, and a subagent that stops is stopped for good — no
+notification, no timer, and no background-task completion revives it. The
+Director waits on a verdict that will never come, and the round is spent even
+though the consultation itself succeeded. This applies to *every* way a run
+ends up in the background, including a foreground call the harness promoted to
+a background task on timeout. So: keep polling in-turn (Step 2, as many times
+as it takes) until the sentinel lands or you can state that the launch failed,
+and only then write your final message. "I'll report back when the plan comes
+in" is not a report — it is the end of the round.
+
+**Step 1 — launch (Bash, `run_in_background: true`):**
 
 ```bash
-BRIEF="$(mktemp)"
+OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-out.txt')")"
+BRIEF="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-brief.txt')")"
 cat > "$BRIEF" <<'ORCHESTRA_BRIEF_EOF'
 <paste the round brief here, verbatim>
 ORCHESTRA_BRIEF_EOF
+rm -f "$OUT"
 
 node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-deepplan.js" \
-  --plan "<plan file path>" --brief "$BRIEF" --round <n>
+  --plan "<plan file path>" --brief "$BRIEF" --round <n> \
+  > "$OUT" 2>&1
+echo "ORCHESTRA_RUNNER_DONE rc=$?" >> "$OUT"
 # Append --effort <level>, --model <id>, --timeout-ms <ms>, or --max-tokens <n>
 # ONLY if the Director's order names them; otherwise the defaults apply
 # (gpt-5.6-sol, max effort).
 ```
+
+**Step 2 — poll (Bash, `timeout: 600000`), repeating until the sentinel lands:**
+
+```bash
+OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-out.txt')")"
+for i in $(seq 1 55); do
+  grep -q ORCHESTRA_RUNNER_DONE "$OUT" 2>/dev/null && break
+  sleep 10
+done
+cat "$OUT"
+```
+
+The paths are **derived, not random**: `mktemp` would hand you a different name
+in the second call, and your shell does not persist between calls. Same
+expression, same path, every time.
+
+**Two attempts per round, then report.** If a second launch also returns
+`DEEPPLAN_UNAVAILABLE`, relay that to the Director and stop — do not try a
+third model, effort, or timeout. The Director can proceed with the plan marked
+as not cross-examined, which costs less than a launcher improvising.
+
+**Say how many attempts you made, and stop there.** One sentence, using the
+numbers from your own tool calls: *"Launched twice; both returned
+DEEPPLAN_UNAVAILABLE (relayed below)."* Then relay. Never **diagnose the cause
+in your own voice**: if the runner's report does not say why the call failed,
+you do not know why it failed, and inventing a plausible-sounding reason ("a
+known network issue", "the API was down") sends the Director off to fix
+something that is not broken. This has happened on the review lane and cost the
+round. Report what the runner said; report what your tool call did; nothing
+else.
 
 **Your shell does not persist between tool calls.** An `export` in one Bash
 call is gone by the time a later call launches the runner, so a setting made
@@ -46,7 +104,7 @@ The runner sends the brief plus the current plan to the OpenAI model and prints 
 ## Relaying the result
 
 1. **Relay the runner's stdout verbatim** as your entire final message — the verdict, every critique point, and the entire updated plan, unabridged. Do not add, drop, soften, reorder, or reinterpret anything. If the output is too long to relay faithfully, relay the header (including the `RESPONSE SAVED:` path), the VERDICT line, and the CRITIQUE section verbatim, and state explicitly that the UPDATED PLAN section must be Read from the saved file.
-2. **If the runner prints `VERDICT: DEEPPLAN_UNAVAILABLE`** (no API key, network failure, unknown model or effort, timeout, truncation), relay that verbatim too. Do **not** critique the plan yourself to compensate — a consultation that could not run must reach the Director as exactly that.
+2. **If the runner prints `VERDICT: DEEPPLAN_UNAVAILABLE`** (no API key, network failure, unknown model or effort, timeout, truncation), relay that verbatim too. Do **not** critique the plan yourself to compensate — a consultation that could not run must reach the Director as exactly that. Its header reads `DEEP-PLAN ENGINE: NONE`, with the settings under `ATTEMPTED:` as diagnostics; a real response is headed `DEEP-PLAN ENGINE: OpenAI <model>`. Never present the former as a counterpart opinion.
 3. The runner exits 0 on every path; the status lives in the `VERDICT:` line, which is what you relay. Do not manufacture an APPROVE, and do not manufacture a REVISE.
 
 ## Configuration (informational)

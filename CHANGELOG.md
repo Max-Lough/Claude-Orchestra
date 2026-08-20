@@ -112,6 +112,38 @@ pinning the token-keyed launcher protocol) and `tests/review-lane.test.js`
 engine). The doctor tests now pin `CODEX_HOME` to an empty fixture so a
 developer's real `~/.codex` cannot flip a check.
 
+## 1.8.0 — Codex CLI as Director: the harness's mirror image (retroactive entry)
+
+*Recorded after the fact (during 1.9.0), from commit `1f6b1f3` — the release
+shipped without a changelog entry.*
+
+Until now the Codex CLI could only be a hired hand: the codex *pack* gives a
+Claude-directed session OpenAI reviewers, executors, and a planning
+counterpart, but a project that wanted Codex itself in the Director's chair
+had nothing to install. The wiring existed only as a hand-built `.codex/`
+directory proven out in one project (PiratePartyPals), which is exactly the
+state the installer exists to abolish — a working setup nobody else can
+reproduce.
+
+`install-codex.js` makes it a master-repo capability: it stamps `.codex/` +
+`AGENTS.md` the same way `install.js` stamps `.claude/` + `CLAUDE.md`, from a
+new `codex/` tree (protocol, TOML agent roster — scout, detective, executor,
+reviewer — `config.toml`, `hooks.json`, and a ported `orchestra-guard.js`).
+One deliberate asymmetry: the protocol is **embedded whole** into `AGENTS.md`
+rather than imported, because Codex does not expand `@imports`. The mirror
+runs both ways — `codex/packs/claude/` (reviewer-claude, planner-claude)
+gives a Codex-directed project cross-vendor Claude judgment, exactly as
+`packs/codex/` does in the other direction — and the two installers are fully
+independent: a project can run either, both, or neither. PowerShell and POSIX
+wrappers included.
+
+Verified by scratch-dir round trip against the hand-built original: a fresh
+install matches the field `.codex/` byte-for-byte on every functional file,
+re-installs are idempotent (no duplicate `hooks.json`/`AGENTS.md` entries),
+`--no-packs` cleanly deselects, and `--uninstall` removes only
+Orchestra-owned entries while preserving foreign `hooks.json` events and
+surrounding `AGENTS.md` content.
+
 ## 1.7.0 — finding the installs that are behind
 
 Updating one project was already easy: `node install.js <project>`, no flags,

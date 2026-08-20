@@ -188,12 +188,20 @@ function sleep(ms) {
 // executable and is handed over as-is. Same stub, same behaviour, one layer of
 // platform plumbing.
 // `--doctor` takes no work order — that is half its point, so the helper does
-// not pass one.
-function runDoctor(fx, extraEnv) {
-  return spawnSync(process.execPath, [RUNNER, '--doctor'], {
+// not pass one. CODEX_HOME points at an empty fixture directory by default so
+// the developer's real ~/.codex (session history, config) can never leak into
+// the doctor's stale-session hazard report and flip a check.
+const CLEAN_CODEX_HOME = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-codex-home-'));
+  cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+})();
+
+function runDoctor(fx, extraEnv, extraArgs) {
+  return spawnSync(process.execPath, [RUNNER, '--doctor'].concat(extraArgs || []), {
     cwd: fx.repo,
     encoding: 'utf8',
-    timeout: 60000,
+    timeout: 240000,
     env: Object.assign(
       {},
       process.env,
@@ -201,6 +209,9 @@ function runDoctor(fx, extraEnv) {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
         ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
+        CODEX_HOME: CLEAN_CODEX_HOME,
+        ORCHESTRA_EXEC_ARGS: '',
+        ORCHESTRA_REVIEW_ARGS: '',
       },
       extraEnv || {}
     ),
@@ -1241,6 +1252,76 @@ function case19() {
   );
 }
 
+function case20() {
+  section('20. The doctor names stale-session hazards and self-tests the exec nonce');
+  const fx = makeDirtyRepo();
+
+  // Resume-prone env: the exact tokens the exec runner refuses to launch with.
+  const env = runDoctor(fx, { ORCHESTRA_EXEC_ARGS: 'resume --last' });
+  check(
+    'resume-prone ORCHESTRA_EXEC_ARGS are NEEDS ATTENTION with a non-zero exit',
+    env.status === 1 &&
+      /NEEDS ATTENTION/.test(env.stdout || '') &&
+      /session-resuming token/.test(env.stdout || ''),
+    'status=' + env.status + '\n' + (env.stdout || '').slice(0, 1200)
+  );
+
+  // Resume-prone Codex config: a config.toml line that would resume threads.
+  const badHome = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-codex-home-'));
+  cleanups.push(() => fs.rmSync(badHome, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(badHome, 'config.toml'),
+    '# codex config\nexperimental_resume = "/tmp/last-thread"\n',
+    'utf8'
+  );
+  const cfg = runDoctor(fx, { CODEX_HOME: badHome });
+  check(
+    'a resume-prone config.toml line is flagged, with file and line',
+    cfg.status === 1 && /config\.toml:2 looks resume-prone/.test(cfg.stdout || ''),
+    'status=' + cfg.status + '\n' + (cfg.stdout || '').slice(0, 1200)
+  );
+
+  // Session artifacts alone are a note, not a failure: the runners never
+  // resume, so history is harmless until a resume-prone config appears.
+  const histHome = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-codex-home-'));
+  cleanups.push(() => fs.rmSync(histHome, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(histHome, 'sessions', '2026', '08'), { recursive: true });
+  fs.writeFileSync(path.join(histHome, 'sessions', '2026', '08', 'rollout-1.jsonl'), '{}\n');
+  fs.writeFileSync(path.join(histHome, 'sessions', '2026', '08', 'rollout-2.jsonl'), '{}\n');
+  const hist = runDoctor(fx, { CODEX_HOME: histHome });
+  check(
+    'session artifacts alone are an informational note with exit 0',
+    hist.status === 0 && /2 session artifact file\(s\)/.test(hist.stdout || ''),
+    'status=' + hist.status + '\n' + (hist.stdout || '').slice(0, 1200)
+  );
+  check(
+    'the plain doctor points at --live instead of spending a model call',
+    /Add --live/.test(hist.stdout || ''),
+    (hist.stdout || '').slice(-600)
+  );
+
+  // --live: the nonce round-trip through the sibling exec runner, against the
+  // stub engine. A faithful echo self-tests ok; a broken echo fails loudly.
+  const live = runDoctor(fx, { STUB_CODEX_FIRST_LINE: 'STATUS: DONE' }, ['--live']);
+  check(
+    'the --live no-op order round-trips the report-integrity token',
+    live.status === 0 &&
+      /report-integrity self-test: ok/.test(live.stdout || ''),
+    'status=' + live.status + '\n' + (live.stdout || '').slice(-1200)
+  );
+  const liveBroken = runDoctor(
+    fx,
+    { STUB_CODEX_FIRST_LINE: 'STATUS: DONE', STUB_CODEX_OMIT_NONCE: '1' },
+    ['--live']
+  );
+  check(
+    'a broken nonce echo fails the --live self-test with a non-zero exit',
+    liveBroken.status === 1 &&
+      /report-integrity self-test: FAILED/.test(liveBroken.stdout || ''),
+    'status=' + liveBroken.status + '\n' + (liveBroken.stdout || '').slice(-1200)
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1274,6 +1355,7 @@ async function main() {
   case17();
   case18();
   case19();
+  case20();
 }
 
 main().then(finish, (e) => {

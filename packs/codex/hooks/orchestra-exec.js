@@ -41,7 +41,19 @@
  *   that changed during the run is listed in the report (generated build/
  *   engine churn counted separately, same allowlist as the review runner's
  *   integrity check). The engine's CHANGES section is a claim; the audit is
- *   the measurement the Director and the reviewer can hold it against.
+ *   the measurement the Director and the reviewer can hold it against. It is
+ *   computed IN-PROCESS from the runner's own snapshots — never from session
+ *   artifacts — and stamped with the run nonce, so it cannot be replayed.
+ *
+ *   REPORT INTEGRITY — every run generates a fresh nonce, injects it into the
+ *   brief, and requires the engine to echo it on a final REPORT INTEGRITY
+ *   line. A report without the echo (a resumed session, a replayed artifact,
+ *   a stale buffer — the 2026-08-19 field incident), or a report whose
+ *   CHANGES claims contradict an untouched-tree audit, is surfaced as
+ *   STATUS: EXEC_UNAVAILABLE with the suspect text shown but labelled
+ *   untrusted — never as STATUS: DONE. Resume-prone ORCHESTRA_EXEC_ARGS
+ *   tokens (resume, --last, --continue) are refused before launch: every
+ *   exec run is a fresh session by construction.
  *
  * ------------------------------------------------------------------ NO RETRY
  *
@@ -140,7 +152,17 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+
+// Per-run report-integrity token, generated before anything else so every
+// output path — success, failure, early refusal — can carry it. The brief
+// requires the engine to echo it on a REPORT INTEGRITY line; a report that
+// does not carry it did not come from the session this runner just launched
+// (a resumed thread, a replayed artifact, a stale buffer — the 2026-08-19
+// field incident relayed a weeks-old report, with matching stale audit, as a
+// fresh STATUS: DONE), and the runner refuses to relay it as one.
+const RUN_NONCE = crypto.randomBytes(8).toString('hex');
 
 // ------------------------------------------------------------------ config
 
@@ -712,6 +734,15 @@ function buildBrief(workOrder, verification, forbidden) {
     'CONCERNS',
     '- <risks, smells, or follow-ups the Director should weigh — or "none">',
     '',
+    'REPORT INTEGRITY: <run token>',
+    '',
+    'On the REPORT INTEGRITY line, replace <run token> with exactly this',
+    'run\'s token: ' + RUN_NONCE + ' — typed verbatim, alone on that final',
+    'line. The line is mandatory: it is how the runner proves your report',
+    'came from THIS run rather than from a resumed or replayed session, and',
+    'it refuses any report that does not carry the token on that line. Do',
+    'not repeat the token anywhere else in your report.',
+    '',
     ...prohibitionLines(forbidden),
     ...manifestLines(verification),
     '=== WORK ORDER (from the Director — execute exactly this) ===',
@@ -936,7 +967,10 @@ function settingsBits() {
 }
 
 function headerTail() {
-  let out = '';
+  // The nonce is part of the header on EVERY path, so any two runs' outputs
+  // are distinguishable at a glance — a relayed report whose nonce does not
+  // match the launch it claims to answer is a replay, whatever it says.
+  let out = '\nRUN NONCE: ' + RUN_NONCE;
   if (CONFIG.resolvedBin && CONFIG.resolvedBin !== CONFIG.bin) {
     out += '\nCODEX BINARY: ' + CONFIG.resolvedBin;
   }
@@ -964,11 +998,20 @@ function unavailableHeader() {
 // while it ran. Source paths are the headline; generated build/engine churn
 // is counted so a suite run does not bury the edits.
 function auditLines(delta, headBefore, headAfter) {
+  // Every audit ends with its provenance: it is measured IN-PROCESS by this
+  // runner, from fingerprints it took itself around the engine invocation.
+  // It never comes from session artifacts, engine output, or files a prior
+  // run could have left behind — so an audit carrying this run's nonce
+  // cannot be a replay of an earlier run's audit.
+  const provenance =
+    'Audit measured in-process by this runner (run token ' + RUN_NONCE + ') from its own\n' +
+    'before/after tree fingerprints — never from engine or session artifacts.';
   if (!delta) {
     return [
       'TREE AUDIT: unavailable — the directory is not a git work tree (or git is',
       'unavailable), so the runner could not fingerprint it. The CHANGES section',
       'above is the engine\'s own claim, unverified by the runner.',
+      provenance,
     ].join('\n');
   }
   const lines = [];
@@ -1003,16 +1046,19 @@ function auditLines(delta, headBefore, headAfter) {
     'listed here did not happen; a listed path the report never mentions is',
     'unexplained work.'
   );
+  lines.push(provenance);
   return lines.join('\n');
 }
 
 function printReport(body, audit) {
   process.stdout.write(
-    engineHeader() + '\n\n' + body.replace(/\s+$/, '') + '\n\n' + audit + '\n'
+    engineHeader() + '\n\n' + body.replace(/\s+$/, '') + '\n\n' + audit +
+      '\nREPORT INTEGRITY: verified — the engine echoed run token ' + RUN_NONCE +
+      ', and the report does not contradict the tree audit.\n'
   );
 }
 
-function printUnavailable(reason, detail, att, audit) {
+function printUnavailable(reason, detail, att, audit, suspectBody) {
   const block = [
     'STATUS: EXEC_UNAVAILABLE',
     '',
@@ -1033,9 +1079,35 @@ function printUnavailable(reason, detail, att, audit) {
     'came from an OpenAI model. Do NOT treat this order as executed.',
   ].join('\n');
   const diag = att ? '\n\n--- ATTEMPT LOG ---\n' + failureDiagnostics(att) : '';
+  // When an integrity check discarded an engine report, the Director still
+  // needs to SEE what was discarded — labelled as untrusted, never as the
+  // report of this run.
+  const suspect = suspectBody
+    ? '\n\n--- UNVERIFIED ENGINE OUTPUT (integrity check failed — possibly a replay of a\n' +
+      '--- previous session; do not act on it as this run\'s report) ---\n' +
+      indent(suspectBody.replace(/\s+$/, ''), '  ')
+    : '';
   process.stdout.write(
-    unavailableHeader() + '\n\n' + block + (audit ? '\n\n' + audit : '') + diag + '\n'
+    unavailableHeader() + '\n\n' + block + (audit ? '\n\n' + audit : '') + suspect + diag + '\n'
   );
+}
+
+// The CHANGES section of an executor report, parsed just far enough to know
+// whether the engine CLAIMED concrete edits. Returns null when no CHANGES
+// section is found (the missing-STATUS note already covers malformed shapes),
+// otherwise the list of claim lines that are not "none".
+function changesClaims(body) {
+  const m = /^CHANGES\s*$/m.exec(body);
+  if (!m) return null;
+  const lines = body.slice(m.index).split('\n').slice(1);
+  const items = [];
+  for (const line of lines) {
+    if (/^[A-Z][A-Z ]{2,}\s*$/.test(line)) break; // next section header
+    const im = /^\s*[-*]\s*(.+)$/.exec(line);
+    if (im) items.push(im[1].trim());
+    else if (line.trim() !== '' && items.length) break;
+  }
+  return items.filter((t) => !/^["'(]?\s*none\b/i.test(t) && !/^n\/a\b/i.test(t));
 }
 
 // ------------------------------------------------------------------ main
@@ -1149,6 +1221,33 @@ function main() {
   CONFIG.execDir = (args.cd && args.cd.trim()) || CONFIG.projectDir;
   CONFIG.execDirLabel =
     CONFIG.execDir === CONFIG.projectDir ? 'live working tree' : 'directed worktree';
+
+  // Fresh-session enforcement: this runner's guarantees — the idle precheck,
+  // the tree audit, the report-integrity token — are all statements about ONE
+  // freshly launched engine session. An extra arg that resumes a previous
+  // Codex session/thread ("resume", "--last", experimental_resume=...) makes
+  // the engine's final message a message from some OTHER run, which is
+  // exactly the stale-replay failure the integrity token exists to catch.
+  // Refuse up front rather than launching a run whose report is disqualified
+  // by construction.
+  const resumeTokens = CONFIG.extraArgs
+    ? CONFIG.extraArgs.split(/\s+/).filter(
+        (t) => /resume/i.test(t) || t === '--last' || t === '--continue'
+      )
+    : [];
+  if (resumeTokens.length) {
+    printUnavailable(
+      'ORCHESTRA_EXEC_ARGS would resume a previous Codex session',
+      'These token(s) in ORCHESTRA_EXEC_ARGS resume or continue an earlier session: ' +
+        resumeTokens.join(', ') + '\n' +
+        'Every exec run must be a FRESH session: a resumed thread can hand back a\n' +
+        'previous run\'s final message as if it were this run\'s report (observed in\n' +
+        'the field as a weeks-old report relayed as STATUS: DONE for a brand-new\n' +
+        'order). Remove the flag(s) from ORCHESTRA_EXEC_ARGS and re-dispatch.\n' +
+        'Nothing was attempted and the tree was not touched.'
+    );
+    return;
+  }
 
   const workOrder = readFileOr(args.workOrder, '');
   if (!workOrder.trim()) {
@@ -1304,6 +1403,64 @@ function main() {
           : ''),
       att,
       audit
+    );
+    return;
+  }
+
+  // --- report integrity, check 1: the nonce echo. The brief requires the
+  // engine to end its report with `REPORT INTEGRITY: <this run's token>`. A
+  // resumed session, a replayed rollout, or a stale buffer cannot know the
+  // token, so a body without it is treated as NO report from this run — the
+  // discarded text is still shown, labelled untrusted, because the Director
+  // must see what almost got relayed. The token must sit on the REPORT
+  // INTEGRITY line itself: codex may echo the brief (where the token appears
+  // on an instruction line, never in that composed form) into stdout, and an
+  // echo must not count as an answer.
+  if (!new RegExp('^REPORT INTEGRITY:\\s*' + RUN_NONCE + '\\s*$', 'm').test(body)) {
+    printUnavailable(
+      'report integrity check failed — the engine\'s report does not echo this run\'s token',
+      'This run\'s token is ' + RUN_NONCE + '. The brief required the engine to end its\n' +
+        'report with a `REPORT INTEGRITY: ' + RUN_NONCE + '` line, and the report the\n' +
+        'runner captured carries no such line (or a different token). That is the\n' +
+        'signature of a STALE report — a resumed Codex session or a replayed artifact\n' +
+        'handing back some earlier run\'s final message — or of an engine that ignored\n' +
+        'a mandatory output rule; either way the report cannot be attributed to this\n' +
+        'run. The TREE AUDIT below is trustworthy regardless: the runner measured it\n' +
+        'itself, in-process, around this launch. Use it to see what this attempt\n' +
+        'actually did to the tree before deciding what happens next.',
+      att,
+      audit,
+      body
+    );
+    return;
+  }
+
+  // --- report integrity, check 2: the report must not contradict the audit.
+  // An engine that claims concrete CHANGES while the runner measured a
+  // byte-for-byte untouched tree (no source paths, no generated churn, HEAD
+  // unmoved) is describing some other tree — a stale report that happens to
+  // carry the right token cannot exist, but an engine hallucinating work, or
+  // reporting "already present" edits it never made, can. Skipped for
+  // read-only dry runs, where no claim could have landed by design.
+  const claims = changesClaims(body);
+  const treeUntouched =
+    delta !== null &&
+    delta.source.length === 0 &&
+    delta.generated.length === 0 &&
+    before !== null && after !== null && before.head === after.head;
+  if (CONFIG.sandbox !== 'read-only' && claims && claims.length && treeUntouched) {
+    printUnavailable(
+      'report integrity check failed — the report claims edits the runner measured as never happening',
+      'The report\'s CHANGES section claims ' + claims.length + ' edit(s):\n' +
+        indent(claims.slice(0, 10).map((c) => '- ' + c).join('\n'), '  ') +
+        (claims.length > 10 ? '\n  …and ' + (claims.length - 10) + ' more' : '') + '\n' +
+        'but the runner\'s own before/after fingerprints show a tree that did not\n' +
+        'change at all while the engine ran: no source paths, no generated churn,\n' +
+        'HEAD unmoved. A report and an audit that contradict each other must never\n' +
+        'be relayed as a completed order. Treat the order as NOT executed.',
+      att,
+      audit,
+      body
     );
     return;
   }

@@ -45,18 +45,28 @@ in" is not a report — it is the end of the round.
 
 **Step 1 — launch (Bash, `run_in_background: true`):**
 
+First, **invent a run token**: 8+ characters, unique to this launch (say, the
+plan slug plus the round — `authplan-r2`). Write it as a **literal** into every
+command below, launch and polls alike. Never compute it with `$(date)`,
+`$RANDOM`, or `mktemp` — those give a different value in the polling call, and
+your shell does not persist between calls. The token keeps this launch's files
+and sentinel distinct from every other run's: a fixed filename once let a poll
+find a stale run's sentinel and relay that run's entire old output as a fresh
+result.
+
 ```bash
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-out.txt')")"
-BRIEF="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-brief.txt')")"
+RUN=<your run token — the same literal in every command of this launch>
+OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-out-$RUN.txt')")"
+BRIEF="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-brief-$RUN.txt')")"
+rm -f "$OUT"
 cat > "$BRIEF" <<'ORCHESTRA_BRIEF_EOF'
 <paste the round brief here, verbatim>
 ORCHESTRA_BRIEF_EOF
-rm -f "$OUT"
 
 node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-deepplan.js" \
   --plan "<plan file path>" --brief "$BRIEF" --round <n> \
   > "$OUT" 2>&1
-echo "ORCHESTRA_RUNNER_DONE rc=$?" >> "$OUT"
+echo "ORCHESTRA_RUNNER_DONE $RUN rc=$?" >> "$OUT"
 # Append --effort <level>, --model <id>, --timeout-ms <ms>, or --max-tokens <n>
 # ONLY if the Director's order names them; otherwise the defaults apply
 # (gpt-5.6-sol, max effort).
@@ -65,17 +75,20 @@ echo "ORCHESTRA_RUNNER_DONE rc=$?" >> "$OUT"
 **Step 2 — poll (Bash, `timeout: 600000`), repeating until the sentinel lands:**
 
 ```bash
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-out.txt')")"
+RUN=<the same run token, verbatim>
+OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-deepplan-out-$RUN.txt')")"
 for i in $(seq 1 55); do
-  grep -q ORCHESTRA_RUNNER_DONE "$OUT" 2>/dev/null && break
+  grep -q "ORCHESTRA_RUNNER_DONE $RUN" "$OUT" 2>/dev/null && break
   sleep 10
 done
 cat "$OUT"
 ```
 
-The paths are **derived, not random**: `mktemp` would hand you a different name
-in the second call, and your shell does not persist between calls. Same
-expression, same path, every time.
+The paths are **derived from your token, not random**: same token, same path,
+every call of this launch; a different launch can never collide with them.
+**Only a sentinel carrying YOUR token counts** — a sentinel with any other
+token, or output in a file your token does not name, is another run's debris,
+never your result.
 
 **Two attempts per round, then report.** If a second launch also returns
 `DEEPPLAN_UNAVAILABLE`, relay that to the Director and stop — do not try a

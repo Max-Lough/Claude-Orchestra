@@ -97,42 +97,54 @@ finishes" is not a report — it is the end of the round.
 
 #### Step 2a — launch (Bash, `run_in_background: true`)
 
+First, **invent a run token**: 8+ characters, unique to this launch (say, from
+the order's subject plus a counter — `authreview-1`). Write it as a **literal**
+into every command below, launch and polls alike. Never compute it with
+`$(date)`, `$RANDOM`, or `mktemp` — those give a different value in the polling
+call, and your shell does not persist between calls. The token keeps this
+launch's files and sentinel distinct from every other run's: a fixed filename
+once let a poll find a stale run's sentinel and relay that run's entire old
+output as a fresh result.
+
 ```bash
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-out.txt')")"
-WO="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-wo.txt')")"
-ER="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-er.txt')")"
+RUN=<your run token — the same literal in every command of this launch>
+OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-out-$RUN.txt')")"
+WO="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-wo-$RUN.txt')")"
+ER="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-er-$RUN.txt')")"
+rm -f "$OUT"
 cat > "$WO" <<'ORCHESTRA_WORKORDER_EOF'
 <paste the work order here, verbatim>
 ORCHESTRA_WORKORDER_EOF
 cat > "$ER" <<'ORCHESTRA_EXECREPORT_EOF'
 <paste the executor's full report here, verbatim>
 ORCHESTRA_EXECREPORT_EOF
-rm -f "$OUT"
 
 CODEX_BIN="<real path — see below>" \
 node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-review.js" \
   --work-order "$WO" --executor-report "$ER" \
   > "$OUT" 2>&1
-echo "ORCHESTRA_RUNNER_DONE rc=$?" >> "$OUT"
+echo "ORCHESTRA_RUNNER_DONE $RUN rc=$?" >> "$OUT"
 ```
 
-The paths are **derived, not random** — `mktemp` would give you a different
-name in the polling call, and your shell does not persist between calls. Same
-expression, same path, every time.
+The paths are **derived from your token, not random** — same token, same path,
+every call of this launch; a different launch can never collide with them.
 
 #### Step 2b — poll (Bash, `timeout: 600000`)
 
 ```bash
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-out.txt')")"
+RUN=<the same run token, verbatim>
+OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-out-$RUN.txt')")"
 for i in $(seq 1 55); do
-  grep -q ORCHESTRA_RUNNER_DONE "$OUT" 2>/dev/null && break
+  grep -q "ORCHESTRA_RUNNER_DONE $RUN" "$OUT" 2>/dev/null && break
   sleep 10
 done
 cat "$OUT"
 ```
 
 Repeat 2b if the sentinel has not appeared. The runner's own cap ends the run;
-your polling never decides the verdict.
+your polling never decides the verdict. **Only a sentinel carrying YOUR token
+counts** — a sentinel with any other token, or output in a file your token
+does not name, is another run's debris, never your result.
 
 ### Step 3 — the flags
 

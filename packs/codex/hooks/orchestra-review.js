@@ -351,6 +351,7 @@ function parseArgs(argv) {
     else if (a === '--no-probe') out.noProbe = true;
     else if (a === '--warmup-cmd') out.warmupCmd = argv[++i];
     else if (a === '--doctor') out.doctor = true;
+    else if (a === '--live') out.live = true;
     else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
@@ -709,6 +710,160 @@ function setupGitIsolation() {
   }
 }
 
+// Stale-session hazards: the conditions under which a Codex run can hand back
+// a PREVIOUS session's output as if it were fresh. Found the hard way
+// (2026-08-19): an exec lane relayed a weeks-old report — with a matching
+// stale tree audit — as STATUS: DONE for a brand-new order. The exec runner
+// now refuses resume-prone args and verifies a per-run token, but the doctor
+// still names the hazards so a machine that carries them is visibly primed.
+function staleSessionHazards() {
+  const notes = [];
+  const attention = [];
+
+  // 1. Resume-prone extra args. The exec runner refuses these outright; the
+  //    review runner would silently review some other session's context.
+  for (const name of ['ORCHESTRA_EXEC_ARGS', 'ORCHESTRA_REVIEW_ARGS']) {
+    const raw = (process.env[name] || '').trim();
+    if (!raw) continue;
+    const bad = raw
+      .split(/\s+/)
+      .filter((t) => /resume/i.test(t) || t === '--last' || t === '--continue');
+    if (bad.length) {
+      attention.push(
+        name + ' contains session-resuming token(s): ' + bad.join(', ') + ' — a run ' +
+          'launched with these can hand back a PREVIOUS session\'s output as a fresh ' +
+          'result. The exec runner refuses to launch with them; remove them.'
+      );
+    }
+  }
+
+  // 2. Resume-prone Codex config. Read-only inspection; comments are skipped.
+  const codexHome = (process.env.CODEX_HOME || '').trim() || path.join(os.homedir(), '.codex');
+  try {
+    const cfg = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+    const hits = cfg
+      .split(/\r?\n/)
+      .map((l, i) => ({ n: i + 1, text: l }))
+      .filter((l) => /resume/i.test(l.text) && !/^\s*#/.test(l.text));
+    for (const h of hits) {
+      attention.push(
+        path.join(codexHome, 'config.toml') + ':' + h.n + ' looks resume-prone: "' +
+          h.text.trim() + '" — `codex exec` runs launched by the Orchestra runners ' +
+          'must start fresh sessions; a config that resumes threads by default can ' +
+          'replay a stale run\'s final message as a fresh report.'
+      );
+    }
+  } catch (_) {
+    /* no config to read — nothing resume-prone in it */
+  }
+
+  // 3. Session/rollout artifacts. Normal Codex history and harmless by
+  //    themselves — the runners never resume — but worth counting so a reader
+  //    knows the ammunition exists if a resume-prone config (above) appears.
+  let artifacts = 0;
+  for (const sub of ['sessions', 'threads', 'rollouts']) {
+    const dir = path.join(codexHome, sub);
+    const walk = (d, depth) => {
+      if (depth > 4 || artifacts > 5000) return;
+      let entries;
+      try {
+        entries = fs.readdirSync(d, { withFileTypes: true });
+      } catch (_) {
+        return;
+      }
+      for (const e of entries) {
+        if (e.isDirectory()) walk(path.join(d, e.name), depth + 1);
+        else artifacts++;
+      }
+    };
+    walk(dir, 0);
+  }
+  if (artifacts > 0) {
+    notes.push(
+      artifacts + (artifacts > 5000 ? '+' : '') + ' session artifact file(s) under ' +
+        codexHome + ' — normal Codex history, harmless by itself: the runners never ' +
+        'pass resume flags, and the exec runner verifies a per-run token so a stale ' +
+        'session cannot be replayed as a fresh run.'
+    );
+  }
+
+  return { notes, attention };
+}
+
+// The exec lane's report-integrity self-test: launch the REAL engine through
+// the sibling exec runner with a trivial no-op order in a scratch directory
+// (read-only sandbox) and verify the nonce round-trip — brief in, echo out,
+// `REPORT INTEGRITY: verified` printed. Costs one real model call, so it runs
+// only under `--doctor --live`.
+function runExecSelftest() {
+  const execRunner = path.join(__dirname, 'orchestra-exec.js');
+  if (!fs.existsSync(execRunner)) {
+    return {
+      ok: false,
+      skipped: true,
+      lines: ['exec-lane self-test: SKIPPED — ' + execRunner + ' is not installed beside this file.'],
+    };
+  }
+  let dir = '';
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-selftest-'));
+  } catch (e) {
+    return { ok: false, lines: ['exec-lane self-test: could not create a scratch dir (' + ((e && e.message) || e) + ')'] };
+  }
+  try {
+    // A git repo lets the runner produce a real (empty) tree audit.
+    spawnSync('git', ['init', '-q', dir], { encoding: 'utf8' });
+    const wo = path.join(dir, 'no-op-order.txt');
+    fs.writeFileSync(
+      wo,
+      'SELF-TEST — a deliberate no-op. Do not read files, run commands, or edit\n' +
+        'anything. Reply with the required report structure exactly: STATUS: DONE,\n' +
+        'CHANGES - none, VERIFICATION - not run (no-op self-test), DEVIATIONS -\n' +
+        'none, CONCERNS - none, and the mandatory final REPORT INTEGRITY line.\n',
+      'utf8'
+    );
+    const r = spawnSync(
+      process.execPath,
+      [execRunner, '--work-order', wo, '--cd', dir, '--no-probe',
+        '--timeout-ms', String(Math.max(CONFIG.probeTimeoutMs * 3, 180000))],
+      {
+        encoding: 'utf8',
+        timeout: Math.max(CONFIG.probeTimeoutMs * 3, 180000) + 30000,
+        maxBuffer: 16 * 1024 * 1024,
+        env: Object.assign({}, process.env, {
+          ORCHESTRA_EXEC_SANDBOX: 'read-only',
+          ORCHESTRA_EXEC_IDLE_MS: '0',
+          CLAUDE_PROJECT_DIR: dir,
+        }),
+      }
+    );
+    const out = (r.stdout || '') + (r.stderr || '');
+    if (/REPORT INTEGRITY: verified/.test(out)) {
+      const nonce = /RUN NONCE: ([0-9a-f]+)/.exec(out);
+      return {
+        ok: true,
+        lines: [
+          'exec-lane report-integrity self-test: ok — a no-op order round-tripped the ' +
+            'run token' + (nonce ? ' (' + nonce[1] + ')' : '') + ' and the runner verified it.',
+        ],
+      };
+    }
+    return {
+      ok: false,
+      lines: [
+        'exec-lane report-integrity self-test: FAILED — the no-op run did not produce a',
+        'verified report. Runner output (last 30 lines):',
+      ].concat(tail(out, 30).split('\n').map((l) => '  ' + l)),
+    };
+  } finally {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (_) {
+      /* scratch leak is cosmetic */
+    }
+  }
+}
+
 // `--doctor`: the install check on its own, for a human, at a moment of their
 // choosing — at install time (the installer runs it), or the first time a
 // review comes back empty.
@@ -717,8 +872,9 @@ function setupGitIsolation() {
 // misplaced by one directory produced reviews that returned nothing, for days,
 // with no line anywhere saying the install was wrong. The check was already in
 // the runner; it was only reachable by running a whole review.
-function runDoctor() {
+function runDoctor(live) {
   const install = inspectCodexInstall();
+  const hazards = staleSessionHazards();
   const out = [];
   out.push('ORCHESTRA — Codex install check');
   out.push('');
@@ -744,14 +900,22 @@ function runDoctor() {
       'cannot be inspected. Install it (https://developers.openai.com/codex/cli), or set ' +
       'CODEX_BIN to the executable\'s full path — on Windows that is usually ' +
       '%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\<hash>\\codex.exe.');
+    for (const a of hazards.attention) out.push('  ' + a);
     process.stdout.write(out.join('\n') + '\n');
     process.exitCode = 1;
     return;
   }
 
-  if (install.missing.length) {
+  // Stale-session hazard report — informational notes always, resume-prone
+  // findings under NEEDS ATTENTION below.
+  for (const n of hazards.notes) out.push('  ' + n);
+
+  if (install.missing.length || hazards.attention.length) {
     out.push('');
     out.push('NEEDS ATTENTION');
+    for (const a of hazards.attention) out.push('  ' + a);
+  }
+  if (install.missing.length) {
     out.push('  ' + install.detail);
     out.push('');
     // installDir is known here — the unresolved-binary case returned above.
@@ -778,16 +942,32 @@ function runDoctor() {
     out.push('  Then re-run this check. If your install legitimately does not carry these');
     out.push('  files, set ORCHESTRA_CODEX_HELPER_SIBLINGS (comma-separated, empty for none)');
     out.push('  or "codex": { "helperSiblings": [...] } in .claude/orchestra.json.');
-  } else {
+  } else if (!hazards.attention.length) {
     out.push('');
     out.push('OK — a review would find this install complete.');
     out.push('  (Auth is not checked here: run `codex login`, or export OPENAI_API_KEY.');
     out.push('   The review runner probes auth itself before every review.)');
   }
+
+  // The live self-test costs one real model call, so it runs only on request.
+  let liveFailed = false;
+  if (live) {
+    const selftest = runExecSelftest();
+    out.push('');
+    for (const l of selftest.lines) out.push(l);
+    liveFailed = !selftest.ok && !selftest.skipped;
+  } else if (!install.missing.length) {
+    out.push('');
+    out.push('  (Add --live to also self-test the exec lane\'s report-integrity token with a');
+    out.push('   real no-op engine run — proves a fresh session and the nonce round-trip,');
+    out.push('   at the cost of one model call.)');
+  }
+
   process.stdout.write(out.join('\n') + '\n');
   // A non-zero exit is what lets a wrapper — the installer, CI, a shell script —
   // act on the result without parsing prose.
-  process.exitCode = install.missing.length ? 1 : 0;
+  process.exitCode =
+    install.missing.length || hazards.attention.length || liveFailed ? 1 : 0;
 }
 
 // Environment for every git the review touches — the runner's own calls and the
@@ -2147,13 +2327,20 @@ function main() {
         '         [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]...\n' +
         '         [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
         '         [--retries <n>|--no-retry] [--no-probe] [--warmup-cmd <cmd>]\n' +
-        '       node orchestra-review.js --doctor\n' +
+        '       node orchestra-review.js --doctor [--live]\n' +
         '\n' +
         '  --doctor checks the local Codex install the way a review does — real\n' +
         '  binary, install layout, the helper files that must sit BESIDE it —\n' +
         '  repairs what it can, and prints the exact command for what it cannot.\n' +
-        '  Exit 0 means a review would find a complete install. It reviews\n' +
+        '  It also names stale-session hazards: resume-prone tokens in\n' +
+        '  ORCHESTRA_EXEC_ARGS / ORCHESTRA_REVIEW_ARGS, resume-prone lines in\n' +
+        '  the Codex config, and leftover session artifacts. Exit 0 means a\n' +
+        '  review would find a complete, hazard-free install. It reviews\n' +
         '  nothing and needs no work order.\n' +
+        '\n' +
+        '  --live (with --doctor) additionally runs a real no-op order through\n' +
+        '  the sibling exec runner in a scratch directory (read-only sandbox)\n' +
+        '  and verifies the report-integrity token round-trip — one model call.\n' +
         '\n' +
         '  --head-ref pins the review to a commit: the runner checks it out in a\n' +
         '  throwaway worktree outside the repo and reviews THAT, so the session\'s\n' +
@@ -2300,7 +2487,7 @@ function main() {
   // the install with exactly the settings a review would use — a helperSiblings
   // list the project overrode is the list the doctor verifies.
   if (args.doctor) {
-    runDoctor();
+    runDoctor(args.live);
     return;
   }
 

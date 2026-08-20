@@ -61,6 +61,19 @@ jobs:
           git config --global user.name "Orchestra CI"
           git config --global init.defaultBranch main
 
+      - name: Frontmatter lint (whole repository)
+        # A YAML-unsafe frontmatter value makes Claude Code drop the file
+        # SILENTLY — the agent never registers, with no log anywhere. Strict:
+        # warnings (values that parse but lean on the CRLF-fragile repair
+        # pass) fail this step too, so the class can never merge again.
+        run: node install.js --lint
+
+      - name: Frontmatter-lint suite
+        # Exercises the linter against the unparseable class, the installer's
+        # refusal to stamp a failing source, LF normalization of installed
+        # markdown, and the stamped .claude/.gitattributes.
+        run: node tests/frontmatter-lint.test.js
+
       - name: Review-lane suite
         # The suite drives the real runner against a stub Codex and asserts on
         # what the engine was handed. It needs no install step: plain node, plain

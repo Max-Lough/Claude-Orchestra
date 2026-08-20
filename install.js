@@ -10,6 +10,9 @@
  *   node install.js [targetDir] --uninstall            remove cleanly
  *   node install.js --scan <dir> [--depth n]           report which installs are behind
  *   node install.js --scan <dir> --update              ...and bring the stale ones up
+ *   node install.js --lint [dir]                       frontmatter lint only (CI /
+ *                                                      contributors; dir defaults to
+ *                                                      this master)
  *
  * targetDir defaults to the current working directory.
  *
@@ -79,6 +82,328 @@ function skillDirsIn(dir) {
       return fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'SKILL.md'));
     })
     .sort();
+}
+
+// -------------------------------------------------------- frontmatter lint
+//
+// Claude Code loads agents, skills, and commands from .md files whose YAML
+// frontmatter it parses. Two facts make one bad value catastrophic rather
+// than merely wrong (both verified against the shipped binary, 2026-08):
+//
+//   1. A frontmatter block that fails to parse is dropped SILENTLY — no log,
+//      no telemetry: the parse failure yields an empty frontmatter object and
+//      the missing-name path returns null before any logging runs. The agent
+//      simply never registers, in any session.
+//   2. Claude Code has a repair pass that quotes YAML-unsafe values and
+//      reparses — but its line regex cannot match lines with a trailing CR,
+//      so a CRLF worktree (Windows autocrlf, no .gitattributes) defeats it.
+//      The same file loads on LF platforms and vanishes on CRLF ones.
+//
+// That combination shipped three codex-pack agents whose descriptions carried
+// an unquoted "launcher: it runs" (a bare ": " makes the whole block
+// unparseable) and cost a field project days of misdirected diagnosis before
+// 4ed7a03 reworded them. This lint makes the class unshippable: the installer
+// refuses to stamp any .md whose frontmatter fails a strict parse of the YAML
+// block-mapping subset frontmatter actually uses, and warns about values that
+// parse only lossily or lean on the repair pass. `node install.js --lint`
+// runs the identical check standalone, for CI and contributors.
+
+// The character class Claude Code's repair pass triggers on. A plain scalar
+// containing one of these may parse today, but it is one edit away from
+// needing the repair pass — which CRLF defeats.
+const REPAIR_TRIGGER_CHARS = /[{}\[\]*&#!|>%@`]/;
+
+function extractFrontmatterBlock(text) {
+  let t = text;
+  if (t.charCodeAt(0) === 0xfeff) t = t.slice(1);
+  const crlf = /\r/.test(t);
+  const lines = t.split(/\r\n|\r|\n/);
+  if (!/^---\s*$/.test(lines[0] || '')) return { present: false, crlf };
+  for (let i = 1; i < lines.length; i++) {
+    if (/^---\s*$/.test(lines[i])) {
+      return { present: true, crlf, lines: lines.slice(1, i) };
+    }
+  }
+  return { present: true, crlf, unterminated: true, lines: lines.slice(1) };
+}
+
+// One scalar value, judged the way a strict YAML parser judges it. Returns
+// { kind, error, warning } — kind drives how following lines are read
+// ('block' consumes an indented block; 'open' expects nested structure).
+function judgeScalar(v) {
+  const value = v.trim();
+  if (value === '') return { kind: 'open' };
+  if (value[0] === '"') {
+    return /^"(?:[^"\\]|\\.)*"(?:\s+#.*)?$/.test(value)
+      ? { kind: 'closed' }
+      : { kind: 'closed', error: 'unterminated or malformed double-quoted value' };
+  }
+  if (value[0] === "'") {
+    return /^'(?:[^']|'')*'(?:\s+#.*)?$/.test(value)
+      ? { kind: 'closed' }
+      : { kind: 'closed', error: 'unterminated or malformed single-quoted value' };
+  }
+  if (value[0] === '|' || value[0] === '>') {
+    return /^[|>][+-]?\d*\s*(#.*)?$/.test(value)
+      ? { kind: 'block' }
+      : { kind: 'block', error: 'malformed block-scalar header ("' + value + '")' };
+  }
+  if (value[0] === '[' || value[0] === '{') {
+    let depth = 0;
+    let inStr = '';
+    for (const c of value) {
+      if (inStr) {
+        if (c === inStr) inStr = '';
+        continue;
+      }
+      if (c === '"' || c === "'") inStr = c;
+      else if (c === '[' || c === '{') depth++;
+      else if (c === ']' || c === '}') depth--;
+    }
+    return depth === 0 && !inStr
+      ? { kind: 'closed' }
+      : { kind: 'closed', error: 'flow collection does not close on its line — quote it or use block style' };
+  }
+  // Plain scalar. The hard errors are exactly what makes a real parser reject
+  // the whole block; the warnings are what parses but loses text or leans on
+  // the repair pass.
+  if (/^[*&!%@`]/.test(value)) {
+    return {
+      kind: 'closed',
+      error:
+        'unquoted value begins with the YAML indicator character "' + value[0] +
+        '" — the whole frontmatter fails to parse. Quote the value.',
+    };
+  }
+  if (/^\?(\s|$)/.test(value) || /^-\s/.test(value) || value === '-') {
+    return {
+      kind: 'closed',
+      error:
+        'unquoted value begins with "' + value.slice(0, 2).trim() +
+        '" (a YAML structure indicator) — quote the value.',
+    };
+  }
+  if (/: /.test(value) || /:$/.test(value)) {
+    return {
+      kind: 'closed',
+      error:
+        'unquoted value contains ": " (or ends with ":") — a plain YAML scalar cannot, ' +
+        'so the WHOLE frontmatter fails to parse and Claude Code drops the file ' +
+        'silently. Quote the value, or reword (e.g. "launcher: it runs" → ' +
+        '"launcher that runs").',
+    };
+  }
+  if (/\s#/.test(value)) {
+    return {
+      kind: 'closed',
+      warning:
+        'everything from " #" onward parses as a YAML comment and is silently ' +
+        'dropped from the value — quote the value to keep it.',
+    };
+  }
+  const trig = REPAIR_TRIGGER_CHARS.exec(value);
+  if (trig) {
+    return {
+      kind: 'closed',
+      warning:
+        'unquoted value contains "' + trig[0] + '" — parseable today, but in the ' +
+        'class Claude Code\'s frontmatter repair pass exists for, and that pass is ' +
+        'defeated by CRLF checkouts. Quote the value so it never needs repair.',
+    };
+  }
+  return { kind: 'closed' };
+}
+
+// Lint one .md file's frontmatter. opts.required: the file only functions if
+// Claude Code can load it (agents, specialists, SKILL.md), so absent or
+// unterminated frontmatter and a missing `name` are errors, not shrugs.
+// Returns { present, errors, warnings } with 1-based file line numbers.
+function lintFrontmatterText(text, opts) {
+  const required = !!(opts && opts.required);
+  const errors = [];
+  const warnings = [];
+  const fm = extractFrontmatterBlock(text);
+  if (!fm.present) {
+    if (required) {
+      errors.push({
+        line: 1,
+        text: (text.split(/\r\n|\r|\n/)[0] || '').slice(0, 120),
+        msg: 'no frontmatter block — Claude Code cannot load this file without one (it must begin with "---")',
+      });
+    }
+    return { present: false, errors, warnings };
+  }
+  if (fm.crlf) {
+    warnings.push({
+      line: 1,
+      text: '---',
+      msg:
+        'CRLF line endings — Claude Code\'s frontmatter repair pass cannot match ' +
+        'lines with a trailing CR. The installer stamps LF copies, but keep the ' +
+        'source LF too (.gitattributes: *.md text eol=lf).',
+    });
+  }
+  if (fm.unterminated) {
+    errors.push({
+      line: 1,
+      text: '---',
+      msg: 'frontmatter never closes — no terminating "---" line; the whole file fails to load',
+    });
+    return { present: true, errors, warnings };
+  }
+
+  const err = (j, text, msg) => errors.push({ line: j + 2, text: text.slice(0, 120), msg });
+  const warn = (j, text, msg) => warnings.push({ line: j + 2, text: text.slice(0, 120), msg });
+
+  const topKeys = new Set();
+  let nameValue = '';
+  let blockIndent = -1; // consuming a |/> block while indent exceeds this
+  let lastKind = '';
+  let lastIndent = -1;
+
+  for (let j = 0; j < fm.lines.length; j++) {
+    const raw = fm.lines[j];
+    if (!raw.trim()) continue;
+    const lead = /^[ \t]*/.exec(raw)[0];
+    const indent = lead.length;
+    if (blockIndent >= 0) {
+      if (indent > blockIndent) continue; // block-scalar content, opaque by design
+      blockIndent = -1;
+    }
+    if (lead.includes('\t')) {
+      err(j, raw, 'tab in indentation — YAML forbids tabs; use spaces');
+      continue;
+    }
+    let rest = raw.slice(indent);
+    if (rest.startsWith('#')) continue;
+
+    let isSeqItem = false;
+    if (/^-\s/.test(rest) || rest === '-') {
+      isSeqItem = true;
+      rest = rest.replace(/^-\s*/, '');
+      if (rest === '') continue; // "-" alone: nested structure follows
+    }
+
+    const km = /^([^:#]+?):(?:\s(.*))?$/.exec(rest);
+    if (km && !/\s$/.test(km[1])) {
+      const key = km[1];
+      const value = km[2] == null ? '' : km[2];
+      if (!isSeqItem && indent === 0) {
+        if (topKeys.has(key)) err(j, raw, 'duplicate key "' + key + '"');
+        topKeys.add(key);
+        if (key === 'name') nameValue = value.trim();
+      }
+      const judged = judgeScalar(value);
+      if (judged.error) err(j, raw, key + ': ' + judged.error);
+      if (judged.warning) warn(j, raw, key + ': ' + judged.warning);
+      if (judged.kind === 'block') blockIndent = indent;
+      lastKind = judged.kind;
+      lastIndent = indent;
+      continue;
+    }
+
+    if (isSeqItem) {
+      const judged = judgeScalar(rest);
+      if (judged.error) err(j, raw, 'sequence item: ' + judged.error);
+      if (judged.warning) warn(j, raw, 'sequence item: ' + judged.warning);
+      if (judged.kind === 'block') blockIndent = indent;
+      lastKind = judged.kind;
+      lastIndent = indent;
+      continue;
+    }
+
+    if (indent > lastIndent && lastKind === 'closed') {
+      // A more-indented bare line after a scalar is a plain-scalar
+      // continuation — legal, but the continuation must obey scalar rules.
+      const judged = judgeScalar(rest);
+      if (judged.error) err(j, raw, 'scalar continuation: ' + judged.error);
+      if (judged.warning) warn(j, raw, 'scalar continuation: ' + judged.warning);
+      continue;
+    }
+    if (indent > lastIndent && lastKind === 'open') continue; // nested block — keys checked above when they match
+    err(j, raw, 'not a "key: value" line, a "- item", or a valid continuation — the frontmatter fails to parse');
+  }
+
+  if (required && !nameValue) {
+    errors.push({
+      line: 1,
+      text: '---',
+      msg:
+        'no top-level "name:" with a value — Claude Code drops a frontmatter ' +
+        'without a name (silently), so this file would never register',
+    });
+  }
+  return { present: true, errors, warnings };
+}
+
+// Is Claude Code's ability to LOAD this file the whole point of the file?
+// Agents, specialists, and SKILL.md files: yes. Reference .md beside a skill
+// or plain docs: only if they carry frontmatter at all.
+function frontmatterRequired(file) {
+  const norm = file.replace(/\\/g, '/');
+  const base = path.basename(norm);
+  if (base === 'SKILL.md') return true;
+  const parent = path.basename(path.dirname(norm));
+  return (parent === 'agents' || parent === 'specialists') && !base.startsWith('_');
+}
+
+function lintFile(file, required) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    return { errors: [{ line: 1, text: '', msg: 'unreadable (' + e.message + ')' }], warnings: [] };
+  }
+  return lintFrontmatterText(text, { required });
+}
+
+// Lint a set of {file, required} entries and print findings. Returns
+// { errors, warnings } as counts; the caller decides what is fatal.
+function runLint(targets, baseDir) {
+  let nErrors = 0;
+  let nWarnings = 0;
+  let checked = 0;
+  for (const t of targets) {
+    const res = lintFile(t.file, t.required);
+    if (!res.present && !res.errors.length) continue;
+    checked++;
+    const rel = path.relative(baseDir, t.file).replace(/\\/g, '/') || t.file;
+    for (const e of res.errors) {
+      nErrors++;
+      console.error('  ERROR ' + rel + ':' + e.line + ' — ' + e.msg);
+      if (e.text) console.error('        > ' + e.text);
+    }
+    for (const w of res.warnings) {
+      nWarnings++;
+      console.error('  WARN  ' + rel + ':' + w.line + ' — ' + w.msg);
+      if (w.text) console.error('        > ' + w.text);
+    }
+  }
+  return { errors: nErrors, warnings: nWarnings, checked };
+}
+
+// Every .md under root that the lint should see — skipping VCS/build debris
+// and underscore-prefixed templates, which are never installed and carry
+// <slot> placeholders no YAML parser should be asked to like.
+function collectLintables(root) {
+  const out = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name.startsWith('_') || e.name === '.git') continue;
+      if (SCAN_SKIP.has(e.name)) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.md')) out.push({ file: p, required: frontmatterRequired(p) });
+    }
+  };
+  walk(root);
+  return out;
 }
 
 // ------------------------------------------------------------------- packs
@@ -165,13 +490,25 @@ function assertNoCollisions(names) {
   }
 }
 
+// Markdown is stamped LF regardless of how this master checkout is encoded.
+// Claude Code's frontmatter repair pass cannot match CRLF lines (see the
+// frontmatter-lint comment above), so normalizing at copy time removes the
+// installed files' dependence on the machine's autocrlf setting outright.
+function copyFileStamped(src, dest) {
+  if (src.endsWith('.md')) {
+    fs.writeFileSync(dest, fs.readFileSync(src, 'utf8').replace(/\r\n/g, '\n'), 'utf8');
+    return;
+  }
+  fs.copyFileSync(src, dest);
+}
+
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src)) {
     const s = path.join(src, entry);
     const d = path.join(dest, entry);
     if (fs.statSync(s).isDirectory()) copyDir(s, d);
-    else fs.copyFileSync(s, d);
+    else copyFileStamped(s, d);
   }
 }
 const GUARD = 'orchestra-guard.js';
@@ -544,6 +881,7 @@ let dirArg = '';
 let scanArg = null; // null = not scanning
 let updateFlag = false;
 let depthArg = null;
+let lintFlag = false;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--uninstall') uninstall = true;
@@ -558,14 +896,48 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--update') updateFlag = true;
   else if (a === '--depth') depthArg = args[++i] || '';
   else if (a.startsWith('--depth=')) depthArg = a.slice('--depth='.length);
+  else if (a === '--lint') lintFlag = true;
   else if (a.startsWith('--')) {
     fail(
       'Unknown flag: ' + a +
         ' (expected --uninstall, --packs <names>, --no-packs, --specialists <names>,' +
-        ' --no-specialists, --scan <dir>, --update, or --depth <n>)'
+        ' --no-specialists, --scan <dir>, --update, --depth <n>, or --lint [dir])'
     );
   } else if (!dirArg) dirArg = a;
   else fail('Unexpected extra argument: ' + a);
+}
+
+// --- lint mode: the frontmatter check on its own, for CI and contributors.
+// Strict on purpose: warnings fail it too, because "parses today but leans on
+// the repair pass" is exactly the state that shipped the field failure.
+if (lintFlag) {
+  if (scanArg !== null || uninstall || updateFlag) {
+    fail('--lint runs alone (optionally with a directory to lint): node install.js --lint [dir]');
+  }
+  const root = path.resolve(dirArg || SRC);
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    fail('Lint directory does not exist: ' + root);
+  }
+  console.log('Orchestra frontmatter lint — ' + root);
+  const res = runLint(collectLintables(root), root);
+  console.log(
+    '  ' + res.checked + ' file(s) with frontmatter checked · ' +
+    res.errors + ' error(s) · ' + res.warnings + ' warning(s)'
+  );
+  if (res.errors) {
+    console.error(
+      '\nFAILED — a frontmatter error means Claude Code drops the file SILENTLY:\n' +
+      'the agent or skill never registers, in any session, with no log anywhere.'
+    );
+  } else if (res.warnings) {
+    console.error(
+      '\nFAILED (warnings are fatal in lint mode) — these values parse today but\n' +
+      'lose text or depend on Claude Code\'s CRLF-fragile repair pass. Quote them.'
+    );
+  } else {
+    console.log('  OK — every frontmatter here survives a strict YAML parse unrepaired.');
+  }
+  process.exit(res.errors || res.warnings ? 1 : 0);
 }
 
 // --- scan mode: a different job from installing into one target, so it is
@@ -627,6 +999,19 @@ const stateFile = path.join(dotClaude, STATE_FILE);
 const claudeMd = path.join(target, 'CLAUDE.md');
 const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
 const pauseFile = path.join(dotClaude, 'orchestra.pause');
+const gitattributesFile = path.join(dotClaude, '.gitattributes');
+
+// Exactly what the installer stamps into .claude/.gitattributes — and, on
+// --uninstall, the only content it will remove (anything else is the user's).
+const GITATTRIBUTES_CONTENT = [
+  '# Written by the Orchestra installer. Keep installed files LF on disk:',
+  "# Claude Code's frontmatter repair pass cannot match lines with a trailing",
+  '# CR, so a CRLF re-checkout (core.autocrlf) can silently drop agents whose',
+  '# YAML would need that repair. Delete only if you manage line endings here.',
+  '*.md text eol=lf',
+  '*.js text eol=lf',
+  '',
+].join('\n');
 
 // What the last install selected. Lets a plain re-run refresh the same packs
 // and specialists instead of silently leaving them stale or dropping them.
@@ -669,15 +1054,50 @@ console.log(
 );
 
 if (!uninstall) {
+  // 0. Frontmatter gate — everything about to be copied is linted FIRST, so
+  // a failure touches nothing in the target. A file with unparseable
+  // frontmatter would be dropped SILENTLY by Claude Code (no log, no error:
+  // the agent simply never registers in any session), which is strictly
+  // worse than an installer that refuses with a filename and a line number.
+  const lintTargets = [];
+  for (const a of AGENTS) lintTargets.push({ file: path.join(SRC, 'agents', a), required: true });
+  for (const s of specialists) {
+    lintTargets.push({ file: path.join(SPECIALISTS_DIR, s + '.md'), required: true });
+  }
+  for (const s of availableSkills()) lintTargets.push(...collectLintables(path.join(SKILLS_DIR, s)));
+  for (const name of packs) {
+    const root = path.join(PACKS_DIR, name);
+    const c = packContents(name);
+    for (const f of c.agents) lintTargets.push({ file: path.join(root, 'agents', f), required: true });
+    for (const d of c.skills) lintTargets.push(...collectLintables(path.join(root, 'skills', d)));
+  }
+  const lint = runLint(lintTargets, SRC);
+  if (lint.errors) {
+    fail(
+      'refusing to install: ' + lint.errors + ' frontmatter error(s) above. A file ' +
+        'whose frontmatter fails to parse is dropped SILENTLY by Claude Code — the ' +
+        'agent or skill never registers, with no log anywhere. Nothing was copied. ' +
+        'Fix the value(s) in the master (usually: quote the offending value), or run ' +
+        '`node install.js --lint` for the standalone report.'
+    );
+  }
+  if (lint.warnings) {
+    console.log(
+      '  ! ' + lint.warnings + ' frontmatter warning(s) above — installing anyway ' +
+        '(the LF-normalized copies parse today), but quote those values in the master: ' +
+        'they are one edit away from the silent-drop class.'
+    );
+  }
+
   // 1. Copy files.
   fs.mkdirSync(agentsDir, { recursive: true });
   fs.mkdirSync(hooksDir, { recursive: true });
   for (const a of AGENTS) {
-    fs.copyFileSync(path.join(SRC, 'agents', a), path.join(agentsDir, a));
+    copyFileStamped(path.join(SRC, 'agents', a), path.join(agentsDir, a));
   }
   did('agents: ' + AGENTS.join(', ') + ' -> .claude/agents/');
   for (const s of specialists) {
-    fs.copyFileSync(path.join(SPECIALISTS_DIR, s + '.md'), path.join(agentsDir, s + '.md'));
+    copyFileStamped(path.join(SPECIALISTS_DIR, s + '.md'), path.join(agentsDir, s + '.md'));
   }
   if (specialists.length) did('specialists: ' + specialists.join(', ') + ' -> .claude/agents/');
   const skills = availableSkills();
@@ -717,7 +1137,7 @@ if (!uninstall) {
     const root = path.join(PACKS_DIR, name);
     const c = packContents(name);
     for (const f of c.agents) {
-      fs.copyFileSync(path.join(root, 'agents', f), path.join(agentsDir, f));
+      copyFileStamped(path.join(root, 'agents', f), path.join(agentsDir, f));
     }
     for (const f of c.hooks) {
       fs.copyFileSync(path.join(root, 'hooks', f), path.join(hooksDir, f));
@@ -742,8 +1162,25 @@ if (!uninstall) {
       'Installed by the Orchestra harness (v' + VERSION + ').'
     );
   }
-  fs.writeFileSync(orchestraMd, protocol, 'utf8');
+  fs.writeFileSync(orchestraMd, protocol.replace(/\r\n/g, '\n'), 'utf8');
   did('protocol -> .claude/ORCHESTRA.md' + (VERSION ? ' (v' + VERSION + ')' : ''));
+
+  // 1c. Line-ending armor. The LF-normalized copies above fix the install,
+  // but a project that COMMITS .claude/ and re-checks out under
+  // core.autocrlf=true would convert them right back to CRLF — re-arming the
+  // repair-pass failure the lint exists to prevent. A scoped .gitattributes
+  // pins the endings on disk regardless of that setting. Only created when
+  // absent: an existing file is the user's, and is never edited.
+  if (!fs.existsSync(gitattributesFile)) {
+    fs.writeFileSync(gitattributesFile, GITATTRIBUTES_CONTENT, 'utf8');
+    did('.claude/.gitattributes stamped (*.md and *.js stay LF — autocrlf cannot re-break frontmatter)');
+  } else if (!/eol=lf/.test(fs.readFileSync(gitattributesFile, 'utf8'))) {
+    console.log(
+      '  ! .claude/.gitattributes exists but pins no LF endings — left untouched (it is ' +
+        'yours). Consider adding "*.md text eol=lf": a CRLF re-checkout can silently ' +
+        'break agent frontmatter.'
+    );
+  }
 
   // 2. Merge hook entry into settings.json (replace any stale Orchestra entries).
   const settings = readJson(settingsFile);
@@ -916,6 +1353,20 @@ if (!uninstall) {
       fs.unlinkSync(f);
       did('removed ' + path.relative(target, f).replace(/\\/g, '/'));
     }
+  }
+
+  // The stamped .gitattributes is removed only when it is byte-for-byte ours —
+  // a file the user edited (or wrote themselves) is theirs to keep.
+  try {
+    if (
+      fs.existsSync(gitattributesFile) &&
+      fs.readFileSync(gitattributesFile, 'utf8') === GITATTRIBUTES_CONTENT
+    ) {
+      fs.unlinkSync(gitattributesFile);
+      did('removed .claude/.gitattributes (installer-stamped, unedited)');
+    }
+  } catch (_) {
+    /* an unreadable file is left alone */
   }
 
   // Bundled and pack skills: remove master-known names only — skills the user

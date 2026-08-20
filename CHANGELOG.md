@@ -9,6 +9,141 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.9.0 — two silent lies, made loud: unloadable frontmatter and replayed exec reports
+
+Two field incidents from one downstream project (2026-08-19), both of the
+worst species — failures that look exactly like success.
+
+### A YAML-unsafe description silently unloads an agent (frontmatter lint)
+
+Three codex-pack agents shipped with descriptions containing the sentence
+"This agent is a thin launcher: it runs …". A bare `": "` inside an unquoted
+YAML scalar makes the **whole frontmatter unparseable**, and Claude Code drops
+such a file **silently** — no log, no telemetry: the parse failure yields an
+empty frontmatter object, and the missing-name path returns null before any
+logging runs. Claude Code does have a repair pass that would have quoted the
+value, but its line regex cannot match lines with a trailing CR, so CRLF
+worktrees (Windows autocrlf, no `.gitattributes`) defeat it — the same file
+loads on LF platforms and vanishes on CRLF ones, which is how it shipped
+unnoticed. Downstream, the three agents never registered in any session;
+`planner-gpt` (the one codex agent without the sentence) loaded fine, which
+misdirected diagnosis toward session and roster theories for days. 4ed7a03
+reworded the three descriptions; this release makes the class unshippable:
+
+- **The installer lints every `.md` it is about to stamp** — core agents,
+  specialists, skills, pack agents and skills — with a strict parser for the
+  YAML block-mapping subset frontmatter uses, **before copying anything**. A
+  parse failure refuses the install with the file, the line, and the fix; a
+  value that parses but loses text (`" #"` truncation) or leans on the
+  repair pass warns loudly. Required files (agents, specialists, SKILL.md)
+  must also carry a non-empty `name:` — the other silent-drop path.
+- **`node install.js --lint [dir]`** runs the identical check standalone
+  (strict: warnings fail it), and CI runs it over the whole repository on all
+  three platforms, so a YAML-unsafe value can never merge again. There is a
+  dedicated suite, `tests/frontmatter-lint.test.js` (23 checks).
+- **Line endings are settled both ways, deliberately.** The installer now
+  normalizes every installed `.md` to LF (the master's own `.gitattributes`
+  already pins `*.md` to LF), AND stamps a scoped `.claude/.gitattributes`
+  (`*.md`/`*.js text eol=lf`) into the target when none exists — because a
+  project that commits `.claude/` and re-checks out under `autocrlf=true`
+  would otherwise convert the files right back. An existing `.gitattributes`
+  is never edited (a note suggests the line); `--uninstall` removes the
+  stamped file only when it is byte-for-byte the installer's.
+
+### The exec lane could relay a stale run's report — and its "audit" — as fresh
+
+Two consecutive downstream `executor-codex` runs misreported reality: one
+relayed "the scoped changes were already present; no additional edits were
+necessary" over work the engine had in fact just authored, and the other
+returned `STATUS: DONE` with a report, verification counts, and TREE AUDIT
+describing a **weeks-old, already-merged order** while the actual tree was
+verified untouched. The audit — the mechanism that exists to make reports
+checkable — was stale along with the report, which pointed at the one place
+both travel together: **the launcher protocol's output file.** The launcher
+agents derived FIXED paths in `os.tmpdir()` (`orchestra-exec-out.txt`,
+`…-heavy-out.txt`) and polled for a bare `ORCHESTRA_RUNNER_DONE` sentinel
+carrying no run identity. Any launch that died before its `rm -f` (a mangled
+heredoc, a failed background spawn, a permission denial) left the PREVIOUS
+run's complete output — header, report, audit, `rc=0` sentinel — sitting at
+exactly the path the poll then read and relayed wholesale; tmp files persist
+for weeks on Windows, hence the weeks-old replay. The
+"already present" shape is the same key colliding the other way: a second
+launch (the launcher's retry-once rule, or a harness timeout promotion)
+clobbering the first run's in-flight output file, then truthfully describing
+the tree the first run had already edited. Fixed at every layer:
+
+- **Per-run tokens end the collision.** All four launcher protocols
+  (`executor-codex`, `executor-codex-heavy`, `reviewer-codex`, `planner-gpt`)
+  now derive their tmp paths from a launcher-invented run token and write /
+  poll a token-keyed sentinel (`ORCHESTRA_RUNNER_DONE <token> rc=…`). A stale
+  file can no longer satisfy a poll, and a retry (now required to use a fresh
+  token, after re-polling the first) can no longer clobber a live run. The
+  retry rule itself now says: a sentinel with your token means the runner DID
+  run — relay it, never relaunch.
+- **The runner proves freshness with a nonce.** `orchestra-exec.js` generates
+  a per-run token, prints it in the header (`RUN NONCE:`), injects it into
+  the brief, and requires the engine to echo it on a final
+  `REPORT INTEGRITY:` line (the brief never contains the composed line, so an
+  engine echoing its prompt cannot false-pass). A report without the echo —
+  the stale-session signature — is `STATUS: EXEC_UNAVAILABLE`, with the
+  discarded text shown but labelled `UNVERIFIED ENGINE OUTPUT`, never DONE.
+- **The audit is replay-proof by provenance.** It was always computed
+  in-process from the runner's own before/after fingerprints; it now says so,
+  stamped with the run nonce — and a report whose CHANGES claims edits
+  against a tree the runner measured as byte-for-byte untouched (no source
+  paths, no generated churn, HEAD unmoved) is an integrity failure too
+  (skipped for read-only dry runs, where no claim could land by design).
+- **Fresh sessions are enforced, not assumed.** Resume-prone
+  `ORCHESTRA_EXEC_ARGS` tokens (`resume`, `--last`, `--continue`) are refused
+  before anything launches.
+- **The doctor knows the hazard.** `orchestra-review.js --doctor` now flags
+  session-resuming tokens in `ORCHESTRA_EXEC_ARGS` / `ORCHESTRA_REVIEW_ARGS`,
+  resume-prone lines in the Codex `config.toml`, and counts session
+  artifacts under `CODEX_HOME` (informational — history is harmless until a
+  resume-prone config appears). `--doctor --live` additionally runs a real
+  no-op order through the sibling exec runner in a scratch directory
+  (read-only sandbox) and verifies the nonce round-trip, at the cost of one
+  model call.
+
+Tested in `tests/exec-lane.test.js` (79 checks: nonce echo and refusal paths,
+fresh-session enforcement, claim/audit contradiction, and a docs contract
+pinning the token-keyed launcher protocol) and `tests/review-lane.test.js`
+(doctor hazard detection and the `--live` round-trip, against the stub
+engine). The doctor tests now pin `CODEX_HOME` to an empty fixture so a
+developer's real `~/.codex` cannot flip a check.
+
+## 1.8.0 — Codex CLI as Director: the harness's mirror image (retroactive entry)
+
+*Recorded after the fact (during 1.9.0), from commit `1f6b1f3` — the release
+shipped without a changelog entry.*
+
+Until now the Codex CLI could only be a hired hand: the codex *pack* gives a
+Claude-directed session OpenAI reviewers, executors, and a planning
+counterpart, but a project that wanted Codex itself in the Director's chair
+had nothing to install. The wiring existed only as a hand-built `.codex/`
+directory proven out in one project (PiratePartyPals), which is exactly the
+state the installer exists to abolish — a working setup nobody else can
+reproduce.
+
+`install-codex.js` makes it a master-repo capability: it stamps `.codex/` +
+`AGENTS.md` the same way `install.js` stamps `.claude/` + `CLAUDE.md`, from a
+new `codex/` tree (protocol, TOML agent roster — scout, detective, executor,
+reviewer — `config.toml`, `hooks.json`, and a ported `orchestra-guard.js`).
+One deliberate asymmetry: the protocol is **embedded whole** into `AGENTS.md`
+rather than imported, because Codex does not expand `@imports`. The mirror
+runs both ways — `codex/packs/claude/` (reviewer-claude, planner-claude)
+gives a Codex-directed project cross-vendor Claude judgment, exactly as
+`packs/codex/` does in the other direction — and the two installers are fully
+independent: a project can run either, both, or neither. PowerShell and POSIX
+wrappers included.
+
+Verified by scratch-dir round trip against the hand-built original: a fresh
+install matches the field `.codex/` byte-for-byte on every functional file,
+re-installs are idempotent (no duplicate `hooks.json`/`AGENTS.md` entries),
+`--no-packs` cleanly deselects, and `--uninstall` removes only
+Orchestra-owned entries while preserving foreign `hooks.json` events and
+surrounding `AGENTS.md` content.
+
 ## 1.7.0 — finding the installs that are behind
 
 Updating one project was already easy: `node install.js <project>`, no flags,

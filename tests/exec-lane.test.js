@@ -628,6 +628,173 @@ function case13() {
   );
 }
 
+function case14() {
+  section('14. Report integrity: the engine must echo this run\'s token');
+  const fx = makeRepo();
+  const r1 = runExec(fx, []);
+  const out1 = r1.stdout || '';
+  check(
+    'the header carries a per-run nonce',
+    /^RUN NONCE: [0-9a-f]{16}$/m.test(out1),
+    out1.split('\n').slice(0, 4).join('\n')
+  );
+  check(
+    'a faithful echo is verified in the output',
+    /REPORT INTEGRITY: verified — the engine echoed run token [0-9a-f]{16}/.test(out1),
+    out1.slice(-400)
+  );
+  check(
+    'the audit states its in-process provenance',
+    /never from engine or session artifacts/.test(out1),
+    out1.slice(-600)
+  );
+  const r2 = runExec(fx, []);
+  const nonce = (o) => (/^RUN NONCE: ([0-9a-f]{16})$/m.exec(o) || [])[1] || '';
+  check(
+    'two runs carry two different nonces',
+    nonce(out1) && nonce(r2.stdout || '') && nonce(out1) !== nonce(r2.stdout || ''),
+    nonce(out1) + ' vs ' + nonce(r2.stdout || '')
+  );
+
+  // A report that cannot echo the token — the stale-replay signature — is
+  // refused, shown only as labelled untrusted text, and never STATUS: DONE.
+  const omit = runExec(fx, [], { STUB_CODEX_OMIT_NONCE: '1' });
+  const oout = omit.stdout || '';
+  check(
+    'a report without the token is EXEC_UNAVAILABLE, not DONE',
+    /STATUS: EXEC_UNAVAILABLE/.test(oout) &&
+      /report integrity check failed/.test(oout) &&
+      !/^EXEC ENGINE: OpenAI/m.test(oout),
+    oout.slice(0, 600)
+  );
+  check(
+    'the discarded report is still shown, labelled untrusted',
+    /UNVERIFIED ENGINE OUTPUT/.test(oout) && /STUB REPORT/.test(oout),
+    oout.slice(-900)
+  );
+
+  // The right shape with the WRONG token — a previous run's report — is
+  // equally refused: the token is per-run, not per-format.
+  const stale = runExec(fx, [], { STUB_CODEX_NONCE_VALUE: 'deadbeefdeadbeef' });
+  check(
+    'a previous run\'s token is refused like a missing one',
+    /STATUS: EXEC_UNAVAILABLE/.test(stale.stdout || '') &&
+      /report integrity check failed/.test(stale.stdout || ''),
+    (stale.stdout || '').slice(0, 600)
+  );
+}
+
+function case15() {
+  section('15. Fresh-session enforcement: resume-prone args never launch');
+  const fx = makeRepo();
+  const counter = path.join(fx.root, 'attempts.txt');
+  const r = runExec(fx, [], {
+    ORCHESTRA_EXEC_ARGS: 'resume --last',
+    STUB_CODEX_ATTEMPT_FILE: counter,
+  });
+  const out = r.stdout || '';
+  check(
+    'resume-prone ORCHESTRA_EXEC_ARGS are refused',
+    /STATUS: EXEC_UNAVAILABLE/.test(out) &&
+      /would resume a previous Codex session/.test(out),
+    out.slice(0, 500)
+  );
+  check(
+    'the engine (and even the probe) was never launched',
+    !fs.existsSync(counter),
+    'attempt counter exists: ' + fs.existsSync(counter)
+  );
+  check(
+    'the refusal names the offending tokens',
+    /resume, --last/.test(out),
+    out.slice(0, 800)
+  );
+}
+
+function case16() {
+  section('16. Report/audit contradiction: claimed edits that never happened');
+  const fx = makeRepo();
+  const lie = runExec(fx, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag,src/other.js — new helper',
+  });
+  const lout = lie.stdout || '';
+  check(
+    'claiming edits against an untouched tree is EXEC_UNAVAILABLE',
+    /STATUS: EXEC_UNAVAILABLE/.test(lout) &&
+      /claims edits the runner measured as never happening/.test(lout),
+    lout.slice(0, 700)
+  );
+  check(
+    'the contradiction shows both sides: the claims and the still-clean audit',
+    /src\/app\.js:12/.test(lout) && /TREE AUDIT: no source paths changed/.test(lout),
+    lout.slice(0, 1200)
+  );
+
+  // The same claim WITH a real matching edit passes — the check is about
+  // contradiction, not about the presence of a CHANGES section.
+  const fx2 = makeRepo();
+  const honest = runExec(fx2, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'src/new-feature.js — created',
+    STUB_CODEX_TOUCH: 'src/new-feature.js',
+  });
+  check(
+    'the same claim with a real edit is relayed as a verified report',
+    /STATUS: DONE/.test(honest.stdout || '') &&
+      /REPORT INTEGRITY: verified/.test(honest.stdout || ''),
+    (honest.stdout || '').slice(0, 500)
+  );
+
+  // A read-only dry run cannot land an edit by design, so its claims are not
+  // held against the (necessarily untouched) tree.
+  const fx3 = makeRepo();
+  const dry = runExec(fx3, [], {
+    ORCHESTRA_EXEC_SANDBOX: 'read-only',
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js — would change',
+  });
+  check(
+    'a read-only dry run skips the contradiction check',
+    /STATUS: DONE/.test(dry.stdout || '') && !/EXEC_UNAVAILABLE/.test(dry.stdout || ''),
+    (dry.stdout || '').slice(0, 500)
+  );
+}
+
+function case17() {
+  section('17. Launcher protocol: no collidable artifacts, token-keyed sentinels');
+  // The 2026-08-19 field incident: the launchers derived FIXED tmp paths and a
+  // generic sentinel, so a stale output file from any prior run satisfied the
+  // poll and its whole content — header, report, tree audit, rc=0 — was
+  // relayed as a fresh result. The protocol now keys every path and sentinel
+  // by a per-launch run token; these checks pin that contract in the docs the
+  // launcher agents actually follow.
+  const launchers = [
+    'packs/codex/agents/executor-codex.md',
+    'packs/codex/agents/executor-codex-heavy.md',
+    'packs/codex/agents/reviewer-codex.md',
+    'packs/codex/agents/planner-gpt.md',
+  ];
+  for (const rel of launchers) {
+    const text = fs.readFileSync(path.join(MASTER, rel), 'utf8');
+    check(
+      rel + ': no fixed (token-less) tmp output/order paths remain',
+      !/tmpdir\(\),'orchestra-[a-z-]+\.txt'/.test(text),
+      (text.match(/tmpdir\(\),'orchestra-[a-z-]+\.txt'/g) || []).join(', ')
+    );
+    const sentinels = text.match(/ORCHESTRA_RUNNER_DONE[^\n"]*/g) || [];
+    check(
+      rel + ': every sentinel write and poll carries the run token',
+      sentinels.length >= 2 && sentinels.every((s) => /ORCHESTRA_RUNNER_DONE \$RUN/.test(s)),
+      sentinels.join('\n')
+    );
+    const rmIdx = text.indexOf('rm -f "$OUT"');
+    const launchIdx = text.indexOf('> "$OUT" 2>&1');
+    check(
+      rel + ': the output file is cleared before the runner writes it',
+      rmIdx !== -1 && launchIdx !== -1 && rmIdx < launchIdx,
+      'rm at ' + rmIdx + ', launch at ' + launchIdx
+    );
+  }
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -656,6 +823,10 @@ async function main() {
   case11();
   case12();
   case13();
+  case14();
+  case15();
+  case16();
+  case17();
 }
 
 main().then(finish, (e) => {

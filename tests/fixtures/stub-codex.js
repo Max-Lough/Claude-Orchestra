@@ -32,6 +32,15 @@
  *   STUB_CODEX_FIRST_LINE override the report's first line (default
  *                         "VERDICT: APPROVE") — the exec-lane tests use
  *                         "STATUS: DONE", the executor report shape.
+ *   STUB_CODEX_OMIT_NONCE do not echo the exec brief's run token — models a
+ *                         stale/replayed report, which cannot know it.
+ *   STUB_CODEX_NONCE_VALUE
+ *                         echo this token instead of the brief's — models a
+ *                         PREVIOUS run's report (right shape, wrong run).
+ *   STUB_CODEX_CLAIM_CHANGES
+ *                         comma-split entries to put in a CHANGES section of
+ *                         the report WITHOUT touching anything — models an
+ *                         engine claiming edits it never made.
  *
  * A probe invocation is recognised by its prompt: the runner asks for a single
  * token echo. The stub answers it without pretending to review anything.
@@ -175,6 +184,19 @@ const userName = git(['config', 'user.name']);
 const briefMarkers = ['PROHIBITED COMMANDS', 'VERIFICATION MANIFEST', 'WORK ORDER']
   .filter((m) => brief.includes(m));
 
+// The exec runner's brief names a per-run token the report must echo on a
+// final REPORT INTEGRITY line. Echo it faithfully by default (a live engine
+// follows the brief); the knobs above break the echo deliberately.
+const nonceMatch = /run's token: ([0-9a-f]{8,})/.exec(brief);
+const nonceToEcho = process.env.STUB_CODEX_OMIT_NONCE
+  ? ''
+  : process.env.STUB_CODEX_NONCE_VALUE || (nonceMatch ? nonceMatch[1] : '');
+
+const claimedChanges = (process.env.STUB_CODEX_CLAIM_CHANGES || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const report = [
   process.env.STUB_CODEX_FIRST_LINE || 'VERDICT: APPROVE',
   '',
@@ -216,7 +238,10 @@ const report = [
   '',
   'NITS',
   '- none',
-].join('\n');
+]
+  .concat(claimedChanges.length ? ['', 'CHANGES'].concat(claimedChanges.map((c) => '- ' + c)) : [])
+  .concat(nonceToEcho ? ['', 'REPORT INTEGRITY: ' + nonceToEcho] : [])
+  .join('\n');
 
 if (outFile) {
   try {

@@ -93,6 +93,18 @@ with an empty `TREE AUDIT`. The exec runner names `--doctor` on exactly that
 failure shape; the launchers relay the line and never run it themselves (it
 repairs the install, which is the user's machine and the Director's call).
 
+**Stale sessions are the other silent lie** (2026-08-19: a weeks-old report —
+with a matching stale audit — was relayed as `STATUS: DONE` for a brand-new
+order). Three defences, layered: every launcher keys its tmp paths and
+`ORCHESTRA_RUNNER_DONE` sentinel by a per-launch run token, so a leftover
+output file can never satisfy a poll; the exec runner injects a per-run nonce
+into the brief and refuses any report that does not echo it on a
+`REPORT INTEGRITY` line (or that claims CHANGES against a tree its own
+in-process audit measured as untouched); and resume-prone `ORCHESTRA_EXEC_ARGS`
+tokens are refused before launch. `--doctor` flags resume-prone env/config and
+counts session artifacts; `--doctor --live` proves the nonce round-trip with a
+real no-op engine run.
+
 ## Project configuration
 
 Per-project settings live under a `codex` key in `.claude/orchestra.json`, so

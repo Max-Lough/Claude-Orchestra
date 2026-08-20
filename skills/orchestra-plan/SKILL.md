@@ -1,6 +1,6 @@
 ---
 name: orchestra-plan
-description: Author a durable Orchestra plan — work orders sized, sequenced, and tiered per ORCHESTRA.md §8, with acceptance criteria and cadence clauses — written to .claude/plans/<slug>.md. Use when the user asks to plan work before building it, wants a plan or design saved to disk, or when a request is large enough that decomposition into work orders is itself the next deliverable.
+description: "Author a durable Orchestra plan — work orders sized, sequenced, and tiered per ORCHESTRA.md §8, with acceptance criteria and cadence clauses — written to .claude/plans/<slug>.md. Use when the user asks to plan work before building it, wants a plan or design saved to disk, or when a request is large enough that decomposition into work orders is itself the next deliverable."
 ---
 
 # Orchestra plan

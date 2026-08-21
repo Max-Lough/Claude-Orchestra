@@ -9,6 +9,56 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.9.1 — hooks stop crashing under a "type": "module" target
+
+All hook scripts — the core `orchestra-guard.js` and the codex pack's
+`orchestra-review.js` / `orchestra-exec.js` / `orchestra-deepplan.js` — are
+CommonJS (`require(...)`), and the installer copies them verbatim into a
+target's `.claude/hooks/`. A target whose own root `package.json` declares
+`"type": "module"` makes Node treat every `.js` file it loads by path as ESM
+by default — including these — so `require` is undefined at module scope and
+every one of them dies immediately: `ReferenceError: require is not defined
+in ES module scope` (hit for real at `orchestra-review.js:208`). That kills
+the pack self-check, `--doctor`, and every agent invocation of every hook —
+a latent bomb in any project that adopts ESM at the root, silent until the
+first hook actually runs.
+
+- **The installer now stamps `.claude/hooks/package.json` with
+  `{"type":"commonjs"}`** on every install, right after the core guard is
+  copied — before any pack hooks land, since it applies to all of them
+  alike. Node resolves a script's module type from the package.json nearest
+  the *script*, so this one scoping file pins `.claude/hooks/` to CommonJS
+  regardless of what the target's root declares. No hook renames, no
+  reference updates. Idempotent: a re-run over unchanged content is silent;
+  content that drifted (edited or replaced out of band) is restamped with a
+  single one-line notice. `--uninstall` removes it along with the other hook
+  files. The comparison is CRLF-tolerant — a byte-identical stamp checked out
+  under `core.autocrlf=true` still parses to the same JSON and is left alone
+  rather than "repaired" on every future run — and the stamped
+  `.claude/.gitattributes` now pins `*.json text eol=lf` too, alongside
+  `*.md`/`*.js`, so a fresh checkout doesn't need that tolerance in the first
+  place. (Widened from `package.json` to `*.json` so `.claude/settings.json`
+  and `.claude/orchestra-install.json` get the same protection.)
+- **`--uninstall`'s `.claude/.gitattributes` removal is now a shape match, not
+  a byte-exact compare against the current `GITATTRIBUTES_CONTENT`.** The
+  `*.json` widening above is exactly the kind of edit that constant will keep
+  taking, and a byte-exact compare would stop recognizing every
+  `.gitattributes` a prior version had stamped — silently leaving it behind on
+  every future `--uninstall`, forever, for every project already using the
+  harness. `isOurGitattributes()` instead requires the installer's header
+  comment line and that every other non-empty, non-comment line is a plain
+  `<pattern> text eol=lf` rule, so it recognizes the file whichever version of
+  the harness wrote it. A genuinely user-edited file still fails that shape
+  and is left alone, exactly as before.
+- New coverage in `tests/frontmatter-lint.test.js`: an install into a target
+  whose `package.json` declares `"type": "module"`, asserting the scoping
+  file is written, the installed `orchestra-guard.js` and
+  `orchestra-review.js --doctor` no longer crash at module scope, the drift
+  and creation notices never double up, and a CRLF-mangled stamp is left
+  untouched — plus `--uninstall` removing a simulated pre-1.9.1, two-pattern
+  `.gitattributes` (the shape-match regression this exists to prevent) while
+  still leaving a user-edited one in place.
+
 ## 1.9.0 — two silent lies, made loud: unloadable frontmatter and replayed exec reports
 
 Two field incidents from one downstream project (2026-08-19), both of the

@@ -71,7 +71,9 @@ jobs:
       - name: Frontmatter-lint suite
         # Exercises the linter against the unparseable class, the installer's
         # refusal to stamp a failing source, LF normalization of installed
-        # markdown, and the stamped .claude/.gitattributes.
+        # markdown, the stamped .claude/.gitattributes, and the stamped
+        # .claude/hooks/package.json that keeps hook scripts CommonJS under a
+        # "type": "module" target.
         run: node tests/frontmatter-lint.test.js
 
       - name: Review-lane suite

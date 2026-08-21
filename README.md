@@ -215,7 +215,7 @@ Orchestra/
 │   ├── review-lane.test.js ← the cross-vendor review lane, end to end
 │   ├── exec-lane.test.js   ← the cross-vendor execution lane, end to end
 │   ├── scan-lane.test.js   ← install.js --scan / --update, against real installs
-│   ├── frontmatter-lint.test.js ← install.js --lint + LF stamping + .gitattributes
+│   ├── frontmatter-lint.test.js ← install.js --lint + LF stamping + .gitattributes + hooks CJS scoping
 │   └── fixtures/           ← a stub Codex CLI that reports what the engine saw
 └── packs/                  ← OPTIONAL modules, installed only when named (--packs)
     ├── README.md           ← the pack contract
@@ -287,7 +287,7 @@ node install.js --lint            # lint every .md with frontmatter in this mast
 node install.js --lint <dir>      # ...or in any directory
 ```
 
-Errors are frontmatter a strict YAML parse rejects (the silent-drop class, including a missing `name:` in agents/specialists/SKILL.md); warnings are values that parse today but lose text (`" #"` comment truncation) or lean on the CRLF-fragile repair pass. Lint mode is strict — warnings fail it too — and CI runs it over the whole repository on every platform. Every install runs the same check over everything it is about to copy and **refuses before copying anything** on an error. Installed `.md` files are additionally normalized to LF, and a scoped `.claude/.gitattributes` (`*.md`/`*.js text eol=lf`) is stamped when the project has none, so a downstream `autocrlf` re-checkout cannot re-break what the lint approved.
+Errors are frontmatter a strict YAML parse rejects (the silent-drop class, including a missing `name:` in agents/specialists/SKILL.md); warnings are values that parse today but lose text (`" #"` comment truncation) or lean on the CRLF-fragile repair pass. Lint mode is strict — warnings fail it too — and CI runs it over the whole repository on every platform. Every install runs the same check over everything it is about to copy and **refuses before copying anything** on an error. Installed `.md` files are additionally normalized to LF, and a scoped `.claude/.gitattributes` (`*.md`/`*.js`/`*.json text eol=lf`) is stamped when the project has none, so a downstream `autocrlf` re-checkout cannot re-break what the lint approved. The install also stamps `.claude/hooks/package.json` (`{"type":"commonjs"}`) so every hook script keeps CommonJS semantics even when the project's own root `package.json` declares `"type": "module"` — without it Node treats the hooks as ESM and `require` throws before the guard ever runs.
 
 What it does *not* do is as deliberate as what it does:
 

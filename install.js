@@ -513,6 +513,16 @@ function copyDir(src, dest) {
 }
 const GUARD = 'orchestra-guard.js';
 const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
+
+// Every hook script (core guard, pack hooks) is CommonJS (`require(...)`).
+// Node resolves a script's module type from the package.json NEAREST the
+// script, so this one scoping file pins .claude/hooks/ to CommonJS
+// regardless of the target project's own root "type" field — without it, a
+// project with "type": "module" at its root makes Node treat every .js file
+// under .claude/hooks/ as ESM, and every hook crashes with "require is not
+// defined in ES module scope" (hit for real at orchestra-review.js:208).
+const HOOKS_PACKAGE_JSON = 'package.json';
+const HOOKS_PACKAGE_JSON_CONTENT = '{"type":"commonjs"}\n';
 const STATE_FILE = 'orchestra-install.json'; // records the pack/specialist selection
 const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by the Orchestra installer - do not edit between markers) -->';
 const END = '<!-- ORCHESTRA:END -->';
@@ -553,6 +563,35 @@ function did(msg) {
 function fail(msg) {
   console.error('ERROR: ' + msg);
   process.exit(1);
+}
+
+// See HOOKS_PACKAGE_JSON_CONTENT above for why this file exists. Idempotent:
+// a file that already carries the right content is left alone, silently, so
+// a plain re-run stays quiet; a file that exists with something ELSE gets
+// overwritten (the hooks must stay CommonJS) with a notice, since that is a
+// state worth knowing about.
+function stampHooksPackageJson(dirPath) {
+  const p = path.join(dirPath, HOOKS_PACKAGE_JSON);
+  const existing = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
+  if (existing === null) {
+    fs.writeFileSync(p, HOOKS_PACKAGE_JSON_CONTENT, 'utf8');
+    did('.claude/hooks/package.json stamped (hooks stay CommonJS even when the project is "type": "module")');
+    return;
+  }
+  // Compared CRLF-normalized: GITATTRIBUTES_CONTENT pins this file to LF on
+  // fresh checkouts, but a checkout that predates that line (or any
+  // core.autocrlf=true re-checkout before .gitattributes is picked up) can
+  // still hand back the identical JSON with \r\n line endings. Node parses
+  // that JSON exactly the same either way, so treat it as unchanged rather
+  // than "fixing" a file nobody actually edited on every single run.
+  if (existing === HOOKS_PACKAGE_JSON_CONTENT || existing.replace(/\r\n/g, '\n') === HOOKS_PACKAGE_JSON_CONTENT) {
+    return;
+  }
+  fs.writeFileSync(p, HOOKS_PACKAGE_JSON_CONTENT, 'utf8');
+  did(
+    '.claude/hooks/package.json existed with different content — overwritten ' +
+      '(it must stay {"type":"commonjs"} or the hooks stop loading)'
+  );
 }
 
 function readJson(file) {
@@ -1001,8 +1040,12 @@ const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
 const pauseFile = path.join(dotClaude, 'orchestra.pause');
 const gitattributesFile = path.join(dotClaude, '.gitattributes');
 
-// Exactly what the installer stamps into .claude/.gitattributes — and, on
-// --uninstall, the only content it will remove (anything else is the user's).
+// Exactly what the installer stamps into .claude/.gitattributes today. Never
+// compare a file against this constant byte-for-byte to decide ownership
+// (see isOurGitattributes below) — it changes shape across versions (this
+// revision alone added, then widened, its third pattern line), and a
+// byte-exact check would stop recognizing every install a prior version
+// wrote.
 const GITATTRIBUTES_CONTENT = [
   '# Written by the Orchestra installer. Keep installed files LF on disk:',
   "# Claude Code's frontmatter repair pass cannot match lines with a trailing",
@@ -1010,8 +1053,24 @@ const GITATTRIBUTES_CONTENT = [
   '# YAML would need that repair. Delete only if you manage line endings here.',
   '*.md text eol=lf',
   '*.js text eol=lf',
+  '*.json text eol=lf',
   '',
 ].join('\n');
+
+// Recognizes ANY installer-authored .claude/.gitattributes, past or future —
+// not a specific version of GITATTRIBUTES_CONTENT. A file is ours if it opens
+// with our header comment and every other non-empty, non-comment line is a
+// plain "<pattern> text eol=lf" rule; anything that fails that shape
+// (hand-authored, or genuinely edited) is left alone, same as a byte-exact
+// match would have left it. CRLF-normalized first so a file re-checked-out
+// under core.autocrlf=true still matches.
+function isOurGitattributes(raw) {
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  if (lines[0] !== '# Written by the Orchestra installer. Keep installed files LF on disk:') {
+    return false;
+  }
+  return lines.every((line) => line === '' || line.startsWith('#') || /^\S+ text eol=lf$/.test(line));
+}
 
 // What the last install selected. Lets a plain re-run refresh the same packs
 // and specialists instead of silently leaving them stale or dropping them.
@@ -1111,6 +1170,10 @@ if (!uninstall) {
   if (skills.length) did('skills: ' + skills.join(', ') + ' -> .claude/skills/');
   fs.copyFileSync(path.join(SRC, 'hooks', GUARD), path.join(hooksDir, GUARD));
   did('hook script -> .claude/hooks/' + GUARD);
+  // Scope .claude/hooks/ to CommonJS now — before any pack hooks are copied
+  // below, since it applies to all of them equally and the core install
+  // always runs this path.
+  stampHooksPackageJson(hooksDir);
 
   // 1b. Packs — opt-in modules. Deselected packs from a previous install are
   // removed first, so `--no-packs` (or dropping a name) actually takes effect.
@@ -1173,7 +1236,7 @@ if (!uninstall) {
   // absent: an existing file is the user's, and is never edited.
   if (!fs.existsSync(gitattributesFile)) {
     fs.writeFileSync(gitattributesFile, GITATTRIBUTES_CONTENT, 'utf8');
-    did('.claude/.gitattributes stamped (*.md and *.js stay LF — autocrlf cannot re-break frontmatter)');
+    did('.claude/.gitattributes stamped (*.md, *.js, *.json stay LF — autocrlf cannot re-break frontmatter)');
   } else if (!/eol=lf/.test(fs.readFileSync(gitattributesFile, 'utf8'))) {
     console.log(
       '  ! .claude/.gitattributes exists but pins no LF endings — left untouched (it is ' +
@@ -1347,7 +1410,7 @@ if (!uninstall) {
       did('removed .claude/agents/' + a);
     }
   }
-  const hookFiles = [GUARD].concat(packHooks).map((h) => path.join(hooksDir, h));
+  const hookFiles = [GUARD, HOOKS_PACKAGE_JSON].concat(packHooks).map((h) => path.join(hooksDir, h));
   for (const f of hookFiles.concat([orchestraMd, pauseFile, stateFile])) {
     if (fs.existsSync(f)) {
       fs.unlinkSync(f);
@@ -1355,12 +1418,15 @@ if (!uninstall) {
     }
   }
 
-  // The stamped .gitattributes is removed only when it is byte-for-byte ours —
-  // a file the user edited (or wrote themselves) is theirs to keep.
+  // The stamped .gitattributes is removed only when it matches OUR shape —
+  // any version we've ever written, not just today's GITATTRIBUTES_CONTENT
+  // (see isOurGitattributes) — so a project stamped by an older installer
+  // still gets cleaned up. A file the user edited (or wrote themselves) is
+  // theirs to keep.
   try {
     if (
       fs.existsSync(gitattributesFile) &&
-      fs.readFileSync(gitattributesFile, 'utf8') === GITATTRIBUTES_CONTENT
+      isOurGitattributes(fs.readFileSync(gitattributesFile, 'utf8'))
     ) {
       fs.unlinkSync(gitattributesFile);
       did('removed .claude/.gitattributes (installer-stamped, unedited)');

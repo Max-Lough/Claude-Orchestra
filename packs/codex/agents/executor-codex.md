@@ -26,6 +26,15 @@ Your work order contains the **full execution work order** for the engine — go
 
 Build the runner's command line, launch it by the table below, relay its output. The runner enforces the Orchestra executor law in its brief, drives `codex exec` in a `workspace-write` sandbox in the live tree, audits which paths actually changed, and prints a complete report to stdout.
 
+## Launch discipline
+
+Do these, in order, before every launch:
+
+1. **cd to the repo root first.** Resolve it fresh with `git rev-parse --show-toplevel` and `cd` there before invoking the runner. A launcher sitting in a subdirectory (a worker package, a nested app) leaves `CLAUDE_PROJECT_DIR` defaulting to that subdirectory, and the runner then treats the subdirectory itself as the project root — commands run and paths resolve from the wrong place, not the repo root the work order describes.
+2. **Set `CLAUDE_PROJECT_DIR` inline, on the runner's own command line, to that same repo root.** Never a separate `export`/`cd` step first — your shell does not persist between tool calls (see "Settings go on the command line" below), so a value set one call earlier is gone by the time the runner launches.
+3. **Write the runner's output file under the project's `.claude/scratch/` directory**, not the OS temp dir — create that directory first if it does not exist. Read the file back (`wc -c "$OUT"`, or PowerShell `(Get-Content -Raw "$OUT").Length`) in the SAME shell call that launches the runner, as a transport sanity check.
+4. **A 0-byte output file after the runner has exited is not something to retry away.** Report `STATUS: EXEC_UNAVAILABLE` with the raw exit code / process state you actually observed, rather than relaunching blind — execution is never auto-retried (see "The three things you are forbidden to invent" above), and a launcher guessing at a second attempt risks the exact half-edited-tree scenario that rule exists to prevent.
+
 ### Step 1 — decide the runner's cap BEFORE you launch
 
 | Situation | Runner cap |
@@ -54,26 +63,37 @@ First, **invent a run token**: 8+ characters, unique to this launch (say, from y
 
 ```bash
 RUN=<your run token — the same literal in every command of this launch>
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-exec-out-$RUN.txt')")"
-WO="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-exec-wo-$RUN.txt')")"
-rm -f "$OUT"
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+mkdir -p "$ROOT/.claude/scratch"
+OUT="$ROOT/.claude/scratch/orchestra-exec-out-$RUN.txt"
+WO="$ROOT/.claude/scratch/orchestra-exec-wo-$RUN.txt"
 cat > "$WO" <<'ORCHESTRA_WORKORDER_EOF'
 <paste the work order here, verbatim>
 ORCHESTRA_WORKORDER_EOF
+rm -f "$OUT"
 
-node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-exec.js" \
+CLAUDE_PROJECT_DIR="$ROOT" \
+node "$ROOT/.claude/hooks/orchestra-exec.js" \
   --work-order "$WO" \
   > "$OUT" 2>&1
 echo "ORCHESTRA_RUNNER_DONE $RUN rc=$?" >> "$OUT"
+wc -c "$OUT"
 ```
 
-The paths are **derived from your token, not random** — same token, same path, every call of this launch; a different launch (yours or anyone's) can never collide with them.
+The `wc -c` on the last line is the same-call transport check: a `0 …` result
+after the sentinel lands means the write never landed. The paths are
+**derived from your token and the repo root, not random** — `mktemp` would
+give you a different name in the polling call, and your shell does not
+persist between calls. Same token, same root, same path, every call of this
+launch; a different launch (yours or anyone's) can never collide with them.
 
 #### Step 2b — poll (Bash, `timeout: 600000`)
 
 ```bash
 RUN=<the same run token, verbatim>
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-exec-out-$RUN.txt')")"
+ROOT="$(git rev-parse --show-toplevel)"
+OUT="$ROOT/.claude/scratch/orchestra-exec-out-$RUN.txt"
 for i in $(seq 1 55); do
   grep -q "ORCHESTRA_RUNNER_DONE $RUN" "$OUT" 2>/dev/null && break
   sleep 10

@@ -47,6 +47,16 @@ output. The runner builds the adversarial review brief, drives `codex exec` in
 a sandbox (it reads the diff and runs the tests itself), captures the verdict,
 and prints a complete review report to stdout in the Orchestra format.
 
+## Launch discipline
+
+Do these, in order, before every launch:
+
+1. **cd to the repo root first.** Resolve it fresh with `git rev-parse --show-toplevel` and `cd` there before invoking the runner. A launcher sitting in a subdirectory (a worker package, a nested app) leaves `CLAUDE_PROJECT_DIR` defaulting to that subdirectory, and a pinned review then re-creates the SAME repo-relative subpath inside a bare scratch checkout with no `node_modules` — the engine's own install attempt inside the sandbox has no network and fails (EACCES) until the runner's timeout kills it.
+2. **Set `CLAUDE_PROJECT_DIR` inline, on the runner's own command line, to that same repo root.** Never a separate `export`/`cd` step first — your shell does not persist between tool calls (see "Settings go on the command line" below), so a value set one call earlier is gone by the time the runner launches.
+3. **Always pass `--warmup-cmd "pnpm install"` whenever you are also passing `--head-ref`** (every pinned review). The pinned worktree is a fresh checkout with nothing installed; the warmup runs UNSANDBOXED with full network before the integrity baseline is taken, so it is the only point in the pipeline that can put `node_modules` there before the engine needs it. Skipping it on a pinned review reproduces the EACCES-until-timeout failure this rule exists to prevent.
+4. **Write the runner's output file under the project's `.claude/scratch/` directory**, not the OS temp dir — create that directory first if it does not exist. Read the file back (`wc -c "$OUT"`, or PowerShell `(Get-Content -Raw "$OUT").Length`) in the SAME shell call that launches the runner, as a transport sanity check.
+5. **A 0-byte output file after the runner has exited is not something to retry away.** Report `REVIEW_UNAVAILABLE` with the raw exit code / process state you actually observed, rather than relaunching blind — see "One launch per review" below; a launcher guessing at a second attempt is exactly the failure mode that section forbids.
+
 ### Step 1 — decide the runner's cap BEFORE you launch
 
 You cannot pick a launch method without it, because the launch method is a
@@ -108,32 +118,45 @@ output as a fresh result.
 
 ```bash
 RUN=<your run token — the same literal in every command of this launch>
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-out-$RUN.txt')")"
-WO="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-wo-$RUN.txt')")"
-ER="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-er-$RUN.txt')")"
-rm -f "$OUT"
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+mkdir -p "$ROOT/.claude/scratch"
+OUT="$ROOT/.claude/scratch/orchestra-review-out-$RUN.txt"
+WO="$ROOT/.claude/scratch/orchestra-review-wo-$RUN.txt"
+ER="$ROOT/.claude/scratch/orchestra-review-er-$RUN.txt"
 cat > "$WO" <<'ORCHESTRA_WORKORDER_EOF'
 <paste the work order here, verbatim>
 ORCHESTRA_WORKORDER_EOF
 cat > "$ER" <<'ORCHESTRA_EXECREPORT_EOF'
 <paste the executor's full report here, verbatim>
 ORCHESTRA_EXECREPORT_EOF
+rm -f "$OUT"
 
-CODEX_BIN="<real path — see below>" \
-node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-review.js" \
+CODEX_BIN="<real path — see below>" CLAUDE_PROJECT_DIR="$ROOT" \
+node "$ROOT/.claude/hooks/orchestra-review.js" \
   --work-order "$WO" --executor-report "$ER" \
+  --warmup-cmd "pnpm install" \
   > "$OUT" 2>&1
 echo "ORCHESTRA_RUNNER_DONE $RUN rc=$?" >> "$OUT"
+wc -c "$OUT"
 ```
 
-The paths are **derived from your token, not random** — same token, same path,
-every call of this launch; a different launch can never collide with them.
+`--warmup-cmd` above is required whenever you also pass `--head-ref` (every
+pinned review) — see "Launch discipline" above; harmless to include on a live
+review too. The `wc -c` on the last line is the same-call transport check: a
+`0 …` result after the sentinel lands means the write never landed.
+
+The paths are **derived from your token and the repo root, not random** —
+`mktemp` would give you a different name in the polling call, and your shell
+does not persist between calls. Same token, same root, same path, every call
+of this launch; a different launch can never collide with them.
 
 #### Step 2b — poll (Bash, `timeout: 600000`)
 
 ```bash
 RUN=<the same run token, verbatim>
-OUT="$(node -p "require('path').join(require('os').tmpdir(),'orchestra-review-out-$RUN.txt')")"
+ROOT="$(git rev-parse --show-toplevel)"
+OUT="$ROOT/.claude/scratch/orchestra-review-out-$RUN.txt"
 for i in $(seq 1 55); do
   grep -q "ORCHESTRA_RUNNER_DONE $RUN" "$OUT" 2>/dev/null && break
   sleep 10
@@ -238,9 +261,11 @@ wrong timeout. This has cost real review rounds. Two rules:
 1. **Never use a separate export step.** If a setting must come from the
    environment, put it inline on the runner's own command line
    (`ORCHESTRA_REVIEW_TIMEOUT_MS=1800000 node …`), in the same invocation.
-   This is also why the background launch derives its file paths from
-   `node -p` rather than `mktemp`: the *value* must survive into the polling
-   call, and only a deterministic expression does.
+   This is also why the background launch derives its file paths from your
+   run token combined with a fixed root expression (`git rev-parse
+   --show-toplevel` plus a name under `.claude/scratch/`) rather than
+   `mktemp`: the *value* must survive into the polling call, and only a
+   deterministic expression does.
 2. **Prefer flags and project config over environment variables entirely.**
    Flags (`--timeout-ms`) cannot be lost. Durable per-project settings belong
    in `.claude/orchestra.json` under `codex` (`reviewTimeoutMs`, `reviewModel`,

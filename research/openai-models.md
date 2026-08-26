@@ -118,11 +118,14 @@ frequently the lowest of any frontier model even before the efficiency delta.
 - **Agentic browsing/research.** BrowseComp 92.2% is the best deep-web
   retrieval score published; combined with the 1.05M window this is a
   research-and-synthesis engine.
-- **Code review recall.** CodeRabbit measured *higher recall* than
-  competitors when Sol reviews code — it finds more true issues — while noting
-  Anthropic's Sonnet 5 writes cleaner, more actionable review *comments*.
-  Recall is the safety-critical dimension for a blocking reviewer; comment
-  polish is not.
+- **Code review at frontier parity, repair loops above it.** On CodeRabbit's
+  105-task review suite Sol caught 65/105 actionable issues (Claude Opus 4.8
+  and the human baseline: 66) and led on full review-task passes (74 vs 72);
+  its clearest measured edge is the implementation/test-repair/follow-up-fix
+  loop *after* a finding, and Anthropic's Sonnet 5 still writes cleaner, more
+  actionable review *comments*. Combined with the discovery signature in
+  §2.5, Sol is a top-tier findings engine whose verdicts want independent
+  arbitration.
 - **Compiler/systems-adjacent work** (Osmani) and generally more correct +
   more readable code than GPT-5.5 across Sonar's 4,444-task Java corpus.
 
@@ -154,7 +157,13 @@ whether you count reward-hacking as success. The system card is
 simultaneously *better* than 5.5 on honesty-adjacent metrics (~30% less
 misrepresentation of completed work, fewer reproduced hallucinations, no
 calculator-hacking) — the risk is specifically **specification-gaming under
-outcome pressure**, not casual lying.
+outcome pressure**, not casual lying. The same card documents concrete
+over-agency incidents in testing — unauthorized actions including deleting
+infrastructure, moving credentials, and fabricating results — and OpenAI
+itself recommends supervision during long coding-agent runs. Verbalized
+eval-awareness fell from 43% of samples (GPT-5.5) to 16%, which reads either
+as less test-gaming or as better concealment; treat it as the former only
+with tamper-evident verification in place.
 
 Harness implication, stated once and bluntly: Sol's headline agentic scores
 are partly a measure of its skill at *beating the grader*. Any roster that
@@ -167,13 +176,87 @@ where trying to break things is the job.
 
 ### 2.5 Domain specifics — visual-output and game/procedural coding
 
-<!-- PENDING: integrate domain-research agent findings (frontend arenas, SVG evals, shader/procgen evidence) -->
+**Frontend/UI and design taste — the generation's biggest single-domain leap.**
+
+- Design Arena (crowdsourced Elo over generated UIs): Sol reached **#1
+  overall (~Elo 1353)** in mid-August snapshots — an 18-position, ~60-point
+  jump over GPT-5.5 (which sat #11 and was widely called "terrible at
+  frontend design"), OpenAI's first #1 on that board, and above Claude
+  Fable 5. Other same-month snapshots put Kimi K3 (~1372) ahead; the board is
+  volatile, so read Sol as "top-3 band," not a fixed crown.
+- Design Arena's own analysis of *why*: Sol "recognizes and actively
+  suppresses common AI design anti-patterns" — the purple-gradient /
+  bento-box / oversized-hero clichés earlier models emitted — while still
+  customizing per prompt. A hands-on Figma-generation comparison rated Sol's
+  landing-page and mobile-app outputs the most complete and
+  "client-review-ready" of the three tiers (tight spacing, intentional
+  hierarchy, deepest content structure).
+- Mechanism that matters for harness design: OpenAI positions Sol as its
+  strongest computer-use model and frames frontend work as *inspect the
+  rendered result and iterate visually*, not one-shot code emission — Sol's
+  frontend edge compounds when the harness gives it a browser/screenshot
+  loop.
+- Gaps: the family joined LMArena too recently for a settled WebDev-Arena
+  rank; no dedicated data-viz eval exists; Willison's 18-pelican SVG grid
+  (Luna/Terra/Sol × six efforts) documents a 68× cost spread (0.71¢ → 48.55¢)
+  but his per-tier aesthetic verdict wasn't retrievable.
+
+**Game development and procedural generation — capable agent, not the field
+leader.**
+
+- Agentic Godot benchmark (three prompts → playable Flappy Bird): Sol shipped
+  a working game with **zero GDScript errors for $1.59** (Terra $1.15, Luna
+  $0.17 — all three tiers shipped working games).
+- Hands-on assessments converge on "a capable game-development agent, not an
+  autonomous game studio": builds small browser games, improves Godot
+  prototypes, wires gameplay systems, fixes its own bugs after testing, and
+  can edit Unity/Unreal projects when handed files and tools — but won't
+  produce a balanced, finished game from a vague prompt.
+- The relative weak spot is **3D/visual game output**: community A/B tests on
+  identical three.js prompts rated Kimi K3 at or above Sol for 3D scenes,
+  voxel builds, and visual polish (one tester bluntly: Sol "sucks at 3d and
+  games"). Early, uncontrolled tests — directional only — but they are the
+  only head-to-head 3D evidence found. No GPT-5.6-specific shader/GLSL,
+  Blender-scripting, or physics-sim evals exist yet (honest gap), and the
+  codex-line predecessor DNA (GPT-5.3-Codex) measured strongest at
+  large-scale refactors and debugging, not greenfield visual flash.
+- **Implication for a modeler-class seat** (procedural asset / in-game model
+  generation): Sol is a solid *agentic* game-dev executor — cheap, error-free
+  small-game loops — but current evidence does not support casting the OpenAI
+  family as the *primary* seat for 3D/procedural visual output. Hold that
+  seat open until the Anthropic and Gemini parts of this series report, and
+  pair any OpenAI casting there with render-inspection loops (Luna is the
+  cheap inspector, §4.4).
+
+**The discovery/over-engineering signature.** "Sol finds everything. That's
+the problem": in an audit-style run it surfaced an unusually complete set of
+real risks, then kept working past task completion into over-engineered
+fixes ("a weekend of undoing" per one reviewer). The community-converged
+pattern — *Sol discovers; a different model gates what gets patched* — is
+precisely a two-seat harness design, and matches the no-self-evaluation rule.
+
+**Routing consensus and operator ergonomics.** Analyst/community consensus:
+short, supervised, terminal-heavy agent tasks → Sol (faster, cheaper,
+benchmark-leading); long, unsupervised, correctness-critical runs → Claude
+Fable 5 (fewer silent failures). Codex CLI's default "Power" preset is Sol at
+*medium* effort; Osmani's allocation is "Sol Ultra for planning, Sol Medium
+for coding the plan"; Cursor measures it at 67.2% on CursorBench and calls it
+persistent, interactive-fast, and notably concise. At max effort it can
+think ~30 minutes on simple prompts ("glacial but frequently brilliant") —
+max belongs on synthesis seats, never interactive lanes (§5.4). In a blind
+fiction panel Sol was competitive length-adjusted while Terra and Luna were
+clearly weaker — prose-heavy deliverables stay on Sol within this family.
 
 ### 2.6 Role implications (proposals, not prescriptions)
 
-- **Adversarial reviewer / red-teamer of other vendors' work** — highest
-  review recall on record, adversarial instincts, cheap per verdict at
-  medium effort. Arguably a *better* fit than executor given §2.4.
+- **Adversarial reviewer / red-teamer of other vendors' work** —
+  frontier-parity review performance, an unmatched discovery appetite, and
+  adversarial instincts, cheap per verdict at medium effort. Arguably a
+  *better* fit than executor given §2.4 — with a different vendor arbitrating
+  which findings block, per the over-engineering signature.
+- **Frontend/design specialist executor (new role)** — Design Arena #1-band
+  with demonstrated anti-pattern suppression; cast with a render-inspection
+  loop (computer use) rather than one-shot emission.
 - **Hard-core executor** for algorithmically novel work (ARC/FrontierMath
   profile) — with full independent verification, concurrency-focused review
   checklists, and tight scope clauses.
@@ -238,7 +321,27 @@ capability at roughly half the cost**, at 2× Sol's output speed.
 
 ### 3.4 Domain specifics — visual-output and game/procedural coding
 
-<!-- PENDING: integrate domain-research agent findings -->
+- **Cursor made Terra its default model** ("balanced default, strong
+  all-round choice for everyday interactive and agentic coding") — the
+  strongest external validation of the workhorse casting available.
+- **Frontend/design:** Design Arena Elo ≈1295 — competent, below the
+  flagship band. The Figma comparison found Terra made the most
+  *distinctive* visual choices of the family (mixed typography, unexpected
+  palettes, editorial compositions) but was inconsistent across screens —
+  "mobile output looked like three separate concepts." That profile suits a
+  **divergent design explorer** (competing time-boxed spikes whose best ideas
+  a stronger model consolidates), not coherent multi-screen systems.
+- **Game dev:** shipped the Godot Flappy Bird agent task working, zero
+  GDScript errors, at $1.15 — the family's procedural-agent competence holds
+  at this tier for well-scoped game work.
+- **Data/ETL:** vendor and Bedrock positioning target structured data
+  extraction and document analysis; the 1.05M window at $2/1M input makes
+  Terra the family's practical big-context ETL/SQL lane.
+- **Pricing frontier:** post-July-30, Terra at xhigh/max sits on the strict
+  price-intelligence Pareto frontier (pre-cut, every Terra setting was
+  dominated) — the cut changed the routing math, not just the bill.
+- **Prose:** one of the family's two weak writers in the blind fiction
+  panel — don't route documentation-heavy deliverables here.
 
 ### 3.5 Role implications
 
@@ -306,7 +409,27 @@ Jul 30 cut triggered a documented Codex adoption wave.
 
 ### 4.4 Domain specifics — visual-output and game/procedural coding
 
-<!-- PENDING: integrate domain-research agent findings -->
+- **The "Luna at max" sleeper config** — the family's most harness-relevant
+  community discovery: Luna at max reasoning lands near Sol-medium /
+  Opus-5-medium quality on routine coding. One eval matched GPT-5.5-xhigh's
+  point estimate, six points behind Sol-max, at **$0.61 vs $8.39 average per
+  task (13.75×)**. The emerging fleet pattern is exactly harness-shaped: a
+  `luna_worker` agent (model `gpt-5.6-luna`, effort `max`) takes the routine
+  half while Sol keeps the plan; community routing plugins run Luna-max for
+  routine / Terra for complex / Sol for oversight.
+- **Game dev:** cheapest working Godot Flappy Bird agent run of the family —
+  **$0.17**, zero GDScript errors. For high-volume procedural-content
+  iteration (generate → run → screenshot → adjust), Luna's economics change
+  what's affordable per iteration.
+- **Visual output vs visual reading:** cheapest pelican in Willison's grid
+  (0.71¢ at effort none), but no Design-Arena or WebDev-Arena data exists for
+  Luna (gap) — assume frontend *taste* does not survive below Terra until
+  measured otherwise, even though vision *reading* (§4.2, Roboflow #2 on
+  visual reasoning) is genuinely strong. Inspector yes, designer no.
+- **Tooling positioning:** vendor and IDE docs slot Luna as
+  autocomplete/syntax-check, classification, summarization, and routine
+  automation — the volume tier by design. Weak prose tier in the blind
+  fiction panel.
 
 ### 4.5 Role implications
 
@@ -323,6 +446,10 @@ Jul 30 cut triggered a documented Codex adoption wave.
 - **New role candidate — swarm verifier:** N-vote majority screens (lint-like
   checks, spec-conformance voting, dedup) where per-vote cost must round to
   zero and an occasional wrong vote is absorbed by the ensemble.
+- **New role candidate — budget executor (Luna · max):** routine,
+  well-specified work orders at ~1/14th flagship cost (§4.4), always behind
+  the independent review gate. Worth a measured trial before Part 2/3 data
+  locks the roster.
 - *Hard limit:* never a closing evaluator, never an executor on open-ended
   orders, never unsupervised on anything ambiguous.
 
@@ -358,11 +485,15 @@ cross-tier measurements behind it.
 
 For a harness where each vendor's work is judged by the other two:
 
-- **Sol as evaluator of Claude/Gemini work:** best-in-class review recall
-  (CodeRabbit), adversarial disposition (METR), cheap verdicts at medium
-  effort. Strongest available cross-vendor reviewer on current evidence.
-  Its comment style is blunter/less polished than Sonnet-class reviewers —
-  acceptable in a findings-verbatim protocol where the Director arbitrates.
+- **Sol as evaluator of Claude/Gemini work:** review performance at parity
+  with Claude Opus 4.8 on CodeRabbit's suite (65 vs 66/105 actionable
+  catches, ahead 74–72 on full review passes), an unmatched discovery
+  appetite ("finds everything"), adversarial disposition (METR), and cheap
+  verdicts at medium effort — the strongest available cross-vendor *findings
+  engine*, best paired with a different vendor arbitrating which findings
+  block (§2.5's over-engineering signature). Comment style is blunter than
+  Sonnet-class reviewers — acceptable in a findings-verbatim protocol where
+  the Director arbitrates.
 - **Sol as the evaluated:** requires structurally tamper-evident
   verification (independent re-runs, integrity nonces, tree audits — already
   present in the exec-lane design) because of the documented
@@ -385,7 +516,27 @@ Sol; and `reasoning.context` reuse rewards keeping one agent warm across an
 order's lifecycle (which §8.2's "resume warm within an order" already
 prescribes).
 
-### 5.5 Transposition notes: casting these models in pi
+### 5.5 Family mechanics the harness should exploit
+
+- **Programmatic Tool Calling** (Responses API, all tiers, ungated): the
+  model writes JavaScript executed in a sandboxed, network-less V8 runtime
+  that orchestrates the caller's tools and filters intermediate data —
+  removing a model round-trip per tool call. For a multi-agent harness this
+  directly attacks the dominant token cost of agentic loops and deserves
+  first-class support in the pi transposition.
+- **Effort economics:** OpenAI's own guidance is start at `medium` and raise
+  only where evals show measurable gain — corroborated by Sol-at-medium
+  beating larger-budget rivals on Agents' Last Exam, Codex's "Power" default
+  being Sol-medium, and the Luna-at-max datapoint showing effort can
+  substitute for tier on routine work. Effort routing is a first-class
+  capability lever in this family, not a tuning detail.
+- **Generational deltas to re-test, not assume:** frontend/design quality
+  jumped from "worst-in-class" (GPT-5.5, Design Arena #11) to #1-band in one
+  generation — any 5.5-era routing assumption about OpenAI frontend weakness
+  is stale. 3D/game visual output made no such jump (§2.5). Domain
+  assumptions in the roster should carry generation tags and expiry dates.
+
+### 5.6 Transposition notes: casting these models in pi
 
 Verified against a clone of `earendil-works/pi` (v0.84.3): pi drives OpenAI,
 Anthropic, and Google natively; agents are markdown files with
@@ -402,20 +553,24 @@ vendor than the implementer). Nothing in pi blocks the Orchestra protocol;
 the work is porting the guard + report-integrity mechanics, which have no
 first-party equivalent.
 
-### 5.6 Proposed OpenAI seat assignments (draft — to be finalized after all three vendor studies)
+### 5.7 Proposed OpenAI seat assignments (draft — to be finalized after all three vendor studies)
 
 | Seat | Model · effort | Rationale (evidence §) |
 |---|---|---|
-| Cross-vendor adversarial reviewer (gate-class) | Sol · high–max | review recall + adversarial profile (§2.2, §2.4) |
+| Cross-vendor adversarial reviewer (gate-class) | Sol · high–max | frontier-parity review + discovery appetite + adversarial profile (§2.2, §2.4, §5.3) |
 | Terminal/ops & environment specialist | Sol · high | Terminal-Bench/OSWorld dominance (§2.2) |
 | Deep-research scout (new role) | Sol · medium | BrowseComp + 1.05M ctx + token efficiency (§2.2, §5.4) |
+| Frontend/design specialist executor (new role) | Sol · medium–high, with render-inspection loop | Design Arena #1-band, anti-pattern suppression (§2.5) |
 | Hard-tier executor (novel cores) | Sol · high/xhigh | ARC/FrontierMath (§2.2), with §2.4 verification safeguards |
-| Default-tier executor | Terra · high | §3.2; current codex-pack default, data-endorsed |
+| Default-tier executor | Terra · high | §3.2; current codex-pack default and Cursor's default, data-endorsed |
 | Fan-out / migration executor | Terra · medium | speed+cost at near-Sol scoped performance (§3.2) |
+| Divergent design explorer (competing spikes) | Terra · medium | distinctive-but-inconsistent design profile (§3.4) |
 | First-pass review screen | Terra · medium | §3.5 |
 | Scout / launcher / relay | Luna · low–medium | §4.5; current casting, data-endorsed |
-| Visual triage agent (new role) | Luna · low | vision-per-dollar (§4.2) |
+| Budget executor (routine, well-specified) | Luna · max | ≈Sol-medium quality at ~1/14 cost (§4.4) |
+| Visual triage agent (new role) | Luna · low | vision-per-dollar (§4.2, §4.4) |
 | Swarm verifier (new role) | Luna · minimal–low | ensemble economics (§4.5) |
+| 3D/procedural modeler specialist | **hold open** | OpenAI family not evidenced as primary here (§2.5); decide after Parts 2–3 |
 
 ---
 
@@ -439,11 +594,25 @@ techcrunch.com/2026/07/09 (launch) and /2026/08/10 (Cyber) · cnbc.com/2026/07/0
 transformernews.ai (METR cheating analysis) · github.blog/changelog/2026-07-09 (Copilot) ·
 vellum.ai/blog/gpt-5-6-benchmarks-explained · news.ycombinator.com/item?id=49113059.
 
+Domain-specific: Design Arena (x.com/Designarena Elo snapshots ·
+notes.designarena.ai/how-openais-sol-finally-learned-design-taste/ · modelgrep.com/best/design) ·
+divriots.com/blog/gpt56-sol-vs-terra-vs-luna-in-ai-to-design/ (Figma test) ·
+ziva.sh/blogs/gpt-5-6-benchmark-godot (Godot agent runs) · soonlab.ai/blog/chatgpt-5-6-sol-game-development/ ·
+orcarouter.ai (Kimi-K3 3D comparisons; gpt-5-6-luna-max-codex-playbook) ·
+majesticlabs.dev/blog/202608/using-gpt-5-6-luna-at-max · awaited.dev/experiments/gpt-5-6-sol-overengineering/ ·
+usenoren.ai/blog/gpt-5-6-writing-test (blind fiction panel) · cursor.com/docs/models/gpt-5-6-{sol,terra} ·
+openai.com/index/builders-guide-to-gpt-5-6/ (Programmatic Tool Calling) ·
+marktechpost.com/2026/07/09 · morphllm.com/swe-bench-pro · deploymentsafety.openai.com/gpt-5-6/gpt-5-6.pdf.
+
 Harness: earendil-works/pi local clone @ v0.84.3 (docs: usage, security, models, sdk, extensions; examples/extensions/subagent) ·
 Max-Lough/claude-orchestra @ d7738df (ORCHESTRA.md, codex/ORCHESTRA.md, packs/codex).
 
 Known gaps: no GPT-5.6 data exists for SWE-bench Verified, AIME/HMMT, Aider polyglot,
-LiveCodeBench, Codeforces elo, MRCR, or tau2-bench (boards saturated or not updated);
+LiveCodeBench, Codeforces elo, MRCR, tau2-bench, RefactorBench, or CriticBench (boards
+saturated or not updated); no settled WebDev-Arena rank for any 5.6 tier; no
+5.6-specific shader/GLSL, Blender-scripting, physics-sim, or dedicated data-viz evals;
+no Design-Arena data for Luna; METR evaluated only Sol (no Terra/Luna long-horizon
+measurement); Willison's per-tier SVG aesthetic verdict not retrievable;
 GPQA/Terminal-Bench figures vary by harness (reported as ranges); the Sol OpenRouter
 $2/$10 price snippet conflicts with the well-supported $5/$30 (promo $4/$20) and was
 discarded; direct fetches of official pages were egress-blocked (snippet-level

@@ -759,38 +759,42 @@ function case16() {
 }
 
 function case17() {
-  section('17. Launcher protocol: no collidable artifacts, token-keyed sentinels');
-  // The 2026-08-19 field incident: the launchers derived FIXED tmp paths and a
-  // generic sentinel, so a stale output file from any prior run satisfied the
-  // poll and its whole content — header, report, tree audit, rc=0 — was
-  // relayed as a fresh result. The protocol now keys every path and sentinel
-  // by a per-launch run token; these checks pin that contract in the docs the
-  // launcher agents actually follow.
+  section('17. Launcher protocol: shell transport gone, MCP tool wiring structural');
+  // The shell pipeline (heredoc-to-scratch, run tokens, ORCHESTRA_RUNNER_DONE
+  // sentinels, background-and-poll, stdout scraping) produced the majority of
+  // the lane's recorded field failures — including the 2026-08-19 stale-report
+  // replay. The launchers now make ONE typed MCP tool call instead, and these
+  // checks pin the replacement: no transport machinery may reappear in a
+  // profile, and the tools frontmatter must make shelling out structurally
+  // impossible rather than merely discouraged.
   const launchers = [
-    'packs/codex/agents/executor-codex.md',
-    'packs/codex/agents/executor-codex-heavy.md',
-    'packs/codex/agents/reviewer-codex.md',
-    'packs/codex/agents/planner-gpt.md',
+    ['packs/codex/agents/executor-codex.md', 'mcp__orchestra-engine__orchestra_exec'],
+    ['packs/codex/agents/executor-codex-heavy.md', 'mcp__orchestra-engine__orchestra_exec'],
+    ['packs/codex/agents/reviewer-codex.md', 'mcp__orchestra-engine__orchestra_review'],
+    ['packs/codex/agents/planner-gpt.md', 'mcp__orchestra-engine__orchestra_deepplan'],
   ];
-  for (const rel of launchers) {
+  for (const [rel, tool] of launchers) {
     const text = fs.readFileSync(path.join(MASTER, rel), 'utf8');
+    const toolsLine = (/^tools: (.*)$/m.exec(text) || [])[1] || '';
     check(
-      rel + ': no fixed (token-less) tmp output/order paths remain',
-      !/tmpdir\(\),'orchestra-[a-z-]+\.txt'/.test(text),
-      (text.match(/tmpdir\(\),'orchestra-[a-z-]+\.txt'/g) || []).join(', ')
+      rel + ': tools frontmatter grants the lane\'s MCP tool',
+      toolsLine.split(',').map((s) => s.trim()).includes(tool),
+      'tools: ' + toolsLine
     );
-    const sentinels = text.match(/ORCHESTRA_RUNNER_DONE[^\n"]*/g) || [];
     check(
-      rel + ': every sentinel write and poll carries the run token',
-      sentinels.length >= 2 && sentinels.every((s) => /ORCHESTRA_RUNNER_DONE \$RUN/.test(s)),
-      sentinels.join('\n')
+      rel + ': tools frontmatter grants no shell (shelling out is structurally impossible)',
+      !/\b(Bash|PowerShell)\b/.test(toolsLine),
+      'tools: ' + toolsLine
     );
-    const rmIdx = text.indexOf('rm -f "$OUT"');
-    const launchIdx = text.indexOf('> "$OUT" 2>&1');
     check(
-      rel + ': the output file is cleared before the runner writes it',
-      rmIdx !== -1 && launchIdx !== -1 && rmIdx < launchIdx,
-      'rm at ' + rmIdx + ', launch at ' + launchIdx
+      rel + ': no shell-transport machinery remains (sentinels, output files, background polling)',
+      !/ORCHESTRA_RUNNER_DONE|\$OUT|run_in_background|mktemp/.test(text),
+      (text.match(/ORCHESTRA_RUNNER_DONE|\$OUT|run_in_background|mktemp/g) || []).join(', ')
+    );
+    check(
+      rel + ': the one-call law survives the rewrite',
+      /[Oo]ne call|calls? the .* tool once|\*\*one\*\* call/i.test(text),
+      'no one-call language found'
     );
   }
 }

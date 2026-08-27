@@ -223,11 +223,12 @@ Orchestra/
     └── codex/              ← the OpenAI surface: cross-vendor review + deep-plan
         ├── pack.json       ← pack metadata
         ├── agents/
-        │   ├── reviewer-codex.md       ← Haiku launcher · cross-vendor (OpenAI/Codex) review
-        │   ├── executor-codex.md       ← Haiku launcher · OpenAI executor (Terra, default tier)
-        │   ├── executor-codex-heavy.md ← Haiku launcher · OpenAI heavy executor (Sol, high effort)
-        │   └── planner-gpt.md          ← Haiku launcher · deep-plan counterpart (OpenAI API)
+        │   ├── reviewer-codex.md       ← Haiku launcher · cross-vendor (OpenAI/Codex) review, via MCP
+        │   ├── executor-codex.md       ← Haiku launcher · OpenAI executor (Terra, default tier), via MCP
+        │   ├── executor-codex-heavy.md ← Haiku launcher · OpenAI heavy executor (Sol, high effort), via MCP
+        │   └── planner-gpt.md          ← Haiku launcher · deep-plan counterpart (OpenAI API), via MCP
         ├── hooks/
+        │   ├── orchestra-engine-mcp.js ← MCP server exposing the runners as typed tools (registered in .mcp.json)
         │   ├── orchestra-review.js    ← cross-vendor review runner (drives Codex CLI)
         │   ├── orchestra-exec.js      ← cross-vendor execution runner (drives Codex CLI)
         │   └── orchestra-deepplan.js  ← plan-roundabout runner (calls the OpenAI API)
@@ -474,7 +475,7 @@ node install.js /path/to/project --packs codex
 
 | Pack | Adds | Needs |
 |---|---|---|
-| `codex` | `reviewer-codex` (cross-vendor review via the Codex CLI), `executor-codex` / `executor-codex-heavy` (opt-in OpenAI executors — Terra / Sol via the Codex CLI), `planner-gpt` + `/deep-plan` (two-model planning via the OpenAI API), and the three runners | Codex CLI and/or `OPENAI_API_KEY` |
+| `codex` | `reviewer-codex` (cross-vendor review via the Codex CLI), `executor-codex` / `executor-codex-heavy` (opt-in OpenAI executors — Terra / Sol via the Codex CLI), `planner-gpt` + `/deep-plan` (two-model planning via the OpenAI API), the three runners, and the `orchestra-engine` MCP server the launchers call them through (registered in `.mcp.json`; approve it on first launch) | Codex CLI and/or `OPENAI_API_KEY` |
 
 A harness with no packs is Claude-only and complete: full fresh-context adversarial Opus review, the whole operating loop, every core skill. The `codex` pack adds a *layer* — vendor decorrelation — not a missing floor.
 

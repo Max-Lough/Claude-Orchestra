@@ -14,14 +14,41 @@ exist. Nothing degrades — the cross-vendor *layer* is simply absent.
 
 | File | Role |
 |---|---|
-| `agents/reviewer-codex.md` | Thin Haiku launcher; drives the review runner and relays the OpenAI verdict verbatim. Never reviews the code itself. |
-| `agents/executor-codex.md` | Thin Haiku launcher; drives the exec runner at the standard tier (OpenAI Terra) and relays the report + tree audit verbatim. Never edits anything itself. |
+| `agents/reviewer-codex.md` | Thin Haiku launcher; calls the `orchestra_review` MCP tool once and relays the OpenAI verdict verbatim. Never reviews the code itself. |
+| `agents/executor-codex.md` | Thin Haiku launcher; calls the `orchestra_exec` MCP tool once at the standard tier (OpenAI Terra) and relays the report + tree audit verbatim. Never edits anything itself. |
 | `agents/executor-codex-heavy.md` | Same launcher shape at the heavy tier (OpenAI Sol, high reasoning effort) — the OpenAI mirror of `executor-heavy`. |
-| `agents/planner-gpt.md` | Thin Haiku launcher for the `/deep-plan` roundabout; relays the counterpart's critique verbatim. |
+| `agents/planner-gpt.md` | Thin Haiku launcher for the `/deep-plan` roundabout; calls `orchestra_deepplan` and relays the counterpart's critique verbatim. |
+| `hooks/orchestra-engine-mcp.js` | **The MCP transport** — a zero-dependency stdio MCP server exposing the three runners plus the doctor as typed tools (`orchestra_review`, `orchestra_exec`, `orchestra_deepplan`, `orchestra_doctor`). Registered in the project's root `.mcp.json` by the installer. |
 | `hooks/orchestra-review.js` | Review runner — builds the adversarial brief, drives `codex exec` in a sandbox (optionally in a clean worktree pinned to the commit under review), prints an Orchestra-format verdict. |
 | `hooks/orchestra-exec.js` | Execution runner — builds the Orchestra executor-law brief, drives `codex exec` in a `workspace-write` sandbox in the LIVE tree, audits which paths actually changed, prints an Orchestra-format executor report. One attempt, never auto-retried. |
 | `hooks/orchestra-deepplan.js` | Deep-plan runner — sends plan + brief to the OpenAI Responses API. |
 | `skills/deep-plan/` | The `/deep-plan` two-model planning roundabout. |
+
+## The MCP transport
+
+The launchers do not shell out to the runners — they cannot: their `tools:`
+frontmatter grants only the lane's MCP tool, no Bash. Each launcher makes
+**one blocking tool call** against the `orchestra-engine` server and relays the
+result verbatim. The server spawns the runner with real flags, waits out the
+whole attempt chain, and returns the runner's stdout as the tool result —
+unmodified. Anything the server itself has to say (the runner never launched,
+exited non-zero, wrote nothing, or wedged past the kill-backstop) is prefixed
+`MCP TRANSPORT ERROR` and flagged, so a transport failure can never be read as
+an engine verdict.
+
+This replaced the launcher shell pipeline — scratch files, run tokens,
+sentinels, background-and-poll, stdout scraping — that produced the majority
+of this pack's recorded field failures (see the 1.10.0 changelog entry). A
+blocking MCP call at the full 30-minute review default is measured to hold in
+Claude Code, top-level and subagent-nested, with no timeout tuning.
+
+The installer merges the registration into the project's root `.mcp.json`
+(other entries preserved) and removes it on deselection or `--uninstall`.
+**Approve the project MCP server on first launch** — until it is approved,
+the launchers have no tool to call and every cross-vendor lane reports
+unavailable. Headless drivers of long calls (`claude -p` in CI or cron)
+should set `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` or keep the call in the
+foreground turn; interactive sessions need nothing.
 
 ## Setup
 

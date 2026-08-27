@@ -439,7 +439,29 @@ function packManifest(name) {
         'match the directory name'
     );
   }
+  if (cfg.mcpServers !== undefined) {
+    if (!cfg.mcpServers || typeof cfg.mcpServers !== 'object' || Array.isArray(cfg.mcpServers)) {
+      fail('pack "' + name + '" declares mcpServers that is not an object of server entries');
+    }
+    for (const [srv, entry] of Object.entries(cfg.mcpServers)) {
+      if (!entry || typeof entry !== 'object' || typeof entry.command !== 'string' || !entry.command.trim()) {
+        fail('pack "' + name + '" mcpServers["' + srv + '"] must be an object with a string "command"');
+      }
+    }
+  }
   return cfg;
+}
+
+// MCP servers a set of packs declares, as { name: entry }. A manifest is data:
+// the entries are merged into the project's .mcp.json verbatim, and the names
+// are what deselection and --uninstall remove.
+function packMcpServers(names) {
+  const out = {};
+  for (const name of names) {
+    const cfg = packManifest(name);
+    if (cfg.mcpServers) Object.assign(out, cfg.mcpServers);
+  }
+  return out;
 }
 
 // What a pack owns, discovered by walking its directories — pack.json never
@@ -1218,6 +1240,53 @@ if (!uninstall) {
     did('pack "' + name + '": ' + (parts.join(', ') || 'nothing to copy') + ' -> .claude/');
   }
 
+  // 1b-mcp. MCP servers a pack declares are registered in the project's root
+  // .mcp.json (that is where Claude Code discovers project-scope servers —
+  // settings.json hooks cannot register one). Merge, never clobber: entries
+  // from other tools survive, ours are overwritten by name on every run so a
+  // stale registration cannot linger, and a deselected pack's names are
+  // removed the same way its files are above.
+  const mcpFile = path.join(target, '.mcp.json');
+  {
+    const declared = packMcpServers(packs.filter((p) => availablePacks().includes(p)));
+    const stale = packMcpServers(
+      priorPacks.filter((p) => !packs.includes(p) && availablePacks().includes(p))
+    );
+    const staleNames = Object.keys(stale).filter((n) => !(n in declared));
+    if (Object.keys(declared).length || staleNames.length) {
+      const mcp = readJson(mcpFile);
+      if (typeof mcp.mcpServers !== 'object' || mcp.mcpServers === null || Array.isArray(mcp.mcpServers)) {
+        mcp.mcpServers = {};
+      }
+      let changed = false;
+      for (const n of staleNames) {
+        if (n in mcp.mcpServers) { delete mcp.mcpServers[n]; changed = true; }
+      }
+      for (const [n, entry] of Object.entries(declared)) {
+        if (JSON.stringify(mcp.mcpServers[n]) !== JSON.stringify(entry)) {
+          mcp.mcpServers[n] = entry;
+          changed = true;
+        }
+      }
+      if (changed) {
+        writeJson(mcpFile, mcp);
+        did(
+          '.mcp.json: ' +
+            (Object.keys(declared).length
+              ? 'registered MCP server(s) ' + Object.keys(declared).sort().join(', ') + ' (other entries preserved)'
+              : 'removed deselected pack server(s) ' + staleNames.sort().join(', '))
+        );
+      }
+      if (Object.keys(declared).length) {
+        console.log(
+          '  ! First launch will ask you to approve the project MCP server(s) (' +
+            Object.keys(declared).sort().join(', ') +
+            '). Approve once — the cross-vendor lanes call through them.'
+        );
+      }
+    }
+  }
+
   let protocol = fs.readFileSync(path.join(SRC, 'ORCHESTRA.md'), 'utf8');
   if (VERSION) {
     protocol = protocol.replace(
@@ -1474,6 +1543,31 @@ if (!uninstall) {
       }
     }
     if (settingsChanged) writeJson(settingsFile, settings);
+  }
+
+  // MCP registrations any known pack declares are removed by name; entries
+  // from other tools are preserved, and a file that held only ours goes with
+  // the install.
+  const mcpFile = path.join(target, '.mcp.json');
+  if (fs.existsSync(mcpFile)) {
+    const names = Object.keys(packMcpServers(availablePacks()));
+    const mcp = readJson(mcpFile);
+    if (names.length && mcp.mcpServers && typeof mcp.mcpServers === 'object') {
+      let changed = false;
+      for (const n of names) {
+        if (n in mcp.mcpServers) { delete mcp.mcpServers[n]; changed = true; }
+      }
+      if (changed) {
+        if (Object.keys(mcp.mcpServers).length === 0) delete mcp.mcpServers;
+        if (Object.keys(mcp).length === 0) {
+          fs.unlinkSync(mcpFile);
+          did('removed .mcp.json (it held only Orchestra MCP registrations)');
+        } else {
+          writeJson(mcpFile, mcp);
+          did('removed Orchestra MCP server registration(s) from .mcp.json (other entries preserved)');
+        }
+      }
+    }
   }
 
   if (fs.existsSync(claudeMd)) {

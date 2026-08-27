@@ -16,5 +16,11 @@
   "selfCheck": {
     "script": "hooks/orchestra-review.js",
     "args": ["--doctor"]
+  },
+  "mcpServers": {
+    "orchestra-engine": {
+      "command": "node",
+      "args": [".claude/hooks/orchestra-engine-mcp.js"]
+    }
   }
 }

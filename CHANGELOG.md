@@ -9,6 +9,73 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.10.0 — the launcher shell transport is retired: one typed MCP call replaces it
+
+A forensics pass over this changelog and all seventeen codex-lane commits
+(2026-08-26, written up in the Pi-Orchestra evaluation) classified every
+recorded failure by layer: **~53% were the launcher shell transport** —
+heredoc-to-scratch, run tokens, stale sentinels, background-and-poll, stdout
+scraping, `mktemp` path drift, foreground launches dying at the tool's 120 s
+default — against ~35% install/environment and ~12% the engine itself. Three
+releases in a row (1.4.1, 1.9.0, and the unreleased `9ff2a53`) fixed fresh
+instances of the same transport class, each time with more launcher prose;
+`reviewer-codex.md` was 341 lines, ~61% of them launch-and-relay discipline,
+enforced by asking a Haiku launcher to please follow it. Prose fails — that
+was diagnosed in 1.3.0, and the remedy each round was more prose.
+
+This release makes the class structurally unreachable instead. A caller that
+passes a timeout as a typed argument cannot fail to pass it; a caller holding
+a live call cannot poll a stale file; a caller that is code cannot invent a
+cause. (Validated before building: Claude Code holds a blocking MCP tool call
+for the full 1800 s review default, top-level and subagent-nested, measured.)
+
+- **New: `orchestra-engine`, a zero-dependency stdio MCP server in the codex
+  pack** (`hooks/orchestra-engine-mcp.js`), exposing the runners as four typed
+  tools — `orchestra_review`, `orchestra_exec`, `orchestra_deepplan`,
+  `orchestra_doctor`. Each call spawns the corresponding runner with real
+  flags, relays its stdout **verbatim** as the result, and never rewrites or
+  reinterprets a report. Everything the server says in its own voice is
+  prefixed `MCP TRANSPORT` and flagged as an error, so a transport failure can
+  never be read as engine output — the header-attribution law
+  (`ENGINE: NONE`, never the engine's name, on a failure) extends down a
+  layer. A runner that exits non-zero, writes nothing, or wedges past a
+  generous kill-backstop is reported as the anomaly it is, with the captured
+  output attached and labelled `NOT a runner report`. Emits MCP progress
+  notifications when the client sends a `progressToken`.
+- **The four launcher profiles collapse to thin tool-callers.** One blocking
+  tool call, relay the result verbatim, one-call-per-order law intact
+  (review's retries stay inside the runner; exec stays never-retried, with
+  the transport-error-only relaunch exception spelled out). Their `tools:`
+  frontmatter now grants **only the lane's MCP tool** — no Bash at all — so
+  shelling out is not discouraged but impossible. `reviewer-codex.md` drops
+  from 341 lines to ~80, and every retired line was launch discipline whose
+  failure mode the transport no longer has.
+- **`pack.json` can declare `mcpServers`, and the installer registers them.**
+  The codex pack declares `orchestra-engine`; `node install.js <project>
+  --packs codex` merges it into the project's root `.mcp.json` (other
+  entries preserved, ours overwritten by name so a stale registration cannot
+  linger), removes it when the pack is deselected, and `--uninstall` removes
+  it too — deleting the file only when it held nothing but ours.
+- **New suite: `tests/mcp-lane.test.js`** (34 checks, in CI on all three
+  platforms) — speaks real JSON-RPC to the server over stdio and drives the
+  real runners against the stub engine underneath: verbatim relay (live and
+  pinned review, exec with tree audit + nonce round-trip, deep-plan's
+  `DEEPPLAN_UNAVAILABLE` relayed as a report rather than a transport error,
+  doctor's exit code surfaced as data), every transport anomaly speaking as
+  `MCP TRANSPORT`, and progress notifications following the client's token —
+  and only the client's token.
+- **`tests/exec-lane.test.js` case 17 inverts.** It used to pin the shell
+  transport's discipline (token-keyed sentinels, `rm -f` before launch); it
+  now pins the transport's *absence* — no sentinel, no `$OUT`, no
+  backgrounding may reappear in a profile — plus the structural tool grant.
+- The `codex exec` engine underneath is unchanged, and so is every report
+  grammar the Director reads. Install/environment failures (the six-day
+  helper-sibling outage's class) are also unchanged — that bucket lives below
+  the transport and keeps its existing mitigations (`--doctor`, helper
+  restore, layout detection); what the typed contract changes is their
+  *signature*: an empty result is now a loud first-call transport error, not
+  six days of healthy-looking silence.
+
 ## 1.9.1 — hooks stop crashing under a "type": "module" target
 
 All hook scripts — the core `orchestra-guard.js` and the codex pack's

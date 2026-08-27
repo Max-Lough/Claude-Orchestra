@@ -93,3 +93,11 @@ jobs:
         # saw (model, sandbox, effort, identity, brief markers), and the suite
         # asserts on settings resolution, the tree audit, and the no-retry law.
         run: node tests/exec-lane.test.js
+
+      - name: MCP-lane suite
+        # The orchestra-engine MCP server — the typed transport that replaced
+        # the launcher shell pipeline. Speaks real JSON-RPC to the server over
+        # stdio, drives the real runners against the stub engine underneath,
+        # and asserts the server relays reports verbatim and speaks only in
+        # MCP TRANSPORT terms when the transport itself fails.
+        run: node tests/mcp-lane.test.js

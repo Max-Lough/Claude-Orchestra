@@ -9,7 +9,70 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.11.0 — /cross-compare-plan: two independent architects, one blind merge
+
+`/deep-plan` hardens a plan, but it cannot escape a bad framing: the
+counterpart only ever critiques the Director's draft, so the one decision it
+can never challenge is the shape of the first draft itself. And the deep-plan
+counterpart works blind — no repository access — so its critique measures the
+brief as much as the plan. This release adds the divergent complement: a
+planning session where the framing itself is put in competition.
+
+- **New skill: `/cross-compare-plan <goal>`** (codex pack). Two architects
+  from different vendors — a fresh-context Claude architect
+  (`architect-claude`, Fable at high effort; `architect-claude-xhigh` for
+  `effort=xhigh`) and an OpenAI architect (GPT-5.6 Sol, read-only through the
+  Codex CLI) — receive one byte-identical brief and draft complete plans
+  without seeing each other. The drafts are swapped for cross-critique
+  (steelman first, findings tagged [BLOCKER]/[MAJOR]/[MINOR], a comparative
+  assessment both ways), each owner revises with an ADOPTED/REBUTTED
+  disposition per finding, and a blind fresh-context Opus synthesizer
+  (`plan-synthesizer`) merges the strongest final plan into the orchestra-plan
+  template — adjudicating rebutted findings against the tree, flagging
+  assumptions BOTH plans share as *verify during execution* (cross-vendor
+  agreement decorrelates blind spots, it does not prove claims), and
+  escalating at most four genuine ties to the user. Arguments: `effort=`
+  (one level, both lanes — unequal effort would measure budgets, not
+  judgment), `model=`, `context=<repo|none|paths>`, `docs=`.
+- **Anonymity is enforced end to end, structurally where possible.** Both
+  lane charters forbid naming or hinting at any model or vendor (an identity
+  mention is defined as a defect); the lane↔letter mapping lives only in the
+  Director's conversation, never in a file; the synthesizer judges blind and
+  keeps the final plan model-free. Motivation: model-name mentions in
+  planning documents demonstrably steer downstream models — the one reader a
+  plan is guaranteed to have.
+- **New runner: `hooks/orchestra-crossplan.js`** — the GPT lane, one
+  consultation phase per invocation (`--phase draft|critique|revise`),
+  read-only sandbox hard-pinned (a before/after tree fingerprint proves it —
+  any delta is an `⚠ INTEGRITY WARNING`), attachments inlined into the brief
+  so both lanes see identical bytes, and the exec lane's report-integrity
+  nonce carried over verbatim (a document that cannot echo this run's token
+  is refused and NOT saved — the 2026-08-19 stale-replay class, closed here
+  before it is ever observed in this lane). Documents are saved by the
+  runner to `--out` under `.claude/plans/cross-compare/<slug>/`, so nothing
+  load-bearing rides a launcher relay. Header-attribution law throughout:
+  a failure is `CROSSPLAN ENGINE: NONE`, never the engine's name.
+- **New engine tool: `orchestra_crossplan`** on the `orchestra-engine` MCP
+  server (now five tools), same transport contract as the rest: typed
+  arguments, pre-spawn validation of attachment paths, runner stdout relayed
+  verbatim, `MCP TRANSPORT` prefix on everything said in the server's own
+  voice. `architect-codex` is the thin launcher — one call per phase, the
+  transport-error-only relaunch exception, relay verbatim.
+- **The Director stays out of the arbitration — a deliberate inversion of
+  deep-plan.** In deep-plan the Director is the arbiter; here it writes the
+  brief, dispatches waves, verifies artifacts exist, and never judges
+  content, because a Director that reads both plans and knows the mapping
+  would un-blind the merge with its own thumb on the scale. Escalated OPEN
+  DECISIONS go user → Director → synthesizer as rulings, not opinions.
+- **`tests/mcp-lane.test.js` grows a ninth case** (46 checks total): the
+  draft phase end to end against the stub engine (document saved, integrity
+  line stripped, read-only sandbox and effort override proven from the
+  engine's own report), wrong-attachment orders degrading in the runner's
+  grammar rather than the server's, missing files refused pre-spawn, and a
+  token-less report refused and not saved.
+
 ## 1.10.0 — the launcher shell transport is retired: one typed MCP call replaces it
+
 
 A forensics pass over this changelog and all seventeen codex-lane commits
 (2026-08-26, written up in the Pi-Orchestra evaluation) classified every

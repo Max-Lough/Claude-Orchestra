@@ -7,8 +7,9 @@ node install.js /path/to/project --packs codex
 ```
 
 Without it, the harness is Claude-only: reviews run on the fresh-context Opus
-`reviewer`, execution runs on the Claude executors, and `/deep-plan` does not
-exist. Nothing degrades — the cross-vendor *layer* is simply absent.
+`reviewer`, execution runs on the Claude executors, and `/deep-plan` and
+`/cross-compare-plan` do not exist. Nothing degrades — the cross-vendor
+*layer* is simply absent.
 
 ## What it installs
 
@@ -18,11 +19,17 @@ exist. Nothing degrades — the cross-vendor *layer* is simply absent.
 | `agents/executor-codex.md` | Thin Haiku launcher; calls the `orchestra_exec` MCP tool once at the standard tier (OpenAI Terra) and relays the report + tree audit verbatim. Never edits anything itself. |
 | `agents/executor-codex-heavy.md` | Same launcher shape at the heavy tier (OpenAI Sol, high reasoning effort) — the OpenAI mirror of `executor-heavy`. |
 | `agents/planner-gpt.md` | Thin Haiku launcher for the `/deep-plan` roundabout; calls `orchestra_deepplan` and relays the counterpart's critique verbatim. |
-| `hooks/orchestra-engine-mcp.js` | **The MCP transport** — a zero-dependency stdio MCP server exposing the three runners plus the doctor as typed tools (`orchestra_review`, `orchestra_exec`, `orchestra_deepplan`, `orchestra_doctor`). Registered in the project's root `.mcp.json` by the installer. |
+| `agents/architect-codex.md` | Thin Haiku launcher for the `/cross-compare-plan` GPT lane; calls `orchestra_crossplan` once per phase and relays the document's provenance verbatim. Never drafts, critiques, or revises itself. |
+| `agents/architect-claude.md` | The `/cross-compare-plan` Claude architect (Fable, fresh context, high effort) — drafts, critiques the rival plan, revises under critique, anonymously, within the brief's ground-truth scope. |
+| `agents/architect-claude-xhigh.md` | The same architect at xhigh effort, dispatched when the session runs `effort=xhigh` (both lanes always run one identical effort level). |
+| `agents/plan-synthesizer.md` | The `/cross-compare-plan` blind synthesizer (Opus, fresh context) — merges the two revised plans into the final plan, adjudicates disputes against the tree, escalates only genuine ties. |
+| `hooks/orchestra-engine-mcp.js` | **The MCP transport** — a zero-dependency stdio MCP server exposing the four runners plus the doctor as typed tools (`orchestra_review`, `orchestra_exec`, `orchestra_deepplan`, `orchestra_crossplan`, `orchestra_doctor`). Registered in the project's root `.mcp.json` by the installer. |
 | `hooks/orchestra-review.js` | Review runner — builds the adversarial brief, drives `codex exec` in a sandbox (optionally in a clean worktree pinned to the commit under review), prints an Orchestra-format verdict. |
 | `hooks/orchestra-exec.js` | Execution runner — builds the Orchestra executor-law brief, drives `codex exec` in a `workspace-write` sandbox in the LIVE tree, audits which paths actually changed, prints an Orchestra-format executor report. One attempt, never auto-retried. |
 | `hooks/orchestra-deepplan.js` | Deep-plan runner — sends plan + brief to the OpenAI Responses API. |
+| `hooks/orchestra-crossplan.js` | Cross-compare architect runner — drives `codex exec` read-only for one phase (draft / critique / revise), saves the produced document under `.claude/plans/cross-compare/`, and enforces the report-integrity nonce and a read-only tree fingerprint. |
 | `skills/deep-plan/` | The `/deep-plan` two-model planning roundabout. |
+| `skills/cross-compare-plan/` | The `/cross-compare-plan` two-architect session — independent drafts, cross-critique, owner revision, blind merge. |
 
 ## The MCP transport
 
@@ -81,8 +88,15 @@ same-vendor `reviewer-codex` pass.
 **Deep-plan** (`planner-gpt`): export `OPENAI_API_KEY`. The Responses API is
 called directly — the Codex CLI is not involved.
 
+**Cross-compare** (`architect-codex` + `architect-claude` + `plan-synthesizer`):
+same Codex CLI + auth as review — the GPT architect runs through `codex exec`
+in a `read-only` sandbox (hard-pinned; the lane never writes the tree). No
+engine selection needed: `/cross-compare-plan` dispatches all three roles
+itself.
+
 Recommended pin for review: `ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol`. Execution
-defaults to `gpt-5.6-terra` (standard) and `gpt-5.6-sol` (heavy) out of the box.
+defaults to `gpt-5.6-terra` (standard) and `gpt-5.6-sol` (heavy) out of the
+box; the cross-compare GPT lane defaults to `gpt-5.6-sol` at `high` effort.
 
 ## Checking the install — `--doctor`
 
@@ -320,6 +334,11 @@ loudly when it does.
 | `ORCHESTRA_EXEC_PROBE` | `1` | Stage-a echo before the real attempt (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_EXEC_PROBE_TIMEOUT_MS` caps it. |
 | `ORCHESTRA_EXEC_ARGS` | — | Extra args appended to the execution `codex exec`. |
 | `CODEX_BIN` | `codex` | Codex executable path (shared by all runners). |
+| `ORCHESTRA_CROSSPLAN_MODEL` | `gpt-5.6-sol` | Cross-compare GPT-architect model (`codex.crossplanModel`; also the skill's `model=`). |
+| `ORCHESTRA_CROSSPLAN_EFFORT` | `high` | Cross-compare GPT-architect reasoning effort (`codex.crossplanEffort`), sent as `-c model_reasoning_effort=`. The skill's `effort=` overrides per session and routes the Claude lane to the matching tier. |
+| `ORCHESTRA_CROSSPLAN_TIMEOUT_MS` | `900000` | Wall-clock cap per cross-compare phase (`codex.crossplanTimeoutMs`; also `--timeout-ms`). |
+| `ORCHESTRA_CROSSPLAN_PROBE` | `1` | Stage-a echo before each phase (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS` caps it. |
+| `ORCHESTRA_CROSSPLAN_ARGS` | — | Extra args appended to the cross-compare `codex exec`. Resume-prone tokens are refused. |
 | `ORCHESTRA_DEEPPLAN_MODEL` | `gpt-5.6-sol` | Deep-plan counterpart model. |
 | `ORCHESTRA_DEEPPLAN_EFFORT` | `max` | Deep-plan reasoning effort. |
 | `ORCHESTRA_DEEPPLAN_TIMEOUT_MS` | `900000` | Deep-plan wall-clock cap. |

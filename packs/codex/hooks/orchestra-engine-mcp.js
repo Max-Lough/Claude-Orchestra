@@ -3,9 +3,9 @@
 /*
  * orchestra-engine — MCP server for the Orchestra codex pack.
  *
- * Exposes the three runners (review / exec / deep-plan) plus the install
- * doctor as typed MCP tools, so a launcher agent makes ONE blocking tool call
- * and receives the runner's report as data. This replaces the shell
+ * Exposes the four runners (review / exec / deep-plan / cross-compare) plus
+ * the install doctor as typed MCP tools, so a launcher agent makes ONE
+ * blocking tool call and receives the runner's report as data. This replaces the shell
  * transport — heredoc-to-scratch, run tokens, sentinels, background-and-poll,
  * stdout scraping — that produced the majority of the codex lane's recorded
  * field failures (see failure forensics, 2026-08-26: TRANSPORT ≈53%).
@@ -62,6 +62,7 @@ const RUNNERS = {
   review: path.join(HOOKS_DIR, 'orchestra-review.js'),
   exec: path.join(HOOKS_DIR, 'orchestra-exec.js'),
   deepplan: path.join(HOOKS_DIR, 'orchestra-deepplan.js'),
+  crossplan: path.join(HOOKS_DIR, 'orchestra-crossplan.js'),
 };
 
 /* ---------------------------------------------------------- config reads -- */
@@ -89,6 +90,9 @@ function effectiveCapMs(lane, timeoutMsArg) {
   if (lane === 'exec') {
     return num(process.env.ORCHESTRA_EXEC_TIMEOUT_MS) || num(cfg.execTimeoutMs) || 1800000;
   }
+  if (lane === 'crossplan') {
+    return num(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS) || num(cfg.crossplanTimeoutMs) || 900000;
+  }
   return num(process.env.ORCHESTRA_DEEPPLAN_TIMEOUT_MS) || 900000; // deepplan
 }
 
@@ -107,6 +111,7 @@ function backstopMs(lane, capMs) {
     return capMs * (1 + retries) + warmup + 300000;
   }
   if (lane === 'exec') return capMs + 300000; // never auto-retried
+  if (lane === 'crossplan') return capMs + 300000; // one attempt, plus probe margin
   return capMs + 120000; // deepplan
 }
 
@@ -406,6 +411,57 @@ const TOOLS = [
     },
   },
   {
+    name: 'orchestra_crossplan',
+    description:
+      'Run one phase of the Orchestra cross-compare planning lane: an OpenAI model driven by the Codex CLI, ' +
+      'READ-ONLY in the project tree, acting as one of two independent architects. phase "draft" writes a plan ' +
+      'from the shared brief; "critique" critiques the rival plan (own_plan_path + rival_plan_path required); ' +
+      '"revise" produces plan v2 from own_plan_path + critique_path with a disposition per finding. The produced ' +
+      'document is saved to out_path and returned verbatim under a provenance header (DOCUMENT SAVED line). ' +
+      'Blocks until done (default cap 900000 ms; high-effort recon plus a full document routinely uses most of ' +
+      'it). One call per phase; relay a STATUS: CROSSPLAN_UNAVAILABLE as-is — re-dispatch only on the ' +
+      'Director\'s say-so (the lane is read-only, so a re-dispatch is safe once the condition is fixed).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        phase: { type: 'string', enum: ['draft', 'critique', 'revise'], description: 'Which consultation phase to run.' },
+        brief: { type: 'string', description: 'The Director\'s SHARED brief — goal, done-criteria, constraints, GROUND TRUTH scope — verbatim, identical to what the other architect received.' },
+        out_path: { type: 'string', description: 'Where the produced document is written (normally under .claude/plans/cross-compare/<slug>/), relative to the project root or absolute.' },
+        own_plan_path: { type: 'string', description: 'This architect\'s own current plan file. Required for critique and revise.' },
+        rival_plan_path: { type: 'string', description: 'The rival architect\'s plan file under critique. Required for critique only.' },
+        critique_path: { type: 'string', description: 'The critique this architect\'s plan received. Required for revise only.' },
+        effort: { type: 'string', description: 'Reasoning effort, only when the order names one (default high).' },
+        model: { type: 'string', description: 'Model id, only when the order names one (default gpt-5.6-sol).' },
+        timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one (default 900000).' },
+      },
+      required: ['phase', 'brief', 'out_path'],
+    },
+    handler(id, a, progressToken) {
+      const dir = makeRunDir('crossplan');
+      const resolve = (p) => (path.isAbsolute(String(p)) ? String(p) : path.join(ROOT, String(p)));
+      const args = [
+        '--phase', requireString(a, 'phase'),
+        '--brief', writeInput(dir, 'brief.txt', requireString(a, 'brief')),
+        '--out', resolve(requireString(a, 'out_path')),
+      ];
+      for (const [key, flag] of [
+        ['own_plan_path', '--own-plan'],
+        ['rival_plan_path', '--rival-plan'],
+        ['critique_path', '--critique'],
+      ]) {
+        if (typeof a[key] === 'string' && a[key].trim()) {
+          const p = resolve(a[key].trim());
+          if (!fs.existsSync(p)) throw new Error(`${key} not found: ${p}`);
+          args.push(flag, p);
+        }
+      }
+      if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', a.effort);
+      if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
+      if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
+      runRunner(id, 'crossplan', args, progressToken);
+    },
+  },
+  {
     name: 'orchestra_doctor',
     description:
       'Check the Codex install without spending a review: resolves the real codex binary, names the install ' +
@@ -456,7 +512,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '1.10.0' },
+          serverInfo: { name: 'orchestra-engine', version: '1.11.0' },
         },
       });
       return;

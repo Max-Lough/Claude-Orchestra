@@ -9,6 +9,98 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 1.13.0 — cross-compare hardening from the first field run
+
+`/cross-compare-plan`'s first full field test (2026-08-27/28) finished its
+seven consultations and produced a merged plan — and then four distinct
+failures surfaced around the finished artifact, each one a gap the session's
+design had left open rather than a lane misbehaving. Each is closed here
+structurally.
+
+- **The blind merge shipped defects a cross-family reader caught in one
+  pass — the AUDIT wave makes that reader official.** The field run ended
+  with an ad-hoc eighth consultation: the GPT lane critiquing the finished
+  `final-plan.md`. It found an internal arithmetic contradiction, a stale
+  capability figure, and a dropped done-criterion — all real, all missed by
+  the blind synthesis. The root cause is seat arithmetic: with two vendors
+  and three seats, the synthesizer always shares a model family with one
+  architect, so blind judging removes identity bias but not
+  family-correlated blind spots. New argument `audit=<on|off>` (default
+  `on`): after FINALIZE the Director dispatches one more consultation — the
+  GPT lane in phase `critique`, own plan = its own v2, rival =
+  `final-plan.md`, output `audit-of-final.md` — always the GPT lane, because
+  the synthesizer is always a Claude model and the audit must come from the
+  family the synthesizer is NOT. Findings go to the user; accepted
+  mechanical/factual ones are applied by re-dispatching the same synthesizer
+  with the rulings (the ESCALATE pattern), design-level ones are the user's
+  decisions, and the Director applies nothing itself. The session is now
+  **eight** frontier consultations by default, seven with `audit=off`; an
+  unavailable audit lane does not un-finish the plan — it is reported
+  complete but UNAUDITED, plainly.
+- **One critique bought materially less adversarial pressure than the other
+  — coverage is now a contract.** The field run's two critiques were 9KB/11
+  findings versus 43KB/16 findings; the thinner one had simply skipped
+  sections, and nothing in the charter called that a defect. Both lane
+  charters (all three `architect-claude*` files and the runner's embedded
+  critique charter, kept in lockstep) now require every top-level section of
+  the rival plan to be either the subject of at least one finding or listed
+  under a closing `## Sections examined and found sound` heading with one
+  line saying what was checked — breadth forced without incentivizing
+  padding, since "examined and sound" is a legitimate answer. A critique
+  missing the coverage contract joins the malformed-document failure rule:
+  re-dispatch once with the defect named.
+- **The two lanes had unequal research capability — an information-symmetry
+  defect in an exercise whose premise is identical inputs.** One lane had
+  web search enabled through its engine config while the other's charter
+  granted no web tools, so the comparison partly measured tooling. Both
+  lanes now carry the capability by construction: the Claude charters gain
+  `WebSearch, WebFetch`, and the runner passes `-c tools.web_search=true`
+  by default (opt out: `--no-web`, `ORCHESTRA_CROSSPLAN_WEB=0`, or
+  `"codex": { "crossplanWeb": false }`, flag > env > config > default). Use
+  is charter-gated identically in both lanes — web research only when the
+  brief's GROUND TRUTH section grants it; a silent brief grants nothing —
+  and the brief must now state the grant explicitly. The provenance header
+  prints a `web search:` line so every run records which way it ran.
+- **The Director listed `docs=` files by path instead of inlining them —
+  and the byte-identical brief quietly became a hope.** The field run's
+  docs totaled ~113KB and the Director substituted references, degrading
+  the guarantee to "both architects hopefully read the same files". The
+  `docs=` rule now says inlining verbatim is mandatory regardless of size;
+  listing paths instead of content is a brief defect. Past ~100KB the
+  Director warns of the context cost in the INTAKE beat and may OFFER
+  `context=` paths as the alternative — but never silently substitutes.
+
+## 1.12.0 — the cross-compare effort ladder reaches `max`
+
+`/cross-compare-plan` shipped with `effort=<high|xhigh>` and rejected every
+other value. That rejection guards a real invariant — both lanes must run ONE
+identical level, because unequal effort measures budgets rather than judgment
+— but it also stopped the ladder a rung below where both vendors actually
+stop. Asked for "both architects at max effort", the session had no way to say
+yes: it could only run `xhigh` and present it as the ceiling. The invariant was
+never the problem; the enumeration was.
+
+Both vendors expose the same top rung. The Anthropic ladder is
+`low|medium|high|xhigh|max` — agent frontmatter `effort:` and `claude --effort`
+both take all five — and the OpenAI reasoning-effort enum is
+`none|minimal|low|medium|high|xhigh|max`. The pack's own `/deep-plan` has
+defaulted to `max` since it shipped, so the cap lived in exactly one place:
+this skill's argument list.
+
+- **`effort=max` accepted** by `/cross-compare-plan`, routing the Claude lane
+  to the new `architect-claude-max` and passing `max` to the GPT lane. The
+  equality invariant is untouched: one level, both lanes, any other value
+  still an error.
+- **New agent `architect-claude-max`** — the `architect-claude-xhigh` charter
+  at `effort: max`, and nothing else changed. Depth changes how hard an
+  architect thinks, never which rules bind it. `architect-claude-xhigh` no
+  longer describes itself as the deepest tier, because it is not.
+- **No transport change was needed**, which is why this is a one-line class of
+  bug rather than a redesign: `orchestra_crossplan` types `effort` as a
+  free-form string and the runner passes it straight through to
+  `-c model_reasoning_effort=<v>`, so `max` already flowed end to end. Only
+  the skill's own front door refused it.
+
 ## 1.11.0 — /cross-compare-plan: two independent architects, one blind merge
 
 `/deep-plan` hardens a plan, but it cannot escape a bad framing: the

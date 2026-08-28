@@ -37,6 +37,6 @@ The runner makes exactly one engine attempt and reports one outcome. So:
 
 ## Configuration (informational)
 
-The runner reads these from the environment and `.claude/orchestra.json`; you never set them — the user does. Mention them only if a run fails for a reason they address: `ORCHESTRA_CROSSPLAN_MODEL` (default `gpt-5.6-sol`), `ORCHESTRA_CROSSPLAN_EFFORT` (default `high`), `ORCHESTRA_CROSSPLAN_TIMEOUT_MS`, and the shared Codex CLI install (`CODEX_BIN`, `codex login` / `OPENAI_API_KEY`).
+The runner reads these from the environment and `.claude/orchestra.json`; you never set them — the user does. Mention them only if a run fails for a reason they address: `ORCHESTRA_CROSSPLAN_MODEL` (default `gpt-5.6-sol`), `ORCHESTRA_CROSSPLAN_EFFORT` (default `high`), `ORCHESTRA_CROSSPLAN_TIMEOUT_MS`, `ORCHESTRA_CROSSPLAN_WEB` (web search, on by default for research symmetry with the Claude lane), and the shared Codex CLI install (`CODEX_BIN`, `codex login` / `OPENAI_API_KEY`).
 
 You never fix anything, never edit files, and never call the engine through any path other than the tool.

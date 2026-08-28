@@ -220,20 +220,26 @@ Orchestra/
 └── packs/                  ← OPTIONAL modules, installed only when named (--packs)
     ├── README.md           ← the pack contract
     ├── _TEMPLATE/          ← copy this directory to mint a new pack
-    └── codex/              ← the OpenAI surface: cross-vendor review + deep-plan
+    └── codex/              ← the OpenAI surface: cross-vendor review + planning
         ├── pack.json       ← pack metadata
         ├── agents/
         │   ├── reviewer-codex.md       ← Haiku launcher · cross-vendor (OpenAI/Codex) review, via MCP
         │   ├── executor-codex.md       ← Haiku launcher · OpenAI executor (Terra, default tier), via MCP
         │   ├── executor-codex-heavy.md ← Haiku launcher · OpenAI heavy executor (Sol, high effort), via MCP
-        │   └── planner-gpt.md          ← Haiku launcher · deep-plan counterpart (OpenAI API), via MCP
+        │   ├── planner-gpt.md          ← Haiku launcher · deep-plan counterpart (OpenAI API), via MCP
+        │   ├── architect-codex.md      ← Haiku launcher · cross-compare GPT architect (Codex CLI, read-only), via MCP
+        │   ├── architect-claude.md     ← Fable architect · cross-compare Claude lane (fresh context, high effort)
+        │   ├── architect-claude-xhigh.md ← same lane at xhigh effort (effort=xhigh routing)
+        │   └── plan-synthesizer.md     ← Opus synthesizer · blind merge of the two revised plans
         ├── hooks/
         │   ├── orchestra-engine-mcp.js ← MCP server exposing the runners as typed tools (registered in .mcp.json)
         │   ├── orchestra-review.js    ← cross-vendor review runner (drives Codex CLI)
         │   ├── orchestra-exec.js      ← cross-vendor execution runner (drives Codex CLI)
-        │   └── orchestra-deepplan.js  ← plan-roundabout runner (calls the OpenAI API)
+        │   ├── orchestra-deepplan.js  ← plan-roundabout runner (calls the OpenAI API)
+        │   └── orchestra-crossplan.js ← cross-compare architect runner (drives Codex CLI, read-only)
         └── skills/
-            └── deep-plan/  ← /deep-plan · two-model plan roundabout (GPT-5.6 Sol)
+            ├── deep-plan/  ← /deep-plan · two-model plan roundabout (GPT-5.6 Sol)
+            └── cross-compare-plan/ ← /cross-compare-plan · two architects, blind merge
 ```
 
 This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
@@ -421,7 +427,7 @@ Nothing to invoke — just start Claude Code in the project. The protocol loads 
 
 You'll see the Director narrate phase transitions and spawn agents; the agents' raw reports stay behind the curtain, and the Director gives you the synthesized picture with evidence (tests run, review verdicts).
 
-Four slash commands ship with the harness: `/orchestra-status` (live harness state), `/orchestra-plan` (a §8-sized plan written to `.claude/plans/`), `/orchestra-review` (on-demand adversarial review of any diff), and `/deep-plan` (a two-model planning roundabout with GPT-5.6 Sol) — see "Bundled skills".
+Five slash commands ship with the harness: `/orchestra-status` (live harness state), `/orchestra-plan` (a §8-sized plan written to `.claude/plans/`), `/orchestra-review` (on-demand adversarial review of any diff), `/deep-plan` (a two-model planning roundabout with GPT-5.6 Sol), and `/cross-compare-plan` (two independent architects, cross-critique, blind merge) — see "Bundled skills".
 
 ## Pausing the harness
 
@@ -475,7 +481,7 @@ node install.js /path/to/project --packs codex
 
 | Pack | Adds | Needs |
 |---|---|---|
-| `codex` | `reviewer-codex` (cross-vendor review via the Codex CLI), `executor-codex` / `executor-codex-heavy` (opt-in OpenAI executors — Terra / Sol via the Codex CLI), `planner-gpt` + `/deep-plan` (two-model planning via the OpenAI API), the three runners, and the `orchestra-engine` MCP server the launchers call them through (registered in `.mcp.json`; approve it on first launch) | Codex CLI and/or `OPENAI_API_KEY` |
+| `codex` | `reviewer-codex` (cross-vendor review via the Codex CLI), `executor-codex` / `executor-codex-heavy` (opt-in OpenAI executors — Terra / Sol via the Codex CLI), `planner-gpt` + `/deep-plan` (two-model planning via the OpenAI API), `architect-codex` / `architect-claude(-xhigh)` / `plan-synthesizer` + `/cross-compare-plan` (two-architect planning with a blind merge; GPT lane via the Codex CLI, read-only), the four runners, and the `orchestra-engine` MCP server the launchers call them through (registered in `.mcp.json`; approve it on first launch) | Codex CLI and/or `OPENAI_API_KEY` |
 
 A harness with no packs is Claude-only and complete: full fresh-context adversarial Opus review, the whole operating loop, every core skill. The `codex` pack adds a *layer* — vendor decorrelation — not a missing floor.
 
@@ -525,7 +531,7 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
 
 ## Bundled skills
 
-The harness ships skills of its own and stamps them into `<project>/.claude/skills/` on every install — they ride the installer exactly like agents and hooks: installed automatically, updated by re-running the installer, removed by `--uninstall`. Claude Code discovers project skills from that directory, so they're live as slash commands (and as auto-triggered skills) with nothing else to configure. The first three below are core; `deep-plan` arrives only with the `codex` pack.
+The harness ships skills of its own and stamps them into `<project>/.claude/skills/` on every install — they ride the installer exactly like agents and hooks: installed automatically, updated by re-running the installer, removed by `--uninstall`. Claude Code discovers project skills from that directory, so they're live as slash commands (and as auto-triggered skills) with nothing else to configure. The first three below are core; `deep-plan` and `cross-compare-plan` arrive only with the `codex` pack.
 
 | Skill | Invoke | Does |
 |---|---|---|
@@ -533,6 +539,7 @@ The harness ships skills of its own and stamps them into `<project>/.claude/skil
 | `orchestra-plan` | `/orchestra-plan` — or ask to plan before building | Walks the §8 sizing gate and writes a durable plan file — work orders with scope, acceptance criteria, verification tier, cadence clauses — to `.claude/plans/<slug>.md`, the one directory the Director may write itself. |
 | `orchestra-review` | `/orchestra-review` — or ask for a review / second opinion | Runs the loop's REVIEW phase on demand against arbitrary existing changes — working tree, branch, commit range — through the configured engine, with the standard verdict format. Works on changes the harness never authored. |
 | `deep-plan` *(codex pack)* | `/deep-plan <goal>` — or ask for maximum-rigor / cross-vendor planning | Two-model planning roundabout: the Director drafts a full plan, GPT-5.6 Sol (via API, `max` effort by default) critiques and counter-drafts, and the plan ping-pongs until either model approves it unchanged. See "Deep-plan" below; requires the `codex` pack and `OPENAI_API_KEY`. |
+| `cross-compare-plan` *(codex pack)* | `/cross-compare-plan <goal>` — or ask for two independent plans compared and merged | Two-architect session: a fresh-context Claude architect and GPT-5.6 Sol (Codex CLI, read-only) draft from one shared brief independently, cross-critique, revise with a disposition per finding, and a blind Opus synthesizer merges the strongest final plan — escalating only genuine ties to you. See "Cross-compare-plan" below; requires the `codex` pack and the Codex CLI. |
 
 Design constraints (these are also the rules for bundling your own — see `skills/_TEMPLATE/SKILL.md`):
 
@@ -561,6 +568,14 @@ Prefer the flags over the environment variables: a subagent's shell doesn't pers
 
 Unlike the Codex review engine, the counterpart has **no repository access**: it judges coherence, completeness, sequencing, risk coverage, and testability from the brief and plan text alone, and is instructed to raise unverifiable assumptions as critique questions instead of inventing facts. Requests are sent with `store: false`.
 
+### Cross-compare-plan: two architects, one blind merge
+
+Where `/deep-plan` hardens ONE framing by ping-pong, `/cross-compare-plan <goal>` explores TWO: a fresh-context Claude architect (`architect-claude`, Fable) and an OpenAI architect (GPT-5.6 Sol driven read-only through the Codex CLI by `.claude/hooks/orchestra-crossplan.js`) receive one byte-identical brief and draft **without seeing each other**. The drafts are then swapped for cross-critique (steelman first, findings tagged [BLOCKER]/[MAJOR]/[MINOR], comparative assessment), each owner revises under critique with an ADOPTED/REBUTTED disposition per finding, and a **blind synthesizer** (`plan-synthesizer`, fresh-context Opus) merges the strongest final plan — adjudicating rebutted findings against the tree, flagging assumptions both plans share under a *verify during execution* list, and escalating at most four genuine ties (material, evidence-balanced, consequential) to you before finalizing. Reach for it when the right approach is itself uncertain; reach for `/deep-plan` when a single draft needs adversarial hardening.
+
+Unlike deep-plan's counterpart, **both architects have repository access** — read-only, and identical by construction: the brief's GROUND TRUTH section states one scope (`context=repo`, a path list, or `context=none` for brief-only problems, plus any `docs=` documents inlined verbatim), so the plans diverge on judgment, never on information. The whole exchange is **anonymous end to end**: documents carry no model or vendor names, the lane↔letter mapping lives only in the Director's conversation, and the synthesizer judges blind — model-name mentions in planning documents cause exactly the downstream steering the blind merge exists to avoid. Every artifact lands in `.claude/plans/cross-compare/<slug>/` (`brief.md`, `plan-{a,b}-v{1,2}.md`, `critique-of-{a,b}.md`, `final-plan.md`), so the full exchange is auditable afterward.
+
+Skill arguments: `effort=<high|xhigh>` (ONE level, applied identically to both lanes — default `high`), `model=<id>` (GPT architect, default `gpt-5.6-sol`), `context=<repo|none|paths>` (ground-truth scope, default `repo`), `docs=<paths>` (documents inlined into the brief). Runner settings: `ORCHESTRA_CROSSPLAN_MODEL` / `ORCHESTRA_CROSSPLAN_EFFORT` / `ORCHESTRA_CROSSPLAN_TIMEOUT_MS` (default 900000), or `"codex": { crossplanModel, crossplanEffort, crossplanTimeoutMs }` in `.claude/orchestra.json`. A session is **seven frontier consultations** (2 drafts + 2 critiques + 2 revisions + 1 synthesis); the GPT lane bills to your Codex CLI account. On any GPT-lane failure the runner returns `STATUS: CROSSPLAN_UNAVAILABLE` with the reason — never a substitute document — and, because the lane is read-only, the same phase re-dispatches safely once the condition is fixed.
+
 ## Sizing, cadence, and the verification tax
 
 `ORCHESTRA.md` §8 governs how big a work order gets and what a long one owes the Director while it runs. The short version:
@@ -579,6 +594,7 @@ This trades tokens for quality and control, deliberately:
 - **Review runs on Opus** by default — deliberately the most capable regular call in the company, because verdict quality is what the harness optimizes for. The optional `reviewer-codex` engine is billed to your **OpenAI** account (a separate meter); its Claude side is just a negligible Haiku launcher. Pick the OpenAI review model with `ORCHESTRA_REVIEW_MODEL`.
 - **`executor-heavy` is Opus-billed too, by design** — it's routed only to hard cores (concurrency, numerical code, data-risky migrations), coupled cross-subsystem changes, risk-first probes, and orders that already bounced twice at the default tier. The economics are cost per *task*, not per token: verification is paid per review round, so an order that converges in one round on the capable model is cheaper end-to-end than the same order bouncing through two or three rounds on the cheap one.
 - **`/deep-plan` consultations are likewise OpenAI-billed** — GPT-5.6 Sol at `max` effort by default, deliberate overkill for the one artifact where errors compound (the plan). Each roundabout is a handful of such calls at most (default cap 4); use `effort=high` or lower when that rigor isn't warranted.
+- **`/cross-compare-plan` is the most expensive planning gesture in the harness, on purpose** — seven frontier consultations per session (three of them GPT-5.6 Sol through your Codex account, three Fable, one Opus). It buys something no single-lane pass can: two independently-derived framings and a blind merge. Use it for the decisions where the approach itself is in question; `/deep-plan` remains the cheaper hardening pass for a settled framing.
 - The Director's own turns are decision-dense and short; the expensive model at the top writes the least text.
 
 ## Troubleshooting
@@ -619,6 +635,8 @@ This trades tokens for quality and control, deliberately:
 | Review or `/deep-plan` dies at ~2 minutes with no output | The launcher ran the runner in the foreground under the shell tool's 120-second default timeout. Both runners' default caps (600000 / 900000 ms) exceed it, and the tool's own maximum is 600000 ms — so a default-cap run must be launched in the background and polled. The launcher profiles carry the exact commands; re-run the installer if yours predate v1.3.0. |
 | An agent ends its report with "the run is still going, I'll report back when it finishes" | That report is the end of the round: subagents have no notification-based revival, so nothing wakes the agent when the process completes — the result reaches nobody even though the command succeeded. Every command-running profile now forbids ending a turn on a live process (poll in-turn to completion, or kill it and report what ran); re-run the installer if yours predate v1.4.1. Meanwhile, treat such a report as a failed round and re-dispatch the order. |
 | `/deep-plan` returns `VERDICT: DEEPPLAN_UNAVAILABLE` | The DETAIL block states why: `OPENAI_API_KEY` not set, HTTP 401 (bad key), HTTP 400/404 (model or effort not available to your key — override with `model=`/`effort=` or the `ORCHESTRA_DEEPPLAN_*` env vars), a timeout (raise `ORCHESTRA_DEEPPLAN_TIMEOUT_MS` or lower the effort), or truncation (raise `ORCHESTRA_DEEPPLAN_MAX_TOKENS`). Until fixed, the Director proceeds solo and marks the plan as not cross-examined. |
+| `/cross-compare-plan` returns `STATUS: CROSSPLAN_UNAVAILABLE` | The DETAIL block states why — usually the same Codex CLI conditions as review (auth via `codex login`/`OPENAI_API_KEY`, a broken install the doctor can inspect, a timeout worth raising via `crossplanTimeoutMs`). The lane is read-only, so once fixed the same phase re-dispatches safely. The Director never continues single-architect on its own: a one-architect run is not a cross-compare. |
+| A cross-compare document names a model or vendor | The charters forbid it and the synthesizer excludes identity hints from the final plan, but an architect can still slip. Treat it as a contract defect: re-dispatch that phase once with the defect named (the skill's failure rules) — never hand-edit an architect's document. |
 
 ## Design notes
 

@@ -250,7 +250,7 @@ const EXEC_REPORT = 'STATUS: DONE — reformatted add(), committed.';
 
 // ------------------------------------------------------------------- cases
 
-// 1. The handshake and the tool surface: four tools, correct requireds. A
+// 1. The handshake and the tool surface: five tools, correct requireds. A
 //    launcher can only call what tools/list advertises, so the surface IS the
 //    lane's API.
 async function case1() {
@@ -264,8 +264,8 @@ async function case1() {
   const list = await s.rpc('tools/list');
   const tools = (list.result && list.result.tools) || [];
   const names = tools.map((t) => t.name).sort();
-  check('tools/list names the four lanes',
-    JSON.stringify(names) === JSON.stringify(['orchestra_deepplan', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
+  check('tools/list names the five lanes',
+    JSON.stringify(names) === JSON.stringify(['orchestra_crossplan', 'orchestra_deepplan', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
     JSON.stringify(names));
   const review = tools.find((t) => t.name === 'orchestra_review');
   check('orchestra_review requires work_order and executor_report',
@@ -484,6 +484,73 @@ async function case8() {
   s2.close();
 }
 
+// 9. The cross-compare lane: a draft phase produces a document saved to
+//    out_path with the integrity line stripped; wrong attachments degrade in
+//    the RUNNER's grammar (CROSSPLAN_UNAVAILABLE, isError false); a missing
+//    attachment file is a transport error before any spawn; and a report that
+//    cannot echo this run's token is refused and NOT saved.
+async function case9() {
+  section('9. orchestra_crossplan saves the document and enforces integrity');
+  const fx = makeRepo();
+  const OUT = '.claude/plans/cross-compare/test/plan-b-v1.md';
+
+  const s = mcpSession({ fx });
+  await s.start();
+  const res = await s.rpc('tools/call', {
+    name: 'orchestra_crossplan',
+    arguments: { phase: 'draft', brief: 'GOAL: reformat add().', out_path: OUT, timeout_ms: 60000 },
+  }, 180000);
+  const text = resultText(res);
+  check('call is not an error', !(res.result && res.result.isError), text.slice(0, 400));
+  check('header attributes the engine', /CROSSPLAN ENGINE: OpenAI via Codex CLI/.test(text), text.slice(0, 400));
+  check('header names the saved document', /DOCUMENT SAVED: /.test(text), text.slice(0, 600));
+  check('the engine ran read-only', field(text, 'SANDBOX') === 'read-only', field(text, 'SANDBOX'));
+  check('the default effort reached the engine as a config override',
+    /model_reasoning_effort=high/.test(field(text, 'CONFIG_OVERRIDES')), field(text, 'CONFIG_OVERRIDES'));
+  check('REPORT INTEGRITY verified the nonce', /REPORT INTEGRITY: verified/.test(text), text.slice(-400));
+  const saved = fs.existsSync(path.join(fx.repo, OUT)) ? fs.readFileSync(path.join(fx.repo, OUT), 'utf8') : '';
+  check('the document landed at out_path', !!saved.trim(), OUT + ' missing or empty');
+  check('the integrity line was stripped before saving', !/REPORT INTEGRITY/.test(saved), saved.slice(-200));
+
+  const wrong = await s.rpc('tools/call', {
+    name: 'orchestra_crossplan',
+    arguments: { phase: 'critique', brief: 'b', out_path: '.claude/plans/cross-compare/test/c.md' },
+  }, 120000);
+  const wrongText = resultText(wrong);
+  check('a phase missing its attachments degrades in the runner\'s grammar, not the server\'s',
+    !(wrong.result && wrong.result.isError) && /STATUS: CROSSPLAN_UNAVAILABLE/.test(wrongText) &&
+      /CROSSPLAN ENGINE: NONE/.test(wrongText),
+    wrongText.slice(0, 400));
+
+  const missing = await s.rpc('tools/call', {
+    name: 'orchestra_crossplan',
+    arguments: {
+      phase: 'revise', brief: 'b', out_path: '.claude/plans/cross-compare/test/v2.md',
+      own_plan_path: OUT, critique_path: '.claude/plans/cross-compare/no-such-critique.md',
+    },
+  });
+  check('a missing attachment file is a transport error before any spawn',
+    missing.result && missing.result.isError && /MCP TRANSPORT ERROR/.test(resultText(missing)),
+    resultText(missing).slice(0, 300));
+  s.close();
+
+  const s2 = mcpSession({ fx, env: { STUB_CODEX_OMIT_NONCE: '1' } });
+  await s2.start();
+  const STALE_OUT = '.claude/plans/cross-compare/test/stale.md';
+  const stale = await s2.rpc('tools/call', {
+    name: 'orchestra_crossplan',
+    arguments: { phase: 'draft', brief: 'GOAL: anything.', out_path: STALE_OUT, timeout_ms: 60000 },
+  }, 180000);
+  const staleText = resultText(stale);
+  check('a report without this run\'s token is refused as CROSSPLAN_UNAVAILABLE',
+    !(stale.result && stale.result.isError) && /STATUS: CROSSPLAN_UNAVAILABLE/.test(staleText) &&
+      /integrity check failed/.test(staleText),
+    staleText.slice(0, 600));
+  check('the refused document was NOT saved to out_path',
+    !fs.existsSync(path.join(fx.repo, STALE_OUT)), STALE_OUT + ' exists');
+  s2.close();
+}
+
 // ------------------------------------------------------------------- driver
 
 function finish() {
@@ -503,6 +570,7 @@ async function main() {
   await case6();
   await case7();
   await case8();
+  await case9();
 }
 
 main().then(finish, (e) => {

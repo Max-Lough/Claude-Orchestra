@@ -9,6 +9,50 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.0.0 — /deep-plan retired; /cross-compare-plan supersedes it
+
+The plan roundabout was the harness's only lane that called a metered vendor
+API directly. Every other cross-vendor role reaches OpenAI through the Codex
+CLI, on the same subscription auth as the rest of the tooling, so `/deep-plan`
+carried a second billing model, a second failure surface, and a second set of
+credentials for one capability — and the capability itself was the weaker of
+the two planning gestures: its counterpart worked blind, with no repository
+access, so it critiqued the brief as much as the plan, and it could never
+challenge the framing of the draft it was handed. 1.11.0 shipped the lane that
+does both better. Keeping a superseded lane alive is not free — every protocol
+document, roster, and troubleshooting table has to keep describing it.
+
+- **Breaking, and the reason this is a major bump.** The `orchestra-engine`
+  MCP server's published surface lost a tool: `tools/list` no longer
+  advertises `orchestra_deepplan`, and a call to it is now an unknown-tool
+  error. Anything pinned to that name breaks and must be repointed or
+  retired — a custom agent whose `tools:` frontmatter grants
+  `mcp__orchestra-engine__orchestra_deepplan`, a launcher profile of your
+  own, or an external MCP client. `/deep-plan` likewise stops resolving as
+  a slash command, and `planner-gpt` is gone from the protocol's roles
+  table. Under this repo's versioning rule those are breaking protocol
+  changes, not a capability removal that a minor could carry.
+- **`/deep-plan` is gone**, along with everything that existed only to serve
+  it: the `planner-gpt` launcher agent, the `orchestra-deepplan.js` runner,
+  the `deep-plan` skill, the `orchestra_deepplan` MCP tool and its lane
+  wiring in `orchestra-engine-mcp.js`, and the `ORCHESTRA_DEEPPLAN_*` /
+  `OPENAI_BASE_URL` settings that had no other consumer.
+- **`/cross-compare-plan` supersedes it.** Two architects from different
+  vendors draft independently from one brief, cross-critique, revise under
+  critique, and a blind synthesizer merges the result. Both architects read
+  the repository, so neither critique is made blind. For a settled framing
+  that only needs sizing discipline, `/orchestra-plan` remains the cheap pass.
+- **No lane bills a metered API any more.** The `codex` pack now requires the
+  Codex CLI alone (authenticated by `codex login` or `OPENAI_API_KEY`);
+  `OPENAI_API_KEY` is no longer a hard requirement of any capability, only one
+  of two ways to authenticate the CLI.
+- **Coverage moved rather than shrank.** The MCP lane suite still pins the
+  exact tool roster — now four tools — and the wedged-runner backstop check
+  that ran against the deep-plan runner now runs against the cross-compare
+  runner. The deleted lane's own case is gone with the lane; both behaviours
+  it pinned (a runner's `*_UNAVAILABLE` relayed as a report rather than a
+  transport error, and a missing attachment file refused before any spawn)
+  are already covered on the cross-compare lane.
 ## 1.13.0 — cross-compare hardening from the first field run
 
 `/cross-compare-plan`'s first full field test (2026-08-27/28) finished its

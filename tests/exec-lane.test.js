@@ -771,7 +771,6 @@ function case17() {
     ['packs/codex/agents/executor-codex.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/executor-codex-heavy.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/reviewer-codex.md', 'mcp__orchestra-engine__orchestra_review'],
-    ['packs/codex/agents/planner-gpt.md', 'mcp__orchestra-engine__orchestra_deepplan'],
   ];
   for (const [rel, tool] of launchers) {
     const text = fs.readFileSync(path.join(MASTER, rel), 'utf8');

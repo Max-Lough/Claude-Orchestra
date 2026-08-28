@@ -20,7 +20,7 @@ and no files it did not ask for.
 
 | Pack | What it adds | Needs |
 |---|---|---|
-| `codex` | Cross-vendor review (`reviewer-codex` → Codex CLI) and the two-model `/deep-plan` roundabout (`planner-gpt` → OpenAI API) | Codex CLI and/or `OPENAI_API_KEY` |
+| `codex` | Cross-vendor review (`reviewer-codex` → Codex CLI) and the two-architect `/cross-compare-plan` session (`architect-codex` → Codex CLI) | Codex CLI (`codex login` or `OPENAI_API_KEY`) |
 
 ## Layout contract
 
@@ -57,7 +57,7 @@ Everything except `name` is optional.
 
 1. **Degrade, never fail.** A pack's runner must never crash the harness when
    its dependency is absent. Return an explicit `*_UNAVAILABLE` verdict with
-   the reason, exactly as `orchestra-review.js` and `orchestra-deepplan.js` do
+   the reason, exactly as `orchestra-review.js` and `orchestra-crossplan.js` do
    — a capability that could not run must never read as a success.
 2. **Nothing outside the harness may hard-depend on a pack.** The protocol,
    the guard, and the core agents must all work with zero packs installed.

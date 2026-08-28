@@ -145,7 +145,7 @@ const FIXTURE_RUNNERS = (() => {
     'process.exit(0);\n' // exit 0, no stdout at all
   );
   fs.writeFileSync(
-    path.join(bad, 'orchestra-deepplan.js'),
+    path.join(bad, 'orchestra-crossplan.js'),
     'setInterval(() => {}, 1000); // wedge forever; the backstop must fire\n'
   );
   return { empty: path.join(d, 'empty'), bad };
@@ -250,7 +250,7 @@ const EXEC_REPORT = 'STATUS: DONE — reformatted add(), committed.';
 
 // ------------------------------------------------------------------- cases
 
-// 1. The handshake and the tool surface: five tools, correct requireds. A
+// 1. The handshake and the tool surface: four tools, correct requireds. A
 //    launcher can only call what tools/list advertises, so the surface IS the
 //    lane's API.
 async function case1() {
@@ -264,8 +264,8 @@ async function case1() {
   const list = await s.rpc('tools/list');
   const tools = (list.result && list.result.tools) || [];
   const names = tools.map((t) => t.name).sort();
-  check('tools/list names the five lanes',
-    JSON.stringify(names) === JSON.stringify(['orchestra_crossplan', 'orchestra_deepplan', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
+  check('tools/list names the four lanes',
+    JSON.stringify(names) === JSON.stringify(['orchestra_crossplan', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
     JSON.stringify(names));
   const review = tools.find((t) => t.name === 'orchestra_review');
   check('orchestra_review requires work_order and executor_report',
@@ -346,39 +346,10 @@ async function case4() {
   s.close();
 }
 
-// 5. The deep-plan lane degrades inside the RUNNER's grammar, not the
-//    server's: no API key → DEEPPLAN_UNAVAILABLE relayed with isError false —
-//    the transport worked; the engine was unavailable. Those are different
-//    facts and the result must keep them different.
-async function case5() {
-  section('5. orchestra_deepplan relays DEEPPLAN_UNAVAILABLE as a report, not a transport error');
-  const fx = makeRepo();
-  fs.mkdirSync(path.join(fx.repo, '.claude', 'plans'), { recursive: true });
-  fs.writeFileSync(path.join(fx.repo, '.claude', 'plans', 'plan.md'), '# plan\n\n1. do the thing\n');
-  const s = mcpSession({ fx, env: { OPENAI_API_KEY: '' } });
-  await s.start();
-  const res = await s.rpc('tools/call', {
-    name: 'orchestra_deepplan',
-    arguments: { plan_path: '.claude/plans/plan.md', brief: 'Round 1 brief.', round: 1 },
-  }, 120000);
-  const text = resultText(res);
-  check('call is not a transport error', !(res.result && res.result.isError), text.slice(0, 400));
-  check('the runner\'s own sentinel is relayed', /VERDICT: DEEPPLAN_UNAVAILABLE/.test(text), text.slice(0, 600));
-  check('failure header names no engine', /DEEP-PLAN ENGINE: NONE/.test(text), text.slice(0, 400));
-  const missing = await s.rpc('tools/call', {
-    name: 'orchestra_deepplan',
-    arguments: { plan_path: '.claude/plans/no-such-plan.md', brief: 'b', round: 1 },
-  });
-  check('a missing plan file is a transport error before any spawn',
-    missing.result && missing.result.isError && /MCP TRANSPORT ERROR/.test(resultText(missing)),
-    resultText(missing).slice(0, 300));
-  s.close();
-}
-
-// 6. The doctor: exit code is the one meaningful runner exit, so the server
+// 5. The doctor: exit code is the one meaningful runner exit, so the server
 //    surfaces it as data on the first line instead of swallowing it.
-async function case6() {
-  section('6. orchestra_doctor surfaces the exit code as data');
+async function case5() {
+  section('5. orchestra_doctor surfaces the exit code as data');
   const fx = makeRepo();
   const s = mcpSession({ fx });
   await s.start();
@@ -391,11 +362,11 @@ async function case6() {
   s.close();
 }
 
-// 7. The server's own voice. Bad arguments, a missing runner, an abnormal
+// 6. The server's own voice. Bad arguments, a missing runner, an abnormal
 //    exit, an empty stdout, a wedged process — every one is MCP TRANSPORT +
 //    isError, includes the evidence, and never wears an engine's header.
-async function case7() {
-  section('7. transport anomalies speak as MCP TRANSPORT, never as a report');
+async function case6() {
+  section('6. transport anomalies speak as MCP TRANSPORT, never as a report');
   const fx = makeRepo();
 
   const s1 = mcpSession({ fx });
@@ -439,8 +410,8 @@ async function case7() {
     resultText(silent).slice(0, 300));
 
   const wedged = await s3.rpc('tools/call', {
-    name: 'orchestra_deepplan',
-    arguments: { plan_path: 'app.js', brief: 'b', round: 1 },
+    name: 'orchestra_crossplan',
+    arguments: { phase: 'draft', brief: 'b', out_path: 'wedged.md' },
   }, 60000);
   // ORCHESTRA_MCP_BACKSTOP_MS below caps the wedge at 3s.
   check('a wedged runner is killed by the backstop and attributed to THIS SERVER',
@@ -449,11 +420,11 @@ async function case7() {
   s3.close();
 }
 
-// 8. Progress notifications flow when (and only when) the client sends a
+// 7. Progress notifications flow when (and only when) the client sends a
 //    progressToken — the spec's mechanism for a client that resets its
 //    timeout on progress, which is what makes multi-hour chains safe.
-async function case8() {
-  section('8. progress notifications follow the client\'s token');
+async function case7() {
+  section('7. progress notifications follow the client\'s token');
   const fx = makeRepo();
   const s = mcpSession({
     fx,
@@ -484,13 +455,13 @@ async function case8() {
   s2.close();
 }
 
-// 9. The cross-compare lane: a draft phase produces a document saved to
+// 8. The cross-compare lane: a draft phase produces a document saved to
 //    out_path with the integrity line stripped; wrong attachments degrade in
 //    the RUNNER's grammar (CROSSPLAN_UNAVAILABLE, isError false); a missing
 //    attachment file is a transport error before any spawn; and a report that
 //    cannot echo this run's token is refused and NOT saved.
-async function case9() {
-  section('9. orchestra_crossplan saves the document and enforces integrity');
+async function case8() {
+  section('8. orchestra_crossplan saves the document and enforces integrity');
   const fx = makeRepo();
   const OUT = '.claude/plans/cross-compare/test/plan-b-v1.md';
 
@@ -570,7 +541,6 @@ async function main() {
   await case6();
   await case7();
   await case8();
-  await case9();
 }
 
 main().then(finish, (e) => {

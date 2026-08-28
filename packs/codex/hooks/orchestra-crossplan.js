@@ -17,8 +17,7 @@
  * the orchestra-engine MCP server. The Director itself cannot — the guard
  * blocks its Bash — so the cross-vendor exchange stays delegated.
  *
- * Unlike the deep-plan runner (a blind Responses API call), this lane is
- * AGENTIC: the engine explores the project tree first-hand, read-only, within
+ * This lane is AGENTIC: the engine explores the project tree first-hand, read-only, within
  * whatever GROUND TRUTH scope the shared brief grants. Information symmetry
  * with the Claude architect is the design goal — both lanes get the identical
  * brief and the identical scope; what differs is the judgment, not the inputs.

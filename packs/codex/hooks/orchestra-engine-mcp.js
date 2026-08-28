@@ -3,7 +3,7 @@
 /*
  * orchestra-engine — MCP server for the Orchestra codex pack.
  *
- * Exposes the four runners (review / exec / deep-plan / cross-compare) plus
+ * Exposes the three runners (review / exec / cross-compare) plus
  * the install doctor as typed MCP tools, so a launcher agent makes ONE
  * blocking tool call and receives the runner's report as data. This replaces the shell
  * transport — heredoc-to-scratch, run tokens, sentinels, background-and-poll,
@@ -61,7 +61,6 @@ const SCRATCH_BASE = path.join(ROOT, '.claude', 'scratch', 'mcp');
 const RUNNERS = {
   review: path.join(HOOKS_DIR, 'orchestra-review.js'),
   exec: path.join(HOOKS_DIR, 'orchestra-exec.js'),
-  deepplan: path.join(HOOKS_DIR, 'orchestra-deepplan.js'),
   crossplan: path.join(HOOKS_DIR, 'orchestra-crossplan.js'),
 };
 
@@ -90,10 +89,7 @@ function effectiveCapMs(lane, timeoutMsArg) {
   if (lane === 'exec') {
     return num(process.env.ORCHESTRA_EXEC_TIMEOUT_MS) || num(cfg.execTimeoutMs) || 1800000;
   }
-  if (lane === 'crossplan') {
-    return num(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS) || num(cfg.crossplanTimeoutMs) || 900000;
-  }
-  return num(process.env.ORCHESTRA_DEEPPLAN_TIMEOUT_MS) || 900000; // deepplan
+  return num(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS) || num(cfg.crossplanTimeoutMs) || 900000; // crossplan
 }
 
 // The backstop covers the runner's WHOLE chain, not one attempt: a review may
@@ -111,8 +107,7 @@ function backstopMs(lane, capMs) {
     return capMs * (1 + retries) + warmup + 300000;
   }
   if (lane === 'exec') return capMs + 300000; // never auto-retried
-  if (lane === 'crossplan') return capMs + 300000; // one attempt, plus probe margin
-  return capMs + 120000; // deepplan
+  return capMs + 300000; // crossplan — one attempt, plus probe margin
 }
 
 /* ------------------------------------------------------------- scratch -- */
@@ -372,45 +367,6 @@ const TOOLS = [
     },
   },
   {
-    name: 'orchestra_deepplan',
-    description:
-      'Run the Orchestra deep-plan runner: sends the current plan file plus the Director\'s round brief to the ' +
-      'OpenAI planning counterpart and returns its verdict verbatim — VERDICT: APPROVE, or VERDICT: REVISE with ' +
-      'a numbered CRITIQUE and complete UPDATED PLAN (also saved to the path on the RESPONSE SAVED header line). ' +
-      'Blocks until done (default cap 900000 ms; max-effort consultations routinely use most of it). At most two ' +
-      'calls per round; relay a DEEPPLAN_UNAVAILABLE as-is after the second.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        plan_path: { type: 'string', description: 'Path to the plan markdown file (normally under .claude/plans/), relative to the project root or absolute.' },
-        brief: { type: 'string', description: 'The Director\'s round brief — goal, constraints, recon facts, prior-round dispositions — verbatim.' },
-        round: { type: 'number', description: 'Round number (1-based).' },
-        effort: { type: 'string', description: 'Reasoning effort, only when the order names one (default max).' },
-        model: { type: 'string', description: 'Model id, only when the order names one (default gpt-5.6-sol).' },
-        timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one (default 900000).' },
-        max_tokens: { type: 'number', description: 'Output/reasoning token cap, only when the order names one (default 64000).' },
-      },
-      required: ['plan_path', 'brief', 'round'],
-    },
-    handler(id, a, progressToken) {
-      const dir = makeRunDir('deepplan');
-      const planPath = path.isAbsolute(String(a.plan_path || ''))
-        ? String(a.plan_path)
-        : path.join(ROOT, requireString(a, 'plan_path'));
-      if (!fs.existsSync(planPath)) throw new Error(`plan file not found: ${planPath}`);
-      const args = [
-        '--plan', planPath,
-        '--brief', writeInput(dir, 'brief.txt', requireString(a, 'brief')),
-        '--round', String(Math.max(1, Math.floor(Number(a.round) || 1))),
-      ];
-      if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', a.effort);
-      if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
-      if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
-      if (num(a.max_tokens)) args.push('--max-tokens', String(num(a.max_tokens)));
-      runRunner(id, 'deepplan', args, progressToken);
-    },
-  },
-  {
     name: 'orchestra_crossplan',
     description:
       'Run one phase of the Orchestra cross-compare planning lane: an OpenAI model driven by the Codex CLI, ' +
@@ -512,7 +468,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '1.13.0' },
+          serverInfo: { name: 'orchestra-engine', version: '2.0.0' },
         },
       });
       return;

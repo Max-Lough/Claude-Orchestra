@@ -507,8 +507,8 @@ For a harness where each vendor's work is judged by the other two:
 
 GPT-5.6 exposes `max` above `xhigh`, plus `reasoning.mode: pro` on Sol.
 Orchestra's current convention (code tiers stop at `xhigh`; `max` reserved
-for open-ended synthesis — e.g. the deep-plan counterpart runs Sol at `max`)
-transposes cleanly to pi, whose vendor-neutral `ThinkingLevel` ladder
+for open-ended synthesis deliverables, if anywhere) transposes cleanly to pi,
+whose vendor-neutral `ThinkingLevel` ladder
 (`off…xhigh, max`) maps per-model via `thinkingLevelMap`. Two
 OpenAI-specific notes: Agents' Last Exam shows Sol at *medium* effort
 already beating larger-budget rivals — default-effort Sol is not a degraded

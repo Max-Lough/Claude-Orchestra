@@ -1,10 +1,10 @@
 {
   "name": "codex",
   "title": "Codex / GPT cross-vendor interface",
-  "summary": "Adds the OpenAI-backed half of the harness: cross-vendor code review through the Codex CLI, opt-in OpenAI executors (Terra standard tier, Sol heavy tier) through the same CLI, the two-model /deep-plan planning roundabout through the OpenAI API, and the two-architect /cross-compare-plan session (independent drafts, cross-critique, blind synthesis) whose GPT lane runs read-only through the same CLI.",
+  "summary": "Adds the OpenAI-backed half of the harness: cross-vendor code review through the Codex CLI, opt-in OpenAI executors (Terra standard tier, Sol heavy tier) through the same CLI, and the two-architect /cross-compare-plan session (independent drafts, cross-critique, blind synthesis) whose GPT lane runs read-only through the same CLI.",
   "requires": {
     "bin": ["codex (Codex CLI) — for reviewer-codex, the executor-codex tiers, and the cross-compare architect lane"],
-    "env": ["OPENAI_API_KEY or `codex login` — review, execution, and cross-compare", "OPENAI_API_KEY — deep-plan"]
+    "env": ["OPENAI_API_KEY or `codex login` — review, execution, and cross-compare"]
   },
   "notes": [
     "Review engine: set \"reviewEngine\": \"codex\" (or \"dual\") in .claude/orchestra.json.",

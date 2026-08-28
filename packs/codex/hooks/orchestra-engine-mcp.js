@@ -147,6 +147,180 @@ function transportError(id, lines) {
   textResult(id, ['MCP TRANSPORT ERROR (orchestra-engine server, not the engine):', ...lines].join('\n'), true);
 }
 
+/* ------------------------------------------------- in-flight run registry -- */
+
+// JSON-RPC request id -> the run it started. Populated at spawn, cleared in the
+// child's 'close' handler so it cannot leak. Without it the server had no way
+// back from a request id to the process it started, so `notifications/cancelled`
+// had nothing to act on and was discarded — a "stopped" call kept running.
+const IN_FLIGHT = new Map();
+
+// Every request id this server has DISPATCHED A TOOL CALL for, JSON type
+// included — recorded when the call arrives, not when a process starts, so a
+// call that dies in argument validation still counts as an id used here. The
+// loose match in lookupRun consults it; see there for why. Capped oldest-first:
+// a session's request ids are few and short, but nothing here may grow without
+// bound.
+const SEEN_IDS = new Set();
+const SEEN_ORDER = [];
+const SEEN_CAP = 4096;
+const idKey = (v) => `${typeof v}:${String(v)}`;
+
+function rememberId(id) {
+  const k = idKey(id);
+  if (SEEN_IDS.has(k)) return;
+  SEEN_IDS.add(k);
+  SEEN_ORDER.push(k);
+  while (SEEN_ORDER.length > SEEN_CAP) SEEN_IDS.delete(SEEN_ORDER.shift());
+}
+
+function lookupRun(requestId) {
+  if (IN_FLIGHT.has(requestId)) return IN_FLIGHT.get(requestId);
+
+  // Loose match, for a client that echoes an id back with a different JSON type
+  // (request id 7, cancellation "7"). Allowed ONLY when this exact id-and-type
+  // was never used by a tool call here. The exact lookup above misses for any
+  // id no longer in flight — one whose run finished, AND one whose call never
+  // started a run at all (bad arguments, unknown tool, missing runner) — so
+  // without this guard a late cancellation naming a spent numeric 1 would alias
+  // onto a still-running string "1" and kill an unrelated run.
+  if (SEEN_IDS.has(idKey(requestId))) {
+    process.stderr.write(`MCP TRANSPORT: refused a loose id match cancelling ${idKey(requestId)} — that id belongs to a different call here.\n`);
+    return undefined;
+  }
+  let hit;
+  for (const [k, v] of IN_FLIGHT) {
+    if (String(k) !== String(requestId)) continue;
+    if (hit) return undefined; // more than one loose candidate: never guess
+    hit = v;
+  }
+  return hit;
+}
+
+const KILL_GRACE_MS = 3000;        // POSIX SIGTERM -> SIGKILL escalation window
+const TASKKILL_TIMEOUT_MS = 5000;  // taskkill answers in milliseconds or not at all
+
+// Kill the runner AND everything it spawned. The runners drive the Codex CLI
+// with spawnSync, so the engine is a GRANDCHILD of this server (on Windows a
+// great-grandchild, behind a cmd.exe shim): killing the direct child leaves
+// `codex` running (in the exec lane, still editing a workspace-write tree), and
+// the runner cannot help — its event loop is blocked inside spawnSync, so a
+// signal handler there could never fire.
+//   Windows: taskkill /T walks the OS process tree.
+//   POSIX:   the runner leads its own process group (spawn detached), so the
+//            group is signalled as one, SIGTERM then SIGKILL.
+// Always records what it actually did in run.killOutcome / run.treeConfirmed:
+// the transport reports the outcome it measured, never a kill it assumed.
+// `immediate` is for teardown, where no timer can fire and there is nothing to
+// be polite about.
+function killTree(run, immediate) {
+  const child = run && run.child;
+  if (!child || !child.pid) return;
+  if (child.exitCode !== null || child.signalCode !== null) {
+    // Raced with the run ending on its own. Say so — claiming a kill that never
+    // happened is a false statement in the transport's authoritative voice.
+    if (!run.killOutcome) {
+      run.killOutcome = 'the runner had already exited on its own; there was nothing left to kill';
+      run.treeConfirmed = true;
+    }
+    return;
+  }
+  const pid = child.pid;
+
+  if (process.platform === 'win32') {
+    let ok = false, detail = '';
+    try {
+      const r = spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'],
+        { windowsHide: true, timeout: TASKKILL_TIMEOUT_MS, encoding: 'utf8' });
+      // spawnSync REPORTS failure rather than throwing: a missing taskkill, a
+      // non-zero status and a timeout all arrive in the result object. Not
+      // reading it is how a failed tree-kill gets reported as a successful one.
+      if (r.error) detail = `taskkill could not run: ${r.error.message}`;
+      else if (r.status !== 0) {
+        const firstLine = String(r.stderr || '').trim().split(/\r?\n/)[0];
+        detail = `taskkill exited ${r.status}${firstLine ? ': ' + firstLine : ''}`;
+      } else ok = true;
+    } catch (e) {
+      detail = `taskkill threw: ${e.message}`;
+    }
+    try { child.kill('SIGKILL'); } catch (_) { /* already gone */ }
+    run.treeConfirmed = ok;
+    run.killOutcome = ok
+      ? `taskkill /PID ${pid} /T /F killed the process tree`
+      : `taskkill /T /F did NOT confirm the kill (${detail}); only the direct runner process could be signalled`;
+    return;
+  }
+
+  const signalGroup = (sig) => {
+    try { process.kill(-pid, sig); return true; } catch (e) {
+      if (e && e.code === 'ESRCH') return true; // the whole group is already gone
+      try { child.kill(sig); } catch (__) { /* already gone */ }
+      return false;
+    }
+  };
+
+  if (immediate) {
+    const ok = signalGroup('SIGKILL');
+    run.treeConfirmed = ok;
+    run.killOutcome = ok
+      ? `SIGKILL to process group ${pid}`
+      : `the process group could not be signalled; only the direct runner process was`;
+    return;
+  }
+
+  const grouped = signalGroup('SIGTERM');
+  run.treeConfirmed = grouped;
+  run.killOutcome = grouped
+    ? `SIGTERM to process group ${pid}, SIGKILL escalation armed (${KILL_GRACE_MS}ms)`
+    : `the process group could not be signalled; only the direct runner process was — a descendant engine may survive`;
+
+  // The escalation is armed once and is NEVER cleared — not by the runner's own
+  // 'close', not by anything. The runner dies on SIGTERM within milliseconds; a
+  // descendant that ignores or slow-handles SIGTERM outlives it, so clearing
+  // this timer when the runner closes would disarm the sweep in precisely the
+  // case it exists for. It is unref'd, so an armed sweep never holds the server
+  // open, and signalling a group with no members is a harmless ESRCH.
+  if (!run.killTimer) {
+    run.killTimer = setTimeout(() => signalGroup('SIGKILL'), KILL_GRACE_MS);
+    if (typeof run.killTimer.unref === 'function') run.killTimer.unref();
+  }
+}
+
+// A client asked to cancel a request. If it is still in flight, kill its whole
+// process tree; the child's 'close' handler then resolves the request the same
+// way the kill-backstop does, so the caller gets a coherent MCP TRANSPORT
+// result instead of a hang.
+function cancelRun(requestId, reason) {
+  const run = lookupRun(requestId);
+  if (!run) return; // already finished, or never one of ours — nothing to do
+  run.cancelled = true;
+  run.cancelReason = (typeof reason === 'string' && reason.trim()) ? reason.trim() : '';
+  killTree(run);
+}
+
+// Teardown. Nothing this server started may outlive it: the POSIX detach above
+// takes the runner out of the server's process group, so a terminal's
+// SIGINT/SIGHUP no longer reaches the runner and the engine on its own — the
+// server has to pass it on. Runs on paths where no timer can fire ('exit' in
+// particular), so it signals with SIGKILL immediately rather than arming an
+// escalation nothing would ever run.
+function drainInFlight() {
+  for (const run of IN_FLIGHT.values()) {
+    try { killTree(run, true); } catch (_) { /* best effort; we are leaving */ }
+  }
+  IN_FLIGHT.clear();
+}
+process.on('exit', drainInFlight); // also covers stdin 'end', which exits through here
+// Handling these replaces the default disposition, so the server now exits 0 on
+// a signal where it previously exited 128+signal. Nothing reads this process's
+// exit code (it is an MCP stdio server, not a runner whose status is a verdict),
+// and draining is worth more than the code.
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+  try {
+    process.on(sig, () => { drainInFlight(); process.exit(0); });
+  } catch (_) { /* signal not supported on this platform */ }
+}
+
 /* --------------------------------------------------------- runner spawn -- */
 
 const OUTPUT_CAP = 4 * 1024 * 1024; // per stream; a runner report is a few KB
@@ -172,11 +346,19 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
       env: Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: ROOT }, extraEnv || {}),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
+      // POSIX only: lead a process group, so killTree can signal the runner AND
+      // the engine it blocks on as one unit. Windows walks the tree with
+      // taskkill /T instead and needs no detach. stdio stays piped either way,
+      // and the child is never unref'd, so the run's lifecycle is unchanged.
+      detached: process.platform !== 'win32',
     });
   } catch (e) {
     transportError(id, [`the runner process could not be spawned: ${e.message}`]);
     return;
   }
+
+  const run = { child, cancelled: false, cancelReason: '', killTimer: null, killOutcome: '', treeConfirmed: false };
+  if (id !== undefined && id !== null) IN_FLIGHT.set(id, run); // rememberId happens at dispatch, not here
 
   let out = '', err = '', outTruncated = false, errTruncated = false;
   child.stdout.on('data', (d) => {
@@ -210,26 +392,67 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
   let backstopFired = false;
   const backstopTimer = setTimeout(() => {
     backstopFired = true;
-    try { child.kill('SIGKILL'); } catch (_) { /* already gone */ }
+    // The tree, not the child: the runner blocks on the engine via spawnSync,
+    // so a direct-child kill leaves the engine running (the same defect that
+    // made cancellation silent).
+    killTree(run);
   }, killAfter);
 
   child.on('error', (e) => {
     clearTimeout(backstopTimer); if (progressTimer) clearInterval(progressTimer);
+    if (id !== undefined && id !== null) IN_FLIGHT.delete(id);
+    // A cancellation already owns this request's answer. Staying silent here
+    // keeps ONE response on one JSON-RPC id, and lets the 'close' handler
+    // deliver the accurate one instead of a misleading "failed to launch"
+    // ahead of it. run.killTimer is deliberately NOT cleared — see killTree.
+    if (run.cancelled) return;
     transportError(id, [`the runner process failed to launch or crashed at the OS level: ${e.message}`]);
   });
 
   child.on('close', (code, signal) => {
     clearTimeout(backstopTimer); if (progressTimer) clearInterval(progressTimer);
+    // Registry cleanup lives HERE and only here: node emits 'close' after
+    // 'error' in every case, including a spawn that failed at the OS level, so
+    // this always runs. run.killTimer is deliberately left armed (see killTree)
+    // — the SIGKILL sweep must outlive the runner it was armed for.
+    if (id !== undefined && id !== null) IN_FLIGHT.delete(id);
     const elapsed = Date.now() - started;
     const tail = (s, n) => (s.length > n ? '…' + s.slice(-n) : s);
+    const unconfirmed = 'WARNING: this server could NOT confirm the whole process tree died. A descendant ' +
+      'engine process may still be running — and in the exec lane, still editing the tree. Look for a stray ' +
+      'engine process before starting another run.';
+
+    if (run.cancelled) {
+      // The MCP spec says a receiver SHOULD NOT respond to a cancelled request.
+      // Answering anyway is deliberate: a client that has moved on ignores an
+      // unmatched id, while one still waiting would otherwise hang until its
+      // own timeout with no idea what became of the run.
+      const lines = [
+        `the ${lane} run was CANCELLED by the client (notifications/cancelled) after ${elapsed}ms` +
+          (run.cancelReason ? ` — reason: ${run.cancelReason}` : '') +
+          `. THIS SERVER stopped the runner and the engine below it: ${run.killOutcome || 'no kill was required'}.`,
+        'No report exists for this call: the run was stopped, not completed. Treat it exactly as an ' +
+          'unavailable lane — nothing the engine may have produced is a result.',
+        'The engine was killed mid-flight, so whatever it had already written stands: the WORKING TREE MAY BE ' +
+          'HALF-EDITED and no TREE AUDIT exists for this run. Audit the tree before proceeding.',
+      ];
+      if (!run.treeConfirmed) lines.push(unconfirmed);
+      lines.push(`runner stdout tail:\n${tail(out, 4000) || '(empty)'}`);
+      lines.push(`runner stderr tail:\n${tail(err, 2000) || '(empty)'}`);
+      transportError(id, lines);
+      return;
+    }
 
     if (backstopFired) {
-      transportError(id, [
+      const lines = [
         `the ${lane} runner exceeded the server's kill-backstop (${killAfter}ms; runner cap ${capMs}ms) and was killed by THIS SERVER after ${elapsed}ms.`,
         'This is a runner-process anomaly: the runner\'s own timer should always fire first.',
-        `runner stdout tail:\n${tail(out, 4000) || '(empty)'}`,
-        `runner stderr tail:\n${tail(err, 2000) || '(empty)'}`,
-      ]);
+        `how it was stopped: ${run.killOutcome || 'no kill was required'}.`,
+      ];
+      if (!run.treeConfirmed) lines.push(unconfirmed);
+      lines.push(`runner stdout tail:\n${tail(out, 4000) || '(empty)'}`);
+      lines.push(`runner stderr tail:\n${tail(err, 2000) || '(empty)'}`);
+      transportError(id, lines);
       return;
     }
 
@@ -473,7 +696,17 @@ function handleMessage(line) {
       });
       return;
     }
-    if (method === 'notifications/initialized' || method === 'notifications/cancelled') return;
+    if (method === 'notifications/initialized') return;
+    if (method === 'notifications/cancelled') {
+      // A cancellation is the ONLY thing that can stop a run early. The runner
+      // cannot honour one itself (it is blocked inside spawnSync), and the MCP
+      // server is session-scoped — not a child of the calling agent — so
+      // nothing downstream dies when that agent is stopped. Discarding this
+      // notification is what let a "stopped" call keep editing the tree.
+      const requestId = params && params.requestId;
+      if (requestId !== undefined && requestId !== null) cancelRun(requestId, params && params.reason);
+      return;
+    }
     if (method === 'ping') { send({ jsonrpc: '2.0', id, result: {} }); return; }
     if (method === 'tools/list') {
       send({
@@ -483,6 +716,11 @@ function handleMessage(line) {
       return;
     }
     if (method === 'tools/call') {
+      // Remember the id HERE, at dispatch — before anything can fail. A call
+      // that never reaches a spawn (unknown tool, bad arguments, missing runner)
+      // has still USED this id, so a later cancellation naming it must never be
+      // allowed to loose-match onto a different, live run.
+      if (id !== undefined && id !== null) rememberId(id);
       const tool = TOOLS.find((t) => t.name === (params && params.name));
       if (!tool) {
         send({ jsonrpc: '2.0', id, error: { code: -32602, message: `unknown tool: ${params && params.name}` } });

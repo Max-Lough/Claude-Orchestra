@@ -148,8 +148,57 @@ const FIXTURE_RUNNERS = (() => {
     path.join(bad, 'orchestra-crossplan.js'),
     'setInterval(() => {}, 1000); // wedge forever; the backstop must fire\n'
   );
-  return { empty: path.join(d, 'empty'), bad };
+
+  // A wedge shaped like the REAL runners: it records its own pid, then blocks
+  // its event loop inside spawnSync on a grandchild that records its pid and
+  // wedges — exactly how orchestra-crossplan.js / orchestra-exec.js drive the
+  // Codex CLI. Killing only the server's direct child leaves the grandchild
+  // alive, which is the bug the cancellation path has to close.
+  //
+  // The grandchild IGNORES SIGTERM. That is the whole point: on POSIX the
+  // runner dies on the group's SIGTERM within milliseconds, so a grandchild
+  // that dies on the same signal proves nothing — the test would pass whether
+  // or not the SIGKILL escalation survives the runner's exit. A SIGTERM-deaf
+  // grandchild can only die by escalation, which is what makes case 9 a real
+  // regression test for it. On Windows taskkill /T /F ignores the handler.
+  const tree = path.join(d, 'tree');
+  fs.mkdirSync(tree);
+  const ENGINE_SRC =
+    'process.on("SIGTERM", () => {});' +
+    'require("fs").writeFileSync(process.env.ORCHESTRA_TEST_ENGINE_PIDFILE, String(process.pid));' +
+    'setInterval(() => {}, 1000);';
+  fs.writeFileSync(
+    path.join(tree, 'orchestra-crossplan.js'),
+    [
+      'const fs = require("fs");',
+      'const { spawnSync } = require("child_process");',
+      'fs.writeFileSync(process.env.ORCHESTRA_TEST_RUNNER_PIDFILE, String(process.pid));',
+      'spawnSync(process.execPath, ["-e", ' + JSON.stringify(ENGINE_SRC) + '], { stdio: "ignore" });',
+      '',
+    ].join('\n')
+  );
+
+  return { empty: path.join(d, 'empty'), bad, tree };
 })();
+
+// Is a pid still around? EPERM means it exists but is not ours to signal.
+function alive(pid) {
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+async function waitFor(fn, ms) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    let v;
+    try { v = fn(); } catch (_) { v = null; }
+    if (v) return v;
+    if (Date.now() > deadline) return null;
+    await sleep(50);
+  }
+}
 
 // ------------------------------------------------------------- MCP client
 
@@ -204,17 +253,32 @@ function mcpSession(opts) {
     }
   });
 
-  function rpc(method, params, timeoutMs) {
-    const id = nextId++;
+  // Send a request under a caller-chosen id — the only way to put a STRING id
+  // on the wire, which the id-aliasing cases below need.
+  function rpcWithId(id, method, params, timeoutMs) {
     return new Promise((resolve, reject) => {
       const t = setTimeout(
-        () => reject(new Error('no response to ' + method + ' within ' + (timeoutMs || 120000) + 'ms; server stderr:\n' + stderr)),
+        () => reject(new Error('no response to ' + method + ' (id ' + JSON.stringify(id) + ') within ' +
+          (timeoutMs || 120000) + 'ms; server stderr:\n' + stderr)),
         timeoutMs || 120000
       );
       pending.set(id, (msg) => { clearTimeout(t); resolve(msg); });
       child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params: params || {} }) + '\n');
     });
   }
+
+  function rpc(method, params, timeoutMs) {
+    return rpcWithId(nextId++, method, params, timeoutMs);
+  }
+
+  // Fire-and-forget: notifications carry no id and get no response.
+  function notify(method, params) {
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params: params || {} }) + '\n');
+  }
+
+  // The id the NEXT rpc() call will use — the only way to name a request in a
+  // notifications/cancelled before its response arrives.
+  function peekNextId() { return nextId; }
 
   async function start() {
     const init = await rpc('initialize', {
@@ -232,7 +296,7 @@ function mcpSession(opts) {
   }
   cleanups.push(close);
 
-  return { rpc, start, close, notifications, stderrText: () => stderr };
+  return { rpc, rpcWithId, notify, peekNextId, start, close, notifications, stderrText: () => stderr };
 }
 
 function resultText(msg) {
@@ -522,6 +586,184 @@ async function case8() {
   s2.close();
 }
 
+// 9. Cancellation. Stopping a codex-lane call must stop the ENGINE, not just
+//    the request: the server keeps an id -> child registry, a
+//    notifications/cancelled kills the whole process tree (the runner AND the
+//    grandchild it blocks on inside spawnSync), and the request is resolved in
+//    the server's own MCP TRANSPORT voice instead of hanging until the
+//    backstop. Before this existed the notification was discarded outright and
+//    a "stopped" run kept editing the tree for the rest of its timeout.
+async function case9() {
+  section('9. notifications/cancelled kills the in-flight process TREE');
+  const fx = makeRepo();
+  const pidDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-cancel-'));
+  cleanups.push(() => fs.rmSync(pidDir, { recursive: true, force: true }));
+  const runnerPidFile = path.join(pidDir, 'runner.pid');
+  const enginePidFile = path.join(pidDir, 'engine.pid');
+  const readPid = (p) => { try { return Number(fs.readFileSync(p, 'utf8').trim()) || 0; } catch (_) { return 0; } };
+
+  // Every pid any wedge in this case ever reported, so nothing survives the
+  // suite however the case ends. The fixture's grandchild ignores SIGTERM, so
+  // reap with SIGKILL.
+  const seenPids = [];
+  cleanups.push(() => {
+    for (const pid of seenPids) { try { process.kill(pid, 'SIGKILL'); } catch (_) { /* gone */ } }
+  });
+
+  // No backstop override anywhere in this case: crossplan's default backstop is
+  // 20 minutes away, so anything that resolves in seconds did so because
+  // cancellation worked — not because the old kill-backstop caught it.
+  const s = mcpSession({
+    fx,
+    hooksDir: FIXTURE_RUNNERS.tree,
+    env: {
+      ORCHESTRA_TEST_RUNNER_PIDFILE: runnerPidFile,
+      ORCHESTRA_TEST_ENGINE_PIDFILE: enginePidFile,
+    },
+  });
+  await s.start();
+
+  const WEDGE_ARGS = { name: 'orchestra_crossplan', arguments: { phase: 'draft', brief: 'b', out_path: 'cancelled.md' } };
+
+  // Start a wedged run and wait until both its processes exist. `id` may be any
+  // JSON-RPC id; omit it to take the session's next numeric one.
+  async function startWedge(id) {
+    for (const f of [runnerPidFile, enginePidFile]) { try { fs.rmSync(f, { force: true }); } catch (_) { /* fine */ } }
+    const rid = id === undefined ? s.peekNextId() : id;
+    const promise = (id === undefined
+      ? s.rpc('tools/call', WEDGE_ARGS, 45000)
+      : s.rpcWithId(id, 'tools/call', WEDGE_ARGS, 45000)
+    ).then((m) => ({ ok: true, m }), (e) => ({ ok: false, e }));
+    const up = await waitFor(() => (readPid(runnerPidFile) && readPid(enginePidFile)) ? true : null, 30000);
+    const runnerPid = readPid(runnerPidFile);
+    const enginePid = readPid(enginePidFile);
+    for (const pid of [runnerPid, enginePid]) if (pid) seenPids.push(pid);
+    return { id: rid, promise, up, runnerPid, enginePid };
+  }
+
+  // --- 9a. the crux: a cancelled run's whole tree dies, and the request answers.
+  const w = await startWedge();
+  check('the wedged runner and its SIGTERM-ignoring grandchild both started', !!w.up,
+    'runner=' + w.runnerPid + ' engine=' + w.enginePid);
+  check('the grandchild engine is a DIFFERENT process from the runner',
+    !!w.runnerPid && !!w.enginePid && w.runnerPid !== w.enginePid,
+    'runner=' + w.runnerPid + ' engine=' + w.enginePid);
+
+  s.notify('notifications/cancelled', { requestId: w.id, reason: 'stopped by the user' });
+
+  const res = await w.promise;
+  check('the cancelled request is RESOLVED, not left hanging', res.ok,
+    res.ok ? '' : String((res.e && res.e.message) || res.e).slice(0, 300));
+  const text = res.ok ? resultText(res.m) : '';
+  check('the resolution is the server\'s own MCP TRANSPORT voice, marked isError',
+    res.ok && res.m.result && res.m.result.isError === true && /^MCP TRANSPORT ERROR/.test(text),
+    text.slice(0, 300));
+  check('the resolution says the run was cancelled and no report exists',
+    /CANCELLED by the client/.test(text) && /No report exists for this call/.test(text), text.slice(0, 400));
+  check('the cancellation reason is carried through', /stopped by the user/.test(text), text.slice(0, 400));
+  check('it is NOT mislabelled as the kill-backstop', !/kill-backstop/.test(text), text.slice(0, 400));
+  // A killed engine leaves no TREE AUDIT, so the caller has to be told the tree
+  // is unaudited — that is the one sentence a launcher must relay upward.
+  check('the resolution warns the working tree may be half-edited and unaudited',
+    /WORKING TREE MAY BE HALF-EDITED/.test(text) && /Audit the tree/.test(text), text.slice(0, 900));
+  // The transport must describe the kill it actually performed, never assume one.
+  check('the resolution names the mechanism that actually stopped the tree',
+    process.platform === 'win32'
+      ? /taskkill \/PID \d+ \/T \/F killed the process tree/.test(text)
+      : /SIGTERM to process group \d+, SIGKILL escalation armed/.test(text),
+    text.slice(0, 900));
+  check('a confirmed tree-kill carries no could-NOT-confirm warning',
+    !/could NOT confirm/.test(text), text.slice(0, 900));
+
+  // The crux. The grandchild ignores SIGTERM, so on POSIX it can ONLY die by the
+  // SIGKILL escalation surviving the runner's own exit — the defect that shipped
+  // green the first time round. Poll: escalation is 3s, taskkill reaps async.
+  const engineGone = await waitFor(() => (!alive(w.enginePid) ? true : null), 20000);
+  check('the SIGTERM-ignoring grandchild ENGINE was killed (escalation survives the runner\'s exit)',
+    !!engineGone, 'engine pid ' + w.enginePid + ' still alive 20s after cancellation');
+  const runnerGone = await waitFor(() => (!alive(w.runnerPid) ? true : null), 20000);
+  check('the runner process was killed', !!runnerGone, 'runner pid ' + w.runnerPid + ' still alive');
+
+  // --- 9b. a client that echoes the id with a different JSON type still cancels.
+  const echo = await startWedge();
+  check('the loose-match wedge started', !!echo.up, 'runner=' + echo.runnerPid);
+  s.notify('notifications/cancelled', { requestId: String(echo.id), reason: 'string echo of a numeric id' });
+  const echoRes = await echo.promise;
+  check('a cancellation echoing a numeric id AS A STRING still cancels the right run',
+    echoRes.ok && /CANCELLED by the client/.test(resultText(echoRes.m)),
+    echoRes.ok ? resultText(echoRes.m).slice(0, 200) : String((echoRes.e && echoRes.e.message) || echoRes.e).slice(0, 200));
+  await waitFor(() => (!alive(echo.enginePid) ? true : null), 20000);
+
+  // --- 9c. ...but a RETIRED id must never alias onto a live one. Sequence:
+  // numeric N ran and finished (9a); a different request now holds the string
+  // id "N"; a late cancellation for numeric N must kill NOTHING.
+  const victim = await startWedge(String(w.id));
+  check('a second run is in flight under the STRING form of a completed id', !!victim.up,
+    'runner=' + victim.runnerPid);
+  s.notify('notifications/cancelled', { requestId: w.id, reason: 'late cancel of the completed numeric id' });
+  const raced = await Promise.race([victim.promise, sleep(6000).then(() => 'still-running')]);
+  check('a completed numeric id does NOT cancel the live run holding its string form',
+    raced === 'still-running',
+    'the unrelated run was resolved: ' + (raced === 'still-running' ? '' : JSON.stringify(raced).slice(0, 300)));
+  check('...and that run\'s engine is untouched', alive(victim.enginePid),
+    'engine pid ' + victim.enginePid + ' was killed by an aliased cancellation');
+
+  // Its own id still stops it — the guard narrows the match, it does not break it.
+  s.notify('notifications/cancelled', { requestId: String(w.id), reason: 'its own id' });
+  const victimRes = await victim.promise;
+  check('the run stops when cancelled under its OWN id',
+    victimRes.ok && /CANCELLED by the client/.test(resultText(victimRes.m)),
+    victimRes.ok ? resultText(victimRes.m).slice(0, 200) : String((victimRes.e && victimRes.e.message) || victimRes.e).slice(0, 200));
+  const victimGone = await waitFor(() => (!alive(victim.enginePid) ? true : null), 20000);
+  check('its engine dies too', !!victimGone, 'engine pid ' + victim.enginePid + ' still alive');
+
+  // --- 9e. the same wrong-run kill through the PRE-SPAWN door. An id whose call
+  // died in argument validation never started a process — but it was still an id
+  // used here, so it must not be loose-matchable onto a live run either. This is
+  // why the id is remembered at DISPATCH rather than after a successful spawn.
+  const preSpawnId = s.peekNextId();
+  const badArgs = await s.rpc('tools/call', {
+    name: 'orchestra_crossplan',
+    arguments: { phase: 'draft', out_path: 'never-spawned.md' }, // no brief: fails requireString
+  }, 30000);
+  check('a tools/call that fails argument validation never reaches a spawn',
+    badArgs.result && badArgs.result.isError &&
+      /could not be started/.test(resultText(badArgs)) && /brief/.test(resultText(badArgs)),
+    resultText(badArgs).slice(0, 300));
+
+  const victim2 = await startWedge(String(preSpawnId));
+  check('a run is in flight under the STRING form of that pre-spawn-failed id', !!victim2.up,
+    'runner=' + victim2.runnerPid);
+  s.notify('notifications/cancelled', { requestId: preSpawnId, reason: 'late cancel of an id that never spawned' });
+  const raced2 = await Promise.race([victim2.promise, sleep(6000).then(() => 'still-running')]);
+  check('an id that failed BEFORE spawn cannot cancel the live run holding its string form',
+    raced2 === 'still-running',
+    'the unrelated run was resolved: ' + (raced2 === 'still-running' ? '' : JSON.stringify(raced2).slice(0, 300)));
+  check('...and that run\'s engine is untouched too', alive(victim2.enginePid),
+    'engine pid ' + victim2.enginePid + ' was killed by an aliased cancellation');
+  // A refusal that says nothing anywhere is a refusal nobody can diagnose in
+  // the field. It belongs on stderr — stdout is the JSON-RPC channel.
+  check('a refused loose match leaves a diagnosable note on the server\'s stderr',
+    /refused a loose id match/.test(s.stderrText()), JSON.stringify(s.stderrText().slice(-300)));
+
+  s.notify('notifications/cancelled', { requestId: String(preSpawnId), reason: 'its own id' });
+  const v2res = await victim2.promise;
+  check('...and it still stops under its OWN id',
+    v2res.ok && /CANCELLED by the client/.test(resultText(v2res.m)),
+    v2res.ok ? resultText(v2res.m).slice(0, 200) : String((v2res.e && v2res.e.message) || v2res.e).slice(0, 200));
+  await waitFor(() => (!alive(victim2.enginePid) ? true : null), 20000);
+
+  // --- 9d. registry hygiene: entries are gone, so repeats and nonsense are no-ops.
+  s.notify('notifications/cancelled', { requestId: w.id, reason: 'again' });
+  s.notify('notifications/cancelled', { requestId: 987654, reason: 'never existed' });
+  s.notify('notifications/cancelled', {});
+  s.notify('notifications/initialized', {});
+  const pong = await s.rpc('ping', {}, 10000);
+  check('the server survives repeat/unknown/malformed cancellations and initialized',
+    pong.result && !pong.error, JSON.stringify(pong).slice(0, 200));
+  s.close();
+}
+
 // ------------------------------------------------------------------- driver
 
 function finish() {
@@ -541,6 +783,7 @@ async function main() {
   await case6();
   await case7();
   await case8();
+  await case9();
 }
 
 main().then(finish, (e) => {

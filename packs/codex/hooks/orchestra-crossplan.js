@@ -22,6 +22,12 @@
  * whatever GROUND TRUTH scope the shared brief grants. Information symmetry
  * with the Claude architect is the design goal — both lanes get the identical
  * brief and the identical scope; what differs is the judgment, not the inputs.
+ * That symmetry includes research capability: web search is enabled for this
+ * lane BY DEFAULT (`-c tools.web_search=true`), mirroring the web tools the
+ * Claude architect charters carry — and, like the Claude lane's, its USE is
+ * governed by the brief's GROUND TRUTH grant, not by the toolbox. Opt out
+ * with --no-web, ORCHESTRA_CROSSPLAN_WEB=0, or "codex": { "crossplanWeb":
+ * false }; the provenance header records the setting either way.
  *
  * Anonymity is part of the charter: the produced documents carry no mention of
  * any AI system, vendor, or model — the synthesizer that later merges the two
@@ -32,6 +38,7 @@
  *   node orchestra-crossplan.js --phase draft|critique|revise --brief <file>
  *     --out <file> [--own-plan <file>] [--rival-plan <file>] [--critique <file>]
  *     [--model <id>] [--effort <level>] [--timeout-ms <n>] [--no-probe]
+ *     [--no-web]
  *
  * --brief       the Director's SHARED brief (goal, done-criteria, constraints,
  *               GROUND TRUTH scope) — identical for both architects, verbatim
@@ -51,15 +58,18 @@
  *   ORCHESTRA_CROSSPLAN_MODEL       model id (default "gpt-5.6-sol")
  *   ORCHESTRA_CROSSPLAN_EFFORT      reasoning effort, passed to codex as
  *                                    `-c model_reasoning_effort=<v>`
- *                                    (default "high"; the skill offers xhigh)
+ *                                    (default "high"; the skill offers xhigh and max)
  *   ORCHESTRA_CROSSPLAN_TIMEOUT_MS  wall-clock cap (default 900000)
+ *   ORCHESTRA_CROSSPLAN_WEB         0 disables the engine's web search
+ *                                    (default on — research symmetry with
+ *                                    the Claude lane; also --no-web)
  *   ORCHESTRA_CROSSPLAN_ARGS        extra `codex exec` args (resume/continue
  *                                    tokens are refused — fresh session law)
  *   ORCHESTRA_CROSSPLAN_PROBE       0 disables the stage-a echo probe
  *   CODEX_BIN / ORCHESTRA_CODEX_HELPERS  shared with the review/exec lanes
  *   .claude/orchestra.json → "codex": { crossplanModel, crossplanEffort,
- *     crossplanTimeoutMs, authProbe, probeTimeoutMs, helpersDir,
- *     integrityIgnore, integrityIgnoreDefaults }
+ *     crossplanTimeoutMs, crossplanWeb, authProbe, probeTimeoutMs,
+ *     helpersDir, integrityIgnore, integrityIgnoreDefaults }
  */
 'use strict';
 
@@ -107,6 +117,8 @@ const CONFIG = {
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   gitIsolation: process.env.ORCHESTRA_CROSSPLAN_GIT_ISOLATION !== '0',
   probe: process.env.ORCHESTRA_CROSSPLAN_PROBE !== '0',
+  web: true,
+  webSource: 'default',
   probeTimeoutMs: intOr(process.env.ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS, 90000),
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
@@ -134,6 +146,7 @@ function parseArgs(argv) {
     else if (a === '--effort') out.effort = argv[++i];
     else if (a === '--timeout-ms') out.timeoutMs = argv[++i];
     else if (a === '--no-probe') out.noProbe = true;
+    else if (a === '--no-web') out.noWeb = true;
     else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
@@ -494,6 +507,10 @@ const COMMON_RULES = [
   'attachments. Where a claim matters and the granted scope cannot verify it,',
   'mark it explicitly as an assumption — never invent repository facts.',
   '',
+  'Web research is permitted ONLY when the brief\'s GROUND TRUTH section',
+  'grants it; when the brief is silent or restricts scope, any web tooling',
+  'goes unused — the brief governs, the toolbox does not.',
+  '',
   'ANONYMITY. Write in neutral technical prose. Never name, hint at, or',
   'allude to which AI system, vendor, or model authored any document in this',
   'exercise — yourself included. Never sign the document, never address the',
@@ -566,6 +583,11 @@ function critiqueCharter() {
     '5. Do not manufacture findings to look thorough, and do not withhold one',
     '   to look agreeable. An empty findings list, argued, is a legitimate',
     '   critique.',
+    '6. Coverage is a contract: every top-level section of the rival plan must',
+    '   be either the subject of at least one finding or explicitly listed',
+    '   under a closing "## Sections examined and found sound" heading with one',
+    '   line saying what was checked. A critique that silently skips sections',
+    '   is an incomplete deliverable.',
     '',
     'Hunt at minimum for: incorrect assumptions; missing dependencies;',
     'unnecessary complexity; feasibility problems; failure modes the plan',
@@ -586,6 +608,9 @@ function critiqueCharter() {
     '## Comparative assessment',
     '<where the rival plan is stronger than your own, and where yours is',
     'stronger — argued with reasons, not asserted; the synthesizer reads this>',
+    '## Sections examined and found sound',
+    '<one line per rival-plan top-level section that drew no finding, saying',
+    'what was checked; omit the heading only if every section drew a finding>',
     '',
     'Write nothing before the document and nothing after it except the',
     'integrity line described below. Do not fence the whole document in a',
@@ -751,6 +776,7 @@ function settingsBits() {
     'phase: ' + (CONFIG.phase || '(none)'),
     'effort: ' + (CONFIG.effort || 'codex default'),
     'sandbox: read-only',
+    'web search: ' + (CONFIG.web ? 'on' : 'off') + ' (' + CONFIG.webSource + ')',
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (re-dispatch is safe — the lane is read-only)',
   ];
@@ -967,7 +993,7 @@ function main() {
       'Usage: node orchestra-crossplan.js --phase draft|critique|revise --brief <file>\n' +
         '         --out <file> [--own-plan <file>] [--rival-plan <file>]\n' +
         '         [--critique <file>] [--model <id>] [--effort <level>]\n' +
-        '         [--timeout-ms <n>] [--no-probe]\n' +
+        '         [--timeout-ms <n>] [--no-probe] [--no-web]\n' +
         '\n' +
         '  Runs one cross-compare consultation phase via an OpenAI model driven\n' +
         '  by the Codex CLI, read-only in the project tree. The produced document\n' +
@@ -1029,6 +1055,18 @@ function main() {
   }
   if (!process.env.ORCHESTRA_CROSSPLAN_PROBE && codexCfg.authProbe != null) {
     CONFIG.probe = codexCfg.authProbe !== false;
+  }
+  // Web search: on by default — research symmetry with the Claude lane, whose
+  // charters carry web tools. Precedence: flag > env > orchestra.json > default.
+  if (args.noWeb) {
+    CONFIG.web = false;
+    CONFIG.webSource = 'flag';
+  } else if (process.env.ORCHESTRA_CROSSPLAN_WEB != null && process.env.ORCHESTRA_CROSSPLAN_WEB !== '') {
+    CONFIG.web = process.env.ORCHESTRA_CROSSPLAN_WEB !== '0';
+    CONFIG.webSource = 'env';
+  } else if (codexCfg.crossplanWeb != null) {
+    CONFIG.web = codexCfg.crossplanWeb !== false;
+    CONFIG.webSource = 'orchestra.json';
   }
   if (!process.env.ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS && codexCfg.probeTimeoutMs != null) {
     CONFIG.probeTimeoutMs = intOr(codexCfg.probeTimeoutMs, CONFIG.probeTimeoutMs);
@@ -1165,6 +1203,9 @@ function main() {
   const codexArgs = ['exec', '--sandbox', 'read-only', '--cd', CONFIG.projectDir];
   if (CONFIG.model) codexArgs.push('--model', CONFIG.model);
   if (CONFIG.effort) codexArgs.push('-c', 'model_reasoning_effort=' + CONFIG.effort);
+  // Research symmetry with the Claude lane: the capability is on by default in
+  // BOTH lanes; the brief's GROUND TRUTH grant governs whether either uses it.
+  if (CONFIG.web) codexArgs.push('-c', 'tools.web_search=true');
   codexArgs.push('--output-last-message', lastMsgFile);
   if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
   codexArgs.push('-'); // read the brief from stdin

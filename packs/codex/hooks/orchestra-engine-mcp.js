@@ -512,7 +512,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '1.11.0' },
+          serverInfo: { name: 'orchestra-engine', version: '1.13.0' },
         },
       });
       return;

@@ -37,38 +37,33 @@ migration. All 11 audit findings are dispositioned (see its `## Audit dispositio
 - **Gemini/Google lane removed** by owner decision 2026-08-28 (WO-3 withdrawn; native
   video/audio intake given up; exhaustion relief now falls to human sooner).
 
+## Resolved 2026-08-28 (second session)
+
+**1. The three deferred lineup rulings — ruled and applied** (see final-plan.md's "Lineup
+rulings, 2026-08-28 (second session)"): (a) SUPERSEDED by the Conductor re-cast, (b) ADOPTED
+into §5.5, (c) ADOPTED into WO-1 (60%-of-bucket proposed trigger).
+
+**2. Four owner lineup re-casts, applied throughout final-plan.md:**
+- **Conductor = Fable 5, the interactive session model, at owner-set effort** (the session
+  model IS the Conductor; no bootstrap layer); Sol depletion mirror at matched effort.
+- **Opus holds no USER-DIALOGUE seat** — field-observed degradation of its human-facing
+  reporting; re-aimed at goal-directed deep work (I0/I1/E3/E4/E6, reference duty).
+- **Architect defaults to Sol · xhigh**; Fable · high–xhigh for especially complex, nebulous,
+  or ambiguous goals; Opus · high on Codex exhaustion.
+- **Luna · xhigh–max is the Builder's preferred casting** for bounded, short-horizon,
+  fully-specified, deterministically-verifiable orders; Sonnet · med keeps longer/thinner-spec
+  orders; the never-under-specified guardrail survives; WO-12a's trial gate becomes live
+  escape-rate confirmation.
+
+**3. Lab work ported (PR #23):** the `/deep-plan` retirement (lab `392f23a`, reconciled with
+v1.12.0/v1.13.0, stamped v2.0.0 here) and the MCP cancellation fix (in-flight run registry,
+whole-tree kills, measured outcomes; 68 mcp-lane tests pass). The lab's remaining unported
+item is `plans/proposed-orchestra-improvements.md` (already copied here) — deferred backlog,
+proposed, not scheduled. The lab is now fully ported and can be deleted.
+
 ## Open items for the next session
 
-**1. Three lineup rulings (owner review pending — listed at the end of final-plan.md's
-Audit dispositions, NOT yet applied):**
-- (a) Conductor effort split by turn type — intake/arbitration at high, relay turns at
-  medium; currently the medium-effort Conductor self-assesses ambiguity (circular).
-- (b) An explicit §5.5 statement that removing the Gemini lane makes pool-exhaustion states
-  fall back to the human operator sooner — owned as a conscious trade.
-- (c) An Opus-concentration watch: WO-1 measures the AU-O fraction drawn by the I0/I1/E3/E4
-  mix; if high, deliberate Detective/Investigator rotation to the Sol mirror.
-
-**2. Lab-unique work that has NOT been ported to this repo** (the lab made its own commits
-during the session; nothing below exists on `main` here — decide, then port deliberately):
-- **`/deep-plan` retirement (lab commit `392f23a`, stamped v2.0.0 in the lab).** The lab
-  session retired the deep-plan skill on the strength of final-plan.md §6.3/§6.4 (one
-  Architect contract; the metered API transport violates the subscription-only basis,
-  WO-13). Porting it will conflict lightly with this repo's v1.13.0 SKILL.md changes and
-  needs its own version decision (the lab called it 2.0.0). Reviewed APPROVE in the lab
-  after one REVISE round (version stamps).
-- **MCP cancellation fix (UNCOMMITTED in the lab: `packs/codex/hooks/orchestra-engine-mcp.js`
-  +250, `tests/mcp-lane.test.js` +253).** Honors `notifications/cancelled` by killing the
-  child process via an in-flight run registry; motivated by the orphaned Codex run during
-  the session (a "stopped" call kept running — judged the one finding with a live safety
-  consequence). Must be reconciled with this repo's 1.13.0 engine changes when ported.
-- **`plans/proposed-orchestra-improvements.md`** (copied here) — deferred backlog: P1
-  harvest the ledger from logs instead of hand-writing it, P2 name the Codex rollout on
-  every runner report, P3 commission the missing verification manifest. Proposed, not
-  scheduled.
-- The lab's web-tools commit (`f4ab59e`) is superseded by this repo's v1.13.0 (which does
-  the same more completely); nothing to port.
-
-**3. Plan execution (sequencing per final-plan.md `## Orders`):**
+**Plan execution (sequencing per final-plan.md `## Orders`):**
 - **WO-1 + WO-2 are ready to run** — `probes/RUNBOOK.md` in this repo (telemetry hook
   validated; review-throughput probe dry-run validated; nothing billed yet). WO-3 withdrawn.
 - Then **WO-7a** (40-request paper classification corpus) before any schema work (WO-4).
@@ -78,5 +73,8 @@ during the session; nothing below exists on `main` here — decide, then port de
 ## Related PRs
 
 - PR #21 — `/cross-compare-plan` max effort rung + field-test hardening (v1.12.0, v1.13.0).
-- PR (this branch) — the session record, the revised final plan, the probes, and the two
-  research reports the session used.
+- PR #22 — the session record, the revised final plan, the probes, and the two research
+  reports the session used.
+- PR #23 — the lab ports: `/deep-plan` retirement (v2.0.0) + MCP cancellation fix.
+- PR (this branch) — the 2026-08-28 second-session lineup rulings applied to final-plan.md,
+  STATUS.md, and the probe runbook.

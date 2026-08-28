@@ -178,16 +178,23 @@ owning exactly one task class.
 - **Purpose.** Convert intake into classified work orders, castings, risk tiers, review paths and
   budgets; arbitrate verdicts; gate irreversible actions; talk to the user; decide everything and
   build nothing.
-- **Casting.** Primary Anthropic · Claude Opus 5 · medium (high only for ambiguous or
-  irreversible classification). **Depletion mirror** OpenAI · GPT-5.6 Sol · medium, activated
-  from a signed control checkpoint. Never Fable (rationed, latency-unpredictable, thinking
-  non-disableable), never any cheap tier (judgment seat, P4).
-- **Rationale.** The dossier's alignment evidence: lowest measured misaligned-behaviour score in
-  the roster (2.3), strongest pushback on unsound premises, most careful with irreversible
-  effects, freshest cutoff (May 2026). Direction is the one unreviewed output in the system, so
-  calibration outranks ceiling — and Fable's 50% weekly sub-cap (Max seats; usage-credits-only
-  below Max) makes it the wrong model to spend on turn-by-turn routing. Effort medium because
-  adaptive thinking at high overthinks short routing turns.
+- **Casting.** Primary Anthropic · Claude Fable 5, cast as the interactive session model
+  itself — the Conductor IS the session; there is no bootstrap layer between them. Effort is
+  chosen by the owner at session launch (medium / high / xhigh by task), which also resolves
+  the self-assessed-ambiguity circularity the audit flagged (open item (a), superseded).
+  **Depletion mirror** OpenAI · GPT-5.6 Sol at the effort matching the Fable seat (or as the
+  owner directs), activated from a signed control checkpoint. Never Opus (owner ruling
+  2026-08-28: Opus holds no USER-DIALOGUE seat — see the lineup rulings in the Audit
+  dispositions), never any cheap tier (judgment seat, P4).
+- **Rationale.** Re-cast by owner ruling 2026-08-28, superseding the merge's Opus choice. The
+  original casting weighed the dossier's alignment evidence (calibration outranks ceiling on
+  the one unreviewed seat); field observation added what the dossier never measured: the
+  Conductor's core function is USER-DIALOGUE, and Opus's human-facing reporting degrades into
+  dense, garbled prose a human cannot reliably distill. The ration objection to Fable
+  dissolves with the same day's Architect re-cast — a Sol-default A0 frees most of the Fable
+  budget for the one seat that talks to the owner. The calibration requirements themselves
+  (no-overturn rule, authority restraint, T3 refusal) carry over to the Fable casting
+  unchanged.
 - **Tools.** READ (user-handed files, agent artifacts, harness config, plan files), WRITE-DOC
   (plans/memory), SPAWN, USER-DIALOGUE. No SEARCH, EXECUTE, WRITE-TREE. Shape: `packet` + plan.
 - **Strengths.** Decomposition, rejecting bad premises, authority restraint, integration,
@@ -214,16 +221,24 @@ owning exactly one task class.
 
 - **Purpose.** Turn a goal into a plan — decomposition, sequencing, acceptance criteria, risk
   ordering — and produce system architecture and novel-algorithm designs without implementing.
-- **Casting.** Primary Anthropic · Claude Fable 5 · high — **conditional on a Max-or-above
-  Anthropic seat**; below Max the primary is Opus 5 · high (Fable runs on metered usage credits
-  there, outside the deployment basis). Mirror OpenAI · GPT-5.6 Sol · high (also the second lane
-  of a comparative session). Ceiling Fable · xhigh / Sol · max, comparative sessions only.
+- **Casting.** Primary OpenAI · GPT-5.6 Sol · xhigh (owner ruling 2026-08-28). Anthropic ·
+  Claude Fable 5 · high–xhigh when the goal is especially complex, nebulous, or the objective
+  itself is ambiguous (owner judgment at intake; conditional on a Max-or-above Anthropic seat
+  as before — below Max, Fable runs on metered usage credits, outside the deployment basis).
+  Fallback Anthropic · Claude Opus 5 · high when the Codex allowance is exhausted. Mirror: the
+  opposite family of whichever primary is cast (a comparative session still runs two lanes).
+  Ceiling Fable · xhigh / Sol · max, comparative sessions only.
 - **Rationale.** Open-ended synthesis is where the Anthropic lead is broadest and best-measured:
   SWE-bench Pro sign (~80 vs Sol 64.6 — magnitude discounted, direction corroborated by
   CursorBench peak and Senior SWE-bench #1), HLE 55.5, GDPval-AA lead. Plan errors compound
   through every later round (P14), which is exactly where to spend. Sol mirrors on genuinely
   different strengths (Agent's Last Exam +13 over Fable — workflow decomposition vs
-  architectural judgment); two lanes disagreeing is the point of a comparative session.
+  architectural judgment); two lanes disagreeing is the point of a comparative session. Owner
+  re-cast 2026-08-28: Sol takes the default because plan authorship by the OpenAI lane draws
+  its mandatory cross-family review from the Anthropic pool — the side 5.3's arithmetic shows
+  has slack — while freeing the Fable ration for the Conductor seat and reserving Fable for
+  exactly the nebulous/ambiguous ceiling cases the Anthropic evidence above supports; the
+  security-planning route-filter to Sol becomes the default path rather than an exception.
 - **Tools.** READ, SEARCH, NETWORK, WRITE-DOC (plans only). Shape: `repo` + `haystack`.
 - **Strengths.** Highest single-mind ceiling; long-horizon coherence; wants goals and
   constraints, not scripts.
@@ -505,11 +520,16 @@ the report is a claim, not evidence.
 
 - **Purpose.** Implement a well-scoped change behind a written spec — feature, fix, integration,
   or a confirmed bounded performance improvement — in one run and one review round.
-- **Casting.** Primary Anthropic · Claude Sonnet 5 · medium (high for unusually dense but
-  bounded logic); mirror OpenAI · GPT-5.6 Terra · medium; **budget casting** OpenAI · GPT-5.6
-  Luna · max for fully-specified, deterministically-verifiable orders under pool pressure —
-  single-source community evidence (≈Sol-medium quality at ~1/14th per-task cost), so
-  trial-gated (WO-12a) and never used on anything under-specified.
+- **Casting.** Split by order shape (owner ruling 2026-08-28). **Preferred:** OpenAI · GPT-5.6
+  Luna · xhigh–max for bounded, short-horizon, fully-specified, deterministically-verifiable
+  orders — promoted from trial-gated budget casting on the owner's accumulated field data
+  (cost/performance far above its weight class on exactly this shape; the earlier single-source
+  community figure of ≈Sol-medium quality at ~1/14th per-task cost now corroborated by owner
+  observation). Anthropic · Claude Sonnet 5 · medium (high for unusually dense but bounded
+  logic) for orders expected to run longer or whose spec is thinner than Luna's bar; mirror
+  OpenAI · GPT-5.6 Terra · medium. Luna never receives under-specified work — that guardrail
+  survives the promotion; the WO-12a entry trial becomes confirmation-in-production under the
+  live escape-rate monitoring adopted with audit finding 5.
 - **Rationale.** The volume seat; its economics dominate. Flagship-director-plus-workhorse
   reached ≈96% of all-flagship quality at 46% cost in the one available orchestration study;
   Sonnet and Terra are within ~0.2 points on SWE-bench Pro, so the choice between them is pool
@@ -955,8 +975,9 @@ the report is a claim, not evidence.
   publishes `AU-all`, `AU-opus`, `AU-fable`, and `OU` — per bucket, not per vendor. If WO-1
   falsifies the two-bucket structure, this collapses to one AU and nothing else changes.
 - **The one hard gate a non-judging seat holds.** When `AU-opus` is predicted below reserve, no
-  Opus casting is dispatched — Principal, Detective, Investigator, Data Engineer and the
-  Conductor's own Opus turns re-cast to mirrors or wait. Reason (P15): the failure past that
+  Opus casting is dispatched — Principal, Detective, Investigator and Data Engineer re-cast to
+  mirrors or wait; the same gate on `AU-fable` re-casts the Conductor's own turns to its Sol
+  mirror. Reason (P15): the failure past that
   boundary is silent substitution, not refusal, so the only reliable defense is to stop before
   the boundary. The gate is mechanical; the Conductor decides only which lawful response —
   mirror or wait — applies.
@@ -979,8 +1000,8 @@ the report is a claim, not evidence.
 ```
                               USER  /  human approver (T3)
                                 |
-                          [ CONDUCTOR ]  Opus 5 · medium
-              (Sol · medium mirror, from signed checkpoint, restricted)
+                     [ CONDUCTOR ]  Fable 5 · owner-set effort
+            (Sol mirror at matched effort, from signed checkpoint, restricted)
                                 |
      +------------+------------+---------------+----------------+
      |            |            |               |                |
@@ -1141,8 +1162,8 @@ authorization, never the primary.
 
 | Class | Task class | Signals that select it | Primary role | Primary casting | Reviewer | Escalation path |
 |---|---|---|---|---|---|---|
-| O0 | Direction and arbitration | routing, verdict conflicts, approvals, reporting | **Conductor** | Opus 5 · med (Sol · med mirror) | user; no-overturn rule; cross-family critique for material plans | user decision |
-| A0 | Planning / architecture | goal without steps, "how should we", system design | **Architect** | Fable 5 · high (Opus 5 · high below Max) | cross-family plan critique | ceiling effort → A1 comparative session |
+| O0 | Direction and arbitration | routing, verdict conflicts, approvals, reporting | **Conductor** | Fable 5 · owner-set effort (session model; Sol mirror at matched effort) | user; no-overturn rule; cross-family critique for material plans | user decision |
+| A0 | Planning / architecture | goal without steps, "how should we", system design | **Architect** | Sol · xhigh (Fable 5 · high–xhigh for nebulous/ambiguous goals; Opus 5 · high on Codex exhaustion) | cross-family plan critique | ceiling effort → A1 comparative session |
 | A1 | Comparative adjudication | two credible incompatible plans; framing uncertain | **Synthesizer** | Fable · xhigh / Opus 5 · high / Sol · max | opposite-family ledger completeness check, challenges, and post-composition audit (all mandatory) | unresolved contests → OPEN DECISIONS → user; >4 → re-plan framing |
 | N0 | Fetch / find / lookup | "where is", "list all", history | **Scout** | Haiku · off / Luna · low | Verifier citation replay | re-probe once → I0; truncation → N2/I0 auto |
 | N1 | Deep external research | vendor docs, standards, prior art | **Researcher** | Sol · med | citation checks; Opus 5 · high when decision-bearing | Sol · high → dual-lane at gate class → A0 |
@@ -1152,7 +1173,7 @@ authorization, never the primary.
 | M0 | Document / media intake | PDFs, screenshots, recordings, charts, "read these" | **Archivist** | Terra · med (documents/PDFs/logs/text) / Opus 5 · med (images/charts/renders); raw video/audio → deterministic transcode fallback or UNAVAILABLE | schema validator + consumer; cross-family review for consequential extractions | → E5/I0/N1 by kind |
 | E0 | Terminal / shell ops | build breaks, CI red, toolchain, container — env is the variable | **Operator** | Sol · high | Verifier (mandatory, tree audit) + Opus 5 · high | Sol · max once → Opus 5 · high (strategy stall; WO-12e trial) → re-plan |
 | E1 | Mechanical batch | sweep, matrix, template, uniform codemod, poll | **Runner** | Luna · low–med / Haiku · off | parent spot-check + Verifier oracle; opposite-family diff check if tree-mutating | 2 failures → parent takes it back; non-uniform → E2/E8 |
-| E2 | Routine coding | spec exists, scope known | **Builder** | Sonnet 5 · med (Terra · med mirror; Luna · max trial) | Verifier → computed cross-family (preferred band at T1) | 2 REVISE / CHECKPOINT → E3 → re-plan |
+| E2 | Routine coding | spec exists, scope known | **Builder** | Luna · xhigh–max (bounded, fully-specified) / Sonnet 5 · med (longer or thinner-spec; Terra · med mirror) | Verifier → computed cross-family (preferred band at T1) | 2 REVISE / CHECKPOINT → E3 → re-plan |
 | E3 | Complex long-horizon coding | interlocked subsystems, split-resistant | **Principal** | Opus 5 · high (xhigh point) | cross-family **mandatory** + Verifier; checkpoint reviews | xhigh → Fable · high ceiling → re-plan |
 | E4 | Data / schema work | migration, backfill, ETL, index | **Data Engineer** | Opus 5 · high (Terra · high reversible-T1 only) | cross-family **mandatory** + invariant compare | I1 (locking/perf) → A0; T3 → named human |
 | E5 | Visual / UI work | screenshot, mock, layout, viewport, a11y | **Interface Artisan** | Sol · med–high + browser loop | deterministic checks → Opus 5 closing (read-only) → code review | Fable critic → A0 (design system) |
@@ -1372,9 +1393,13 @@ user. No rung edits the mandatory set.
 
 | Exhausted pool | Control plane | Continues | Blocks |
 |---|---|---|---|
-| Anthropic | Sol · medium Conductor mirror from signed checkpoint (restricted authority) | T0 work; already-classified OpenAI T1 work; OpenAI-authored artifacts reviewable by… nobody same-family — a named human for consequential closure, or wait | New consequential classification; OpenAI T2/T3 closure without an independent family |
-| OpenAI | Opus Conductor remains | T0 work; OpenAI-authored artifacts still reviewable by Anthropic | New Anthropic semantic authorship whose review cannot be scheduled (queue visible, dated) |
+| Anthropic | Sol Conductor mirror at matched effort from signed checkpoint (restricted authority) | T0 work; already-classified OpenAI T1 work; OpenAI-authored artifacts reviewable by… nobody same-family — a named human for consequential closure, or wait | New consequential classification; OpenAI T2/T3 closure without an independent family |
+| OpenAI | Fable Conductor remains | T0 work; OpenAI-authored artifacts still reviewable by Anthropic | New Anthropic semantic authorship whose review cannot be scheduled (queue visible, dated) |
 | Both | no model-side control plane; queue state persisted for resume | deterministic-only V0/P0 checks | all model-cast work; consequential closure waits or goes to a human |
+
+With the Gemini lane removed (5.6) there is no third pool: any state this ladder cannot absorb
+falls back to the human operator sooner than a three-vendor design would have — owned as a
+conscious trade (owner ruling 2026-08-28, audit open item (b)).
 
 ## 5.6 The Gemini lane — removed
 
@@ -1401,7 +1426,7 @@ transport — preserved and generalized to every provider adapter.
 
 | Current | Becomes | Why |
 |---|---|---|
-| Director = Fable (MODE A) / Opus (MODE B) | **Conductor = Opus 5 · medium** always; Sol · medium depletion mirror; Fable re-aimed at A0/A1/E3-ceiling | Both independent designs converged: alignment and calibration outrank ceiling on the one unreviewed judgment seat; Fable is rationed (50% sub-cap; absent below Max) and latency-unpredictable |
+| Director = Fable (MODE A) / Opus (MODE B) | **Conductor = Fable 5, the interactive session model, at owner-set effort**; Sol depletion mirror at matched effort; Opus barred from all USER-DIALOGUE seats and re-aimed at deep work (I0/I1/E3/E4/E6) | Owner re-cast 2026-08-28 superseding the merge's converged Opus choice: field-observed degradation of Opus's human-facing reporting, on the seat whose core function is talking to the owner; the Fable ration is freed by the Sol-default Architect |
 | `reviewer` = Opus always, cross-vendor pass by convention | **Reviewer computed from recorded author family** | The convention asks a loaded Director to remember three conditional rules; computing it removes the failure from human memory |
 | `executor-heavy-xhigh` as a second agent definition | an effort point of Principal, routed | The protocol already says one tier, two effort points; a duplicate definition invites a phantom escalation rung |
 | `modeler` specialist (Sonnet) | **Spatial Specialist**, first-class, Opus 5 · high | A named task class with distinctive failure modes; the evidence points at the ceiling band, not the workhorse |
@@ -1546,14 +1571,18 @@ CLI's remaining-allowance signal. Deliver draw per routine round, draw per gate-
 and time-to-throttle **per bucket** (`AU-all`, `AU-opus`, `AU-fable`, `OU`). Two priority
 facts: does the seat in use really have a separate Opus bucket, and what happens at its edge —
 deliberately exhaust it on a throwaway session and observe whether the served model
-self-identifies as requested. *Stop condition:* a single day's normal work exhausting a pool →
+self-identifies as requested. Also deliver the **Opus-concentration watch** (owner ruling
+2026-08-28, audit open item (c)): the AU-O fraction drawn by the I0/I1/E3/E4 mix; if it exceeds
+60% of the weekly Opus bucket at readout (proposed operational value), the Conductor rotates
+Detective/Investigator dispatches to their Sol mirrors deliberately rather than waiting for the
+P15 gate. *Stop condition:* a single day's normal work exhausting a pool →
 re-scope the mandate's throughput assumptions before anything else proceeds.
 
 ### WO-2: Probe review throughput and drill the control-plane handoff
 Route ≥20 representative completed changes through the forced cross-vendor review path the
 harness already supports (`reviewEngine: "codex"` / `"dual"`). Measure complete reviews per
 five-hour window, turns per review, pool movement, wall clock, retries, queue age. Drill one
-Opus→Sol Conductor checkpoint handoff on a synthetic workload and prove no restricted decision
+Fable→Sol Conductor checkpoint handoff on a synthetic workload and prove no restricted decision
 closes. *Stop condition:* projected mandatory-review capacity <1.43× expected peak arrival
 (the level the ≤70%-utilization gate requires) → provision a larger tier, shrink expected
 gate-class volume, or hold the mandate's activation.
@@ -1720,7 +1749,9 @@ architect had reason to doubt them — each with its practical detection:
    independently inverted the repository's current MODE A ordering; convergence is a signal, not
    proof. Detected: ledger metrics "plans revised after first execution round" and "orders
    re-scoped mid-flight" against the WO-1 baseline; the remedy if wrong is lowering the
-   Architect-call threshold, not re-casting the Conductor first.
+   Architect-call threshold, not re-casting the Conductor first. [Superseded 2026-08-28: the
+   owner re-cast the Conductor to Fable 5 on field-observed human-facing communication
+   failure — see the lineup rulings in the Audit dispositions.]
 7. **Vendor-reported benchmark figures in the three research reports are accurate enough to
    route on** (both treat them as priors; several are vendor-run, and both plans inherited the
    same saturated Terminal-Bench 2.1 signal). Detected: the paired-casting trials (WO-12) —
@@ -1856,16 +1887,44 @@ the integration and operational cost of a third provider judged not worth its ca
 this deployment; the capability given up is native video/audio intake (M0 degrades
 deterministically or returns typed UNAVAILABLE). WO-3 and WO-12g are withdrawn in place.
 
-### Open items for next session (owner review pending)
+### Lineup rulings, 2026-08-28 (second session) — applied throughout this document
 
-Recorded verbatim as open questions; explicitly NOT yet applied anywhere in this document:
+The three deferred open items, ruled and applied:
 
-- (a) Conductor effort split by turn type (intake/arbitration at high, relay turns at
-  medium) — currently the medium-effort Conductor self-assesses ambiguity.
-- (b) An explicit statement in §5.5 that with the Gemini lane removed, pool-exhaustion states
-  fall back to the human operator sooner, owned as a conscious trade.
-- (c) An Opus-concentration watch: WO-1 to measure the AU-O fraction drawn by the I0/I1/E3/E4
-  mix, with deliberate Detective/Investigator rotation to the Sol mirror if high.
+- (a) SUPERSEDED — the Conductor re-cast below makes effort an owner choice at session launch
+  (the Conductor is the interactive session model), which removes the self-assessed-ambiguity
+  circularity the effort split was designed to fix.
+- (b) ADOPTED — 5.5 now states that with the Gemini lane removed, pool-exhaustion states fall
+  back to the human operator sooner, owned as a conscious trade.
+- (c) ADOPTED — WO-1 now delivers the Opus-concentration watch (the AU-O fraction drawn by the
+  I0/I1/E3/E4 mix; proposed 60%-of-bucket trigger) with deliberate Detective/Investigator
+  rotation to the Sol mirrors when it fires.
+
+Four owner re-casts, same ruling date, applied in the role entries (1, 2, 11), the class
+table, the 3.1 topology diagram, the Quartermaster gate, 5.5, 6.2 and WO-1:
+
+1. **Conductor = Fable 5, the interactive session model, at owner-set effort** (medium / high /
+   xhigh by task); Sol depletion mirror at matched effort (or as the owner directs). Grounds:
+   the seat's core function is USER-DIALOGUE, and field observation shows Opus's human-facing
+   reporting degrading into dense, garbled prose that is very difficult to distill — a failure
+   of exactly what the seat exists to do, and one the dossier's alignment metrics never
+   measured.
+2. **Opus holds no USER-DIALOGUE seat anywhere in the lineup.** It is re-aimed at what the same
+   observations show it excels at: goal-directed deep work at long horizon (I0/I1/E3/E4/E6 and
+   reference duty), where its output goes to other models or the Verifier, never directly to a
+   human. Known failure shape, accepted and mitigated by bounded orders and mandatory review:
+   over-engineering, small-issue fixation, and losing the big picture on dynamic,
+   ambiguity-heavy problems.
+3. **The Architect defaults to Sol · xhigh**; Fable · high–xhigh when the goal is especially
+   complex, nebulous, or ambiguous (owner judgment at intake); Opus · high on Codex
+   exhaustion. Grounds: shifts mandatory plan review onto the pool 5.3 shows has slack, frees
+   the Fable ration for the Conductor, and reserves Fable for exactly the cases its evidence
+   supports.
+4. **Luna · xhigh–max is the Builder's preferred casting for bounded, short-horizon,
+   fully-specified, deterministically-verifiable orders** (owner field data: cost/performance
+   far above its weight class on this shape); Sonnet · medium keeps longer-duration and
+   thinner-spec orders; the never-under-specified guardrail survives; WO-12a's entry trial
+   becomes confirmation under the live escape-rate monitoring adopted with finding 5.
 
 ## Cross-compare log
 

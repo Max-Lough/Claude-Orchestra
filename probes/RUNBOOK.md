@@ -197,5 +197,6 @@ touching existing files or vendor internals):
   turn count, and pool movement is a vendor-UI reading taken before/after the
   probe run; record both manually. Wall clock and verdict are what the probe
   captures.
-- WO-2's **Opus -> Sol Conductor checkpoint handoff drill** — a synthetic
-  control-plane exercise involving live sessions, not scriptable here.
+- WO-2's **Fable -> Sol Conductor checkpoint handoff drill** (Conductor re-cast
+  to Fable 5 by owner ruling 2026-08-28) — a synthetic control-plane exercise
+  involving live sessions, not scriptable here.

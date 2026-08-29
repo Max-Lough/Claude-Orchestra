@@ -125,6 +125,12 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   **Threshold: ≥18/20 (90%) with ≤1 genuine ambiguity.** Pass → WO-4 (encode 4.1 + 4.2 as
   data); fail → second redraw. WO-7a's caveat stands: history holds no true E4/E5/E6 work,
   so those boundaries remain untested until WO-7b seeds synthetic items.
+- **WO-7a-bis SCORED — FAIL (2026-08-29):** the independent pass was completed and saved
+  before the sealed pass was opened. Agreement was **17/20 (85%)**, below the required
+  18/20; one genuine ambiguity (item 16, D0/N2) is at the allowed maximum, and no corpus
+  defects were struck. The disagreements are item 5 (I1/I0), item 16 (N2/D0 provisional),
+  and item 17 (E3/E2). The full pair ledger is in `wo7a-bis-corpus.md`. Per the
+  pre-registered rule, a second Part-4 boundary redraw is now required before WO-4.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -142,16 +148,14 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
 - PR #27 — the WO-7a-bis blinded re-probe corpus + sealed model pass.
 
-## Fresh-session quick start (as of 2026-08-29, WO-7a-bis corpus ready)
+## Fresh-session quick start (as of 2026-08-29, WO-7a-bis scored FAIL)
 
-1. **The owner's blind pass on WO-7a-bis is the active step.** The 20-item blinded
-   re-probe corpus is drawn and its model pass is sealed (see the WO-7a-bis corpus READY
-   entry above). The owner fills the "Your class" column of `wo7a-bis-corpus.md` against
-   the redrawn Part 4 as written — **without opening
-   `wo7a-bis-model-classification-SEALED.md`** — then the two passes are compared and
-   scored at ≥18/20 with ≤1 genuine ambiguity. Pass → WO-4, which must encode Part-4.1
-   **and §4.2** as data against the redrawn text (not the pre-2026-08-29 version). Fail →
-   second redraw.
+1. **The second Part-4 boundary redraw is the active step.** WO-7a-bis scored 17/20
+   (85%) with one genuine ambiguity, so WO-4 remains gated. Use the disagreement ledger
+   in `wo7a-bis-corpus.md`: clarify §4.2's active-runtime wording against discriminator B,
+   add or resolve the missing D0/N2 boundary for status/handoff summaries, and define
+   discriminator G's component/contract unit and composition with other pair rules. Only
+   after the redraw may WO-4 encode Part-4.1 and §4.2 as data.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.

@@ -33,32 +33,58 @@ risk tier (T0–T3, Part 2.0) and anything you found ambiguous.
 
 | # | Request | Your class |
 |---|---------|------------|
-| 1 | Bundle the orchestra skills with the harness itself, so the installer stamps them into every project on install, removes exactly its own on uninstall, and never leaves stale copies behind. | |
-| 2 | Shell scripts committed from a Windows machine check out with CRLF endings and break the POSIX installer's shebang on Unix — make checkouts come out right on every platform. | |
-| 3 | The review-lane suite's check count changed recently — what is it now, and which commit moved it? | |
-| 4 | Build a Codex-native install so the Codex CLI can serve as the Director — a new installer engine that embeds the full protocol, plus every agent, pack, and hook ported across to the Codex side. | |
-| 5 | The scratch sweep keeps reporting it reclaimed nothing while abandoned review directories pile up on disk — work out why the count and the directories disagree. | |
-| 6 | The scout and the detective are the only command-running agents still missing the running-process rule — add the same one-line rule to both files. | |
-| 7 | Profile OpenAI's GPT-5.6 family — per-tier benchmarks, strengths and failure modes, and any evaluator-seating caveats — and write it up as a research report the roster planning can cite. | |
-| 8 | The guard enforces against sessions whose model it cannot determine, so a brand-new session's first turn gets its tools denied — make it stand down unless it has positive evidence of a director model. | |
-| 9 | Review runs occasionally die leaving no verdict, no error, and no exit status at all — find out what is happening to them and make the lane survive it. | |
-| 10 | Work orders keep being mis-sized — one bundle ran opaque for over two hours and a midpoint regression surfaced only at completion — design a sizing and cadence protocol that keeps this from recurring. | |
-| 11 | The codex-pack agents that launch the engine each drift on launch discipline in their own way — wrong working directory, output landing in the repo, warmups where they shouldn't be; bring every one of them in line. | |
-| 12 | Install the dispatch telemetry hook into this repo's harness settings so every model dispatch gets logged for the weekly allowance report. | |
-| 13 | Go through the logs of CI's first cross-platform hour and produce the complete list of distinct runner defects they surfaced. | |
-| 14 | Switch substantive review to a cross-vendor judge: verdicts should come from an OpenAI model instead of a second Claude, with the review contract itself unchanged. | |
-| 15 | Add tests proving a live-tree review refuses the warmup: the refusal must be reported, and the file the warmup would have created must not appear in the project. | |
-| 16 | Bring the status record up to date: what the just-merged PR landed, and how a fresh session should pick the work back up. | |
-| 17 | Reviewers grade residual hardening gaps as MAJOR right beside genuine contract violations — make every finding carry a claim-breach-or-hardening-gap label, and let only breaches force a REVISE. | |
-| 18 | Confirm a fresh install into a scratch project produces files byte-identical to the reference project's live copies on every functional file. | |
-| 19 | The inert review tier and the verification manifest only bind when the Codex driver runs the review — restate them as engine-agnostic review policy that holds for any judge, including the in-session fallback. | |
-| 20 | Decide which engine should judge substantive reviews in this repo by default — Opus, the cross-vendor lane, or both with the Director arbitrating. | |
+| 1 | Bundle the orchestra skills with the harness itself, so the installer stamps them into every project on install, removes exactly its own on uninstall, and never leaves stale copies behind. | E3 |
+| 2 | Shell scripts committed from a Windows machine check out with CRLF endings and break the POSIX installer's shebang on Unix — make checkouts come out right on every platform. | E0 |
+| 3 | The review-lane suite's check count changed recently — what is it now, and which commit moved it? | N0 |
+| 4 | Build a Codex-native install so the Codex CLI can serve as the Director — a new installer engine that embeds the full protocol, plus every agent, pack, and hook ported across to the Codex side. | E3 |
+| 5 | The scratch sweep keeps reporting it reclaimed nothing while abandoned review directories pile up on disk — work out why the count and the directories disagree. | I1 |
+| 6 | The scout and the detective are the only command-running agents still missing the running-process rule — add the same one-line rule to both files. | E1 |
+| 7 | Profile OpenAI's GPT-5.6 family — per-tier benchmarks, strengths and failure modes, and any evaluator-seating caveats — and write it up as a research report the roster planning can cite. | N1 |
+| 8 | The guard enforces against sessions whose model it cannot determine, so a brand-new session's first turn gets its tools denied — make it stand down unless it has positive evidence of a director model. | E2 |
+| 9 | Review runs occasionally die leaving no verdict, no error, and no exit status at all — find out what is happening to them and make the lane survive it. | I1 |
+| 10 | Work orders keep being mis-sized — one bundle ran opaque for over two hours and a midpoint regression surfaced only at completion — design a sizing and cadence protocol that keeps this from recurring. | A0 |
+| 11 | The codex-pack agents that launch the engine each drift on launch discipline in their own way — wrong working directory, output landing in the repo, warmups where they shouldn't be; bring every one of them in line. | E8 |
+| 12 | Install the dispatch telemetry hook into this repo's harness settings so every model dispatch gets logged for the weekly allowance report. | E2 |
+| 13 | Go through the logs of CI's first cross-platform hour and produce the complete list of distinct runner defects they surfaced. | N2 |
+| 14 | Switch substantive review to a cross-vendor judge: verdicts should come from an OpenAI model instead of a second Claude, with the review contract itself unchanged. | E2 |
+| 15 | Add tests proving a live-tree review refuses the warmup: the refusal must be reported, and the file the warmup would have created must not appear in the project. | Q0 |
+| 16 | Bring the status record up to date: what the just-merged PR landed, and how a fresh session should pick the work back up. | N2 |
+| 17 | Reviewers grade residual hardening gaps as MAJOR right beside genuine contract violations — make every finding carry a claim-breach-or-hardening-gap label, and let only breaches force a REVISE. | E3 |
+| 18 | Confirm a fresh install into a scratch project produces files byte-identical to the reference project's live copies on every functional file. | V0 |
+| 19 | The inert review tier and the verification manifest only bind when the Codex driver runs the review — restate them as engine-agnostic review policy that holds for any judge, including the in-session fallback. | D0 |
+| 20 | Decide which engine should judge substantive reviews in this repo by default — Opus, the cross-vendor lane, or both with the Director arbitrating. | O0 |
 
 ## Comparison with the sealed pass
 
-*(To be completed after the independent pass above is done and saved. For scoring, a sealed
-provisional class is treated as that pass's class; an ambiguity flag does not erase a class
-disagreement.)*
+The independent pass above was completed and saved before
+`wo7a-bis-model-classification-SEALED.md` was opened. For scoring, the sealed provisional
+class is treated as that pass's class; its ambiguity flag does not erase a class
+disagreement.
+
+**Result: 17/20 agreement (85%) — FAIL.** This is below the required 18/20 threshold.
+There is one genuine ambiguity (item 16), at the allowed maximum. Per the pre-registered
+rule, Part 4 requires a second boundary redraw before WO-4 encodes the taxonomy.
+
+### Disagreement ledger
+
+| # | This pass | Sealed pass | Class pair | Boundary finding |
+|---|-----------|-------------|------------|------------------|
+| 5 | I1 | I0 | I0/I1 | This pass treated recurring command output as an active runtime symptom; the sealed pass applied discriminator B's `unanswerable from intake → I0`. The latter is the literal tiebreak. Tighten §4.2 so “active” alone never establishes that reproduction or instrumentation is required. |
+| 16 | N2 | D0 (provisional; ambiguous) | D0/N2 | The preamble says a session summary is N2, while D0 owns changelogs and documentation of decisions already made. A status/handoff update satisfies both and no D0/N2 discriminator exists. Add one or narrow the session-summary example. |
+| 17 | E3 | E2 | E2/E3 | This pass applied discriminator G to the finding label and verdict gate as coupled contracts; the sealed pass applied discriminator T's one-central-mechanism test. T only distinguishes E2/E8, so it cannot settle E2/E3. Define the unit of “component/contract” in G and state how pair discriminators compose when more than one is invoked. |
+
+### Genuine ambiguity
+
+- **Item 16 — D0/N2:** the requested artifact is both a changelog-like status update about
+  settled work and a fresh-session handoff summary. The current text assigns those readings
+  to different classes without a discriminator between them. The sealed pass selected D0
+  provisionally; this pass selected N2 from the preamble's explicit session-summary clause.
+
+Items 5 and 17 are disagreements, but not counted as residual ambiguities: discriminator B's
+default resolves item 5 to I0, and discriminator G is the controlling adjacent-pair rule for
+item 17. No item was struck as a corpus defect. The continuing ambiguity ledger gains one
+D0/N2 entry; no class pair reaches the three-ambiguity merge/redraw trigger independently of
+this probe's overall FAIL.
 
 <!--
 Source commits (audit trail; one short sha per item — the commit whose work the request

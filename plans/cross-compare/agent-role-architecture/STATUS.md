@@ -112,6 +112,19 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   that table is an answer key, not a validation, so **WO-4 stays gated on WO-7a-bis** (fresh
   blinded mini-corpus; the original 40 are burned for blinding). WO-4 then encodes 4.1 and
   4.2 as data; WO-7b re-validates through the implemented router.
+- **WO-7a-bis corpus READY (2026-08-29):** `wo7a-bis-corpus.md` — 20 one-line requests
+  reverse-derived from 17 source commits the first corpus never used (checked against its
+  audit trail), randomized, 14 of 20 seeded on the redrawn boundaries: the §4.2 diagnosis
+  chain ×4 (stated-axis E0, reproduce-first I1, disc-B-tiebreak I0, states-own-cause direct
+  route), disc-T topology ×4 (three central-mechanism, one surface-set), composite bait ×1,
+  disc-G mirror-without-coupling ×1, disc-I exact-substitution ×1, disc-S env-words ×1,
+  disc-U corpus-synthesis ×1, report-container bait ×1. The model's pass is sealed in
+  `wo7a-bis-model-classification-SEALED.md` — produced by a fresh-context agent given only
+  the 20 requests plus final-plan.md Parts 2.0 and 4 (no git history, no prior corpus, no
+  session context). Next: the owner classifies blind in `wo7a-bis-corpus.md`, then scores.
+  **Threshold: ≥18/20 (90%) with ≤1 genuine ambiguity.** Pass → WO-4 (encode 4.1 + 4.2 as
+  data); fail → second redraw. WO-7a's caveat stands: history holds no true E4/E5/E6 work,
+  so those boundaries remain untested until WO-7b seeds synthetic items.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -126,19 +139,18 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - PR #25 — WO-1 installed, WO-2 executed and passed (throughput + handoff drill), WO-7a
   corpus + sealed model pass, and v2.1.0 (BREACH/GAP finding buckets; running-process rule
   coverage completed).
+- PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
 
-## Fresh-session quick start (as of 2026-08-29, post-WO-7a redraw)
+## Fresh-session quick start (as of 2026-08-29, WO-7a-bis corpus ready)
 
-1. **WO-7a-bis is the active work order.** WO-7a scored 31/40 — FAIL — the boundaries were
-   redrawn and then wording-tightened under owner review (see the WO-7a SCORED entry above);
-   the redraw's own resolution table is an answer key, so it gets one clean blinded re-probe:
-   draw 15–20 fresh one-line requests from source commits the first corpus did not use
-   (unused shas are derivable from the audit-trail comment in `wo7a-corpus.md`), seeded on
-   the redrawn boundaries (diagnosis chain, E2/E8 topology, I0/N2 output type, composite
-   bait, report-container bait), seal a fresh-context model pass, owner classifies blind,
-   score at ≥90% with ≤1 genuine ambiguity. Pass → WO-4, which must encode Part-4.1 **and
-   §4.2** as data against the redrawn text (not the pre-2026-08-29 version). Fail → second
-   redraw.
+1. **The owner's blind pass on WO-7a-bis is the active step.** The 20-item blinded
+   re-probe corpus is drawn and its model pass is sealed (see the WO-7a-bis corpus READY
+   entry above). The owner fills the "Your class" column of `wo7a-bis-corpus.md` against
+   the redrawn Part 4 as written — **without opening
+   `wo7a-bis-model-classification-SEALED.md`** — then the two passes are compared and
+   scored at ≥18/20 with ≤1 genuine ambiguity. Pass → WO-4, which must encode Part-4.1
+   **and §4.2** as data against the redrawn text (not the pre-2026-08-29 version). Fail →
+   second redraw.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.

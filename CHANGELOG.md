@@ -9,6 +9,38 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.1.0 — review findings carry a BREACH/GAP provenance bucket; the running-process rule reaches every Bash-granting role
+
+The WO-2 throughput probe re-reviewed 20 already-merged commits through the
+cross-vendor lane and 17 drew REVISE. A finding-by-finding calibration audit of
+three of those reviews found the reviewer *accurate* — 10/12 findings real,
+zero noise, every `path:line` citation resolving — but miscalibrated in one
+specific way: its REVISE bar was "any gap versus the commit's stated intent,"
+so edge-case hardening shortfalls (an empty-string name slipping a lint, an
+exotic YAML escape) drew MAJOR labels alongside genuine contract violations,
+and on a hardening-themed repository that made REVISE near-universal. The old
+format looked reasonable because severity was doing double duty: it graded how
+bad a defect was, but the verdict rule needed to know something else — whether
+this change *caused* it.
+
+- The reviewer brief (`orchestra-review.js`) now requires every finding to
+  carry a provenance bucket alongside severity: `[BREACH]` — the change breaks
+  what it itself set out to do (introduced defect, violated order requirement,
+  failed claim in its own report or changelog, self-contradiction) — or
+  `[GAP]` — a real weakness the diff exposes but never promised to fix. The
+  verdict rule keys on the bucket: a CRITICAL or MAJOR BREACH forces REVISE;
+  GAP findings of any severity, and MINOR BREACHes, permit APPROVE with the
+  findings listed as dispatcher backlog. When torn, the brief says BREACH.
+- The same probe's review of `98a5157` refuted `ORCHESTRA.md`'s claim that
+  "every role that runs commands carries the rule" about never ending a turn
+  on a still-running process: `scout` and `detective` granted Bash and carried
+  no such rule, and the three `architect-claude*` launchers in the codex pack
+  had lost it in the 1.13→2.0 rewrite. All five now carry it, phrased for
+  their failure shape — a short read-only command promoted to a background
+  task on timeout is still a running process the agent started. The claim in
+  `ORCHESTRA.md` is true again. (The MCP-transport launchers run no commands
+  and correctly carry nothing.)
+
 ## 2.0.0 — /deep-plan retired; /cross-compare-plan supersedes it
 
 The plan roundabout was the harness's only lane that called a metered vendor

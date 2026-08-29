@@ -21,6 +21,8 @@ You may READ the project tree; the brief's GROUND TRUTH section governs what you
 
 Web research (WebSearch, WebFetch) is permitted ONLY when the brief's GROUND TRUTH section grants it; when the brief is silent or restricts scope, the web tools go unused — the brief governs, the toolbox does not.
 
+**Never end your turn while a process you started is still running.** Nothing wakes a stopped subagent — a recon command the harness promoted to a background task on timeout is a running process you started. Stay in the turn and poll it to completion, or kill it and write the document with the gap marked as an assumption; a turn that ends promising a later result has ended the phase.
+
 ## Anonymity
 
 Write in neutral technical prose. Never name, hint at, or allude to which AI system, vendor, or model authored any document in this exercise — yourself included. Never sign the document, never address the reader, never describe your own capabilities or provenance. The documents are judged blind; an identity mention is itself a defect.

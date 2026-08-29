@@ -107,5 +107,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - PR #22 — the session record, the revised final plan, the probes, and the two research
   reports the session used.
 - PR #23 — the lab ports: `/deep-plan` retirement (v2.0.0) + MCP cancellation fix.
-- PR (this branch) — the 2026-08-28 second-session lineup rulings applied to final-plan.md,
+- PR #24 — the 2026-08-28 second-session lineup rulings applied to final-plan.md,
   STATUS.md, and the probe runbook.
+- PR #25 — WO-1 installed, WO-2 executed and passed (throughput + handoff drill), WO-7a
+  corpus + sealed model pass, and v2.1.0 (BREACH/GAP finding buckets; running-process rule
+  coverage completed).
+
+## Fresh-session quick start (as of 2026-08-28, post-PR #25)
+
+1. **WO-7a is the active work order.** The owner classifies all 40 items in
+   `wo7a-corpus.md` against final-plan.md's Part-4/4.1 tables WITHOUT opening
+   `wo7a-model-classification-SEALED.md`, then the session scores agreement
+   (pass: ≥90%, ≤2 genuine ambiguities; fail → redraw boundaries before WO-4).
+2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
+   then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
+   readout against the manual readings file.
+3. After WO-7a scoring: WO-4 (schemas) → WO-5 (Verifier substrate) → WO-6 (router), with the
+   P3→P2→P1 deferred backlog (`plans/proposed-orchestra-improvements.md`) schedulable any
+   time — P3 (verification manifest) is the cheapest and benefits every review immediately.

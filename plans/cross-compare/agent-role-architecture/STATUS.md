@@ -64,9 +64,40 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 ## Open items for the next session
 
 **Plan execution (sequencing per final-plan.md `## Orders`):**
-- **WO-1 + WO-2 are ready to run** — `probes/RUNBOOK.md` in this repo (telemetry hook
-  validated; review-throughput probe dry-run validated; nothing billed yet). WO-3 withdrawn.
-- Then **WO-7a** (40-request paper classification corpus) before any schema work (WO-4).
+- **WO-1 IN FLIGHT (installed 2026-08-28):** telemetry hook + settings live in this repo's
+  `.claude/`; one weekly cycle of normal work collects the ledger, then
+  `node .claude/hooks/orchestra-telemetry.js --report` plus the Opus-concentration readout.
+  Manual companions in `.claude/orchestra-manual-readings.md` (gitignored).
+- **WO-2 throughput probe DONE — PASSED (2026-08-28):** 20/20 historical commits reviewed
+  through the pinned cross-vendor lane, 0 UNAVAILABLE (17 REVISE / 3 APPROVE), mean wall
+  clock 8.3m, P95 10.8m, projected **36.0 reviews/5h** sequential. Owner-set peak = 10
+  gate-class arrivals/5h → capacity is 3.6× peak, clearing both the 1.3× stop condition and
+  the 1.43× (≤70%-utilization) gate. Utilization at peak ≈ 28%. Pool draw across the batch:
+  ~8%→11% of the weekly Codex window (readings file). One first-batch timeout at the default
+  10m cap (18k-line commit) completed in 9.3m on re-run — variance; the 20-review batch used
+  `--timeout-ms 1200000`. Audit trail: `%TEMP%\orchestra-probe-wQGdcJ`. WO-3 withdrawn.
+- **WO-2 handoff drill DONE — PASSED (2026-08-28):** Fable→Sol Conductor checkpoint handoff
+  on a synthetic 8-order workload (4 in-authority, 4 restricted traps). No restricted
+  decision closed; 8/8 nonce echoes; T3 and verdict-override correctly deferred to the named
+  human, Sol-authored T2 closure to Anthropic, author≠approve honored. Full record:
+  `wo2-handoff-drill.md` in this directory. **WO-2 is complete.**
+- **Reviewer calibration sample (2026-08-28):** 3 of the 17 REVISE reviews audited finding-by
+  finding against the code — **10/12 REAL, 2/12 DEBATABLE, 0/12 NOISE**; every file:line
+  citation resolved. Verdict: usefully strict, not noisy; its flaw is severity inflation
+  (edge-hardening gaps graded MAJOR). Operating rule adopted: **gate-class REVISE from this
+  lane = blocking for triage, not automatically blocking for merge**; owner judgment on
+  MAJOR/CRITICAL labels. Proposed lane improvement: have the reviewer separate
+  "violates the commit's own claim" (auto-blocking) from "residual hardening gap" (backlog).
+  One still-live finding: `agents/scout.md` + `agents/detective.md` lack the
+  no-ending-a-turn-with-running-processes rule that `ORCHESTRA.md:38` claims every
+  command-running role carries (from review of `98a5157b1afe`).
+- **WO-7a corpus READY (2026-08-28):** `wo7a-corpus.md` — 40 one-line requests reverse-derived
+  from real history, randomized, 26 on the seeded adjacent-pair boundaries (E0/I1 ×6, I0/I1 ×3,
+  E2/E3 ×7, E8/E1 ×4, E5/E6 ×2 bait-only, N0/N2 ×3, performance intake ×1). The model's pass
+  is sealed in `wo7a-model-classification-SEALED.md`. **Next: the owner classifies the corpus
+  independently — do NOT open the sealed file first** — then compare (≥90% agreement, ≤2
+  genuine ambiguities, else redraw boundaries before WO-4). Caveat: history holds no true
+  E4/E5/E6 work; seed WO-7b with synthetic E5/E6 items.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

@@ -1160,7 +1160,20 @@ exactly one primary; no identifier owned twice; every role's declared classes a 
 table) is asserted mechanically at registry load (WO-4). Risk (T0–T3) modifies review and
 authorization, never the primary.
 
-| Class | Task class | Signals that select it | Primary role | Primary casting | Reviewer | Escalation path |
+**Precedence: signals are recall hints, not routers** *(WO-7a redraw, 2026-08-29; items
+5/8/21)*. The signals column exists to bring a class to mind; it never decides. A class is
+decided by the **requested work product** — the artifact or answer that must exist when the
+order closes — and, on any adjacent pair, by its 4.1 discriminator, both answered **from
+the request text alone**. The work product is the **immediate operation and phase** — find,
+diagnose, synthesize, build, verify — never the container the result lands in: research
+folded into a report is N1, table extraction into a brief is M0, a session summary is N2;
+D0 is only for documenting a decision already made (disc. R). Domain nouns in the subject
+matter do not route: "add an agent
+that drives Blender" is roster work (E2), not spatial code (E6); "set up CI" with nothing
+broken is authoring (E2), not environment surgery (E0). When a signal word and a
+discriminator disagree, the discriminator wins.
+
+| Class | Task class | Recall signals | Primary role | Primary casting | Reviewer | Escalation path |
 |---|---|---|---|---|---|---|
 | O0 | Direction and arbitration | routing, verdict conflicts, approvals, reporting | **Conductor** | Fable 5 · owner-set effort (session model; Sol mirror at matched effort) | user; no-overturn rule; cross-family critique for material plans | user decision |
 | A0 | Planning / architecture | goal without steps, "how should we", system design | **Architect** | Sol · xhigh (Fable 5 · high–xhigh for nebulous/ambiguous goals; Opus 5 · high on Codex exhaustion) | cross-family plan critique | ceiling effort → A1 comparative session |
@@ -1171,7 +1184,7 @@ authorization, never the primary.
 | I0 | Deep investigation | "why does", "how does X flow", nothing needs running | **Detective** | Opus 5 · high | Verifier + refutation duty; cross-family falsification at gate class (mandatory) | Fable · high → I1 (needs an experiment) |
 | I1 | Intricate bug tracing / perf investigation | intermittent, race, Heisenbug, "make it faster" | **Investigator** | Opus 5 · high | cross-family on the fix; Verifier on the repro | Fable · high → A0 (architectural); fix → E2/E3/E4/E0 by shape |
 | M0 | Document / media intake | PDFs, screenshots, recordings, charts, "read these" | **Archivist** | Terra · med (documents/PDFs/logs/text) / Opus 5 · med (images/charts/renders); raw video/audio → deterministic transcode fallback or UNAVAILABLE | schema validator + consumer; cross-family review for consequential extractions | → E5/I0/N1 by kind |
-| E0 | Terminal / shell ops | build breaks, CI red, toolchain, container — env is the variable | **Operator** | Sol · high | Verifier (mandatory, tree audit) + Opus 5 · high | Sol · max once → Opus 5 · high (strategy stall; WO-12e trial) → re-plan |
+| E0 | Terminal / shell ops | build breaks, CI red, toolchain, container — env is the variable, not the deliverable (authoring new CI/config → E2, disc. S) | **Operator** | Sol · high | Verifier (mandatory, tree audit) + Opus 5 · high | Sol · max once → Opus 5 · high (strategy stall; WO-12e trial) → re-plan |
 | E1 | Mechanical batch | sweep, matrix, template, uniform codemod, poll | **Runner** | Luna · low–med / Haiku · off | parent spot-check + Verifier oracle; opposite-family diff check if tree-mutating | 2 failures → parent takes it back; non-uniform → E2/E8 |
 | E2 | Routine coding | spec exists, scope known | **Builder** | Luna · xhigh–max (bounded, fully-specified) / Sonnet 5 · med (longer or thinner-spec; Terra · med mirror) | Verifier → computed cross-family (preferred band at T1) | 2 REVISE / CHECKPOINT → E3 → re-plan |
 | E3 | Complex long-horizon coding | interlocked subsystems, split-resistant | **Principal** | Opus 5 · high (xhigh point) | cross-family **mandatory** + Verifier; checkpoint reviews | xhigh → Fable · high ceiling → re-plan |
@@ -1179,7 +1192,7 @@ authorization, never the primary.
 | E5 | Visual / UI work | screenshot, mock, layout, viewport, a11y | **Interface Artisan** | Sol · med–high + browser loop | deterministic checks → Opus 5 closing (read-only) → code review | Fable critic → A0 (design system) |
 | E6 | Spatial / procedural code | mesh, shader, scene, CAD, simulation | **Spatial Specialist** | Opus 5 · high | geometry checks → triage → Fable critic → cross-family | Fable/A0 → E0 (toolchain) |
 | E7 | Security review | auth, crypto, parsing, deps, secrets | **Red Team** | Sol · high | Opus 5 · high (identity-uncertain = non-closing → human); human sign-off on critical | Sol · max → human security owner. **Never Fable** |
-| E8 | Refactoring at scale | rename, API migration, "everywhere", N consumers | **Refactorer** | Terra · med | Verifier census → Sweeper → cross-family sample+census | E3 (not mechanical after all) |
+| E8 | Refactoring at scale | semantic rename/API migration with judgment at N sites; "everywhere" (exact uniform token swap → E1, disc. I) | **Refactorer** | Terra · med | Verifier census → Sweeper → cross-family sample+census | E3 (not mechanical after all) |
 | Q0 | Test design / authoring | "add tests", fixtures, independent oracle | **Test Designer** | opposite implementation author: Terra · med / Sonnet · med | mutation+flake oracle; implementation-family review of tests at T2/T3 | requirements owner (O0/A0) |
 | D0 | Documentation | README, ADR, changelog, migration guide | **Doc Writer** | Sonnet 5 · med (routine) / Opus 5 · med (deliverable-grade) | cross-family accuracy vs diff + Verifier claim sample | Fable (deliverable, Max only) → human (legal) |
 | R0 | Adversarial review | a change exists and must be checked | **Reviewer** | computed from the full author/co-author family set | Verifier evidence audit; contested → human once | 2 REVISE → re-plan; 3 rounds hard cap |
@@ -1191,15 +1204,15 @@ authorization, never the primary.
 
 | # | Pair | The one question | Answer → route |
 |---|---|---|---|
-| A | E0 vs I1 | What changes when you change one thing? | Env-varying → **E0**. Intermittent in one env → **I1**. Unknown → E0 triages ≤15 tool calls, delivers the environment matrix, then owns or hands over |
-| B | I0 vs I1 | Does the next step require running or instrumenting? | No → **I0**. Yes → **I1**. A Detective concluding "run an experiment" has finished correctly |
+| A | E0 vs I1 | Does the request itself state an environment axis? | Stated (works on X, fails on Y; install/toolchain/CI infra named as the variable) → **E0**. Not stated → the 4.2 diagnosis chain: active runtime symptom to reproduce or instrument → **I1**; root-cause inquiry over fixed artifacts → **I0**. A suspected-but-unstated axis is no axis — E0 never absorbs an undiagnosed bug; I1 delivers the environment matrix and hands over if the hunt lands on the environment |
+| B | I0 vs I1 | Does the next step require running or instrumenting? | No → **I0**. Yes → **I1**. Unanswerable from the intake text → **I0** (lower blast radius). A Detective concluding "run an experiment" has finished correctly |
 | C | N0 vs I0 | Location or cause? | where/which/when → **N0**; why/how/load-bearing → **I0**. A surviving UNKNOWN becomes I0, never a third scout |
 | D | N0 vs N1 | Can the repository settle it? | Yes → **N0**. No → **N1** |
 | E | N1 vs M0 | Is the corpus already in hand? | Must be found → **N1**. Named and fixed, job is extraction → **M0** |
 | F | N0 vs N2 | Was the declared surface exhausted without truncation? | Yes → **N0** result stands. No → **N2** (automatic) |
-| G | E2 vs E3 | Could a competent worker finish in one run with the spec as written? | Yes → **E2**. No, parts interlocked → **E3**. "Big" is not an answer; big-and-separable is a chain of E2 orders |
-| H | E3 vs E8 | Is the risk a wrong line or a missed site? | Wrong line → **E3**. Missed site, semantics constant → **E8** |
-| I | E8 vs E1 | Is the transform strictly uniform, enumerable, and validator-checkable? | Yes → **E1**. No (pattern plus judgment at sites) → **E8** |
+| G | E2 vs E3 | Does the request itself name coupled contracts — ≥2 components that must change together, or an acceptance unit that cannot land in independent pieces? | Yes, observable in the intake text → **E3** — named coupling beats a named template to mirror. No coupling named (a named template/lane to mirror is evidence of separability, never an override) → **E2**. "Big" is not an answer; big-and-separable is a chain of E2 orders. Never decided on imagined implementation facts |
+| H | E3 vs E8 | Is the risk a wrong line or a missed site? | Wrong line → **E3**. Missed site, semantics constant → **E8**. Both — a novel core plus an N-site migration → the composite rule (4.2): **E3** parent owns the core, E8 child order carries the fan-out |
+| I | E8 vs E1 | Is the transform strictly uniform, enumerable, and validator-checkable? | Yes — an exact token substitution, grep-verifiable, however many files → **E1**, and this beats E8's signal words. No (pattern plus judgment at sites) → **E8** |
 | J | E8 vs E4 | Does any persisted data change shape or content? | No → **E8**. Yes → **E4**, even when the code is trivial |
 | K | E5 vs E6 | Document flow, or generated geometry? | DOM/native-widget flow → **E5**. Meshes, shaders, scenes, simulation → **E6** |
 | L | I1 vs E2 (performance) | Is the bottleneck confirmed with a profile and numeric target? | No → **I1** first. Yes → the fix class per shape, carrying the profile as spec |
@@ -1209,12 +1222,40 @@ authorization, never the primary.
 | P | A0 vs A1 | Does a plan exist yet? | None, or one to author → **A0**. Two credible incompatible plans → **A1** |
 | Q | O0 vs A0 | Routing decision, or a plan? | Which role/casting/verdict → **O0**. Sequenced steps with acceptance criteria → **A0** |
 | R | D0 vs A0 | Is the decision already made? | Yes → **D0**. No — the document *is* the decision → **A0** |
+| S | E0 vs E2 | Is the environment the variable, or the artifact? | Something that used to work behaves differently across envs/installs/runners → **E0**. Authoring or extending config/workflow/CI whose desired behavior is specified and nothing is broken → **E2**. "CI" as a word routes nothing |
+| T | E2 vs E8 | Does the request name one central mechanism, or a set of surfaces? | One named mechanism, rule, or helper — however many consumers benefit → **E2**. A named surface set — "all", "every", "everywhere", N listed sites each to be found and touched → **E8**. Topology unstated → **E8**: a needless census is bounded waste; a missed site is silent |
+| U | I0 vs N2 | Is the deliverable a causal mechanism, or a cross-source synthesis? | A mechanism explaining observed behavior → **I0**. An exhaustive pattern/category synthesis over a named fixed corpus → **N2** |
 
 **Residual rule.** A request still matching two primaries is a classification defect — and
 "the cheaper of the two" is undefined across pools, because AU and OU do not convert (Part
 5.2). The Conductor routes to whichever primary carries the **lower blast radius on a wrong
 answer** — acceptance risk, not price — capped at a triage budget, and logs the ambiguity
 against the pair. Three logged ambiguities on one pair force a boundary redraw or a merge.
+
+## 4.2 Phase rules (WO-7a redraw, 2026-08-29)
+
+Two rules that operate above the pair discriminators. Both exist because WO-7a failed
+(31/40): every disagreement traced either to a boundary decidable only with solution facts,
+or to a composite request with no decomposition rule (ledger: `wo7a-corpus.md`).
+
+**Diagnosis before implementation** *(items 9, 11, 16)*. A request that reports a symptom
+whose cause the request text does not establish is an investigation first, never a presumed
+fix, routed by an explicit precedence chain: **(1)** an environment axis stated in the
+request → **E0**; **(2)** an active runtime symptom that must be reproduced or instrumented
+→ **I1**; **(3)** a root-cause-only inquiry over fixed artifacts (logs, history, code as
+text) → **I0**. Between (2) and (3) discriminator B decides, and unanswerable → I0. The
+fix is a second order, classified by shape once the cause is known — exactly the
+hand-over I1's escalation path already names. A request that states its own cause and asks
+for the remedy routes directly to the fix class. Corollary — **intake decidability**: every
+discriminator is answered from the request text alone; an answer that needs facts only the
+work will produce is "unknown" and triggers this rule, and a classification rationale that
+cites implementation facts absent from the request is void.
+
+**Composite orders** *(item 36)*. A request bundling a novel interlocked core with an N-site
+fan-out is one **E3** parent order that owns the core and the acceptance criteria,
+dispatching the fan-out as an **E8** child order (**E1** if strictly uniform); a pure
+fan-out with no novel core stays E8. Classify by which component carries the acceptance
+risk, never by which has more words or touches more files.
 
 ---
 
@@ -1623,6 +1664,25 @@ before WO-4, so boundary redraws happen before the schemas encode the classes; s
 adjacent pairs (E0/I1, I0/I1, E2/E3, E8/E1, E5/E6, N0/N2, performance intake). Threshold: ≥90%
 agreement, ≤2 genuine ambiguities — else redraw boundaries now, before the registry and 22
 agent definitions exist.
+
+**Outcome (2026-08-29): FAIL — 31/40 (77.5%), two genuine ambiguities (at the cap).** Nine
+disagreements across nine distinct pairs (a tenth, I0/I1, added by the item-16 ambiguity;
+none repeated, so no merge was forced); the mass sat on E2's borders (five of the nine) and
+the diagnosis frontier (four items), with Bands A/D perfectly clean. Root cause: boundaries
+drawn in outcome space but decided at intake. Redraw applied per the pre-registered rule:
+the signals-precedence rule (Part 4 preamble), amended discriminators A/B/G/H/I, new
+discriminators S/T/U, and the 4.2 phase rules (diagnosis-before-implementation; composite
+orders); an owner review the same day tightened the wording (explicit diagnosis chain with
+the suspected-axis E0 triage removed, intake-visible T and U, coupling-beats-mirror in G,
+the operation-not-container clause, the signals column renamed to recall signals). Full
+ledger and the post-redraw resolution of all ten flagged items: `wo7a-corpus.md` — an
+answer key, not an independent validation. **WO-4 unblocks only after WO-7a-bis:** a fresh
+blinded mini-corpus of 15–20 one-line requests from source commits the first corpus did not
+use, seeded on the redrawn boundaries (the diagnosis chain, E2/E8 topology, I0/N2 output
+type, composite bait, report-container bait), a sealed fresh-context model pass, an
+independent owner pass, threshold pro-rated to ≥90% with ≤1 genuine ambiguity. The original
+40 are burned for blinding now that the ledger and resolutions exist. On a pass, WO-4
+encodes 4.1 **and 4.2** as data; WO-7b re-validates through the implemented router.
 
 ### WO-7b: Classification corpus — through the implemented router
 The same corpus re-run through the implemented router after WO-6, router vs human, same

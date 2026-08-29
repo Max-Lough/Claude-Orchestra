@@ -150,6 +150,22 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   ≤1 genuine ambiguity (recommended: it is cheap and the three redrawn rules plus the item-1
   shift are exactly what needs independent confirmation), or (b) accept the answer key and
   let WO-7b's run through the implemented router serve as the validation gate.
+- **WO-7a-ter RULED, corpus DRAWN, passes SEALED (2026-08-29):** the owner ruled the open
+  decision — option (a), widened to a **cross-repo** probe from two of the owner's other
+  repositories (PiratePartyPals, Godot 4.6; LLM-Comm-V2/Homonoia, TS monorepo), chosen
+  because the in-repo pool was exhausted and the foreign histories supply the never-tested
+  E5/E6/K boundaries plus a domain-transfer check. Pipeline: two read-only scout agents
+  profiled both histories; GPT-5.6 Sol (xhigh, read-only Codex CLI) deep-mined 58
+  candidate commits, separating intake-visible facts from solution facts (per the owner's
+  offload-heavy-work-to-OpenAI directive). `wo7a-ter-corpus.md` holds 20 items.
+  **Selection integrity:** every commit named with a class hint in session was excluded —
+  this burned the only clean E4 sources, so E4 stays untested until WO-7b's synthetic
+  items. Two passes are sealed in `wo7a-ter-model-classification-SEALED.md`: Claude
+  fresh-context (primary, scored) and Sol xhigh (supplementary cross-family data, never
+  gating), plus the identity of the 10 redraw-#2-seeded items for post-hoc subset scoring.
+  **Gates, pre-registered: full ≥18/20 with ≤1 genuine ambiguity → WO-4; sealed subset
+  ≥9/10 validates redraw #2 specifically.** Next: the owner classifies blind in
+  `wo7a-ter-corpus.md` without opening the sealed file, then scores both gates.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -167,17 +183,20 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
 - PR #27 — the WO-7a-bis blinded re-probe corpus + sealed model pass.
 
-## Fresh-session quick start (as of 2026-08-29, post-redraw #2)
+## Fresh-session quick start (as of 2026-08-29, WO-7a-ter corpus ready)
 
-1. **The open owner decision — how redraw #2 is validated — is the active step.**
-   WO-7a-bis scored 17/20 (85%) — FAIL — and boundary redraw #2 landed the same day,
-   scoped to the three ledger findings (see the redraw entry above; full detail in
-   `wo7a-bis-corpus.md` and final-plan.md's WO-7a outcome). WO-4 stays gated until the
-   owner rules between (a) a short WO-7a-ter blinded probe (~10–12 items, the last unused
-   commits plus synthetic items, seeded on I0/I1, D0/N2, E2/E3, and the shifted G
-   boundary; pro-rated ≥90%, ≤1 genuine ambiguity — recommended) and (b) accepting the
-   answer key with WO-7b's router run as the validation gate. Either way WO-4 encodes
-   Part-4.1 **and §4.2** as data against the redraw-#2 text.
+1. **The owner's blind pass on WO-7a-ter is the active step.** Redraw #2 landed after the
+   bis FAIL, the owner ruled its validation runs cross-repo, and the 20-item corpus is
+   drawn with both model passes sealed (see the WO-7a-ter entry above). The owner fills
+   the "Your class" column of `wo7a-ter-corpus.md` against the redraw-#2 Part 4 as
+   written — **without opening `wo7a-ter-model-classification-SEALED.md`** — then scores
+   two pre-registered gates: full corpus ≥18/20 with ≤1 genuine ambiguity (unblocks WO-4,
+   which encodes Part-4.1 **and §4.2** as data against the redraw-#2 text), and the
+   sealed 10-item redraw-#2 subset ≥9/10 (validates the redraw; a fail concentrated
+   outside the subset indicts the newly probed E5/E6/K boundaries instead). Fail → third
+   redraw scoped to the new ledger findings. Cross-probe pair ledger: I0/I1 and E2/E3 at
+   two entries each, D0/N2 at one — a third on any of them trips the merge/redraw
+   trigger.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.

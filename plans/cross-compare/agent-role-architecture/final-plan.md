@@ -1715,6 +1715,22 @@ the last unused commits plus synthetic items, seeded on I0/I1, D0/N2, E2/E3, and
 G boundary; threshold pro-rated ≥90%, ≤1 genuine ambiguity) or accepting the answer key and
 letting WO-7b's router run serve as the validation gate.
 
+**Ruled 2026-08-29 (owner): WO-7a-ter, cross-repo.** Redraw #2 is validated by a fresh
+blinded probe drawn from two of the owner's other repositories (a Godot 4.6 multiplayer
+game; a TypeScript monorepo web/mobile app) — the in-repo pool was exhausted, and the
+foreign histories supply the never-tested E5/E6/K boundaries with real work plus a
+domain-transfer check on the whole taxonomy. Twenty items (`wo7a-ter-corpus.md`),
+preferring AI-authored source commits (the owner is least likely to recall their
+solutions); any commit whose class was mentioned in session was excluded — which burned
+the only clean E4 sources, so E4 stays untested until WO-7b's synthetic items. Two sealed
+passes: Claude fresh-context (primary, scored) and GPT-5.6 Sol (supplementary — the
+Conductor's Sol depletion mirror means Sol will classify at intake in production;
+divergences are ledger findings, never gating). Gates, pre-registered before the blind
+pass: full corpus **≥18/20 with ≤1 genuine ambiguity** unblocks WO-4; the **10
+redraw-#2-seeded items (identities sealed) ≥9/10** validate the redraw specifically — a
+full-corpus fail concentrated outside that subset indicts the newly probed boundaries,
+not redraw #2.
+
 ### WO-7b: Classification corpus — through the implemented router
 The same corpus re-run through the implemented router after WO-6, router vs human, same
 thresholds. A WO-7a pass that WO-7b fails indicts the router implementation, not the taxonomy.

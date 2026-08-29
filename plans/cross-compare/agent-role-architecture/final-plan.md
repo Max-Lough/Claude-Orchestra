@@ -1233,13 +1233,16 @@ rule — never to another pair's discriminator, however suggestive its question 
 | T | E2 vs E8 | Does the request name one central mechanism, or a set of surfaces? | One named mechanism, rule, or helper — however many consumers benefit → **E2**. A named surface set — "all", "every", "everywhere", N listed sites each to be found and touched → **E8**. Topology unstated → **E8**: a needless census is bounded waste; a missed site is silent |
 | U | I0 vs N2 | Is the deliverable a causal mechanism, or a cross-source synthesis? | A mechanism explaining observed behavior → **I0**. An exhaustive pattern/category synthesis over a named fixed corpus → **N2** |
 | V | D0 vs N2 | Must the content be recovered from a corpus, or is it settled? | Producing the document requires reading and reconciling a body of material to learn what it must say → **N2**. The content is settled at intake — named events, decisions, and outcomes to record, however summary-shaped the container → **D0** |
-| W | E2 vs E5 | Is the interface itself the acceptance artifact, or merely a consumer/container? | Presentation, layout, rendered visual state, or interaction behavior whose acceptance requires rendering or exercising the interface → **E5**. Computation, data selection, transport, or business logic that can be accepted independently while the screen's presentation and interaction remain unchanged → **E2**. A screen name or UI consumer alone never makes the work E5 (redraw #3) |
+| W | E2 vs E5 | Is the interface itself the acceptance artifact, or merely a consumer/container? | Presentation, layout, structure, styling, or interaction behavior — work accepted by inspecting or exercising the interface artifact itself, including a new or redesigned surface → **E5**. Computation, data selection, transport, or business logic that can be accepted independently while the surface's layout, styling, and interaction stay as they are → **E2**. **Displayed values are data, not presentation**: changing which values a surface shows, with its layout, styling, and interaction untouched, routes E2 even though the rendered pixels differ (amended after the PR #27 cross-vendor review). A screen name or UI consumer alone never makes the work E5 (redraw #3) |
 
 **Residual rule.** A request still matching two primaries is a classification defect — and
 "the cheaper of the two" is undefined across pools, because AU and OU do not convert (Part
 5.2). The Conductor routes to whichever primary carries the **lower blast radius on a wrong
 answer** — acceptance risk, not price — capped at a triage budget, and logs the ambiguity
-against the pair. Three logged ambiguities on one pair force a boundary redraw or a merge.
+against the pair. Three logged entries on one pair force a boundary redraw or a merge — an
+entry being a residual ambiguity so logged **or a scored cross-pass class disagreement from
+a validation probe** (the trigger as practiced since WO-7a-bis; the disagreement half was
+first codified after the PR #27 cross-vendor review flagged it as unwritten).
 
 ## 4.2 Phase rules (WO-7a redraw, 2026-08-29)
 
@@ -1761,6 +1764,17 @@ discriminator W separates E2 computation/data/transport consumed by an unchanged
 from E5 presentation, rendered state, and interaction behavior. Post-redraw, ter items 2,
 10, 16, and 17 resolve E2, I0, E2, and I1 respectively. G, V, and K are unchanged. The ter
 corpus is now burned; WO-4 remains gated pending an independent validation of redraw #3.
+
+**Redraw #3 amended pre-validation (2026-08-29).** The owner-directed cross-vendor review
+of PR #27 (Sol · xhigh, VERDICT: REVISE; verdict and dispositions in
+`pr27-cross-vendor-review.md`) independently confirmed every score, gate, and commit-order
+claim, and found three MAJOR defects. Dispositions: the human passes are not immutably
+sealed pre-reveal — protocol change: from WO-7a-quater on, the owner's filled blind pass
+is committed and pushed **before** the sealed file is opened; disc. W's two horns both
+claimed its motivating case — W amended above (displayed values are data, not
+presentation); the three-entry trigger counted disagreements while Part 4 defined only
+ambiguity entries — the residual rule now codifies both. The quater probe validates
+redraw #3 **as amended**.
 
 ### WO-7b: Classification corpus — through the implemented router
 The same corpus re-run through the implemented router after WO-6, router vs human, same

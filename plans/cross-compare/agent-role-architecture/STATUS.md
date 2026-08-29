@@ -181,6 +181,20 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   and K stay unchanged. Full score, subset accounting, ledger, and scope:
   `wo7a-ter-corpus.md`; applied text: `final-plan.md` Part 4. The ter corpus is burned, and
   WO-4 stays gated pending independent validation of redraw #3.
+- **PR #27 cross-vendor review — Sol · xhigh, VERDICT: REVISE (2026-08-29):** run at the
+  owner's directive through the repo's review lane (fresh-context Codex CLI, read-only,
+  scope `main...998b978`); verdict verbatim plus dispositions in
+  `pr27-cross-vendor-review.md`. Every score, gate pre-registration, and commit-order
+  claim was independently CONFIRMED. Three MAJORs, all dispositioned: (1) human passes
+  not immutably sealed pre-reveal → protocol change: from WO-7a-quater on, the owner's
+  filled blind pass is committed and pushed **before** the sealed file is opened; (2)
+  disc. W's horns both claimed its motivating case → W amended (displayed values are
+  data, not presentation) before the quater validation; (3) the three-entry merge/redraw
+  trigger counted disagreements while Part 4's text defined only ambiguity entries →
+  residual rule codified to count both. MINORs: the redraw-#2 "validated" claim precisely
+  scoped in `wo7a-ter-corpus.md`; the Related-PRs index corrected; selection-integrity
+  auditability → the quater sealed file carries its exclusion/burn ledger and mining
+  provenance.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -196,7 +210,9 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   corpus + sealed model pass, and v2.1.0 (BREACH/GAP finding buckets; running-process rule
   coverage completed).
 - PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
-- PR #27 — the WO-7a-bis blinded re-probe corpus + sealed model pass.
+- PR #27 — the full WO-7a-bis + WO-7a-ter validation cycle: both corpora with sealed
+  model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
+  record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus.
 
 ## Fresh-session quick start (as of 2026-08-29, redraw #3 applied)
 

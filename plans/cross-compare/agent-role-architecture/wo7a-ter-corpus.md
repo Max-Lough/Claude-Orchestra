@@ -89,7 +89,10 @@ pre-registered rule requires a third boundary redraw.
 
 **Redraw-#2 subset result: 9/10 agreement (90%) — PASS.** The sealed subset is items
 1, 5, 6, 8, 11, 12, 13, 15, 17, and 20; item 17 is the only miss. Redraw #2 is therefore
-validated by its own gate. Three of the four full-corpus misses are outside the subset, so
+validated by its own gate — precisely scoped (per the PR #27 cross-vendor review): its
+G/V-seeded items went 6/6, while amended B missed one of its four seeded items (17) and
+was re-sharpened by redraw #3; the gate passed, but B's redraw-#2 wording did not survive
+unchanged. Three of the four full-corpus misses are outside the subset, so
 the full FAIL does not invalidate redraw #2 as a unit; it scopes the next work to the new
 boundary findings below. The sealed Claude and Sol passes agree on all 20 classes, so
 there is no supplementary cross-family class divergence to add.

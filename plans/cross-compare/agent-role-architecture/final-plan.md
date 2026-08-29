@@ -1212,7 +1212,7 @@ rule — never to another pair's discriminator, however suggestive its question 
 | # | Pair | The one question | Answer → route |
 |---|---|---|---|
 | A | E0 vs I1 | Does the request itself state an environment axis? | Stated (works on X, fails on Y; install/toolchain/CI infra named as the variable) → **E0**. Not stated → the 4.2 diagnosis chain: symptom whose evidence lives only in a live run → **I1**; inquiry over persisted artifacts → **I0**. A suspected-but-unstated axis is no axis — E0 never absorbs an undiagnosed bug; I1 delivers the environment matrix and hands over if the hunt lands on the environment |
-| B | I0 vs I1 | Does the intake name evidence that exists only in a live run? | Yes — intermittence with no persisted trace, timing and races, state that vanishes with the process → **I1**. No — the symptom persists in artifacts that can be read (files on disk, logs, history, code as text) → **I0**. Unanswerable from the intake text → **I0** (lower blast radius). A symptom being active, ongoing, or recurring is not by itself a running requirement (redraw #2). A Detective concluding "run an experiment" has finished correctly |
+| B | I0 vs I1 | Does the intake name evidence that exists only in a live run? | Yes — intermittence with no persisted trace, timing and races, state that vanishes with the process, or missing render/interaction behavior whose truth can only be witnessed while running → **I1**. No — the symptom persists in artifacts that can be read (files on disk, logs, history, code as text), including generated or exported outputs that survive the process even when the discrepancy is found by comparing runs → **I0**. Unanswerable from the intake text → **I0** (lower blast radius). **Evidence means the observation that establishes the symptom, not merely related implementation context**: committed source does not make a runtime-only absence persisted evidence (redraw #3). A symptom being active, ongoing, or recurring is not by itself a running requirement (redraw #2). A Detective concluding "run an experiment" has finished correctly |
 | C | N0 vs I0 | Location or cause? | where/which/when → **N0**; why/how/load-bearing → **I0**. A surviving UNKNOWN becomes I0, never a third scout |
 | D | N0 vs N1 | Can the repository settle it? | Yes → **N0**. No → **N1** |
 | E | N1 vs M0 | Is the corpus already in hand? | Must be found → **N1**. Named and fixed, job is extraction → **M0** |
@@ -1233,6 +1233,7 @@ rule — never to another pair's discriminator, however suggestive its question 
 | T | E2 vs E8 | Does the request name one central mechanism, or a set of surfaces? | One named mechanism, rule, or helper — however many consumers benefit → **E2**. A named surface set — "all", "every", "everywhere", N listed sites each to be found and touched → **E8**. Topology unstated → **E8**: a needless census is bounded waste; a missed site is silent |
 | U | I0 vs N2 | Is the deliverable a causal mechanism, or a cross-source synthesis? | A mechanism explaining observed behavior → **I0**. An exhaustive pattern/category synthesis over a named fixed corpus → **N2** |
 | V | D0 vs N2 | Must the content be recovered from a corpus, or is it settled? | Producing the document requires reading and reconciling a body of material to learn what it must say → **N2**. The content is settled at intake — named events, decisions, and outcomes to record, however summary-shaped the container → **D0** |
+| W | E2 vs E5 | Is the interface itself the acceptance artifact, or merely a consumer/container? | Presentation, layout, rendered visual state, or interaction behavior whose acceptance requires rendering or exercising the interface → **E5**. Computation, data selection, transport, or business logic that can be accepted independently while the screen's presentation and interaction remain unchanged → **E2**. A screen name or UI consumer alone never makes the work E5 (redraw #3) |
 
 **Residual rule.** A request still matching two primaries is a classification defect — and
 "the cheaper of the two" is undefined across pools, because AU and OU do not convert (Part
@@ -1261,6 +1262,13 @@ for the remedy routes directly to the fix class. Corollary — **intake decidabi
 discriminator is answered from the request text alone; an answer that needs facts only the
 work will produce is "unknown" and triggers this rule, and a classification rationale that
 cites implementation facts absent from the request is void.
+
+For this rule, **the cause is stated** only when the intake names both an observable causal
+mechanism or condition and the operation or change implicated in producing it, sufficiently
+to make the remedy's shape intake-visible. A diagnostic that directly names the mechanism
+(for example, duplicate registration) can satisfy that test together with the implicated
+change. Merely saying that a generic symptom began "after" or "since" a change is temporal
+correlation and does not satisfy it (redraw #3).
 
 **Composite orders** *(item 36)*. A request bundling a novel interlocked core with an N-site
 fan-out is one **E3** parent order that owns the core and the acceptance criteria,
@@ -1730,6 +1738,29 @@ pass: full corpus **≥18/20 with ≤1 genuine ambiguity** unblocks WO-4; the **
 redraw-#2-seeded items (identities sealed) ≥9/10** validate the redraw specifically — a
 full-corpus fail concentrated outside that subset indicts the newly probed boundaries,
 not redraw #2.
+
+**WO-7a-ter outcome (2026-08-29): full FAIL; redraw #2 PASS.** The owner pass was completed
+and saved before the seal was opened. It agreed with the primary Claude pass on **16/20
+(80%)**, below the required 18/20; all three blind passes flagged zero ambiguities. The
+sealed redraw-#2 subset agreed on **9/10**, meeting its specific gate, with item 17 the only
+seeded miss. Three of the four misses were outside the subset. Thus WO-4 remains blocked,
+but redraw #2's G/V changes are validated rather than rolled back. Disagreements were item
+2 (I0/E2: when a cause is stated), item 10 (I1/I0: exported outputs), item 16 (E5/E2:
+calculation consumed by a screen), and item 17 (I1/I0: missing runtime render). Full scores,
+the sealed-subset accounting, and the ledger are in `wo7a-ter-corpus.md`. The primary
+Claude and supplementary Sol passes agreed on all 20 classes.
+
+**Redraw #3 applied (2026-08-29), scoped to those findings.** The two new I0/I1 entries
+advance that pair's cross-probe ledger from two to four, tripping the standing third-entry
+redraw-or-merge rule; B now distinguishes persisted generated/exported outputs from runtime
+behavior whose occurrence or absence must be witnessed live, and defines evidence as the
+observation establishing the symptom rather than related source context. The diagnosis
+phase now defines a stated cause as an intake-visible mechanism plus its implicated change,
+with a self-identifying diagnostic eligible and mere temporal correlation ineligible. New
+discriminator W separates E2 computation/data/transport consumed by an unchanged screen
+from E5 presentation, rendered state, and interaction behavior. Post-redraw, ter items 2,
+10, 16, and 17 resolve E2, I0, E2, and I1 respectively. G, V, and K are unchanged. The ter
+corpus is now burned; WO-4 remains gated pending an independent validation of redraw #3.
 
 ### WO-7b: Classification corpus — through the implemented router
 The same corpus re-run through the implemented router after WO-6, router vs human, same

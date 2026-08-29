@@ -166,6 +166,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   **Gates, pre-registered: full ≥18/20 with ≤1 genuine ambiguity → WO-4; sealed subset
   ≥9/10 validates redraw #2 specifically.** Next: the owner classifies blind in
   `wo7a-ter-corpus.md` without opening the sealed file, then scores both gates.
+- **WO-7a-ter SCORED — full FAIL; redraw #2 PASS; redraw #3 APPLIED (2026-08-29):** the
+  owner pass was completed and saved before opening the seal (pre-reveal SHA-256 recorded
+  in the corpus). Full agreement against the primary Claude pass was **16/20 (80%)** with
+  zero ambiguity flags, so the ≥18/20 gate failed and WO-4 remains blocked. The sealed
+  redraw-#2 subset was **9/10 (90%)**, so redraw #2 is specifically validated; item 17 was
+  its only miss, while three of four misses sat outside the subset. Disagreements: item 2
+  I0/E2 (cause-stated threshold), item 10 I1/I0 (persisted exports), item 16 E5/E2
+  (unchanged UI consuming new computation), item 17 I1/I0 (runtime-only negative render
+  evidence). The sealed Claude and Sol passes agreed on all 20 classes. I0/I1 advances
+  from two ledger entries to four, tripping the third-entry redraw/merge rule; I0/E2 and
+  E2/E5 each gain one. Redraw #3 therefore sharpens B's evidence object, defines when the
+  diagnosis corollary treats a cause as stated, and adds discriminator W for E2/E5. G, V,
+  and K stay unchanged. Full score, subset accounting, ledger, and scope:
+  `wo7a-ter-corpus.md`; applied text: `final-plan.md` Part 4. The ter corpus is burned, and
+  WO-4 stays gated pending independent validation of redraw #3.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -183,20 +198,16 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
 - PR #27 — the WO-7a-bis blinded re-probe corpus + sealed model pass.
 
-## Fresh-session quick start (as of 2026-08-29, WO-7a-ter corpus ready)
+## Fresh-session quick start (as of 2026-08-29, redraw #3 applied)
 
-1. **The owner's blind pass on WO-7a-ter is the active step.** Redraw #2 landed after the
-   bis FAIL, the owner ruled its validation runs cross-repo, and the 20-item corpus is
-   drawn with both model passes sealed (see the WO-7a-ter entry above). The owner fills
-   the "Your class" column of `wo7a-ter-corpus.md` against the redraw-#2 Part 4 as
-   written — **without opening `wo7a-ter-model-classification-SEALED.md`** — then scores
-   two pre-registered gates: full corpus ≥18/20 with ≤1 genuine ambiguity (unblocks WO-4,
-   which encodes Part-4.1 **and §4.2** as data against the redraw-#2 text), and the
-   sealed 10-item redraw-#2 subset ≥9/10 (validates the redraw; a fail concentrated
-   outside the subset indicts the newly probed E5/E6/K boundaries instead). Fail → third
-   redraw scoped to the new ledger findings. Cross-probe pair ledger: I0/I1 and E2/E3 at
-   two entries each, D0/N2 at one — a third on any of them trips the merge/redraw
-   trigger.
+1. **Independent validation of redraw #3 is the active gate.** WO-7a-ter scored 16/20 on
+   the full corpus (FAIL) but 9/10 on the sealed redraw-#2 subset (PASS), so G/V stay and
+   the third redraw is narrowly applied to I0/I1 evidence, the cause-stated diagnosis
+   threshold, and new E2/E5 discriminator W. The ter items and both sealed passes are now
+   burned. Before WO-4, pre-register and draw a fresh blinded probe targeted at those
+   three changes; do not reuse ter as independent evidence. I0/I1 now has four ledger
+   entries and has already tripped its redraw/merge trigger; E2/E3 remains at two and
+   D0/N2 at one.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.

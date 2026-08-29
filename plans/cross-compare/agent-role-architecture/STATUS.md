@@ -140,6 +140,7 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   corpus + sealed model pass, and v2.1.0 (BREACH/GAP finding buckets; running-process rule
   coverage completed).
 - PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
+- PR #27 — the WO-7a-bis blinded re-probe corpus + sealed model pass.
 
 ## Fresh-session quick start (as of 2026-08-29, WO-7a-bis corpus ready)
 

@@ -1776,6 +1776,16 @@ presentation); the three-entry trigger counted disagreements while Part 4 define
 ambiguity entries — the residual rule now codifies both. The quater probe validates
 redraw #3 **as amended**.
 
+**WO-7a-quater pre-registration (2026-08-29).** The redraw-#3 validation probe: 20 items
+in `wo7a-quater-corpus.md`, drawn from the unburned remainder of the ter cross-repo pools
+(exclusion ledger and mining provenance in the sealed file, per the review's auditability
+finding), with both model passes and the seeded-subset key sealed in
+`wo7a-quater-model-classification-SEALED.md`. **Gates: full ≥18/20 with ≤1 genuine
+ambiguity → WO-4; the sealed redraw-#3 subset at ≥7/8 validates the redraw
+specifically** — a full fail concentrated outside the subset indicts the other probed
+boundaries, not the redraw. Seal protocol per the cross-vendor review: the owner's filled
+pass is committed and pushed before the seal is opened.
+
 ### WO-7b: Classification corpus — through the implemented router
 The same corpus re-run through the implemented router after WO-6, router vs human, same
 thresholds. A WO-7a pass that WO-7b fails indicts the router implementation, not the taxonomy.

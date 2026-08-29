@@ -195,6 +195,19 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   scoped in `wo7a-ter-corpus.md`; the Related-PRs index corrected; selection-integrity
   auditability → the quater sealed file carries its exclusion/burn ledger and mining
   provenance.
+- **WO-7a-quater DRAWN, passes SEALED (2026-08-29):** the redraw-#3 validation probe,
+  drawn per the owner's direction from the unburned remainder of the two foreign-repo
+  pools. The ter mining reports were recovered from the Codex CLI session logs and the
+  class-hint burn list rebuilt from the drawing session's transcript; 14 burned commits,
+  the 20 ter-used commits, and 4 more excluded under a stricter description-exposure
+  standard are all ledgered with provenance in the sealed file. 20 items in
+  `wo7a-quater-corpus.md`; sealed in `wo7a-quater-model-classification-SEALED.md`:
+  the Claude fresh-context primary (scored), the Sol xhigh supplementary (run from an
+  empty cwd — an isolation tightening over ter; never gating), and the seeded-subset
+  key. **Gates, pre-registered: full ≥18/20 with ≤1 genuine ambiguity → WO-4; sealed
+  redraw-#3 subset ≥7/8 validates the redraw.** New seal protocol: the owner commits and
+  pushes the filled corpus **before** opening the sealed file. Next: the owner
+  classifies blind in `wo7a-quater-corpus.md`.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -214,16 +227,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus.
 
-## Fresh-session quick start (as of 2026-08-29, redraw #3 applied)
+## Fresh-session quick start (as of 2026-08-29, WO-7a-quater corpus ready)
 
-1. **Independent validation of redraw #3 is the active gate.** WO-7a-ter scored 16/20 on
-   the full corpus (FAIL) but 9/10 on the sealed redraw-#2 subset (PASS), so G/V stay and
-   the third redraw is narrowly applied to I0/I1 evidence, the cause-stated diagnosis
-   threshold, and new E2/E5 discriminator W. The ter items and both sealed passes are now
-   burned. Before WO-4, pre-register and draw a fresh blinded probe targeted at those
-   three changes; do not reuse ter as independent evidence. I0/I1 now has four ledger
-   entries and has already tripped its redraw/merge trigger; E2/E3 remains at two and
-   D0/N2 at one.
+1. **The owner's blind pass on WO-7a-quater is the active step.** Redraw #3 — applied
+   after the ter FAIL and amended after the PR #27 cross-vendor review (disc. W
+   values-are-data clarification, codified disagreement trigger) — needs independent
+   validation before WO-4. The 20-item corpus is drawn from the unburned cross-repo
+   remainder with both model passes sealed (see the WO-7a-quater entry above). The owner
+   fills the "Your class" column of `wo7a-quater-corpus.md` against the amended Part 4 as
+   written — **without opening `wo7a-quater-model-classification-SEALED.md`** — then,
+   per the new seal protocol, **commits and pushes the filled corpus BEFORE opening the
+   sealed file**, then scores the two pre-registered gates: full ≥18/20 with ≤1 genuine
+   ambiguity (unblocks WO-4) and the sealed redraw-#3 subset ≥7/8 (validates redraw #3
+   specifically). Cross-probe pair ledger standing: I0/I1 at four entries (trigger
+   already tripped and absorbed by redraw #3), E2/E3 at two, D0/N2, I0/E2, and E2/E5 at
+   one each — a third entry on any standing pair trips the merge/redraw trigger.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.

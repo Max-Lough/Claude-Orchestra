@@ -131,6 +131,25 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   defects were struck. The disagreements are item 5 (I1/I0), item 16 (N2/D0 provisional),
   and item 17 (E3/E2). The full pair ledger is in `wo7a-bis-corpus.md`. Per the
   pre-registered rule, a second Part-4 boundary redraw is now required before WO-4.
+- **Part-4 boundary redraw #2 APPLIED (2026-08-29):** scoped to the three bis findings —
+  disc. B recast on where the evidence lives (live-run-only vs persisted artifacts;
+  recurrence alone never establishes a running requirement; §4.2 chain and disc. A
+  mirrored); new disc. V (D0 vs N2: settled content to record vs content recovered by
+  reconciling a corpus; preamble session-summary example narrowed); disc. G given an
+  explicit component unit (what could land as its own order; clauses of one policy are one
+  component; an acceptance unit must span ≥2 components) plus the preamble pairwise-scoping
+  rule (a discriminator routes only within its own pair). All three flagged items resolve
+  determinately, and one *agreed* item is logged as shifting under the tightened G — bis
+  item 1 re-resolves E3→E2 (answer-key table and the shift note in `wo7a-bis-corpus.md`).
+  Cross-probe pair ledger: I0/I1 and E2/E3 each at two logged entries, D0/N2 at one; a
+  third on any pair trips the merge/redraw trigger. **OPEN DECISION (owner): how redraw #2
+  is validated before WO-4.** The unused-history pool is nearly exhausted (~3 substantive
+  commits remain: `c15f090`, `c51a8f6`, `e3b730d`), so the options are (a) a short
+  WO-7a-ter probe of ~10–12 items — the last unused commits plus synthetic items — seeded
+  only on I0/I1, D0/N2, E2/E3, and the shifted G boundary, threshold pro-rated ≥90% with
+  ≤1 genuine ambiguity (recommended: it is cheap and the three redrawn rules plus the item-1
+  shift are exactly what needs independent confirmation), or (b) accept the answer key and
+  let WO-7b's run through the implemented router serve as the validation gate.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -148,14 +167,17 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
 - PR #27 — the WO-7a-bis blinded re-probe corpus + sealed model pass.
 
-## Fresh-session quick start (as of 2026-08-29, WO-7a-bis scored FAIL)
+## Fresh-session quick start (as of 2026-08-29, post-redraw #2)
 
-1. **The second Part-4 boundary redraw is the active step.** WO-7a-bis scored 17/20
-   (85%) with one genuine ambiguity, so WO-4 remains gated. Use the disagreement ledger
-   in `wo7a-bis-corpus.md`: clarify §4.2's active-runtime wording against discriminator B,
-   add or resolve the missing D0/N2 boundary for status/handoff summaries, and define
-   discriminator G's component/contract unit and composition with other pair rules. Only
-   after the redraw may WO-4 encode Part-4.1 and §4.2 as data.
+1. **The open owner decision — how redraw #2 is validated — is the active step.**
+   WO-7a-bis scored 17/20 (85%) — FAIL — and boundary redraw #2 landed the same day,
+   scoped to the three ledger findings (see the redraw entry above; full detail in
+   `wo7a-bis-corpus.md` and final-plan.md's WO-7a outcome). WO-4 stays gated until the
+   owner rules between (a) a short WO-7a-ter blinded probe (~10–12 items, the last unused
+   commits plus synthetic items, seeded on I0/I1, D0/N2, E2/E3, and the shifted G
+   boundary; pro-rated ≥90%, ≤1 genuine ambiguity — recommended) and (b) accepting the
+   answer key with WO-7b's router run as the validation gate. Either way WO-4 encodes
+   Part-4.1 **and §4.2** as data against the redraw-#2 text.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.

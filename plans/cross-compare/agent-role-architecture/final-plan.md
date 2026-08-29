@@ -1166,12 +1166,19 @@ decided by the **requested work product** — the artifact or answer that must e
 order closes — and, on any adjacent pair, by its 4.1 discriminator, both answered **from
 the request text alone**. The work product is the **immediate operation and phase** — find,
 diagnose, synthesize, build, verify — never the container the result lands in: research
-folded into a report is N1, table extraction into a brief is M0, a session summary is N2;
-D0 is only for documenting a decision already made (disc. R). Domain nouns in the subject
+folded into a report is N1, table extraction into a brief is M0, a summary reconciled out
+of a large session record is N2 while a status note recording settled outcomes is D0
+(disc. V); D0 is only for documenting a decision already made (disc. R). Domain nouns in the subject
 matter do not route: "add an agent
 that drives Blender" is roster work (E2), not spatial code (E6); "set up CI" with nothing
 broken is authoring (E2), not environment surgery (E0). When a signal word and a
 discriminator disagree, the discriminator wins.
+
+**Discriminators are pairwise-scoped** *(redraw #2, 2026-08-29; bis item 17)*. A 4.1
+discriminator is consulted only when the two classes it names are the two contenders. Once
+intake narrows a request to classes X and Y, the decision falls to the X/Y discriminator if
+one exists, else to this precedence rule and the §4.2 phase rules, else to the residual
+rule — never to another pair's discriminator, however suggestive its question reads.
 
 | Class | Task class | Recall signals | Primary role | Primary casting | Reviewer | Escalation path |
 |---|---|---|---|---|---|---|
@@ -1204,13 +1211,13 @@ discriminator disagree, the discriminator wins.
 
 | # | Pair | The one question | Answer → route |
 |---|---|---|---|
-| A | E0 vs I1 | Does the request itself state an environment axis? | Stated (works on X, fails on Y; install/toolchain/CI infra named as the variable) → **E0**. Not stated → the 4.2 diagnosis chain: active runtime symptom to reproduce or instrument → **I1**; root-cause inquiry over fixed artifacts → **I0**. A suspected-but-unstated axis is no axis — E0 never absorbs an undiagnosed bug; I1 delivers the environment matrix and hands over if the hunt lands on the environment |
-| B | I0 vs I1 | Does the next step require running or instrumenting? | No → **I0**. Yes → **I1**. Unanswerable from the intake text → **I0** (lower blast radius). A Detective concluding "run an experiment" has finished correctly |
+| A | E0 vs I1 | Does the request itself state an environment axis? | Stated (works on X, fails on Y; install/toolchain/CI infra named as the variable) → **E0**. Not stated → the 4.2 diagnosis chain: symptom whose evidence lives only in a live run → **I1**; inquiry over persisted artifacts → **I0**. A suspected-but-unstated axis is no axis — E0 never absorbs an undiagnosed bug; I1 delivers the environment matrix and hands over if the hunt lands on the environment |
+| B | I0 vs I1 | Does the intake name evidence that exists only in a live run? | Yes — intermittence with no persisted trace, timing and races, state that vanishes with the process → **I1**. No — the symptom persists in artifacts that can be read (files on disk, logs, history, code as text) → **I0**. Unanswerable from the intake text → **I0** (lower blast radius). A symptom being active, ongoing, or recurring is not by itself a running requirement (redraw #2). A Detective concluding "run an experiment" has finished correctly |
 | C | N0 vs I0 | Location or cause? | where/which/when → **N0**; why/how/load-bearing → **I0**. A surviving UNKNOWN becomes I0, never a third scout |
 | D | N0 vs N1 | Can the repository settle it? | Yes → **N0**. No → **N1** |
 | E | N1 vs M0 | Is the corpus already in hand? | Must be found → **N1**. Named and fixed, job is extraction → **M0** |
 | F | N0 vs N2 | Was the declared surface exhausted without truncation? | Yes → **N0** result stands. No → **N2** (automatic) |
-| G | E2 vs E3 | Does the request itself name coupled contracts — ≥2 components that must change together, or an acceptance unit that cannot land in independent pieces? | Yes, observable in the intake text → **E3** — named coupling beats a named template to mirror. No coupling named (a named template/lane to mirror is evidence of separability, never an override) → **E2**. "Big" is not an answer; big-and-separable is a chain of E2 orders. Never decided on imagined implementation facts |
+| G | E2 vs E3 | Does the request itself name coupled contracts — ≥2 components that must change together, or an acceptance unit that cannot land in independent pieces? | Yes, observable in the intake text → **E3** — named coupling beats a named template to mirror. No coupling named (a named template/lane to mirror is evidence of separability, never an override) → **E2**. "Big" is not an answer; big-and-separable is a chain of E2 orders. Never decided on imagined implementation facts. A **component** is an artifact that could land as its own order — a subsystem, file set, or contract with independent acceptance; clauses, fields, or rules of one document, policy, or mechanism are one component however many the request enumerates, and an acceptance unit qualifies only when it spans ≥2 such components (redraw #2) |
 | H | E3 vs E8 | Is the risk a wrong line or a missed site? | Wrong line → **E3**. Missed site, semantics constant → **E8**. Both — a novel core plus an N-site migration → the composite rule (4.2): **E3** parent owns the core, E8 child order carries the fan-out |
 | I | E8 vs E1 | Is the transform strictly uniform, enumerable, and validator-checkable? | Yes — an exact token substitution, grep-verifiable, however many files → **E1**, and this beats E8's signal words. No (pattern plus judgment at sites) → **E8** |
 | J | E8 vs E4 | Does any persisted data change shape or content? | No → **E8**. Yes → **E4**, even when the code is trivial |
@@ -1225,6 +1232,7 @@ discriminator disagree, the discriminator wins.
 | S | E0 vs E2 | Is the environment the variable, or the artifact? | Something that used to work behaves differently across envs/installs/runners → **E0**. Authoring or extending config/workflow/CI whose desired behavior is specified and nothing is broken → **E2**. "CI" as a word routes nothing |
 | T | E2 vs E8 | Does the request name one central mechanism, or a set of surfaces? | One named mechanism, rule, or helper — however many consumers benefit → **E2**. A named surface set — "all", "every", "everywhere", N listed sites each to be found and touched → **E8**. Topology unstated → **E8**: a needless census is bounded waste; a missed site is silent |
 | U | I0 vs N2 | Is the deliverable a causal mechanism, or a cross-source synthesis? | A mechanism explaining observed behavior → **I0**. An exhaustive pattern/category synthesis over a named fixed corpus → **N2** |
+| V | D0 vs N2 | Must the content be recovered from a corpus, or is it settled? | Producing the document requires reading and reconciling a body of material to learn what it must say → **N2**. The content is settled at intake — named events, decisions, and outcomes to record, however summary-shaped the container → **D0** |
 
 **Residual rule.** A request still matching two primaries is a classification defect — and
 "the cheaper of the two" is undefined across pools, because AU and OU do not convert (Part
@@ -1241,9 +1249,12 @@ or to a composite request with no decomposition rule (ledger: `wo7a-corpus.md`).
 **Diagnosis before implementation** *(items 9, 11, 16)*. A request that reports a symptom
 whose cause the request text does not establish is an investigation first, never a presumed
 fix, routed by an explicit precedence chain: **(1)** an environment axis stated in the
-request → **E0**; **(2)** an active runtime symptom that must be reproduced or instrumented
-→ **I1**; **(3)** a root-cause-only inquiry over fixed artifacts (logs, history, code as
-text) → **I0**. Between (2) and (3) discriminator B decides, and unanswerable → I0. The
+request → **E0**; **(2)** a symptom whose evidence exists only in a live run and so must be
+reproduced or instrumented → **I1**; **(3)** a root-cause inquiry whose evidence persists
+in fixed artifacts (logs, history, files, code as text) → **I0**. Between (2) and (3)
+discriminator B decides on the evidence named at intake — a symptom being active, ongoing,
+or recurring never by itself establishes a running requirement (redraw #2) — and
+unanswerable → I0. The
 fix is a second order, classified by shape once the cause is known — exactly the
 hand-over I1's escalation path already names. A request that states its own cause and asks
 for the remedy routes directly to the fix class. Corollary — **intake decidability**: every
@@ -1683,6 +1694,26 @@ type, composite bait, report-container bait), a sealed fresh-context model pass,
 independent owner pass, threshold pro-rated to ≥90% with ≤1 genuine ambiguity. The original
 40 are burned for blinding now that the ledger and resolutions exist. On a pass, WO-4
 encodes 4.1 **and 4.2** as data; WO-7b re-validates through the implemented router.
+
+**WO-7a-bis outcome (2026-08-29): FAIL — 17/20 (85%), one genuine ambiguity (at the cap).**
+Three disagreements: I0/I1 (bis item 5 — "active" read as a running requirement against B's
+literal default), D0/N2 (bis item 16 — no discriminator existed for the pair), E2/E3 (bis
+item 17 — another pair's discriminator invoked because G left "component" undefined).
+**Redraw #2** applied the same day, scoped to the three ledger findings: B recast on where
+the evidence lives (live-run-only vs persisted artifacts; recurrence alone never establishes
+a running requirement; the §4.2 chain and disc. A mirrored), new discriminator V (D0 vs N2:
+settled content recorded vs content recovered from a corpus; the preamble's session-summary
+example narrowed to match), G given an explicit component unit (what could land as its own
+order; clauses of one policy are one component; an acceptance unit must span ≥2 components),
+and the preamble given the pairwise-scoping rule. One agreed item shifts class under the
+tightened G and is logged openly rather than silently: bis item 1 (both passes E3 via the
+old acceptance-unit horn) re-resolves E2 — the installer lifecycle is one component. Ledger
+and answer-key resolutions: `wo7a-bis-corpus.md`. **How redraw #2 is validated before WO-4
+is an OPEN DECISION for the owner** — the unused-history pool is nearly exhausted (about
+three substantive commits remain), so the options are a short WO-7a-ter probe (~10–12 items:
+the last unused commits plus synthetic items, seeded on I0/I1, D0/N2, E2/E3, and the shifted
+G boundary; threshold pro-rated ≥90%, ≤1 genuine ambiguity) or accepting the answer key and
+letting WO-7b's router run serve as the validation gate.
 
 ### WO-7b: Classification corpus — through the implemented router
 The same corpus re-run through the implemented router after WO-6, router vs human, same

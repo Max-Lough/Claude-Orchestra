@@ -94,10 +94,24 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - **WO-7a corpus READY (2026-08-28):** `wo7a-corpus.md` — 40 one-line requests reverse-derived
   from real history, randomized, 26 on the seeded adjacent-pair boundaries (E0/I1 ×6, I0/I1 ×3,
   E2/E3 ×7, E8/E1 ×4, E5/E6 ×2 bait-only, N0/N2 ×3, performance intake ×1). The model's pass
-  is sealed in `wo7a-model-classification-SEALED.md`. **Next: the owner classifies the corpus
-  independently — do NOT open the sealed file first** — then compare (≥90% agreement, ≤2
-  genuine ambiguities, else redraw boundaries before WO-4). Caveat: history holds no true
+  is sealed in `wo7a-model-classification-SEALED.md`. Caveat: history holds no true
   E4/E5/E6 work; seed WO-7b with synthetic E5/E6 items.
+- **WO-7a SCORED — FAIL — and boundaries REDRAWN (2026-08-29):** owner pass vs sealed pass
+  = **31/40 (77.5%)** against the ≥36/40 threshold; two genuine ambiguities (at the cap); no
+  corpus defects struck. The nine disagreements spanned nine distinct pairs — ten with the
+  item-16 ambiguity's I0/I1 (none repeated — no merge forced) — concentrated on **E2's
+  borders** (five pairs) and the **diagnosis frontier** (E0/I1, E2/I1, I0/I1, I0/N2); Bands
+  A/D were perfectly clean. Root cause: boundaries appealed to solution facts, but
+  classification happens at intake. Redraw applied to final-plan.md per the pre-registered
+  rule: signals-precedence (Part 4 preamble), amended discriminators A/B/G/H/I, new S/T/U,
+  new **§4.2 phase rules** (diagnosis-before-implementation + intake decidability; composite
+  orders). Owner review the same day tightened the wording: explicit E0→I1→I0 diagnosis
+  chain (suspected-axis E0 triage removed), intake-visible T/U, coupling-beats-mirror in G,
+  the operation-not-container clause, signals column renamed "Recall signals". All ten
+  flagged items resolve determinately under the new rules (table in `wo7a-corpus.md`) — but
+  that table is an answer key, not a validation, so **WO-4 stays gated on WO-7a-bis** (fresh
+  blinded mini-corpus; the original 40 are burned for blinding). WO-4 then encodes 4.1 and
+  4.2 as data; WO-7b re-validates through the implemented router.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -113,15 +127,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   corpus + sealed model pass, and v2.1.0 (BREACH/GAP finding buckets; running-process rule
   coverage completed).
 
-## Fresh-session quick start (as of 2026-08-28, post-PR #25)
+## Fresh-session quick start (as of 2026-08-29, post-WO-7a redraw)
 
-1. **WO-7a is the active work order.** The owner classifies all 40 items in
-   `wo7a-corpus.md` against final-plan.md's Part-4/4.1 tables WITHOUT opening
-   `wo7a-model-classification-SEALED.md`, then the session scores agreement
-   (pass: ≥90%, ≤2 genuine ambiguities; fail → redraw boundaries before WO-4).
+1. **WO-7a-bis is the active work order.** WO-7a scored 31/40 — FAIL — the boundaries were
+   redrawn and then wording-tightened under owner review (see the WO-7a SCORED entry above);
+   the redraw's own resolution table is an answer key, so it gets one clean blinded re-probe:
+   draw 15–20 fresh one-line requests from source commits the first corpus did not use
+   (unused shas are derivable from the audit-trail comment in `wo7a-corpus.md`), seeded on
+   the redrawn boundaries (diagnosis chain, E2/E8 topology, I0/N2 output type, composite
+   bait, report-container bait), seal a fresh-context model pass, owner classifies blind,
+   score at ≥90% with ≤1 genuine ambiguity. Pass → WO-4, which must encode Part-4.1 **and
+   §4.2** as data against the redrawn text (not the pre-2026-08-29 version). Fail → second
+   redraw.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
-3. After WO-7a scoring: WO-4 (schemas) → WO-5 (Verifier substrate) → WO-6 (router), with the
+3. Sequence from here: WO-4 (schemas) → WO-5 (Verifier substrate) → WO-6 (router), with the
    P3→P2→P1 deferred backlog (`plans/proposed-orchestra-improvements.md`) schedulable any
    time — P3 (verification manifest) is the cheapest and benefits every review immediately.

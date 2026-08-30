@@ -22,8 +22,9 @@ home — the lab is scratch):
 
 ## State of the plan
 
-`final-plan.md` specifies 24 catalog entries (22 model-cast roles + 2 deterministic
-substrates), a 24-class taxonomy with a one-primary-per-class bijection, a computed
+`final-plan.md` specifies 23 active catalog entries (21 model-cast roles + 2 deterministic
+substrates; 24 before the 2026-08-29 I0/I1 merge), a 23-class taxonomy with a
+one-primary-per-class bijection, a computed
 cross-family review matrix, a subscription-allowance cost model, and an 18-work-order
 migration. All 11 audit findings are dispositioned (see its `## Audit dispositions`):
 
@@ -221,6 +222,30 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   no persisted-generated-output I0 case for B and no values-only E2 case for W existed in
   the source pool; both edges stay untested until WO-7b synthetics. Full tables and ledger:
   `wo7a-quater-corpus.md`.
+- **FINAL RULING (2026-08-29) — validation-gate cycle CLOSED by owner delegation; WO-4
+  UNBLOCKED.** The owner ended the probe/redraw cycle and delegated the disposition to a
+  final end-to-end review of the model-selection layer, pre-committing to its
+  conclusions. Ruled and applied to `final-plan.md` (Part 4 marked as the final
+  owner-delegated ruling superseding the redraw cycle): **(1) I0/I1 merged** into one
+  Investigator seat and class I0 (identical castings at every rung — the split bought
+  intake burden and no routing difference; five distinct-item ledger entries; the
+  boundary is a solution fact, undecidable at intake) — Part 2 seat 7 rewritten, seat 13
+  retired with a stub, disc. B retired, `I1` kept as a registered alias; **(2) Part 4
+  restructured around a §4.0 total decision procedure** — seven fixed-order steps
+  (decisions/assurance → answers → symptom gate → consequence trumps → acceptance
+  artifact → implementation shape → residual) that cite the §4.1 discriminators, closing
+  the many-doors defect every probe failure traced to (diagnosis-chain vs W, L vs
+  cause-stated, G vs J, spatial acceptance vs separability are now explicitly ordered);
+  **(3) classification error accepted as a property of one-line intake** (~70–85%
+  ceiling, zero ambiguity flags, three lexical redraws moved agreement down): class is a
+  routing hypothesis with first-class `RECLASSIFY` recovery, and risk tier + author
+  family — never class — carry the review/authorization gates; 7.2's routing gate
+  restated as misroute recovery. E2/E3, E3/E4, E2/E6, E5/I1 and the rest are **not**
+  merged (different castings or review lanes); their conflicts are resolved by the
+  procedure's ordering. No fifth mined corpus: WO-7b through the implemented router
+  (with the reserved B/W synthetic edges) is the remaining validation. The cross-probe
+  pair ledger is closed and dispositioned in `wo7a-quater-corpus.md`. Next: **WO-4**
+  (schemas; encode §4.0 as ordered data, 23-class invariant, RECLASSIFY status).
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -240,21 +265,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-29, WO-7a-quater scored)
+## Fresh-session quick start (as of 2026-08-29, final ruling applied)
 
-1. **A scoped boundary redraw #4 is the active step; WO-4 remains blocked.** WO-7a-quater
-   failed both gates: 14/20 full and 4/8 on redraw #3's sealed subset. Start from the six
-   primary disagreements and four supplementary divergences in `wo7a-quater-corpus.md`.
-   The recurring I0/I1 boundary now has five distinct-item entries despite redraw #3;
-   E5/I1 gained two in this probe, and E0/E5, E3/E4, E2/I1, E5/E8, and E2/E6 each gained
-   one. Redraw #4 must decide where phase diagnosis yields to a specified fix, order L
-   against the cause-stated corollary, and resolve cross-specialty ownership for
-   E3/E4 and E2/E6. Do not claim coverage for B's persisted-generated-output horn or W's
-   values-only horn: those await WO-7b synthetics.
+1. **WO-4 is the active step — the validation-gate cycle is closed.** The 2026-08-29
+   owner-delegated final ruling (see the FINAL RULING bullet above) merged I0/I1 into one
+   Investigator seat, restructured Part 4 around the §4.0 total decision procedure, and
+   demoted class to a routing hypothesis with `RECLASSIFY` recovery. WO-4 encodes §4.0 as
+   ordered data with the 23-class invariant (`I1` alias) and the RECLASSIFY report
+   status; no redraw #4 and no fifth mined corpus. B's persisted-generated-output horn
+   and W's values-only horn remain untested until WO-7b synthetics, which now measure
+   misroute recovery (restated 7.2 gate), not one-shot agreement.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
-3. Sequence after a fresh validation clears the taxonomy gate: WO-4 (schemas) → WO-5
-   (Verifier substrate) → WO-6 (router). The P3→P2→P1 deferred backlog
+3. Sequence (taxonomy gate closed by the ruling): WO-4 (schemas) → WO-5
+   (Verifier substrate) → WO-6 (router) → WO-7b (synthetics through the router — the
+   remaining routing validation). The P3→P2→P1 deferred backlog
    (`plans/proposed-orchestra-improvements.md`) remains schedulable meanwhile — P3
    (verification manifest) is the cheapest and benefits every review immediately.

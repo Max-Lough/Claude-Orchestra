@@ -3,7 +3,8 @@
 ## Goal
 
 Specify a complete agent role architecture and hierarchy for a cross-vendor multi-agent coding
-harness: 22 model-cast capability roles plus 2 deterministic substrates, a 24-class task
+harness: 21 model-cast capability roles plus 2 deterministic substrates (22/24 before the
+2026-08-29 I0/I1 merge), a 23-class task
 taxonomy in strict one-to-one ownership with them, an author-aware review matrix computed from
 recorded provenance, a subscription-allowance cost model denominated per vendor pool (and per
 bucket where a vendor meters per bucket), and a staged, reversible migration from the roster in
@@ -166,8 +167,10 @@ an instance may be handed, dispatcher-enforced. **Risk tiers** (orthogonal to cl
 - **T3** gate-critical or irreversible (production effects, deletion, secrets, releases,
   external communication, critical security decisions) — always human-authorized (P13).
 
-Twenty-four catalog entries: 22 model-cast roles and 2 deterministic substrates (V0, P0), each
-owning exactly one task class.
+Twenty-three active catalog entries: 21 model-cast roles and 2 deterministic substrates
+(V0, P0), each owning exactly one task class. Entry 13 is retired — class I1 merged into
+I0 by the final owner-delegated ruling of 2026-08-29 — with its number kept so references
+stay stable.
 
 ---
 
@@ -331,8 +334,8 @@ owning exactly one task class.
   answers on under-specified missions; answering "why" when asked "where."
 - **Owns / must not receive.** Owns N0. Never: causal questions (→ I0), >32K supplied tokens or
   unbounded repos (→ N2/I0), judgment that steers a plan.
-- **Escalation.** One re-probe on an UNKNOWN; a surviving UNKNOWN becomes a Detective case —
-  never a third scout mission.
+- **Escalation.** One re-probe on an UNKNOWN; a surviving UNKNOWN becomes an Investigator
+  case (I0) — never a third scout mission.
 - **Review.** The Verifier replays citations and search counts; T0 facts need no model verdict;
   conclusions route through I0/N1/N2/R0.
 
@@ -384,34 +387,75 @@ owning exactly one task class.
 - **Review.** Cross-family (Opus 5 · high) for decision-bearing conclusions; seeded-document
   checks measure extraction completeness.
 
-#### 7. Detective — class I0 (causal evidence investigation, read-only)
+#### 7. Investigator — class I0 (investigation: causal evidence, reproduction, performance intake)
 
-- **Purpose.** Answer *why / how / which is load-bearing* about code that exists, by reading
-  only, returning an evidence-chained verdict with a confidence grade
-  (CONFIRMED / LIKELY / UNCERTAIN).
-- **Casting.** Primary Anthropic · Claude Opus 5 · high; mirror OpenAI · GPT-5.6 Sol · high;
-  ceiling Fable 5 · high when the trail is cold and blocking.
-- **Rationale.** Senior SWE-bench #1 in bug and performance investigation — the most on-point
-  measurement for this contract; freshest cutoff matters most here. Sol mirrors with genuinely
-  different blind spots; the two disagreeing is informative.
-- **Tools.** READ, SEARCH, NETWORK, EXECUTE read-only. Explicitly not running the code under
-  test — that boundary separates it from I1. Shape: `repo`.
-- **Weaknesses / failure modes.** Over-engineering the diagnosis; **confident narrative** from
-  partial evidence; unreviewed output steering plans.
-- **Verdict checks, in increasing cost.** (1) Verifier chain re-run, every verdict: cited lines
-  exist and say what the report claims. (2) Refutation duty, contractual, every verdict: the
-  evidence that would refute the leading hypothesis and the result of looking; the two strongest
-  discarded alternatives with citations — a verdict with no discarded alternatives is incomplete
-  by contract. (3) **Cross-family falsification pass, mandatory for gate-class CONFIRMED**
-  (verdicts authorizing Principal-tier, data, or security work, or a re-plan): a second
-  Detective on the opposite family receives the question, chain and alternatives — not the
-  narrative — and returns CONCUR / CONCUR-WITH-DOUBT / COMPETING HYPOTHESIS. Disagreement
-  surfaces to the Conductor as a decision. Where unavailable, the verdict stands as LIKELY and
-  cannot authorize gate-class work.
-- **Owns / must not receive.** Owns I0. Never: anything requiring execution (→ I1), locating
-  (→ N0 at 1/25th the draw), fixes (→ executors), review.
-- **Escalation.** In: a scout UNKNOWN surviving one re-probe; questions whose wrong answer
-  misdirects a plan. Out: Fable ceiling; I1 when the next step is an experiment.
+*Merged seat — final owner-delegated ruling, 2026-08-29.* Detective (I0, read-only) and
+Investigator (I1, run-the-system) are one seat. Their primary, mirror, and ceiling
+castings were identical at every rung (Opus 5 · high / Sol · high / Fable 5 · high), so
+the split carried no routing, casting, or review-lane consequence — while its boundary
+(whether the decisive evidence needs a live run) is a solution fact, unanswerable at
+intake, and produced five distinct-item probe disagreements across four probes, surviving
+a redraw aimed squarely at it. Class I1 is retired; its identifier is a registered alias
+of I0.
+
+- **Purpose.** Answer *why / how / which is load-bearing* — and chase intricate,
+  intermittent, or state-dependent defects and performance regressions — by whatever the
+  evidence requires: reading first, then instrumenting, bisecting, profiling, or
+  reproducing when its own hypothesis demands an experiment. Deliver an evidence-chained
+  verdict with a confidence grade (CONFIRMED / LIKELY / UNCERTAIN), a minimal
+  reproduction plus diagnosis, or a fix with the reproduction attached.
+- **Casting.** Primary Anthropic · Claude Opus 5 · high; mirror OpenAI · GPT-5.6 Sol ·
+  high (preferred when the defect is environment- or tool-loop-shaped; wrong for race
+  hunts — the concurrency blind spot); ceiling Fable 5 · high when the trail is cold and
+  blocking, or after two failed hunts with different hypotheses.
+- **Rationale.** Senior SWE-bench #1 in bug **and performance** investigation — the most
+  on-point measurement for this contract; freshest cutoff matters most here. Sol mirrors
+  with genuinely different blind spots; the two disagreeing is informative.
+- **Read-only-first law.** Every investigation begins in read-only posture. Crossing into
+  execution is a reportable phase transition: the report records what was run and why the
+  hypothesis required it; probe writes are confined to a declared scratch/probe scope
+  under a probe manifest and clean-tree assertion (checked mechanically by the Verifier).
+  The Conductor may pin an order read-only via `tool_capabilities`; the seat then finishes
+  the way the old Detective did — "the next step is an experiment" is a correct finish,
+  handed back as a follow-on order.
+- **Performance is two-phase, and this seat owns the intake.** "Make it faster" routes
+  here first (§4.0 step 3c); the seat establishes the bottleneck, invariant and numeric
+  target. The fix then routes by shape as a new order — bounded → E2 (carrying the
+  profile as its spec), cross-system redesign → E3, data/query → E4, environment/build →
+  E0. No optimization order is accepted without a baseline measurement artifact; baseline
+  and target measurements come from different runs and are independently re-run by the
+  Verifier; benchmark-fitting is a named failure mode.
+- **Tools.** READ, SEARCH, NETWORK, EXECUTE (full — read-only-first law above),
+  profilers/traces/debuggers, WRITE-TREE restricted to a scratch/probe scope plus the
+  eventual fix, SPAWN (Runner, for seed-matrix reproduction). Shape: `repo`.
+- **Weaknesses / failure modes.** **Confident narrative** from partial evidence;
+  over-engineering the diagnosis; probe residue (the manifest + clean-tree assertion);
+  fix-before-understand (the report requires the failing-then-passing reproduction
+  *first*); rabbit-holing (tool-call budget and a mandatory halfway CHECKPOINT with the
+  hypothesis list); perturbing Heisenbugs; unreviewed output steering plans.
+- **Verdict checks, in increasing cost.** (1) Verifier chain re-run, every verdict: cited
+  lines exist and say what the report claims; reproduction re-run and probe-clean tree
+  audit whenever the seat ran anything. (2) Refutation duty, contractual, every verdict:
+  the evidence that would refute the leading hypothesis and the result of looking; the
+  two strongest discarded alternatives with citations — a verdict with no discarded
+  alternatives is incomplete by contract. (3) **Cross-family falsification pass, mandatory
+  for gate-class CONFIRMED** (verdicts authorizing Principal-tier, data, or security work,
+  or a re-plan): a second Investigator on the opposite family receives the question, chain
+  and alternatives — not the narrative — and returns CONCUR / CONCUR-WITH-DOUBT /
+  COMPETING HYPOTHESIS. Disagreement surfaces to the Conductor as a decision. Where
+  unavailable, the verdict stands as LIKELY and cannot authorize gate-class work.
+- **Owns / must not receive.** Owns I0 — the merged class: read-only causal inquiry;
+  intricate/intermittent bugs; flaky tests; races; performance investigation; "works
+  locally, fails in CI" once the environment matrix points at program behavior. Never:
+  locating (→ N0 at a fraction of the draw), routine fixes with known cause (→ E2),
+  general terminal administration (→ E0), presentation/interaction defects of an
+  interface (→ E5, §4.0 step 3a), review.
+- **Escalation.** In: a scout UNKNOWN surviving one re-probe; questions whose wrong
+  answer misdirects a plan. Out: Fable ceiling; A0 when the finding is architectural;
+  the fix → E2/E3/E4/E0 by shape.
+- **Review.** Verifier (chain re-run; reproduction re-run; tree clean of probes) →
+  cross-family Reviewer on any fix; the falsification pass above at gate class. A
+  reproduction that only fails under the hunter's instrumentation is not a reproduction.
 
 #### 8. Archivist — class M0 (multimodal and document intake)
 
@@ -482,7 +526,7 @@ the report is a claim, not evidence.
   on legitimate security-adjacent work: a refusal is a reportable event, not a finding.
 - **Owns / must not receive.** Owns E0. Never: application logic (→ E2/E3), irreversible actions
   without authorization, routine command-running (→ Runner), security judgment (→ E7).
-- **Discriminator vs I1** ("works locally, fails in CI" reads as both): what changes when you
+- **Discriminator vs I0** ("works locally, fails in CI" reads as both): what changes when you
   change one thing? Same commit passes in env X, fails in env Y → Operator. Same commit fails
   intermittently in one env → Investigator. Unknown → Operator triages first under ~15 tool
   calls and delivers the environment matrix, then owns or hands over.
@@ -541,8 +585,9 @@ the report is a claim, not evidence.
   escalating (BLOCKED/CHECKPOINT are reportable statuses, not judgment calls); Terra's cliff on
   messy long-horizon work (clean-pass 40.7 vs Sol 63.7 on the authoring suite) — Terra is a lane
   for *scoped* orders only; accepts bad plans.
-- **Owns / must not receive.** Owns E2 (performance fixes arrive only with I1's profile,
-  invariant and numeric target — that profile *is* the bounded spec). Never: split-resistant
+- **Owns / must not receive.** Owns E2 (performance fixes arrive only with the
+  Investigator's I0 profile, invariant and numeric target — that profile *is* the bounded
+  spec). Never: split-resistant
   cross-subsystem work (→ E3), unspecified work (→ A0 first), data migrations (→ E4), environment
   problems (→ E0), certifying its own tests.
 - **Escalation.** Two REVISE rounds, a CHECKPOINT, or a mis-sized BLOCKED → Principal, once, with
@@ -583,43 +628,17 @@ the report is a claim, not evidence.
 - **Review.** Mandatory cross-family Reviewer plus mandatory Verifier; checkpoint reviews at
   subsystem boundaries plus the complete pinned artifact.
 
-#### 13. Investigator — class I1 (intricate bug tracing; runtime and performance investigation)
+#### 13. (Retired) — class I1 merged into I0
 
-- **Purpose.** Chase intricate, intermittent or state-dependent defects and performance
-  regressions *by running the system* — instrument, bisect, profile, reproduce under varied
-  conditions — and deliver a minimal reproduction plus diagnosis, or a fix with the reproduction
-  attached.
-- **Casting.** Primary Anthropic · Claude Opus 5 · high; mirror OpenAI · GPT-5.6 Sol · high
-  (preferred when the defect is environment- or tool-loop-shaped; wrong for race hunts — the
-  concurrency blind spot); ceiling Fable 5 · high after two failed hunts with different
-  hypotheses.
-- **Why this seat exists.** The current roster cannot staff it: `agents/detective.md` forbids the
-  read-only investigator from running the experiment its own hypothesis requires, and the
-  executor has no investigative mandate, so a Heisenbug shuttles hypotheses between two agents
-  that each hold half the loop. Casting follows Senior SWE-bench #1 in bug **and performance**
-  investigation.
-- **Performance is two-phase, and this seat owns the intake.** "Make it faster" routes here
-  first; I1 establishes the bottleneck, invariant and numeric target. The fix then routes by
-  shape as a new order — bounded → E2 (carrying the profile as its spec), cross-system redesign
-  → E3, data/query → E4, environment/build → E0. No separate performance-implementer role: the
-  profile-equipped implementation classes already own those shapes, and a duplicate primary
-  would break class uniqueness. Contract rules carried in: no optimization order is accepted
-  without a baseline measurement artifact; baseline and target measurements come from different
-  runs and are independently re-run by the Verifier; benchmark-fitting is a named failure mode.
-- **Tools.** READ, SEARCH, EXECUTE (full), profilers/traces/debuggers, WRITE-TREE restricted to
-  a scratch/probe scope plus the eventual fix, SPAWN (Runner, for seed-matrix reproduction).
-  Shape: `repo`.
-- **Weaknesses / failure modes.** Probe residue (probe manifest + clean-tree assertion, checked
-  mechanically by the Verifier); fix-before-understand (the report requires the
-  failing-then-passing reproduction *first*); rabbit-holing (tool-call budget and a mandatory
-  halfway CHECKPOINT with the hypothesis list); perturbing Heisenbugs.
-- **Owns / must not receive.** Owns I1 (intricate/intermittent bugs; flaky tests; races;
-  performance investigation; "works locally, fails in CI" once the environment matrix points at
-  program behavior). Never: read-only causal questions (→ I0), routine fixes with known cause
-  (→ E2), general terminal administration (→ E0), review.
-- **Review.** Verifier (reproduction re-run; tree clean of probes) then cross-family Reviewer on
-  the fix. A reproduction that only fails under the hunter's instrumentation is not a
-  reproduction.
+Merged into seat 7 (Investigator) by the final owner-delegated ruling of 2026-08-29. The
+two seats' castings were identical at every rung, and the I0/I1 boundary — whether the
+decisive evidence needs a live run — is a solution fact no intake rule could decide: five
+distinct-item disagreements across the four WO-7a probes, surviving a redraw aimed at it.
+The original charter's substance survives in seat 7: the run-the-system loop, the
+performance two-phase intake, the probe manifest, and the reproduction contract are all
+carried there, under the read-only-first law. `I1` remains a registered alias resolving
+to I0 so orders, ledgers, and probe records stay readable. Number kept so later entries
+keep their references.
 
 #### 14. Data Engineer — class E4 (data, schema, query, migration)
 
@@ -950,7 +969,7 @@ the report is a claim, not evidence.
   applies to everyone else.
 - **Mandatory checks by class.** Tree audit + nonce echo for every authoring seat on every
   vendor; mutation check for new tests; invariant comparison for data changes; reproduction
-  re-run for I1; census re-run for E8; citation replay for N0/N1/I0; both-sides re-measurement
+  re-run for any I0 reproduction; census re-run for E8; citation replay for N0/N1/I0; both-sides re-measurement
   for performance claims.
 - **Failure modes.** Scope illusion (a green run on an incomplete manifest — it reports what it
   ran, never "verified"); stale manifests, environment nondeterminism, flaky tests, a checker
@@ -975,7 +994,7 @@ the report is a claim, not evidence.
   publishes `AU-all`, `AU-opus`, `AU-fable`, and `OU` — per bucket, not per vendor. If WO-1
   falsifies the two-bucket structure, this collapses to one AU and nothing else changes.
 - **The one hard gate a non-judging seat holds.** When `AU-opus` is predicted below reserve, no
-  Opus casting is dispatched — Principal, Detective, Investigator and Data Engineer re-cast to
+  Opus casting is dispatched — Principal, Investigator and Data Engineer re-cast to
   mirrors or wait; the same gate on `AU-fable` re-casts the Conductor's own turns to its Sol
   mirror. Reason (P15): the failure past that
   boundary is silent substitution, not refusal, so the only reliable defense is to stop before
@@ -1009,8 +1028,8 @@ the report is a claim, not evidence.
  Scout        Architect   Operator          Reviewer        Verifier
  Researcher   Synthesizer Runner            Sweeper         Quartermaster
  LC Analyst               Builder           Red Team
- Detective                Principal *
- Archivist                Investigator *
+ Archivist                Principal *
+                          Investigator *
                           Data Engineer
                           Interface Artisan *
                           Spatial Spec *
@@ -1073,7 +1092,7 @@ ladder edits it.
 | Comparative-adjudication passes (A1): ledger completeness check, challenges, post-composition audit | **Mandatory** | as above; an unchecked ledger or unchallenged position is not merged |
 | Any ceiling-authored change; every Sol-authored tree mutation | **Mandatory** | as above |
 | Unattributed / unprovable provenance, at any mandatory class | **Mandatory — fails closed** | concurring independent verdicts from both families, or a named human review recorded in the ledger; no single-family verdict closes it |
-| Gate-class Detective CONFIRMED (I0 check 3) | **Mandatory** | verdict stands as LIKELY; cannot authorize gate-class work |
+| Gate-class Investigator CONFIRMED (I0 check 3) | **Mandatory** | verdict stands as LIKELY; cannot authorize gate-class work |
 | Routine E2 rounds with full deterministic coverage | *Preferred* | may degrade to fresh-context, different-model, same-family review + mandatory Verifier, with `review.cross_family = false` set by the dispatcher and rendered verbatim in the user report |
 | Test-only changes passing a mutation check | *Preferred* | as above |
 | Routine (non-deliverable-grade) documentation | *Preferred* | as above |
@@ -1155,10 +1174,29 @@ ceiling specialist → human. No repeated effort cycling.
 
 # Part 4 — Routing table
 
-Twenty-four classes; each has exactly one primary role; the ownership invariant (every class
-exactly one primary; no identifier owned twice; every role's declared classes a subset of this
-table) is asserted mechanically at registry load (WO-4). Risk (T0–T3) modifies review and
-authorization, never the primary.
+**Final ruling, 2026-08-29 — owner-delegated, superseding the redraw cycle.** Four blinded
+probes (WO-7a/-bis/-ter/-quater: 77.5% → 85% → 80% → 70%) established that lexically
+sharpening pairwise discriminators does not converge: every rule got sharper while
+agreement fell, because no total order said which rule engages first — the diagnosis
+chain, W, L, and the cause-stated corollary could each plausibly claim the same request,
+and three confident readers entered through three different doors (zero ambiguity flags on
+either side of the quater probe; differently-reasoned confidence, not resolvable doubt).
+This revision therefore rules, by owner delegation and with no further paper probes:
+**(1)** classes I0 and I1 are **merged** — their primary, mirror, and ceiling castings
+were identical at every rung, so the split bought intake burden and no routing difference,
+while its boundary (does the evidence need a live run?) is a solution fact no intake rule
+can decide (five distinct-item disagreements across four probes, surviving a redraw aimed
+at it); **(2)** classification enters through the **§4.0 total decision procedure** —
+fixed-order steps that cite the discriminators — replacing free entry into §4.1;
+**(3)** a class is a **routing hypothesis with cheap misroute recovery**, not a
+correctness-gated contract (residual rule; WO-4 encodes it). The validation-gate cycle is
+closed; WO-4 proceeds; WO-7b validates through the implemented router.
+
+Twenty-three classes (twenty-two active, plus `I1` retired as a registered alias of I0);
+each active class has exactly one primary role; the ownership invariant (every class
+exactly one primary; no identifier owned twice; every role's declared classes a subset of
+this table) is asserted mechanically at registry load (WO-4). Risk (T0–T3) modifies review
+and authorization, never the primary.
 
 **Precedence: signals are recall hints, not routers** *(WO-7a redraw, 2026-08-29; items
 5/8/21)*. The signals column exists to bring a class to mind; it never decides. A class is
@@ -1174,11 +1212,13 @@ that drives Blender" is roster work (E2), not spatial code (E6); "set up CI" wit
 broken is authoring (E2), not environment surgery (E0). When a signal word and a
 discriminator disagree, the discriminator wins.
 
-**Discriminators are pairwise-scoped** *(redraw #2, 2026-08-29; bis item 17)*. A 4.1
-discriminator is consulted only when the two classes it names are the two contenders. Once
-intake narrows a request to classes X and Y, the decision falls to the X/Y discriminator if
-one exists, else to this precedence rule and the §4.2 phase rules, else to the residual
-rule — never to another pair's discriminator, however suggestive its question reads.
+**Entry is through §4.0, in order** *(final ruling, 2026-08-29)*. Classification runs the
+§4.0 decision procedure top to bottom; the first step that decides, decides, and later
+steps are never consulted. The §4.1 discriminators are the procedure's cited tests — a
+discriminator is consulted only at the step that cites it, for the pair it names (the
+pairwise-scoping rule of redraw #2 survives unchanged inside the steps) — and free entry
+into §4.1, where two readers could reach the same request through different rules, is
+closed. The §4.2 definitions (cause-stated; composite orders) serve the procedure's steps.
 
 | Class | Task class | Recall signals | Primary role | Primary casting | Reviewer | Escalation path |
 |---|---|---|---|---|---|---|
@@ -1188,14 +1228,14 @@ rule — never to another pair's discriminator, however suggestive its question 
 | N0 | Fetch / find / lookup | "where is", "list all", history | **Scout** | Haiku · off / Luna · low | Verifier citation replay | re-probe once → I0; truncation → N2/I0 auto |
 | N1 | Deep external research | vendor docs, standards, prior art | **Researcher** | Sol · med | citation checks; Opus 5 · high when decision-bearing | Sol · high → dual-lane at gate class → A0 |
 | N2 | Long-context synthesis | large supplied corpus to reconcile | **LC Analyst** | Terra · med | Opus 5 · high when decision-bearing | Terra · high → Sol · high → I0/A0 |
-| I0 | Deep investigation | "why does", "how does X flow", nothing needs running | **Detective** | Opus 5 · high | Verifier + refutation duty; cross-family falsification at gate class (mandatory) | Fable · high → I1 (needs an experiment) |
-| I1 | Intricate bug tracing / perf investigation | intermittent, race, Heisenbug, "make it faster" | **Investigator** | Opus 5 · high | cross-family on the fix; Verifier on the repro | Fable · high → A0 (architectural); fix → E2/E3/E4/E0 by shape |
+| I0 | Investigation (causal, runtime, performance intake — merged I0+I1, 2026-08-29 ruling) | "why does", "find out", intermittent, race, Heisenbug, "make it faster" | **Investigator** | Opus 5 · high | Verifier + refutation duty; cross-family falsification at gate class (mandatory); cross-family on any fix; Verifier on any repro | Fable · high → A0 (architectural); fix → E2/E3/E4/E0 by shape |
+| I1 | *Retired — merged into I0 (2026-08-29 final ruling); identifier kept as a registered alias so orders, ledgers, and probe records stay readable* | — | → I0 | — | — | — |
 | M0 | Document / media intake | PDFs, screenshots, recordings, charts, "read these" | **Archivist** | Terra · med (documents/PDFs/logs/text) / Opus 5 · med (images/charts/renders); raw video/audio → deterministic transcode fallback or UNAVAILABLE | schema validator + consumer; cross-family review for consequential extractions | → E5/I0/N1 by kind |
 | E0 | Terminal / shell ops | build breaks, CI red, toolchain, container — env is the variable, not the deliverable (authoring new CI/config → E2, disc. S) | **Operator** | Sol · high | Verifier (mandatory, tree audit) + Opus 5 · high | Sol · max once → Opus 5 · high (strategy stall; WO-12e trial) → re-plan |
 | E1 | Mechanical batch | sweep, matrix, template, uniform codemod, poll | **Runner** | Luna · low–med / Haiku · off | parent spot-check + Verifier oracle; opposite-family diff check if tree-mutating | 2 failures → parent takes it back; non-uniform → E2/E8 |
 | E2 | Routine coding | spec exists, scope known | **Builder** | Luna · xhigh–max (bounded, fully-specified) / Sonnet 5 · med (longer or thinner-spec; Terra · med mirror) | Verifier → computed cross-family (preferred band at T1) | 2 REVISE / CHECKPOINT → E3 → re-plan |
 | E3 | Complex long-horizon coding | interlocked subsystems, split-resistant | **Principal** | Opus 5 · high (xhigh point) | cross-family **mandatory** + Verifier; checkpoint reviews | xhigh → Fable · high ceiling → re-plan |
-| E4 | Data / schema work | migration, backfill, ETL, index | **Data Engineer** | Opus 5 · high (Terra · high reversible-T1 only) | cross-family **mandatory** + invariant compare | I1 (locking/perf) → A0; T3 → named human |
+| E4 | Data / schema work | migration, backfill, ETL, index | **Data Engineer** | Opus 5 · high (Terra · high reversible-T1 only) | cross-family **mandatory** + invariant compare | I0 (locking/perf) → A0; T3 → named human |
 | E5 | Visual / UI work | screenshot, mock, layout, viewport, a11y | **Interface Artisan** | Sol · med–high + browser loop | deterministic checks → Opus 5 closing (read-only) → code review | Fable critic → A0 (design system) |
 | E6 | Spatial / procedural code | mesh, shader, scene, CAD, simulation | **Spatial Specialist** | Opus 5 · high | geometry checks → triage → Fable critic → cross-family | Fable/A0 → E0 (toolchain) |
 | E7 | Security review | auth, crypto, parsing, deps, secrets | **Red Team** | Sol · high | Opus 5 · high (identity-uncertain = non-closing → human); human sign-off on critical | Sol · max → human security owner. **Never Fable** |
@@ -1207,12 +1247,96 @@ rule — never to another pair's discriminator, however suggestive its question 
 | V0 | Mechanical verification | "did it actually pass", claim check, tree audit | **Verifier** (substrate) | code first; cheapest tier assist | none — machine-checkable | failed check → author, pre-review |
 | P0 | Allowance accounting | pool state, throttle prediction, cost report | **Quartermaster** (substrate) | code + cheapest tier | reality: predicted vs observed | Conductor re-plans session shape |
 
+## 4.0 The decision procedure (total order) — final ruling, 2026-08-29
+
+One door into the taxonomy. Run the steps in order; the first that decides, decides;
+later steps are never consulted. Every test is answered from the request text alone
+(§4.2 intake decidability); a test unanswerable from the intake is answered **no**. The
+§4.1 discriminators cited below remain the definitions of their pair tests; nothing else
+in §4.1 routes on its own.
+
+**Step 1 — Decisions, plans, and assurance acts.**
+- A routing/casting/verdict decision → **O0** (disc. Q). Adjudicating two credible
+  incompatible plans → **A1** (disc. P). Authoring a plan, design, decision, or protocol
+  — including a document that *is* the decision → **A0** (discs. Q, R).
+- A machine-checkable fact about a change or tree → **V0** (disc. N). Correctness review
+  of an existing change → **R0**; exploitability of it or of the system → **E7**; both,
+  on the trigger list → both, in that order (disc. M). Post-fan-out completeness →
+  **S0** (disc. O). Allowance/pool accounting → **P0**.
+
+**Step 2 — Answers with nothing to change.** If the deliverable is an answer or
+extraction, and no artifact beyond it is requested:
+- Bounded location/lookup over a declared, exhaustible surface → **N0** (discs. C, D, F).
+- Needs the outside world → **N1** (disc. D).
+- Extraction from a fixed corpus in hand → **M0** (disc. E).
+- Reconciling synthesis over supplied material → **N2** (discs. U, F).
+- A causal mechanism — why / how / which is load-bearing → **I0** (discs. C, U).
+
+**Step 3 — The symptom gate (diagnosis before implementation).** A request reporting a
+symptom — behavior wrong, broken, missing, intermittent, or slow — routes by the first
+matching clause:
+- **(a)** the defect is in the presentation, layout, styling, or interaction affordances
+  of an interface, and acceptance is inspecting or exercising that interface → **E5**
+  (disc. W). The render-inspect-adjust loop *is* the diagnosis, so no separate
+  investigation order precedes it; a browser, device, or viewport named as where the
+  interface misrenders is E5's multi-viewport charter, **not** an environment axis. A
+  wrong screen, wrong data, wrong navigation *outcome*, or crash surfacing through a UI
+  is program behavior, not presentation → clause (d).
+- **(b)** the request states that the environment or toolchain layer is the variable or
+  the broken thing — the same artifact behaves differently across installs, platforms,
+  runners, or toolchains, or a named build/CI/packaging/container/dependency mechanism is
+  what fails → **E0** (discs. A, S). A suspected-but-unstated axis is no axis.
+- **(c)** a performance, latency, or resource symptom **whose acceptance is the
+  performance outcome itself** ("make it faster", "eliminate the stall"), without a
+  baseline profile and numeric target in the intake → **I0** (disc. L). A narratively
+  named suspect ("the dock-search stall") is not a profile — performance always takes
+  the measurement gate, and clause (e)'s cause-stated fall-through never overrides it. A
+  request naming a specified structural change whose *motivation* is performance
+  ("cut the fan-out", "cache X"), acceptance being the change itself, is specified work
+  → clause (e).
+- **(d)** any other symptom whose cause the intake does not establish (§4.2 cause-stated
+  definition: observable mechanism **plus** implicated operation or change) → **I0**.
+  The fix is a second order, routed through this procedure with the cause then stated.
+- **(e)** cause stated, or no symptom at all — fall through as specified work.
+
+**Step 4 — Consequence trumps.** For specified work:
+- Persisted data changes shape or content anywhere in the order → **E4**, even when the
+  code is trivial and whatever else the order couples (disc. J's principle, generalized:
+  schema risk outranks coupling — an order carrying both a cross-component contract and a
+  persisted-data change belongs to E4, or to an E4 parent with the non-data half as a
+  child order). Discovered only mid-order → stop and RECLASSIFY (residual rule).
+- The deliverable is attacking the change or system defensively → **E7** (disc. M).
+
+**Step 5 — The acceptance artifact.** For specified work, what does acceptance inspect?
+- Geometry, meshes, scenes, shaders, rigs, or simulation output, accepted by inspecting
+  spatial or rendered output → **E6** (disc. K). An existing template to mirror does not
+  demote spatial acceptance — separability sizes E2/E3 work; it does not change what
+  acceptance looks at; a separable non-spatial tail (catalog/registry entries) may split
+  off as an E2 child. Domain nouns still route nothing: code *about* a spatial tool whose
+  acceptance is ordinary program behavior is not E6.
+- Interface presentation, structure, styling, or interaction → **E5** (disc. W; displayed
+  values are data, not presentation → not this clause) — however many surfaces it spans:
+  a census across screens runs inside the E5 order (or as its child), never as E8.
+- An independent test oracle → **Q0**. Recording settled content → **D0** (discs. R, V;
+  content that must be recovered from a corpus → N2).
+
+**Step 6 — Implementation shape.** Everything remaining is system/code authoring:
+- A strictly uniform, enumerable, validator-checkable transform → **E1** (disc. I).
+- Coupled contracts spanning ≥2 components in the intake text → **E3** (disc. G); a
+  bundled novel core plus an N-site fan-out → E3 parent with an E8/E1 child (§4.2
+  composite rule).
+- A named surface set, or wide change with topology unstated → **E8** (discs. T, H).
+- Otherwise → **E2**.
+
+**Step 7 — Residual.** Still two primaries → the residual rule below: route by lower
+blast radius, log the pair, and rely on cheap RECLASSIFY — not on further rule-sharpening.
+
 ## 4.1 Exclusive discriminators (adjacent pairs)
 
 | # | Pair | The one question | Answer → route |
 |---|---|---|---|
-| A | E0 vs I1 | Does the request itself state an environment axis? | Stated (works on X, fails on Y; install/toolchain/CI infra named as the variable) → **E0**. Not stated → the 4.2 diagnosis chain: symptom whose evidence lives only in a live run → **I1**; inquiry over persisted artifacts → **I0**. A suspected-but-unstated axis is no axis — E0 never absorbs an undiagnosed bug; I1 delivers the environment matrix and hands over if the hunt lands on the environment |
-| B | I0 vs I1 | Does the intake name evidence that exists only in a live run? | Yes — intermittence with no persisted trace, timing and races, state that vanishes with the process, or missing render/interaction behavior whose truth can only be witnessed while running → **I1**. No — the symptom persists in artifacts that can be read (files on disk, logs, history, code as text), including generated or exported outputs that survive the process even when the discrepancy is found by comparing runs → **I0**. Unanswerable from the intake text → **I0** (lower blast radius). **Evidence means the observation that establishes the symptom, not merely related implementation context**: committed source does not make a runtime-only absence persisted evidence (redraw #3). A symptom being active, ongoing, or recurring is not by itself a running requirement (redraw #2). A Detective concluding "run an experiment" has finished correctly |
+| A | E0 vs I0 | Does the request itself state an environment axis? | Stated (works on X, fails on Y; install/toolchain/CI/dependency infrastructure named as the variable or the broken thing) → **E0**. Not stated → **I0** via §4.0 step 3 — a suspected-but-unstated axis is no axis, and E0 never absorbs an undiagnosed bug; when a hunt lands on the environment, the Investigator delivers the environment matrix and hands over. A browser/device/viewport where an *interface* misrenders is step 3(a)'s business (→ E5), never an environment axis |
+| B | I0 vs I1 | *Retired 2026-08-29 — the pair is merged (final ruling). Whether the decisive evidence needs a live run is a solution fact, not an intake fact; the merged Investigator answers it by working, read-only first. Letter kept so the probe ledgers stay readable* | — |
 | C | N0 vs I0 | Location or cause? | where/which/when → **N0**; why/how/load-bearing → **I0**. A surviving UNKNOWN becomes I0, never a third scout |
 | D | N0 vs N1 | Can the repository settle it? | Yes → **N0**. No → **N1** |
 | E | N1 vs M0 | Is the corpus already in hand? | Must be found → **N1**. Named and fixed, job is extraction → **M0** |
@@ -1222,7 +1346,7 @@ rule — never to another pair's discriminator, however suggestive its question 
 | I | E8 vs E1 | Is the transform strictly uniform, enumerable, and validator-checkable? | Yes — an exact token substitution, grep-verifiable, however many files → **E1**, and this beats E8's signal words. No (pattern plus judgment at sites) → **E8** |
 | J | E8 vs E4 | Does any persisted data change shape or content? | No → **E8**. Yes → **E4**, even when the code is trivial |
 | K | E5 vs E6 | Document flow, or generated geometry? | DOM/native-widget flow → **E5**. Meshes, shaders, scenes, simulation → **E6** |
-| L | I1 vs E2 (performance) | Is the bottleneck confirmed with a profile and numeric target? | No → **I1** first. Yes → the fix class per shape, carrying the profile as spec |
+| L | I0 vs fix class (performance) | Is the bottleneck confirmed with a profile and numeric target? | No → **I0** first (a narratively named suspect is not a profile; the cause-stated fall-through never overrides this gate). Yes → the fix class per shape, carrying the profile as spec. A specified structural change merely *motivated* by performance, whose acceptance is the change itself, is ordinary specified work (§4.0 step 3c) |
 | M | R0 vs E7 | "Is it correct?" or "how would an attacker use it?" | Correctness → **R0**. Exploitability → **E7**. Both, on the trigger list → both, in that order |
 | N | R0 vs V0 | Does answering require judgment? | No — command, exit code, diff, fingerprint → **V0**. Yes → **R0**. V0 always runs first |
 | O | S0 vs R0 | Completeness or correctness? | Missed a site → **S0**. Is what landed right → **R0**. That order; never the same instance |
@@ -1233,7 +1357,7 @@ rule — never to another pair's discriminator, however suggestive its question 
 | T | E2 vs E8 | Does the request name one central mechanism, or a set of surfaces? | One named mechanism, rule, or helper — however many consumers benefit → **E2**. A named surface set — "all", "every", "everywhere", N listed sites each to be found and touched → **E8**. Topology unstated → **E8**: a needless census is bounded waste; a missed site is silent |
 | U | I0 vs N2 | Is the deliverable a causal mechanism, or a cross-source synthesis? | A mechanism explaining observed behavior → **I0**. An exhaustive pattern/category synthesis over a named fixed corpus → **N2** |
 | V | D0 vs N2 | Must the content be recovered from a corpus, or is it settled? | Producing the document requires reading and reconciling a body of material to learn what it must say → **N2**. The content is settled at intake — named events, decisions, and outcomes to record, however summary-shaped the container → **D0** |
-| W | E2 vs E5 | Is the interface itself the acceptance artifact, or merely a consumer/container? | Presentation, layout, structure, styling, or interaction behavior — work accepted by inspecting or exercising the interface artifact itself, including a new or redesigned surface → **E5**. Computation, data selection, transport, or business logic that can be accepted independently while the surface's layout, styling, and interaction stay as they are → **E2**. **Displayed values are data, not presentation**: changing which values a surface shows, with its layout, styling, and interaction untouched, routes E2 even though the rendered pixels differ (amended after the PR #27 cross-vendor review). A screen name or UI consumer alone never makes the work E5 (redraw #3) |
+| W | E2 vs E5 | Is the interface itself the acceptance artifact, or merely a consumer/container? | Presentation, layout, structure, styling, or interaction behavior — work accepted by inspecting or exercising the interface artifact itself, including a new or redesigned surface → **E5**. Computation, data selection, transport, or business logic that can be accepted independently while the surface's layout, styling, and interaction stay as they are → **E2**. **Displayed values are data, not presentation**: changing which values a surface shows, with its layout, styling, and interaction untouched, routes E2 even though the rendered pixels differ (amended after the PR #27 cross-vendor review). A screen name or UI consumer alone never makes the work E5 (redraw #3). **A defect in presentation, layout, styling, or interaction routes E5 directly — the render loop is its diagnosis** (§4.0 step 3a; final ruling): no investigation order precedes it, while a wrong outcome or wrong data surfacing through a UI is program behavior and takes the symptom gate |
 
 **Residual rule.** A request still matching two primaries is a classification defect — and
 "the cheaper of the two" is undefined across pools, because AU and OU do not convert (Part
@@ -1244,7 +1368,29 @@ entry being a residual ambiguity so logged **or a scored cross-pass class disagr
 a validation probe** (the trigger as practiced since WO-7a-bis; the disagreement half was
 first codified after the PR #27 cross-vendor review flagged it as unwritten).
 
-## 4.2 Phase rules (WO-7a redraw, 2026-08-29)
+**The classification-error stance (final ruling, 2026-08-29).** Four blinded probes put
+one-line-intake agreement between confident, competent classifiers at ~70–85% with zero
+ambiguity flags — differently-reasoned confidence, not resolvable doubt — and three
+lexical redraws moved agreement down, not up. That is a property of one-line intake, not
+of any particular wording; the architecture stops pretending otherwise. A class is a
+**routing hypothesis, not a correctness-gated contract**: the safety load rides on risk
+tier, author family, and the mandatory review matrix (§3.4) — none of which a
+misclassification can relax — while class carries casting and cost, where the price of a
+wrong guess is bounded waste. Operationally: **(1)** every seat's "owns / must not
+receive" list is a live intake filter — a seat receiving work outside its charter returns
+**RECLASSIFY** (recommended class + the observed evidence) within a triage budget (~15
+tool calls, the Operator-triage precedent), a normal, ledgered event that neither counts
+as a REVISE nor consumes the order's escalation allowance; **(2)** one reclassification
+hop is routine; a second hop on the same order escalates to the Conductor as a
+classification defect; **(3)** an executor discovering mid-order that persisted data
+changes shape or content stops and reclassifies to E4 unconditionally — the step-4 trump
+applies at any time, not only at intake; **(4)** WO-4's schemas encode this: `class` plus
+a first-class `RECLASSIFY` report status, and the router's acceptance gate (7.2) is
+misroute recovery, not one-shot agreement. Reclassification frequency per pair feeds the
+same ledger as ambiguities, so a genuinely broken boundary still surfaces — from live
+routing, where the evidence is real, instead of from a fifth mined corpus.
+
+## 4.2 Phase rules (WO-7a redraw, 2026-08-29; restated by the final ruling)
 
 Two rules that operate above the pair discriminators. Both exist because WO-7a failed
 (31/40): every disagreement traced either to a boundary decidable only with solution facts,
@@ -1252,19 +1398,16 @@ or to a composite request with no decomposition rule (ledger: `wo7a-corpus.md`).
 
 **Diagnosis before implementation** *(items 9, 11, 16)*. A request that reports a symptom
 whose cause the request text does not establish is an investigation first, never a presumed
-fix, routed by an explicit precedence chain: **(1)** an environment axis stated in the
-request → **E0**; **(2)** a symptom whose evidence exists only in a live run and so must be
-reproduced or instrumented → **I1**; **(3)** a root-cause inquiry whose evidence persists
-in fixed artifacts (logs, history, files, code as text) → **I0**. Between (2) and (3)
-discriminator B decides on the evidence named at intake — a symptom being active, ongoing,
-or recurring never by itself establishes a running requirement (redraw #2) — and
-unanswerable → I0. The
-fix is a second order, classified by shape once the cause is known — exactly the
-hand-over I1's escalation path already names. A request that states its own cause and asks
-for the remedy routes directly to the fix class. Corollary — **intake decidability**: every
-discriminator is answered from the request text alone; an answer that needs facts only the
-work will produce is "unknown" and triggers this rule, and a classification rationale that
-cites implementation facts absent from the request is void.
+fix. The operative statement of this rule is now **§4.0 step 3** (final ruling,
+2026-08-29), which totally orders its clauses — interface-defect (a), environment axis
+(b), unprofiled performance (c), general undiagnosed symptom (d) — and merges the former
+(2)/(3) split into the single I0 investigation class; the old E0 → I1 → I0 chain and
+discriminator B are superseded by it. The fix is a second order, classified by shape once
+the cause is known — exactly the hand-over the Investigator's escalation path names. A
+request that states its own cause and asks for the remedy routes directly to the fix
+class (step 3e). Corollary — **intake decidability**: every test is answered from the
+request text alone; an answer that needs facts only the work will produce is "no", and a
+classification rationale that cites implementation facts absent from the request is void.
 
 For this rule, **the cause is stated** only when the intake names both an observable causal
 mechanism or condition and the operation or change implicated in producing it, sufficiently
@@ -1373,6 +1516,10 @@ not primary; V0/P0 are substrates drawing ≈0. Shadow mode replaces it with the
 | I1 | 4 | E6 | 1 |
 | E3 | 4 | E7 | 1 |
 | D0 | 4 | M0 | 1 |
+
+*(2026-08-29 merge note: the I0 and I1 rows in the draw and mix tables now both denote the
+merged I0 investigation class — a combined 9/100 mix share; nothing else changes, since the
+two rows' castings and draw profiles were identical.)*
 
 Generated load, derived from the table and the review/Q0 policies:
 
@@ -1498,7 +1645,7 @@ transport — preserved and generalized to every provider adapter.
 
 | Current | Splits into | Why |
 |---|---|---|
-| `detective` (read-only) | **Detective (I0)** + **Investigator (I1)** | The charter forbids running the experiment its own hypothesis requires (`agents/detective.md` line 13); intricate bug tracing falls between two seats today |
+| `detective` (read-only) | **Detective (I0)** + **Investigator (I1)** → *re-merged into one Investigator seat, class I0, by the 2026-08-29 final ruling*: the split's castings were identical on both halves and its boundary proved intake-undecidable across four probes. What the original split protected survives differently — the read-only law becomes the merged seat's read-only-first law plus pinnable read-only orders, so a Heisenbug no longer shuttles hypotheses between two agents holding half the loop each | The charter forbids running the experiment its own hypothesis requires (`agents/detective.md` line 13); intricate bug tracing falls between two seats today |
 | `executor` (universal author) | Builder, Operator, Refactorer, Test Designer, Data Engineer, Interface Artisan, Spatial Specialist, Doc Writer (+ Investigator's fix-with-repro) | One seat cannot state a usable weakness profile for nine authoring shapes with different verification needs |
 | `scout` (all recon) | **Scout (N0)** + **Researcher (N1)** + **LC Analyst (N2)** + **Archivist (M0)** | Different context shapes, castings and failure modes: missed file ≠ fabricated citation ≠ false synthesis ≠ misread chart |
 | review as one act | **Verifier (V0)** + **Reviewer (R0)** + Conductor arbitration | Separates mechanical from judgmental from decisional (P6, P12); a red suite stops costing a frontier review |
@@ -1532,7 +1679,8 @@ fails the subscription-only gate), family, review-liveness, fallback and modalit
 1. **Alias layer before any rename**: every retired name resolves to a `(role, casting)` pair
    (`executor → Builder(primary)`, `executor-heavy → Principal(high)`, `executor-heavy-xhigh →
    Principal(xhigh)`, `executor-codex → Builder(mirror)`, `reviewer → Reviewer(computed)`,
-   `reviewer-codex → Reviewer(OpenAI casting)`, `scout → Scout`, `detective → Detective`,
+   `reviewer-codex → Reviewer(OpenAI casting)`, `scout → Scout`, `detective →
+   Investigator(read-only pinned)`, `I1 → I0` (class alias, 2026-08-29 merge),
    `modeler → Spatial Specialist`, `architect-* → Architect(casting)`, `planner-gpt →
    Architect(mirror)`, `plan-synthesizer → Synthesizer`), emitting ledger deprecation lines.
 2. **Shadow period**: minimum two weeks or twenty orders, both rosters installed, ledger
@@ -1599,9 +1747,14 @@ The architecture ships only when all hold (thresholds are proposed operational v
 - No default transport uses API keys or per-token billing; subscription authentication audited.
 - Raw M0 audio/video never silently narrows to a non-capable cast: absent the local
   degradation dependency, the modality returns typed `UNAVAILABLE`.
-- Routing: ≥90% agreement on the 40-request corpus, ≤2 genuine ambiguities, no adjacent pair
-  accumulating three logged ambiguities; a competent operator routes 10 unseen requests from
-  the one-pager in under a minute each with ≥9 correct.
+- Routing (restated by the 2026-08-29 final ruling — one-shot agreement is telemetry, not
+  a gate): the ownership bijection holds at registry load; WO-7b reports router-vs-owner
+  agreement on its synthetic corpus for the record, and the shipping gate is **misroute
+  recovery** — every seeded misroute is caught by the receiving seat's owns/must-not-receive
+  filter and RECLASSIFYed within its triage budget, no misroute crosses a mandatory
+  review, tier, or T3 gate, and ≤1 reclassification hop per order at P95 during shadow;
+  a competent operator routes 10 unseen requests from the one-pager's §4.0 procedure in
+  under a minute each, ≥9 landing on their final class within one RECLASSIFY hop.
 
 ## 7.3 Standing telemetry
 
@@ -1657,10 +1810,25 @@ Preserved here so later work-order references keep their numbers.
 
 ### WO-4: Schemas, class registry, ownership invariant
 Author the six schemas (order, report, verdict, authorization packet, casting record, verdict
-audit) as the single source of truth; encode the 24 classes, risk tiers, and Part-4.1
-discriminators as data; assert the ownership invariant mechanically (24 classes, 24 primaries,
-no identifier twice, declared classes ⊆ table). Include integrity block, `requested_casting`/
+audit) as the single source of truth; encode the classes, risk tiers, and Part-4
+routing as data; assert the ownership invariant mechanically (23 classes, 23 primaries,
+no identifier twice, declared classes ⊆ table, `I1` resolving as an alias of I0). Include
+integrity block, `requested_casting`/
 `served_model`, `review.cross_family` (dispatcher-written) as required fields.
+
+**Amended by the final ruling (2026-08-29).** WO-4 is **unblocked** — the validation-gate
+cycle is closed by owner delegation. Encode: **(1)** the **§4.0 decision procedure as
+ordered data** — steps in fixed order, each citing the discriminators it invokes — with
+§4.1/§4.2 as the referenced definitions, not free-standing routers; **(2)** the merged
+I0 class with `I1` as a registered alias (23-class invariant above); **(3)** the
+classification-error stance: `class` is a routing hypothesis — a first-class `RECLASSIFY`
+report status carries `(recommended_class, evidence)`, costs a triage budget, does not
+count as a REVISE, and is ledgered per pair; a second hop on one order escalates as a
+classification defect; risk tier and author family, never class, carry the review and
+authorization gates, so no misclassification can relax a mandatory gate. WO-7b remains
+the validation instrument — synthetics through the implemented router (including B's
+persisted-generated-output horn and W's values-only horn), measuring misroute recovery
+per the restated 7.2 gate; no fifth mined paper corpus runs.
 
 ### WO-5: Build the Verifier substrate first
 Deterministic core as code: manifest execution, exit-code capture, diff parsing, tree
@@ -1803,19 +1971,40 @@ persisted-generated-output I0 case for B's other redraw-#3 clause nor a values-o
 for W's data horn. Those two edges remain untested and are reserved for WO-7b synthetics;
 the failed quater gates neither validate nor falsify them.
 
+**Final ruling (2026-08-29, owner-delegated): the probe/redraw cycle is CLOSED and WO-4
+is UNBLOCKED.** The owner ended the gate cycle and delegated the disposition to a final
+end-to-end review, pre-committing to its conclusions. The ruling, applied throughout this
+document: I0/I1 merged into one Investigator seat and class (identical castings; five
+distinct-item ledger entries; boundary intake-undecidable in principle — Part 2 seat 7,
+Part 4 rows, disc. B retired); Part 4 restructured around the **§4.0 total decision
+procedure** (fixed-order steps superordinating the pairwise discriminators — the total
+order whose absence every probe failure traced to); classification error accepted as a
+property of one-line intake, with class demoted to a routing hypothesis under cheap
+`RECLASSIFY` recovery (residual rule; WO-4). Structural resolutions of the quater
+findings: item 2 → I0 (merge), 8/13 → I0 via steps 3c/2 (merge + L's total ordering),
+11 → E5 and 17 → E5 (step 3a: the render loop is the diagnosis), 12 → E4 (step 4 schema
+trump over G), 18 → E6 (step 5 spatial-acceptance clause — with the owner and Sol,
+against the primary). These are reasoned dispositions, not a validated answer key; the
+validation instrument from here is WO-7b through the implemented router.
+
 ### WO-7b: Classification corpus — through the implemented router
-The same corpus re-run through the implemented router after WO-6, augmented by the
-synthetic cases reserved by WO-7a's real-history coverage gaps — at minimum B's
-persisted-generated-output I0 horn and W's values-only E2 horn. Router vs human, same
-thresholds, with each reserved edge also reported separately so aggregate agreement cannot
-hide a missing boundary. A WO-7a pass that WO-7b fails indicts the router implementation,
-not the taxonomy.
+A synthetic corpus run through the implemented router after WO-6, including the cases
+reserved by WO-7a's real-history coverage gaps — at minimum B's persisted-generated-output
+I0 horn (now: persisted-evidence investigations under the merged class) and W's
+values-only E2 horn. Scored per the 2026-08-29 final ruling's restated 7.2 gate:
+router-vs-owner agreement is reported as telemetry; the gate is **misroute recovery** —
+seeded misroutes caught by seat charter filters and RECLASSIFYed within triage budget,
+no misroute crossing a mandatory review, tier, or T3 gate, ≤1 hop at P95 — with each
+reserved edge also reported separately so aggregates cannot hide a missing boundary. A
+recovery failure indicts the router implementation or a seat's charter filter, not the
+taxonomy; a per-pair RECLASSIFY pile-up indicts the boundary and feeds the ledger.
 
 ### WO-8–11: Staff the bands, in dependency order
-Assurance first (Reviewer both castings, Sweeper, Red Team), then evidence (Scout, Detective
-re-contracted; Researcher, LC Analyst, Archivist new), then construction (Builder and Principal
-first, validated against existing work; then Operator, Test Designer, Refactorer; then
-Investigator; then domain seats), orchestration last (Conductor, Architect, Synthesizer,
+Assurance first (Reviewer both castings, Sweeper, Red Team), then evidence (Scout
+re-contracted; the merged Investigator re-contracted from `detective` per the 2026-08-29
+ruling; Researcher, LC Analyst, Archivist new), then construction (Builder and Principal
+first, validated against existing work; then Operator, Test Designer, Refactorer;
+then domain seats), orchestration last (Conductor, Architect, Synthesizer,
 Quartermaster). Each role ships only with all nine fields populated and its contract lint
 passing (mirror-or-declared-exception included); each with one end-to-end exercised order.
 
@@ -1872,8 +2061,9 @@ Delete/archive superseded definitions; installer list updated; aliases survive o
 release with warnings. Runs only if the gates passed.
 
 ### WO-18: The operator's one page
-Routing table + discriminators + degradation ladder on one page; proof: a competent operator
-routes 10 unseen requests in under a minute each, ≥9 correct.
+The §4.0 decision procedure + routing table + degradation ladder on one page; proof: a
+competent operator routes 10 unseen requests in under a minute each, ≥9 landing on their
+final class within one RECLASSIFY hop (7.2 as restated by the 2026-08-29 ruling).
 
 ## Sequencing
 

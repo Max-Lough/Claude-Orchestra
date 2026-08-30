@@ -133,6 +133,33 @@ failed seeded gate, that boundary must be addressed by redraw #4 or a merge.
 B's other redraw-#3 clause and no values-only E2 case for W's data horn. This probe cannot
 validate either edge; both remain explicitly deferred to WO-7b's synthetic cases.
 
+## Ruling disposition (2026-08-29) — ledger closed
+
+The owner ended the probe/redraw cycle and delegated the disposition to a final
+end-to-end review whose conclusions were pre-committed; the ruling is applied in
+`final-plan.md` (Part 4 preamble, §4.0 total decision procedure, Part 2 seat 7). This
+was the last mined paper probe: the cross-probe pair ledger is **closed** and its
+standing entries are dispositioned below. From here the ledger's successor is live
+RECLASSIFY/ambiguity telemetry per pair (Part 4 residual rule), validated by WO-7b
+through the implemented router.
+
+| Pair (entries) | Disposition |
+|---|---|
+| I0/I1 (5) | **MERGED** — one Investigator seat, class I0; disc. B retired. Items 2, 8, 13 (and ter 5/10/17, bis 5, 7a-16) dissolve. |
+| E5/I1 (2) | Resolved by §4.0 step 3(a): presentation/interaction defects route E5 directly (the render loop is the diagnosis); logic defects surfacing through a UI route I0 via 3(d). Items 11, 17 → E5. |
+| E2/E3 (2) | No merge (castings and mandatory-review lanes differ). G survives as §4.0 step 6, entered only after steps 3–5 filter symptoms, data, and acceptance artifacts. |
+| E0/E5 (1) | §4.0 orders 3(a) before 3(b): a browser/device/viewport where an interface misrenders is E5's multi-viewport charter, never an environment axis. Item 11 → E5. |
+| E3/E4 (1) | §4.0 step 4 schema trump: persisted-data shape/content risk outranks coupling; both-in-one orders belong to E4 (or an E4 parent). Item 12 → E4. |
+| E2/I1 (1) | Disc. L totally ordered above the cause-stated fall-through: performance-outcome acceptance without a profile → I0; a named suspect is not a profile. Item 13 → I0. |
+| E2/E6 (1) | §4.0 step 5 spatial-acceptance clause: geometry/rig/visual-package deliverables accepted by inspecting spatial output → E6 even when mirroring a template; separable non-spatial tails split off as E2 children. Item 18 → E6 (with this pass and Sol, against the primary). |
+| E5/E8 (1) | §4.0 step 5(b): interface work routes E5 before step 6 is reached, however many surfaces it spans; the census runs inside the E5 order. Sol's item-17 ambiguity is thereby decidable. |
+| I0/E2 (1), D0/N2 (1), E2/E5 (1) | Standing rules retained (cause-stated definition; disc. V; disc. W) and now entered only through §4.0's fixed order. |
+
+These dispositions are reasoned rulings, not a blind-validated answer key — the same
+epistemic status the ruling assigns to intake classification generally, which is why the
+class field is now a routing hypothesis with cheap RECLASSIFY recovery rather than a
+correctness-gated contract.
+
 <!--
 Source commits (audit trail; repo + one short sha per item — the commit whose work the
 request was reverse-derived from. PPP = PiratePartyPals (Godot), LC = LLM-Comm-V2

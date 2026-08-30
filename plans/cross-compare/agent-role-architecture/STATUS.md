@@ -314,6 +314,22 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   shapes). WO-6 is **gate-class** per the plan's review routing — cross-vendor review
   before merge. Next: **WO-7b** (synthetic corpus through `dispatch()`, scored on misroute
   recovery per the restated 7.2 gate, including the reserved B/W edges).
+- **WO-7b EXECUTED — ALL GATES PASS (2026-08-30):** the misroute-recovery probe through
+  the implemented router, in `wo7b/` (corpus + gates pre-registered and committed at
+  `c431274` before any model pass; `score.js` is the mechanical scorer, exit 0). 24
+  synthetic items — 13 seeded misroutes, 11 controls, both reserved edges by
+  construction. **G1: 13/13 misroutes caught** by fresh-context seat charter filters
+  (router/charters.json, Sonnet, no tools); **G2: zero mandatory-gate crossings** among
+  the four gate-relevant misroutes (M3 E3→E2, M5 E4→E8, M6 E4→E2, M12 E7→R0), with
+  tier-borne gates mechanically identical under seeded vs true dispatch for all items;
+  **G3: P95 = 1 hop**, all recoveries landed with hop-1 ACCEPT, zero escalations.
+  Telemetry: 0/11 false bounces, 13/13 correct recommended classes, classifier pass
+  24/24 (a separability number for a synthetic corpus, not real-intake accuracy — stated
+  in the report), B horn and W horn each clean in both classification and recovery.
+  Seeded recovery entries do NOT feed the standing three-entry redraw trigger (probe
+  provenance, not organic ambiguity). Full record: `wo7b/wo7b-report.md`. The restated
+  7.2 routing gate is validated; live P95 telemetry continues during shadow (WO-15).
+  Next: **WO-8–11** (staff the bands), with WO-13/WO-14/WO-12f parallelizable.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -335,25 +351,23 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-08-29, final ruling applied)
 
-1. **WO-7b is the active step — WO-4, WO-5, and WO-6 are done.** The 2026-08-29
-   owner-delegated final ruling (see the FINAL RULING bullet above) merged I0/I1,
-   restructured Part 4 around the §4.0 total decision procedure, and demoted class to a
-   routing hypothesis with `RECLASSIFY` recovery; WO-4 encoded it all in `registry/`
-   (`node tests/registry.test.js` is the check); WO-5 built the Verifier substrate in
-   `verifier/` (`node tests/verifier.test.js`, 63 green); WO-6 built the router in
-   `router/` (`node tests/router.test.js`, 74 green — casting tables, review matrix,
-   degradation machine, AU-O gate, Q0 triggers). WO-5 and WO-6 are gate-class and need
-   their cross-vendor review pass at PR time. B's persisted-generated-output horn and W's
-   values-only horn remain untested until WO-7b synthetics, which measure misroute
-   recovery through the implemented `dispatch()` (restated 7.2 gate), not one-shot
-   agreement.
+1. **WO-8–11 are the active steps — WO-4, WO-5, WO-6, and WO-7b are done.** The
+   2026-08-29 owner-delegated final ruling merged I0/I1, restructured Part 4 around the
+   §4.0 total decision procedure, and demoted class to a routing hypothesis with
+   `RECLASSIFY` recovery; WO-4 encoded it in `registry/` (`node tests/registry.test.js`);
+   WO-5 built the Verifier substrate in `verifier/` (`node tests/verifier.test.js`, 63
+   green); WO-6 built the router in `router/` (`node tests/router.test.js`, 82 green —
+   casting tables, review matrix, degradation machine, AU-O gate, Q0 triggers, charters,
+   RECLASSIFY hop machinery); WO-7b validated misroute recovery through it (all three
+   pre-registered gates pass — `wo7b/wo7b-report.md`, including the reserved B/W edges).
+   WO-5 and WO-6 are gate-class and need their cross-vendor review pass at PR time.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
 3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → ~~WO-5
-   (Verifier substrate)~~ → ~~WO-6 (router)~~ → WO-7b (synthetics through the router —
-   the remaining routing validation; then WO-8–11 open). Parallelizable now per the
-   plan's dependency line:
+   (Verifier substrate)~~ → ~~WO-6 (router)~~ → ~~WO-7b (misroute recovery — PASSED)~~
+   → WO-8–11 (staff the bands, in dependency order) → WO-12 trials → WO-15 shadow.
+   Parallelizable now per the plan's dependency line:
    WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
    against the `/deep-plan` retirement), WO-12f (Terra T1 qualification trial, "any
    time after WO-2"; consumes real allowance), and WO-14 (alias layer + kill switch,

@@ -476,4 +476,48 @@ check('an R0 order with author families computes the matrix lane',
   (() => { const d = router.dispatch(order('R0', 'T2'), G, { reviewOf: { authorFamilies: ['openai'] } }); return d.ok && d.review.casting.model === 'Opus 5'; })());
 check('inert verification tier takes no model review', (() => { const d = router.dispatch(order('E2', 'T1'), G, { flags: { inert: true } }); return d.ok && d.review.policy === 'none'; })());
 
+// ------------------------------------- 11. RECLASSIFY hop machinery, charters
+section('11. RECLASSIFY hop machinery and seat charters');
+
+check('every role carries a charter with a non-empty must-not-receive filter (substrates exempt)',
+  (() => {
+    const ch = router.charters.charters;
+    return Object.keys(router.castings.roles).every((r) => ch[r] && (ch[r].substrate || ch[r].mustNotReceive.length > 0));
+  })());
+check('a missing charter fails the load closed',
+  (() => {
+    const ch = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charters.json'), 'utf8'));
+    delete ch.charters.Builder;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-chart-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'charters.json');
+    fs.writeFileSync(file, JSON.stringify(ch), 'utf8');
+    let threw = null;
+    try { createRouter({ chartersFile: file }); } catch (err) { threw = err; }
+    return !!threw && /no charter entry/.test(threw.message);
+  })());
+{
+  const misrouted = order('N2', 'T1', { task_id: 'rc-1' });
+  const report = { status: 'RECLASSIFY', reclassify: { recommended_class: 'I0', evidence: 'deliverable is a causal mechanism, not a synthesis (charter: never live reproduction/causality)' } };
+  const qc = buckets({ 'AU-opus': { state: 'Green', quartermasterConfirmation: true } });
+  const r = router.processReclassify(misrouted, report, qc);
+  check('hop 1 is routine: re-dispatched to the recommended class with the hop counted',
+    r.escalated === false && r.hop === 1 && r.dispatch.ok && r.dispatch.role === 'Investigator' && r.order.reclassify_hops === 1);
+  check('the hop feeds the per-pair ledger with the observed evidence',
+    r.ledger.pair.join('/') === 'I0/N2' && /causal mechanism/.test(r.ledger.evidence));
+  const second = router.processReclassify(r.order, { status: 'RECLASSIFY', reclassify: { recommended_class: 'N2', evidence: 'bounced back' } }, qc);
+  check('a second hop on the same order escalates to the Conductor as a classification defect',
+    second.escalated === true && second.to === 'Conductor' && second.dispatch === null);
+}
+check('a RECLASSIFY without evidence is rejected — the observed evidence is contractual',
+  (() => { try { router.processReclassify(order('E2', 'T1'), { status: 'RECLASSIFY', reclassify: { recommended_class: 'E3' } }, G); return false; } catch (e) { return /evidence/.test(e.message); } })());
+check('recommending the class the order already carries is rejected (I1 alias resolves first)',
+  (() => { try { router.processReclassify(order('I1', 'T1'), { status: 'RECLASSIFY', reclassify: { recommended_class: 'I0', evidence: 'x' } }, G); return false; } catch (e) { return /already carries/.test(e.message); } })());
+check('an alias in recommended_class resolves before re-dispatch',
+  (() => {
+    const qc = buckets({ 'AU-opus': { state: 'Green', quartermasterConfirmation: true } });
+    const r = router.processReclassify(order('N0', 'T1', { task_id: 'rc-2' }), { status: 'RECLASSIFY', reclassify: { recommended_class: 'I1', evidence: 'causal question' } }, qc);
+    return r.dispatch.class === 'I0' && r.dispatch.role === 'Investigator';
+  })());
+
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

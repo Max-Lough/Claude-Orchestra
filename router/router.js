@@ -177,6 +177,28 @@ function createRouter(opts) {
   const conductor = roles['Conductor'];
   if (conductor && !(conductor.never || []).includes('Opus 5')) fail('Conductor must carry the never-Opus rule');
 
+  // ---- seat charters (the live intake filters, Part 2 + error stance) ----
+  let charters;
+  try {
+    charters = JSON.parse(fs.readFileSync(options.chartersFile || path.join(path.dirname(castingsFile), 'charters.json'), 'utf8'));
+  } catch (e) {
+    fail('charters.json unreadable or unparseable: ' + e.message);
+  }
+  if (charters) {
+    for (const name of roleNames) {
+      const ch = (charters.charters || {})[name];
+      if (!ch) { fail('role ' + name + ' has no charter entry'); continue; }
+      if (ch.class !== roles[name].class) fail('charter for ' + name + ' claims class ' + ch.class + ', casting table says ' + roles[name].class);
+      if (!ch.owns || !ch.purpose) fail('charter for ' + name + ' missing owns/purpose');
+      if (!ch.substrate && (!Array.isArray(ch.mustNotReceive) || ch.mustNotReceive.length === 0)) {
+        fail('charter for ' + name + ' has an empty must-not-receive filter');
+      }
+    }
+    for (const name of Object.keys(charters.charters || {})) {
+      if (!roles[name]) fail('charter names unknown role ' + name);
+    }
+  }
+
   if (problems.length > 0) {
     throw new Error('router refused: casting tables invalid (' + problems.length + ' violation(s)):\n  - ' + problems.join('\n  - '));
   }
@@ -584,6 +606,38 @@ function createRouter(opts) {
     return { ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion };
   }
 
+  // ---- RECLASSIFY hop machinery (Part 4 error stance, WO-4 encoding) ----
+  // A seat receiving work outside its charter returns RECLASSIFY with
+  // {recommended_class, evidence}. Processing it re-dispatches the order to
+  // the recommended class with the hop counted: one hop is routine; a second
+  // hop on the same order escalates to the Conductor as a classification
+  // defect. Every hop feeds the per-pair ledger (the same ledger residual
+  // ambiguities feed — three entries on one pair force a redraw or merge).
+  function processReclassify(order, report, buckets, dispatchOpts) {
+    if (!report || report.status !== 'RECLASSIFY') {
+      throw new Error('processReclassify needs a report with status RECLASSIFY');
+    }
+    const rc = report.reclassify || {};
+    if (!rc.recommended_class) throw new Error('RECLASSIFY report missing reclassify.recommended_class');
+    if (!rc.evidence || String(rc.evidence).trim() === '') {
+      throw new Error('RECLASSIFY report missing reclassify.evidence — the observed evidence is required, not optional');
+    }
+    const from = resolveClass(order.class);
+    const to = resolveClass(rc.recommended_class);
+    if (from === to) throw new Error('RECLASSIFY recommends the class the order already carries (' + from + ') — not a reclassification');
+    const hop = (order.reclassify_hops || 0) + 1;
+    const ledgerEntry = { pair: [from, to].sort(), task_id: order.task_id, hop, evidence: rc.evidence };
+    if (hop >= 2) {
+      return {
+        escalated: true, to: 'Conductor',
+        reason: 'classification defect: second reclassification hop on one order (' + order.task_id + '), ' + from + ' → ' + to,
+        hop, ledger: ledgerEntry, dispatch: null,
+      };
+    }
+    const newOrder = Object.assign({}, order, { class: to, reclassify_hops: hop });
+    return { escalated: false, hop, ledger: ledgerEntry, order: newOrder, dispatch: dispatch(newOrder, buckets, dispatchOpts) };
+  }
+
   function allGreen() {
     const out = {};
     for (const b of castings.buckets) out[b] = 'Green';
@@ -591,8 +645,8 @@ function createRouter(opts) {
   }
 
   return {
-    registry, castings, problems: [],
-    route, resolveClass, cast, reviewer, reviewPolicy, dispatch,
+    registry, castings, charters, problems: [],
+    route, resolveClass, cast, reviewer, reviewPolicy, dispatch, processReclassify,
     poolState: (r) => poolState(r, ladderCfg),
     preDispatchGate, q0Required, createQ0Order,
     requiredReserve: (f) => requiredReserve(f, castings.reserve),

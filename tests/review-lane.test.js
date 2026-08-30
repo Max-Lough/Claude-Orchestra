@@ -857,7 +857,13 @@ function case15() {
 
   writeProjectConfig(fx, { helperSiblings: ['codex-command-runner.exe', 'codex-resources'] });
 
-  const wantHelpers = { ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' };
+  // Isolate the repair search from the REAL machine: the runner's known-good
+  // hunt walks home-derived paths (~/.codex/...), so a genuine install on
+  // the test machine that happens to carry the helpers would silently repair
+  // the "missing" fixture and flip these assertions (observed the moment
+  // this machine's Codex install was fixed by hand).
+  const iso = { HOME: fx.root, USERPROFILE: fx.root, CODEX_HOME: path.join(fx.root, '.codex') };
+  const wantHelpers = Object.assign({ ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' }, iso);
   const missing = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
   const mout = missing.stdout || '';
   check(
@@ -919,6 +925,7 @@ function case15() {
   const hard = runReview(fx2, ['--head-ref', fx2.head], {
     CODEX_BIN: fakeBin2,
     ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe',
+    HOME: fx2.root, USERPROFILE: fx2.root, CODEX_HOME: path.join(fx2.root, '.codex'),
   });
   check(
     'requireHelperSiblings turns a missing helper into a refusal',

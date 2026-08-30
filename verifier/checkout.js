@@ -64,41 +64,68 @@ function runGit(args, opts) {
 
 // Minimal glob matcher for the classification patterns: `**` crosses path
 // separators, `*` does not; paths are normalized to forward slashes first.
-// Compiled regexes are cached and star-runs collapsed (a run of `**` compiled
-// to stacked `.*.*` groups was measured at 7.9 s for 8 stars — quadratic
-// backtracking, the E7 ReDoS finding) so a pattern from any future
-// agent-editable source cannot stall the audit.
+//
+// NOT a regex. The first ReDoS fix collapsed only ADJACENT star runs; the
+// R0-EX3 re-review detonated the compiled regex with SEPARATED runs
+// (`**a**a**a…` — 5.4 s on 32 characters), because stacked `.*` groups
+// backtrack combinatorially no matter how each run is collapsed. Patterns
+// are token-compiled once (cached) and matched with a small dynamic program
+// over tokens × characters — strictly O(pattern × path), no backtracking to
+// detonate, whatever an agent-editable pattern source someday feeds it.
 const GLOB_CACHE = new Map();
-function globToRegExp(pattern) {
-  const norm = pattern.replace(/\\/g, '/');
-  const cached = GLOB_CACHE.get(norm);
-  if (cached) return cached;
-  let re = '';
+function compileGlob(pattern) {
+  const norm = String(pattern).replace(/\\/g, '/');
+  let tokens = GLOB_CACHE.get(norm);
+  if (tokens) return tokens;
+  tokens = [];
   for (let i = 0; i < norm.length; i++) {
-    const ch = norm[i];
-    if (ch === '*') {
+    if (norm[i] === '*') {
       let stars = 1;
-      while (norm[i + 1] === '*') { stars++; i++; } // collapse the whole run
+      while (norm[i + 1] === '*') { stars++; i++; }
       if (stars >= 2) {
         if (norm[i + 1] === '/') i++; // `**/` also matches zero directories
-        if (!re.endsWith('.*')) re += '.*'; // never stack adjacent .*
-      } else {
-        re += '[^/]*';
+        if (tokens[tokens.length - 1] !== 'globstar') tokens.push('globstar');
+      } else if (tokens[tokens.length - 1] !== 'star') {
+        tokens.push('star');
       }
-    } else if ('\\^$.|?+()[]{}'.indexOf(ch) !== -1) {
-      re += '\\' + ch;
     } else {
-      re += ch;
+      tokens.push(norm[i]); // literal character (one-char tokens)
     }
   }
-  const compiled = new RegExp('^' + re + '$');
-  GLOB_CACHE.set(norm, compiled);
-  return compiled;
+  GLOB_CACHE.set(norm, tokens);
+  return tokens;
+}
+
+// dp[j] = "the tokens consumed so far can match text[0..j)". Each token
+// updates the whole row in one linear pass.
+function globMatch(tokens, text) {
+  const n = text.length;
+  let prev = new Array(n + 1).fill(false);
+  prev[0] = true;
+  for (const tok of tokens) {
+    const next = new Array(n + 1).fill(false);
+    if (tok === 'globstar') {
+      let reachable = false;
+      for (let j = 0; j <= n; j++) {
+        reachable = reachable || prev[j];
+        next[j] = reachable; // spans any characters, including '/'
+      }
+    } else if (tok === 'star') {
+      for (let j = 0; j <= n; j++) {
+        if (prev[j]) next[j] = true;
+        else if (j > 0 && next[j - 1] && text[j - 1] !== '/') next[j] = true;
+      }
+    } else {
+      for (let j = n; j >= 1; j--) next[j] = prev[j - 1] && text[j - 1] === tok;
+    }
+    prev = next;
+  }
+  return prev[n];
 }
 
 function matchesAny(p, patterns) {
   const norm = String(p).replace(/\\/g, '/');
-  return (patterns || []).some((pat) => globToRegExp(pat).test(norm));
+  return (patterns || []).some((pat) => globMatch(compileGlob(pat), norm));
 }
 
 // ------------------------------------------------------------- fingerprint
@@ -187,8 +214,18 @@ function installExitHandler() {
   // E7 LOW finding: an interrupted run left writable checkouts and stale
   // worktree registrations behind (observed on this machine). Sweep, then
   // re-raise the signal so the exit status stays honest; if re-raising is
-  // unsupported (Windows), fall back to a plain non-zero exit.
-  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  // unsupported, fall back to a plain non-zero exit.
+  //
+  // Windows honesty (R0-EX3): SIGTERM is NOT deliverable to a Node handler
+  // on Windows — TerminateProcess kills without running anything, so no
+  // userland listener can help there. What IS trappable on Windows: SIGINT
+  // (Ctrl+C), SIGBREAK (Ctrl+Break), SIGHUP (console close, ~5 s grace).
+  // The startup `git worktree prune` in createCheckout() is the recovery
+  // path for the untrappable kills; these handlers cover the trappable rest.
+  const sigs = process.platform === 'win32'
+    ? ['SIGINT', 'SIGBREAK', 'SIGHUP']
+    : ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  for (const sig of sigs) {
     try {
       process.on(sig, () => {
         sweepActive();

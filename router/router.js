@@ -183,7 +183,7 @@ function createRouter(opts) {
     const touchUnion = [...new Set([].concat(q0cfg.touchAreas || [], castings.securityTriggerList || []))].sort();
     if (!Array.isArray(touchesEnum)) {
       fail('order.schema.json must declare a typed `touches` enum — the Q0/security touch triggers read that field');
-    } else if (touchesEnum.slice().sort().join(' ') !== touchUnion.join(' ')) {
+    } else if (touchesEnum.slice().sort().join(',') !== touchUnion.join(',')) {
       fail('order.schema.json touches enum diverges from q0Triggers.touchAreas ∪ securityTriggerList');
     }
   }
@@ -357,6 +357,26 @@ function createRouter(opts) {
     return { allowed: true };
   }
 
+  // The reserve half of P15 alone, evaluated against the REQUESTED rung's
+  // model — before the degradation machine's output is accepted. The R0-EX3
+  // finding: at Amber+belowReserve the §5.5 auto-recast used to satisfy the
+  // gate silently ("no Fable dispatch below reserve" was answered by never
+  // asking), so a WORSE pool state produced a MORE permissive outcome than
+  // Green+belowReserve. Reserve is a stop-the-line predicate: the response
+  // (mirror or wait) is the Conductor's decision — or the O0 reserve path —
+  // never the ladder's silent substitution. The Amber ARMING check stays in
+  // preDispatchGate, applied to the casting actually served.
+  function reserveGate(model, buckets) {
+    const nb = normalizeBuckets(buckets);
+    if (model === 'Opus 5' && nb['AU-opus'].belowReserve) {
+      return { allowed: false, gate: 'AU-O reserve (P15)', lawfulResponses: ['mirror', 'wait'], reason: 'AU-opus predicted below reserve — requested casting stops before the boundary; mirror-or-wait is a decision, not a silent substitution' };
+    }
+    if (model === 'Fable 5' && nb['AU-fable'].belowReserve) {
+      return { allowed: false, gate: 'AU-F reserve (P15)', lawfulResponses: ['Sol mirror at matched effort', 'wait'], reason: 'AU-fable predicted below reserve — requested casting stops before the boundary; Conductor turns take the disclosed Sol-mirror reserve path' };
+    }
+    return { allowed: true };
+  }
+
   // ---- cast(role, bucket_state) → (vendor, model, effort) ---------------
   // The degradation machine: Green dispatches the requested rung; Amber
   // re-casts authoring to the healthy pool's mirror; Orange suspends
@@ -418,10 +438,14 @@ function createRouter(opts) {
     }
 
     const state = effectiveState(rung.model, nb);
+    // `requested` records the rung selected BEFORE degradation: the reserve
+    // gate (P15) is evaluated against this, not the recast output — a
+    // degraded recast must never silently satisfy a reserve stop.
     const result = (rg, name, extra) => Object.assign({
       ok: true, role: roleName, rung: name,
       casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
       note: rg.note, bucketState: state,
+      requested: { model: rung.model, rung: rungName },
     }, extra || {});
 
     // Ceiling rungs defer from Orange down (AU-fable stops first, §5.5).
@@ -722,12 +746,17 @@ function createRouter(opts) {
       ? null
       : cast(roleName, buckets, Object.assign({ risk: order.risk, purpose: o.purpose || 'authoring' }, o.castOpts));
 
-    // …then the mechanical pre-dispatch gate on whatever came out — BEFORE
-    // Q0 creation, so the companion is cast opposite the family that will
-    // ACTUALLY author (a recast changes the author family).
+    // …then the mechanical pre-dispatch gates on what came out — BEFORE Q0
+    // creation, so the companion is cast opposite the family that will
+    // ACTUALLY author (a recast changes the author family). Two gates, in
+    // order (R0-EX3 finding): the RESERVE gate runs against the REQUESTED
+    // rung — a §5.5 degradation recast must never silently satisfy a P15
+    // reserve stop — then the full gate (reserve + Amber arming) runs
+    // against the casting actually served.
     let gate = { allowed: true };
     if (casting && casting.ok && !casting.substrate) {
-      gate = preDispatchGate(casting.casting, buckets);
+      gate = reserveGate((casting.requested || casting.casting).model, buckets);
+      if (gate.allowed) gate = preDispatchGate(casting.casting, buckets);
       if (!gate.allowed && roleName === 'Conductor' && gate.gate === 'AU-F reserve (P15)') {
         // Ruling 2a: the AU-fable reserve re-casts the Conductor's turns to
         // the Sol mirror at matched effort — the plan's promised reserve
@@ -741,8 +770,6 @@ function createRouter(opts) {
             casting = Object.assign({}, mirror, {
               recastFrom: casting.rung,
               recastReason: gate.reason,
-              disclosed: true,
-              restrictions: ((role.rungs || {}).mirror && role.rungs.mirror.restrictions) || [],
             });
             gate = mirrorGate;
           }
@@ -750,6 +777,17 @@ function createRouter(opts) {
       }
       if (!gate.allowed) {
         return { ok: false, outcome: 'GATED', gate, role: roleName, class: cls, order, reason: gate.reason };
+      }
+      // Every Conductor turn served on the mirror carries the mirror's §6.6
+      // restrictions and the disclosure marker — REGARDLESS of which path
+      // put it there (the reserve branch above, or the §5.5 degradation
+      // machine inside cast()). The R0-EX3 finding: the Amber-path recast
+      // arrived undisclosed and unrestricted.
+      if (roleName === 'Conductor' && casting.rung === 'mirror') {
+        casting = Object.assign({}, casting, {
+          disclosed: true,
+          restrictions: ((role.rungs || {}).mirror && role.rungs.mirror.restrictions) || [],
+        });
       }
     }
     if (casting && !casting.ok) {
@@ -862,7 +900,11 @@ function createRouter(opts) {
     let c = cast(a.new.role, o.buckets, castOpts);
     let gate = { allowed: true };
     if (c.ok && !c.substrate) {
-      gate = preDispatchGate(c.casting, o.buckets);
+      // Reserve on the REQUESTED rung first (a degradation recast never
+      // silently satisfies a P15 stop), then the full gate on the served
+      // casting — same order as dispatch().
+      gate = reserveGate((c.requested || c.casting).model, o.buckets);
+      if (gate.allowed) gate = preDispatchGate(c.casting, o.buckets);
       if (!gate.allowed) {
         c = { ok: false, outcome: 'GATED', role: a.new.role, rung: c.rung, gate, reason: gate.reason };
       }
@@ -897,7 +939,7 @@ function createRouter(opts) {
     registry, castings, charters, aliases: seatAliases, resolveSeat, problems: [],
     route, resolveClass, cast, reviewer, reviewPolicy, dispatch, processReclassify,
     poolState: (r) => poolState(r, ladderCfg),
-    preDispatchGate, q0Required, createQ0Order,
+    preDispatchGate, reserveGate, q0Required, createQ0Order,
     requiredReserve: (f) => requiredReserve(f, castings.reserve),
     familyOf, bucketsFor, effectiveState: (m, b) => effectiveState(m, normalizeBuckets(b)),
     normalizeBuckets, allGreen,

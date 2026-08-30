@@ -198,8 +198,11 @@ function runShell(command, cwd, timeoutMs) {
     error: r.error ? String(r.error.message || r.error) : null,
     timed_out: !!(r.error && r.error.code === 'ETIMEDOUT'),
     duration_ms: Date.now() - started,
-    stdout_tail: redact(tail(r.stdout)),
-    stderr_tail: redact(tail(r.stderr)),
+    // Redact BEFORE truncating (R0-EX3): tail-then-redact let a credential
+    // straddle the cutoff and survive as a reconstructible suffix — the
+    // pattern only matches whole tokens, and half a token is still a secret.
+    stdout_tail: tail(redact(r.stdout)),
+    stderr_tail: tail(redact(r.stderr)),
   };
 }
 

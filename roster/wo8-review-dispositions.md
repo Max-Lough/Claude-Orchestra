@@ -5,10 +5,12 @@ the four exercises surfaced genuine defects in the already-committed
 substrate tranche (WO-4/5/6/14) — the seats working as designed. This file
 records the exercises and the disposition of every finding.
 
-**Status: round-2 fixes are applied under owner rulings (2026-08-30, below).
-Every outstanding finding is closed in code. The tranche remains REVISE until
-the cross-vendor lane re-reviews the round-2 diff — re-review is the one
-remaining step before the gate closes.**
+**Status: round-2 fixes applied under owner rulings (2026-08-30, below); the
+R0-EX3 re-review (Sol · high, pinned `fb07668..d00a7ae`) confirmed every
+round-1/2 closure real but returned REVISE with 3 MAJOR + 2 MINOR defects in
+the NEW round-2 code — all five reproduced locally and fixed in round 3 (see
+§R0-EX3 below). The tranche remains REVISE until a re-review of the round-3
+diff (R0-EX4) comes back clean.**
 
 ## Exercises
 
@@ -165,11 +167,49 @@ REVISE on new MINORs, all small/local, to fold into the next round:
   outstanding list** — my confinement fix this round is necessary but not sufficient against a
   symlinked checkout.
 
+## R0-EX3 (re-review of round 2) and the round-3 dispositions
+
+R0-EX3 (Sol · high, Codex CLI, pinned `fb07668..d00a7ae`; order at
+`roster/r0-ex3-order.md`, verdict verbatim at `roster/r0-ex3-verdict.md`):
+**REVISE** — every round-1/2 closure independently CONFIRMED (it re-ran all
+seven declared verification commands itself), but 5 defects found in the new
+round-2 code. All five reproduced locally before fixing; all fixed:
+
+- **[MAJOR] reserve gate examined the already-degraded casting** — at
+  `AU-fable {Amber, belowReserve}` the §5.5 auto-recast silently satisfied
+  the P15 stop (a WORSE state than Green+belowReserve produced a MORE
+  permissive outcome). Fixed: `cast()` records the requested rung;
+  `dispatch()`/`resolveSeat()` run a `reserveGate` against the REQUESTED
+  model first (Amber arming still checks the served casting). A Fable/Opus
+  primary at any-state+belowReserve now GATES; the Conductor takes the
+  disclosed reserve path. Corollary fixed with it: EVERY mirror-served
+  Conductor turn now carries `disclosed:true` + the mirror restrictions,
+  whichever path produced it.
+- **[MAJOR] glob ReDoS survived as separated star runs** (`**a**a…` — 5.4 s
+  on 32 chars). The regex is gone entirely: patterns token-compile to a
+  cached list and match via a linear-pass DP (O(pattern × path), no
+  backtracking to detonate). Semantics regression-tested.
+- **[MAJOR] tail-then-redact leaked straddling credentials** — a token
+  crossing the 2000-char cutoff survived as a reconstructible suffix.
+  Fixed: redaction runs over the FULL output before truncation; end-to-end
+  regression through `runShell`.
+- **[MINOR] SIGTERM listener inert on Windows** — TerminateProcess runs no
+  userland handler; nothing can fix that. Fixed honestly: Windows installs
+  the trappable set (SIGINT/SIGBREAK/SIGHUP), POSIX keeps SIGTERM, the
+  limitation is documented in-code, and the startup `worktree prune` is the
+  named recovery for untrappable kills.
+- **[MINOR] literal NUL bytes in `router.js`** (the touches-enum join
+  separators) made the file read as binary to line tools. Replaced with a
+  comma; a no-control-bytes regression check pinned in the router suite.
+
+Also this round: `roster/lint.js` exempts record documents by prefix
+(`woN-`/`rN-exN-`) instead of a growing name list. R0-EX3's one UNVERIFIED
+row (review-lane suite: 6 environment-dependent failures in ITS sandbox)
+reflects the reviewer's environment; the suite is green here.
+
 ## Note
 
-This tranche's mandatory cross-vendor review (R0-EX2) is **REVISE**, and the
-verdict stands until the round-2 diff is re-reviewed by the cross-vendor
-lane. Everything the review found is now fixed in code under the owner
-rulings of 2026-08-30 (see above); the two open items are process, not code:
-(1) the cross-vendor re-review of this round, and (2) the registered
-follow-on — the verification-time diff-derived `touches` cross-check.
+The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
+the round-3 diff (R0-EX4) comes back clean. Open items are process, not
+code: (1) R0-EX4, and (2) the registered follow-on — the verification-time
+diff-derived `touches` cross-check.

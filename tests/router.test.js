@@ -726,6 +726,29 @@ check('a caller-chosen prototype-key rung hits the typed refusal, not a prototyp
 check('inherited bucket values never satisfy the requirement (own properties only)',
   (() => { try { router.cast('Builder', Object.create(G)); return false; } catch (e) { return /fail closed/.test(e.message); } })());
 check('bucketsFor never reads the prototype chain', router.bucketsFor('constructor') === null && router.bucketsFor('__proto__') === null);
+// R0-EX3 findings, pinned as regressions:
+check('R0-EX3: a §5.5 degradation recast never silently satisfies a P15 reserve stop (Amber+belowReserve GATES a Fable primary)',
+  (() => {
+    const d = router.dispatch(order('A1', 'T1'), buckets({ 'AU-fable': { state: 'Amber', belowReserve: true } }));
+    return d.ok === false && d.outcome === 'GATED' && d.gate.gate === 'AU-F reserve (P15)';
+  })());
+check('R0-EX3: the Conductor reserve path survives Amber+belowReserve — Sol mirror, disclosed, restrictions carried',
+  (() => {
+    const d = router.dispatch(order('O0', 'T1'), buckets({ 'AU-fable': { state: 'Amber', belowReserve: true } }));
+    return d.ok && d.casting.casting.model === 'GPT-5.6 Sol' && d.casting.disclosed === true && (d.casting.restrictions || []).length > 0;
+  })());
+check('R0-EX3: EVERY mirror-served Conductor turn is disclosed with restrictions (the plain-Amber degradation path too)',
+  (() => {
+    const d = router.dispatch(order('O0', 'T1'), buckets({ 'AU-fable': 'Amber' }));
+    return d.ok && d.casting.casting.model === 'GPT-5.6 Sol' && d.casting.disclosed === true && (d.casting.restrictions || []).length > 0;
+  })());
+check('R0-EX3: the same requested-rung reserve stop holds for AU-opus through dispatch',
+  (() => {
+    const d = router.dispatch(order('I0', 'T1'), buckets({ 'AU-opus': { state: 'Amber', belowReserve: true, quartermasterConfirmation: true } }));
+    return d.ok === false && d.outcome === 'GATED' && d.gate.gate === 'AU-O reserve (P15)';
+  })());
+check('R0-EX3: router.js source carries no control bytes (a NUL made the file read as binary to line tools)',
+  !/\x00/.test(fs.readFileSync(path.join(MASTER, 'router', 'router.js'), 'utf8')));
 check('cast() uses the same risk oracle as every other risk read (sloppy T1 allowed; sloppy T2 and garbage FORBIDDEN on the Terra E4 lane)',
   (() => {
     const ok = router.cast('Data Engineer', G, { rung: 'reversibleT1', risk: 't1' });

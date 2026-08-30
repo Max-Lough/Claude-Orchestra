@@ -525,11 +525,37 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
     !linked || (verifier.confine(base, 'sneaky/target.txt') === null && verifier.confine(base, 'real/file.txt') !== null));
 
   // The E7 ReDoS finding: 8 stacked stars measured 7.9 s pre-fix. Post-fix
-  // (star-run collapse + cache) the same probe must be effectively instant.
+  // the same probe must be effectively instant.
   const t0 = Date.now();
   checkoutLib.matchesAny('a/'.repeat(40) + 'deep-file-name-that-never-matches.txt', ['********x', '**/**/**/**/**/**/**y']);
   const redosMs = Date.now() - t0;
   check('glob compilation is star-collapse-safe (adversarial pattern < 250 ms, was ~7.9 s)', redosMs < 250, redosMs + 'ms');
+
+  // R0-EX3: SEPARATED star runs detonated the collapsed-regex fix (5.4 s on
+  // 32 chars). The DP matcher is polynomial by construction — pin it.
+  const t1 = Date.now();
+  const sepMatch = checkoutLib.matchesAny('a'.repeat(32), [('**a').repeat(10) + '**b']);
+  const sepMs = Date.now() - t1;
+  check('R0-EX3: separated star runs cannot detonate the matcher (< 250 ms, was 5.4 s)', sepMs < 250 && sepMatch === false, sepMs + 'ms');
+  check('glob semantics survive the DP rewrite',
+    checkoutLib.matchesAny('node_modules/x/y.js', ['node_modules/**']) === true &&
+    checkoutLib.matchesAny('a/b', ['a/**/b']) === true &&
+    checkoutLib.matchesAny('foo', ['**/foo']) === true &&
+    checkoutLib.matchesAny('a/b/c.log', ['**/*.log']) === true &&
+    checkoutLib.matchesAny('c.log', ['*.log']) === true &&
+    checkoutLib.matchesAny('x.logx', ['*.log']) === false &&
+    checkoutLib.matchesAny('a/b', ['*']) === false &&
+    checkoutLib.matchesAny('ab', ['a*b']) === true &&
+    checkoutLib.matchesAny('a/x/b', ['a*b']) === false);
+
+  // R0-EX3: tail-then-redact let a credential straddle the 2000-char cutoff
+  // and survive as a reconstructible suffix. Redaction now runs over the
+  // FULL output before truncation — end-to-end through runShell.
+  const straddleCmd = 'node -e "console.log(\'sk-ABCDEFGHIJKLMNOPQRSTUV\' + \'x\'.repeat(1990))"';
+  const straddle = verifier.runManifest(fixture.dir, { commands: [{ command: straddleCmd }], coverage: 'partial' });
+  check('R0-EX3: a credential straddling the tail cutoff is redacted, never truncated into a reconstructible suffix',
+    straddle.commands[0].exit_code === 0 && !/MNOPQRSTUV/.test(straddle.commands[0].stdout_tail),
+    JSON.stringify(straddle.commands[0].stdout_tail).slice(0, 120));
 }
 
 section('13. The mutation check is wired into the integrated round and the CLI');

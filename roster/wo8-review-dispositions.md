@@ -236,9 +236,35 @@ findings. All fixed in round 4:
   R0-EX3 order records, +136 lines of markdown). Acknowledged; from R0-EX5
   on, orders enumerate every commit in the pinned range.
 
+## R0-EX5 (delta re-review of round 4) and the round-5 disposition
+
+R0-EX5 (Sol · high, pinned `7e90c67..e7a5e31`; verdict verbatim at
+`roster/r0-ex5-verdict.md`): **REVISE** — all four R0-EX4 closures
+CONFIRMED; one **CRITICAL** in the round-4 code, and it is the real thing:
+`sweepAbandoned`'s prefix guard used substring containment on the full path
+and then `rm -rf`'d the worktree's PARENT. Two independent detections within
+minutes of each other:
+
+- **CI (macOS/Windows)**: the test fixture repo's own tmp path
+  (`orchestra-verifier-fixture-…`) matched the substring; its MAIN worktree
+  was classified a leftover and `path.dirname()` of a repo sitting directly
+  in tmp is the **OS temp root**, which the sweep then deleted. Ubuntu and
+  the local run survived on deletion-order luck only.
+- **R0-EX5**: a legitimate dirty worktree under an ancestor merely
+  containing the substring was destructively swept, sibling file included.
+
+**Fixed in round 5**: identification is structural, never a substring — a
+leftover is exactly `<tmp>/<prefix>XXXX/checkout` (basename `checkout`,
+parent whose OWN basename carries the prefix, only that parent removed), and
+the main worktree (first porcelain entry) is skipped outright. Both
+reproducers pinned as regressions (the CI fixture shape and R0-EX5's
+legit-worktree-with-sibling shape). Residual, accepted: a user directory
+deliberately named `orchestra-verifier-*/checkout` and registered as a
+worktree would still be swept — the mkdtemp prefix is the namespace claim.
+
 ## Note
 
 The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-4 diff (R0-EX5) comes back clean. Open items are process, not
-code: (1) R0-EX5, and (2) the registered follow-on — the verification-time
+the round-5 diff (R0-EX6) comes back clean. Open items are process, not
+code: (1) R0-EX6, and (2) the registered follow-on — the verification-time
 diff-derived `touches` cross-check.

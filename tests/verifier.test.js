@@ -581,6 +581,34 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
     fs.existsSync(co2.dir),
     'abandoned exists=' + fs.existsSync(abandonedDir));
   co2.teardown();
+
+  // The CI incident, pinned: this fixture repo's OWN tmp path carries the
+  // sweep prefix as a substring ('orchestra-verifier-fixture-…'). The
+  // substring guard classified the repo's MAIN worktree as a leftover and
+  // rm -rf'd its dirname — the OS TEMP ROOT. The structural guard must
+  // leave a prefix-substring-named repository completely alone.
+  check('R0-EX4/CI: a repository whose own path contains the sweep prefix is never treated as a leftover',
+    fs.existsSync(path.join(fixture.dir, 'lib.js')) &&
+    git(fixture.dir, ['rev-parse', 'HEAD']).length > 0,
+    'fixture repo damaged by the sweep');
+
+  // R0-EX5 CRITICAL, pinned: a LEGITIMATE worktree whose ancestor path
+  // merely contains the prefix substring (and its untracked contents, and
+  // an unrelated sibling file) must survive the sweep untouched.
+  const legitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'user-orchestra-verifier-project-'));
+  cleanups.push(() => fs.rmSync(legitRoot, { recursive: true, force: true }));
+  const legitWt = path.join(legitRoot, 'legitimate-worktree');
+  const sibling = path.join(legitRoot, 'unrelated-sibling.txt');
+  git(fixture.dir, ['worktree', 'add', '--detach', legitWt, fixture.base]);
+  fs.writeFileSync(path.join(legitWt, 'untracked-work.txt'), 'in progress');
+  fs.writeFileSync(sibling, 'not yours');
+  const co3 = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep runs
+  check('R0-EX5: a legitimate worktree under a prefix-substring ancestor survives the sweep (untracked contents and sibling intact)',
+    !co3.error && fs.existsSync(path.join(legitWt, 'untracked-work.txt')) && fs.existsSync(sibling) &&
+    git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(path.basename(legitRoot).toLowerCase()),
+    'legit worktree damaged');
+  co3.teardown();
+  git(fixture.dir, ['worktree', 'remove', '--force', legitWt]);
 }
 
 section('13. The mutation check is wired into the integrated round and the CLI');

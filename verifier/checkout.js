@@ -252,23 +252,35 @@ function normPath(p) {
   return process.platform === 'win32' ? r.toLowerCase() : r;
 }
 
-// Remove registered worktrees under this module's own tmp prefix that no
-// LIVE checkout in this process owns (runVerification legitimately holds
+// Remove registered worktrees this module itself abandoned — no LIVE
+// checkout in this process owns them (runVerification legitimately holds
 // two at once — head + base — and mutationCheck a third; those are in
 // ACTIVE and skipped). A concurrent verifier PROCESS on the same repo could
 // in principle be swept — the same trade the reference lane makes; runs on
 // one repo are serialized by the dispatcher.
+//
+// Identification is STRUCTURAL, never a substring: our leftovers are exactly
+// <tmp>/<PARENT_PREFIX>XXXXXX/checkout — basename 'checkout' inside a parent
+// whose OWN BASENAME carries the prefix, and only that parent is ever
+// removed. The substring version of this guard shipped once and matched a
+// repository whose own path contained the prefix (the CI test fixture,
+// 'orchestra-verifier-fixture-…'): its MAIN worktree became a "leftover" and
+// path.dirname() of a repo sitting directly in tmp is the OS TEMP ROOT,
+// which this function then rm -rf'd. The main worktree (the first porcelain
+// entry) is skipped outright as a second belt.
 function sweepAbandoned(repoDir) {
   const list = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
   if (!list.error && list.status === 0) {
     const live = new Set([...ACTIVE].map((e) => normPath(e.dir)));
-    for (const line of (list.stdout || '').split('\n')) {
-      if (!line.startsWith('worktree ')) continue;
+    const entries = (list.stdout || '').split('\n').filter((l) => l.startsWith('worktree '));
+    for (const line of entries.slice(1)) { // [0] is always the main worktree
       const wt = line.slice('worktree '.length).trim();
-      const norm = normPath(wt);
-      if (!norm.includes(PARENT_PREFIX) || live.has(norm)) continue;
+      const parent = path.dirname(wt);
+      if (path.basename(wt) !== 'checkout') continue;
+      if (!path.basename(parent).startsWith(PARENT_PREFIX)) continue;
+      if (live.has(normPath(wt))) continue;
       runGit(['-C', repoDir, 'worktree', 'remove', '--force', wt]);
-      try { fs.rmSync(path.dirname(wt), { recursive: true, force: true }); } catch (_) { /* best effort */ }
+      try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
     }
   }
   runGit(['-C', repoDir, 'worktree', 'prune']);

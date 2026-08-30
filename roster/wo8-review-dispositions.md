@@ -281,9 +281,28 @@ aliased-tmp-root (junction/symlink) regression that reproduces the class on
 every platform — before the R0-EX6 verdict landed. R0-EX6's junction probe
 is the same shape as the pinned regression.
 
+## R0-EX7 (delta re-review of round 5b) and the round-5c disposition
+
+R0-EX7 (Sol · high, pinned `ceeaabc..09a824e`; verdict verbatim at
+`roster/r0-ex7-verdict.md`): **REVISE** — the stable-alias case (the CI
+shape) confirmed fixed, plus one MAJOR on a sharper edge: when the ALIAS a
+live checkout was created through is later removed, sweep-time re-resolution
+of the ACTIVE handle falls back to the lexical alias spelling while git's
+listed path stays canonical — the exemption misses and the sweep deletes the
+live canonical checkout. It also (fairly) refuted the executor report's
+"all green" header line, since that very report disclosed review-lane at
+113/114 under concurrent load.
+
+**Fixed in round 5c**: a checkout's canonical identity is captured AT
+CREATION (`entry.realDir`, resolved while every path component is guaranteed
+to exist) and the sweep's live set compares that — never a sweep-time
+re-resolution. Sol's alias-removal probe pinned as a regression alongside
+the stable-alias one. PR #28 CI went fully green (9/9 jobs) on `09a824e`;
+this fix hardens the edge CI cannot reach.
+
 ## Note
 
 The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-5b diff (R0-EX7, pinned `ceeaabc..09a824e`) comes back clean. Open
-items are process, not code: (1) R0-EX7, and (2) the registered follow-on —
-the verification-time diff-derived `touches` cross-check.
+the round-5c diff (R0-EX8) comes back clean. Open items are process, not
+code: (1) R0-EX8, and (2) the registered follow-on — the verification-time
+diff-derived `touches` cross-check.

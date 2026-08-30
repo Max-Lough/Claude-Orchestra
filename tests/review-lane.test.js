@@ -346,6 +346,23 @@ async function case4() {
     await sleep(100);
   }
   check('worktree was live before the kill (kill is meaningful)', registered);
+  // Let `worktree add` finish its checkout before pulling the plug. Until it
+  // does, `git worktree list` already shows the entry (registration is
+  // visible before the files are), but git itself holds it LOCKED for that
+  // whole window — proven by polling `list` during a slow add on this
+  // machine, which showed "locked" on every sample until the checkout
+  // finished. `runGit`'s worktree-add is a direct (non-shell) child of the
+  // runner, so it dies with it; kill during that window freezes the entry
+  // mid-checkout, still locked, forever. And a LOCKED worktree cannot be
+  // swept by anything downstream: sweepStaleScratch and teardownScratch both
+  // remove with a single `--force`, which git flatly refuses on a locked
+  // worktree ("cannot remove a locked working tree ... use 'remove -f -f' to
+  // override") — no amount of waiting or re-running the sweep changes that.
+  // So this delay is not pacing a flaky assertion; it is the difference
+  // between "killed mid-review" (recoverable, what this case tests) and
+  // "killed mid-registration" (unrecoverable by design, a different case the
+  // SIGKILL block below already knows to avoid the same way).
+  await sleep(250);
   child.kill('SIGTERM');
   await new Promise((res) => child.on('exit', res));
   await sleep(300);

@@ -631,8 +631,32 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
       (liveViaAlias.error || trigger.error || 'live checkout deleted by the sweep'));
     trigger.teardown();
     liveViaAlias.teardown();
+
+    // R0-EX7: removing ONLY the alias must not strip a live checkout of its
+    // identity. Re-resolving at sweep time falls back to the lexical alias
+    // spelling (the alias is gone) while git's listed path stays canonical —
+    // identity must be captured at creation instead.
+    const realTmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-alias-target-'));
+    const aliasLink2 = path.join(os.tmpdir(), 'orchestra-alias-link2-' + process.pid);
+    fs.symlinkSync(realTmp2, aliasLink2, process.platform === 'win32' ? 'junction' : 'dir');
+    cleanups.push(() => fs.rmSync(realTmp2, { recursive: true, force: true }));
+    cleanups.push(() => { try { fs.rmSync(aliasLink2, { recursive: true, force: true }); } catch (_) { /* gone */ } });
+    const liveViaAlias2 = checkoutLib.createCheckout(fixture.dir, fixture.base, { tmpRoot: aliasLink2 });
+    const canonical = fs.realpathSync(liveViaAlias2.dir);
+    try { fs.unlinkSync(aliasLink2); } catch (_) { fs.rmdirSync(aliasLink2); } // the ALIAS only; the target lives
+    const trigger2 = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep runs
+    check('R0-EX7: removing only the alias does not orphan the live canonical checkout to the sweep',
+      !liveViaAlias2.error && !trigger2.error && fs.existsSync(canonical),
+      'canonical checkout deleted: ' + canonical);
+    trigger2.teardown();
+    // Manual cleanup — the entry's own paths are alias-spelled and the alias
+    // is gone, so its teardown can only clear the ACTIVE registration.
+    git(fixture.dir, ['worktree', 'remove', '--force', canonical]);
+    fs.rmSync(path.dirname(canonical), { recursive: true, force: true });
+    liveViaAlias2.teardown();
   } else {
     check('CI: real-path live-set regression [skipped: cannot create links here]', true);
+    check('R0-EX7: alias-removal regression [skipped: cannot create links here]', true);
   }
 }
 

@@ -280,7 +280,13 @@ function normPath(p) {
 function sweepAbandoned(repoDir) {
   const list = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
   if (!list.error && list.status === 0) {
-    const live = new Set([...ACTIVE].map((e) => normPath(e.dir)));
+    // A live checkout's identity is its CANONICAL path CAPTURED AT CREATION
+    // (entry.realDir), never re-derived here: re-resolving at sweep time
+    // through an alias that has since been removed falls back to the
+    // lexical alias spelling while git's listed path stays canonical — and
+    // the exemption misses a checkout that is very much alive (the R0-EX7
+    // finding: only the alias was gone; the canonical target was deleted).
+    const live = new Set([...ACTIVE].map((e) => e.realDir || normPath(e.dir)));
     const entries = (list.stdout || '').split('\n').filter((l) => l.startsWith('worktree '));
     for (const line of entries.slice(1)) { // [0] is always the main worktree
       const wt = line.slice('worktree '.length).trim();
@@ -349,6 +355,11 @@ function createCheckout(repoDir, commitish, opts) {
     dir,
     commit,
     parent,
+    // Canonical identity, captured NOW while every path component is
+    // guaranteed resolvable. The sweep's live-set exemption compares this —
+    // an alias (symlink/junction tmpRoot, 8.3 short path) removed later
+    // must not strip a live checkout of its identity (R0-EX7).
+    realDir: normPath(dir),
     fingerprintBefore,
     // The before/after comparison, classified. Callers pass project-declared
     // churn patterns; the defaults cover the common generated artifacts.

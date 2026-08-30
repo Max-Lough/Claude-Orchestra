@@ -183,8 +183,14 @@ function createRouter(opts) {
     const touchUnion = [...new Set([].concat(q0cfg.touchAreas || [], castings.securityTriggerList || []))].sort();
     if (!Array.isArray(touchesEnum)) {
       fail('order.schema.json must declare a typed `touches` enum — the Q0/security touch triggers read that field');
-    } else if (touchesEnum.slice().sort().join(',') !== touchUnion.join(',')) {
-      fail('order.schema.json touches enum diverges from q0Triggers.touchAreas ∪ securityTriggerList');
+    } else {
+      // Element-wise, never joined (R0-EX4 MAJOR): any join separator is
+      // collision-prone the moment an entry can contain it — unequal sets
+      // must never compare equal on a serialization accident.
+      const sortedEnum = touchesEnum.slice().sort();
+      if (sortedEnum.length !== touchUnion.length || sortedEnum.some((v, i) => v !== touchUnion[i])) {
+        fail('order.schema.json touches enum diverges from q0Triggers.touchAreas ∪ securityTriggerList');
+      }
     }
   }
   const rm = castings.reviewMatrix || {};

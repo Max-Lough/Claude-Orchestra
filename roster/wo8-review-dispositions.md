@@ -207,9 +207,38 @@ Also this round: `roster/lint.js` exempts record documents by prefix
 row (review-lane suite: 6 environment-dependent failures in ITS sandbox)
 reflects the reviewer's environment; the suite is green here.
 
+## R0-EX4 (delta re-review of round 3) and the round-4 dispositions
+
+R0-EX4 (Sol · high, pinned `d00a7ae..7e90c67`; verdict verbatim at
+`roster/r0-ex4-verdict.md`): **REVISE, converging** — all five R0-EX3
+closures independently CONFIRMED (it re-probed reserve gating, separated
+stars, cutoff redaction, Windows signals, and the NUL itself), with four new
+findings. All fixed in round 4:
+
+- **[MAJOR] comma-join collision in the touches lint** — an enum entry that
+  itself contains a comma made unequal sets join identically (`["auth,authz"]`
+  vs `["auth","authz"]`), letting drift disable mandatory review + Q0. Fixed:
+  element-wise comparison, no join at all; a comma-bearing-entry tamper test
+  pinned. (Ironic lineage: the original NUL separator existed to dodge exactly
+  this; the NUL broke the file, the comma broke the check, the join is gone.)
+- **[MINOR] DP matcher drifted on line terminators** — the rewrite let `**`
+  span `\n`/`\r`/U+2028/U+2029, which the retired regex `.` never matched.
+  Fixed: globstar excludes line terminators, `*` excludes only `/` — the old
+  classes replicated exactly, regression-pinned.
+- **[MINOR] `worktree prune` does not reclaim an EXTANT leftover** — an
+  untrappable kill leaves directory + registration, and prune keeps both.
+  Fixed: `sweepAbandoned()` at checkout creation removes registered worktrees
+  under this module's own tmp prefix that no live in-process checkout owns
+  (ACTIVE set skipped — runVerification legitimately holds head+base at
+  once), then prunes. Simulated-leftover test pinned.
+- **[MINOR] order-file overclaim** — the R0-EX4 order said "the single
+  round-3 commit" while the pinned range also contained `444eaf3` (the
+  R0-EX3 order records, +136 lines of markdown). Acknowledged; from R0-EX5
+  on, orders enumerate every commit in the pinned range.
+
 ## Note
 
 The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-3 diff (R0-EX4) comes back clean. Open items are process, not
-code: (1) R0-EX4, and (2) the registered follow-on — the verification-time
+the round-4 diff (R0-EX5) comes back clean. Open items are process, not
+code: (1) R0-EX5, and (2) the registered follow-on — the verification-time
 diff-derived `touches` cross-check.

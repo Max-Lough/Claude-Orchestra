@@ -98,6 +98,14 @@ function compileGlob(pattern) {
 
 // dp[j] = "the tokens consumed so far can match text[0..j)". Each token
 // updates the whole row in one linear pass.
+//
+// Wildcard character classes replicate the retired regex EXACTLY (R0-EX4
+// MINOR: the first DP draft let `**` span line terminators, which regex `.`
+// never did): `**` matches anything except a line terminator (it does cross
+// '/'); `*` matches anything except '/'. Git-quoted paths keep terminators
+// out of real inputs, but the matcher must not drift just because the
+// engine changed.
+const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029']);
 function globMatch(tokens, text) {
   const n = text.length;
   let prev = new Array(n + 1).fill(false);
@@ -105,10 +113,9 @@ function globMatch(tokens, text) {
   for (const tok of tokens) {
     const next = new Array(n + 1).fill(false);
     if (tok === 'globstar') {
-      let reachable = false;
       for (let j = 0; j <= n; j++) {
-        reachable = reachable || prev[j];
-        next[j] = reachable; // spans any characters, including '/'
+        if (prev[j]) next[j] = true;
+        else if (j > 0 && next[j - 1] && !LINE_TERMINATORS.has(text[j - 1])) next[j] = true;
       }
     } else if (tok === 'star') {
       for (let j = 0; j <= n; j++) {
@@ -236,6 +243,37 @@ function installExitHandler() {
   }
 }
 
+// The mkdtemp prefix every checkout parent carries — the sweep recognizes
+// its own leftovers by it and touches nothing else.
+const PARENT_PREFIX = 'orchestra-verifier-';
+
+function normPath(p) {
+  const r = path.resolve(String(p)).replace(/\\/g, '/');
+  return process.platform === 'win32' ? r.toLowerCase() : r;
+}
+
+// Remove registered worktrees under this module's own tmp prefix that no
+// LIVE checkout in this process owns (runVerification legitimately holds
+// two at once — head + base — and mutationCheck a third; those are in
+// ACTIVE and skipped). A concurrent verifier PROCESS on the same repo could
+// in principle be swept — the same trade the reference lane makes; runs on
+// one repo are serialized by the dispatcher.
+function sweepAbandoned(repoDir) {
+  const list = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
+  if (!list.error && list.status === 0) {
+    const live = new Set([...ACTIVE].map((e) => normPath(e.dir)));
+    for (const line of (list.stdout || '').split('\n')) {
+      if (!line.startsWith('worktree ')) continue;
+      const wt = line.slice('worktree '.length).trim();
+      const norm = normPath(wt);
+      if (!norm.includes(PARENT_PREFIX) || live.has(norm)) continue;
+      runGit(['-C', repoDir, 'worktree', 'remove', '--force', wt]);
+      try { fs.rmSync(path.dirname(wt), { recursive: true, force: true }); } catch (_) { /* best effort */ }
+    }
+  }
+  runGit(['-C', repoDir, 'worktree', 'prune']);
+}
+
 /**
  * Create a throwaway writable checkout of `commitish`, outside the repo.
  * Returns { dir, commit, parent, fingerprintBefore, delta, teardown } or
@@ -254,16 +292,20 @@ function createCheckout(repoDir, commitish, opts) {
     return { error: 'not a git repository (or git unavailable): ' + repoDir };
   }
   const toplevel = path.resolve(top.stdout.trim());
-  // Sweep stale registrations from previously interrupted runs (the same E7
-  // finding): a dangling worktree entry can block re-adding a path.
-  runGit(['-C', repoDir, 'worktree', 'prune']);
+  // Reclaim leftovers from previously interrupted runs (E7 + R0-EX4): a
+  // `worktree prune` alone clears only registrations whose DIRECTORY is
+  // gone — an untrappable kill (TerminateProcess) leaves both the directory
+  // and the registration, which prune happily keeps. Sweep any registered
+  // worktree living under this module's own mkdtemp prefix that no live
+  // checkout in this process owns, then prune the rest.
+  sweepAbandoned(repoDir);
   const resolved = runGit(['-C', repoDir, 'rev-parse', '--verify', String(commitish) + '^{commit}']);
   if (resolved.error || resolved.status !== 0) {
     return { error: 'cannot resolve commit ' + commitish + ': ' + ((resolved.stderr || '').trim() || 'git error') };
   }
   const commit = resolved.stdout.trim();
 
-  const parent = fs.mkdtempSync(path.join(options.tmpRoot || os.tmpdir(), 'orchestra-verifier-'));
+  const parent = fs.mkdtempSync(path.join(options.tmpRoot || os.tmpdir(), PARENT_PREFIX));
   // Bound (1): the checkout lives OUTSIDE the repository. If a caller pointed
   // tmpRoot inside the repo, refuse rather than sandbox the tree inside itself.
   const rel = path.relative(toplevel, parent);

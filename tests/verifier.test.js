@@ -547,6 +547,13 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
     checkoutLib.matchesAny('a/b', ['*']) === false &&
     checkoutLib.matchesAny('ab', ['a*b']) === true &&
     checkoutLib.matchesAny('a/x/b', ['a*b']) === false);
+  check('R0-EX4: wildcard character classes match the retired regex exactly (globstar excludes line terminators, star excludes only /)',
+    checkoutLib.matchesAny('\n', ['**']) === false &&
+    checkoutLib.matchesAny('a\rb', ['a**b']) === false &&
+    checkoutLib.matchesAny('a\u2028b', ['**']) === false &&
+    checkoutLib.matchesAny('a\u2029b', ['**']) === false &&
+    checkoutLib.matchesAny('a\nb', ['a*b']) === true /* old [^/]* matched \n */ &&
+    checkoutLib.matchesAny('a/b/c', ['**']) === true);
 
   // R0-EX3: tail-then-redact let a credential straddle the 2000-char cutoff
   // and survive as a reconstructible suffix. Redaction now runs over the
@@ -556,6 +563,24 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
   check('R0-EX3: a credential straddling the tail cutoff is redacted, never truncated into a reconstructible suffix',
     straddle.commands[0].exit_code === 0 && !/MNOPQRSTUV/.test(straddle.commands[0].stdout_tail),
     JSON.stringify(straddle.commands[0].stdout_tail).slice(0, 120));
+
+  // R0-EX4: `worktree prune` alone clears only registrations whose directory
+  // is GONE — an untrappable kill leaves both directory and registration.
+  // Simulate the leftover exactly (a registered worktree under this module's
+  // own tmp prefix that no live checkout owns) and prove the startup sweep
+  // reclaims it while live checkouts survive.
+  const abandonedParent = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-verifier-'));
+  cleanups.push(() => fs.rmSync(abandonedParent, { recursive: true, force: true }));
+  const abandonedDir = path.join(abandonedParent, 'checkout');
+  git(fixture.dir, ['worktree', 'add', '--detach', abandonedDir, fixture.base]);
+  const co2 = checkoutLib.createCheckout(fixture.dir, fixture.base); // startup sweep runs here
+  const wtList = git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase();
+  check('R0-EX4: startup sweep reclaims an extant abandoned worktree (directory AND registration), live checkouts untouched',
+    !co2.error && !fs.existsSync(abandonedDir) &&
+    !wtList.includes(path.basename(abandonedParent).toLowerCase()) &&
+    fs.existsSync(co2.dir),
+    'abandoned exists=' + fs.existsSync(abandonedDir));
+  co2.teardown();
 }
 
 section('13. The mutation check is wired into the integrated round and the CLI');

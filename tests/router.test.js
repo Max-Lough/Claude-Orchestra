@@ -683,6 +683,22 @@ check('a drifted touches enum fails the router load closed (the schema/trigger l
     fs.writeFileSync(path.join(dir, 'schemas', 'order.schema.json'), JSON.stringify(osJson), 'utf8');
     try { createRouter({ registryBaseDir: dir }); return false; } catch (e) { return /touches enum diverges/.test(e.message); }
   })());
+check('R0-EX4: the touches lint compares elements, never a joined string (a comma-bearing entry cannot collide)',
+  (() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-touch2-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(dir, 'schemas'), { recursive: true });
+    fs.copyFileSync(path.join(MASTER, 'registry', 'classes.json'), path.join(dir, 'classes.json'));
+    for (const f of fs.readdirSync(path.join(MASTER, 'registry', 'schemas'))) {
+      fs.copyFileSync(path.join(MASTER, 'registry', 'schemas', f), path.join(dir, 'schemas', f));
+    }
+    const osJson = JSON.parse(fs.readFileSync(path.join(dir, 'schemas', 'order.schema.json'), 'utf8'));
+    const en = osJson.properties.touches.items.enum.filter((t) => t !== 'auth' && t !== 'authz');
+    en.unshift('auth,authz'); // joins byte-identically to ['auth','authz'] under any comma join
+    osJson.properties.touches.items.enum = en;
+    fs.writeFileSync(path.join(dir, 'schemas', 'order.schema.json'), JSON.stringify(osJson), 'utf8');
+    try { createRouter({ registryBaseDir: dir }); return false; } catch (e) { return /touches enum diverges/.test(e.message); }
+  })());
 check('a gated review lane does not close — closes flips with the embedded gate',
   (() => {
     const r = router.reviewer(['openai'], 'T2', { policy: 'mandatory', buckets: buckets({ 'AU-opus': { state: 'Green', belowReserve: true } }) });

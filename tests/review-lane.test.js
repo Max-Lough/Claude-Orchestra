@@ -380,7 +380,16 @@ async function case4() {
   // "killed mid-registration" (unrecoverable by design, a different case).
   // R0-EX8: wait on the LOCK CONDITION itself, never a fixed duration — a
   // slow checkout stays locked long past any sleep.
-  check('checkout finished registering (lock cleared) before the SIGTERM', await waitWorktreesUnlocked(fx.repo, 30000));
+  const unlockedBeforeTerm = await waitWorktreesUnlocked(fx.repo, 30000);
+  check('checkout finished registering (lock cleared) before the SIGTERM', unlockedBeforeTerm);
+  if (!unlockedBeforeTerm) {
+    // R0-EX9: a timed-out guard has already failed the suite — do NOT also
+    // kill into the explicitly unreclaimable mid-registration state and let
+    // its wreckage cascade through the remaining assertions. Put the child
+    // down hard and skip the kill-dependent sub-checks.
+    child.kill('SIGKILL');
+    await new Promise((res) => child.on('exit', res));
+  } else {
   child.kill('SIGTERM');
   await new Promise((res) => child.on('exit', res));
   await sleep(300);
@@ -406,6 +415,7 @@ async function case4() {
       worktreeLines(fx.repo).length === 1,
       (swept.stdout || '').slice(0, 400) + '\n' + worktreeLines(fx.repo).join('\n')
     );
+  }
   }
 
   // SIGKILL runs no handler by design — the next run's sweep is what reclaims
@@ -438,11 +448,16 @@ async function case4() {
   // latter is a different (and much rarer) shape, and testing it by accident
   // makes this case flaky rather than strict. R0-EX8: wait on the lock
   // condition itself, never a fixed duration.
-  check('checkout finished registering (lock cleared) before the SIGKILL', await waitWorktreesUnlocked(fx2.repo, 30000));
+  const unlockedBeforeKill = await waitWorktreesUnlocked(fx2.repo, 30000);
+  check('checkout finished registering (lock cleared) before the SIGKILL', unlockedBeforeKill);
   check('SIGKILL: the worktree was live before the kill', registered2, 'never registered within 30s');
   c2.kill('SIGKILL');
   await new Promise((res) => c2.on('exit', res));
   await sleep(200);
+  // R0-EX9: when the lock guard timed out, the guard check above already
+  // failed the suite; the orphan is mid-registration (locked, unreclaimable
+  // by design), so the sweep sub-checks below would only compound the noise.
+  if (unlockedBeforeKill) {
   check(
     'SIGKILL leaves an orphan (so the sweep has something to prove)',
     worktreeLines(fx2.repo).length > 1,
@@ -459,6 +474,7 @@ async function case4() {
     /reclaimed \d+ abandoned review worktree/.test(r.stdout || ''),
     (r.stdout || '').slice(0, 600)
   );
+  }
 }
 
 function case5() {

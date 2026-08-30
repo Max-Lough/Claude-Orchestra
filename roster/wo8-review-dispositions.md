@@ -329,10 +329,36 @@ All fixed in round 5d:
   cancelled / 1 Windows review-lane flake — the same race, firing in CI).
   Corrected in the round-5c section above.
 
+## R0-EX9 (delta re-review of round 5d) and the round-5e dispositions
+
+R0-EX9 (Sol · high, pinned `3a9cc73..5fb5142`; verdict verbatim at
+`roster/r0-ex9-verdict.md`): **REVISE** — the lock-condition polls and the
+records correction CONFIRMED; one MAJOR and one MINOR, both fixed in round
+5e:
+
+- **[MAJOR] the fail-closed CLEANUP addressed the vanished alias** — when
+  the alias disappeared before realpath threw, `createCheckout` refused
+  correctly but its `worktree remove <alias-path>` failed, stranding the
+  canonical registration and directory. Fixed structurally: **identity now
+  comes from git's own records** — the linked-worktree porcelain list is
+  snapshotted across the `add`, and the single new entry IS the identity
+  and the entry's working handle. `fs.realpath` is off the identity path
+  entirely (no resolution step left to race), creation/sweep/teardown all
+  address git's spelling (so cleanup can never miss), an ambiguous records
+  diff refuses fail-closed cleaning every candidate, and teardown removes
+  both parent spellings behind a prefix belt. Regressions: poisoned-realpath
+  now yields a WORKING checkout whose sweep exemption holds, and teardown by
+  git's spelling leaves neither registration nor directory.
+- **[MINOR] a timed-out lock guard still killed** — `check()` records
+  failure but does not stop execution, so both branches killed into the
+  explicitly unreclaimable state anyway. Fixed: on guard timeout the child
+  is put down with SIGKILL and the kill-dependent sub-checks are skipped —
+  the guard's own failed check is the suite's loud signal.
+
 ## Note
 
 The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-5d diff (R0-EX9) comes back clean. Open items are process, not
-code: (1) R0-EX9, and (2) the registered follow-ons — the verification-time
+the round-5e diff (R0-EX10) comes back clean. Open items are process, not
+code: (1) R0-EX10, and (2) the registered follow-ons — the verification-time
 diff-derived `touches` cross-check, and the reference runner's
 single-`--force` sweep vs locked worktrees.

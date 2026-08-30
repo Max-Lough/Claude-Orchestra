@@ -655,22 +655,32 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
     fs.rmSync(path.dirname(canonical), { recursive: true, force: true });
     liveViaAlias2.teardown();
 
-    // R0-EX8: identity capture is fail-CLOSED. If the canonical path cannot
-    // be resolved at creation (the alias vanished mid-creation), a lexical
-    // guess stored as identity would be trusted by a later sweep — so there
-    // must be NO checkout at all, and no stray registration left behind.
-    const before = git(fixture.dir, ['worktree', 'list', '--porcelain']);
+    // R0-EX8/R0-EX9: identity comes from GIT'S RECORDS, so fs.realpath is
+    // no longer on the identity path at all — a poisoned realpath must
+    // yield a checkout whose handle IS git's spelling and whose sweep
+    // exemption still holds (both sides degrade to the same string), and a
+    // vanished alias can no longer strand a canonical registration, because
+    // creation, sweep, and teardown all address git's own spelling.
     const realFn = fs.realpathSync;
     const poisoned = () => { throw new Error('ENOENT: poisoned by the R0-EX8 regression'); };
     poisoned.native = poisoned;
     fs.realpathSync = poisoned;
-    let failClosed;
-    try { failClosed = checkoutLib.createCheckout(fixture.dir, fixture.base); }
+    let underPoison;
+    try { underPoison = checkoutLib.createCheckout(fixture.dir, fixture.base); }
     finally { fs.realpathSync = realFn; }
-    check('R0-EX8: an unresolvable canonical identity refuses the checkout (fail closed, no lexical guess, registration cleaned)',
-      !!failClosed.error && /canonical identity/.test(failClosed.error) &&
-      git(fixture.dir, ['worktree', 'list', '--porcelain']) === before,
-      failClosed.error || 'checkout was handed out');
+    const sweepTrigger = checkoutLib.createCheckout(fixture.dir, fixture.base);
+    check('R0-EX9: with realpath unavailable, the checkout handle is git\'s own spelling and the sweep exemption still holds',
+      !underPoison.error && fs.existsSync(underPoison.dir) &&
+      git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(
+        underPoison.dir.replace(/\\/g, '/').toLowerCase()) &&
+      !sweepTrigger.error && fs.existsSync(underPoison.dir),
+      underPoison.error || sweepTrigger.error || 'live checkout lost');
+    sweepTrigger.teardown();
+    underPoison.teardown();
+    check('R0-EX9: teardown by git\'s spelling leaves no registration or directory behind',
+      !fs.existsSync(underPoison.dir) &&
+      !git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(
+        underPoison.dir.replace(/\\/g, '/').toLowerCase()));
   } else {
     check('CI: real-path live-set regression [skipped: cannot create links here]', true);
     check('R0-EX7: alias-removal regression [skipped: cannot create links here]', true);

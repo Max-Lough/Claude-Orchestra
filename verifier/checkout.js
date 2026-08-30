@@ -341,45 +341,58 @@ function createCheckout(repoDir, commitish, opts) {
     return { error: 'refusing a checkout inside the repository under examination: ' + parent };
   }
 
+  // Canonical identity comes from GIT'S OWN RECORDS, not from fs.realpath
+  // (R0-EX9): snapshot the linked-worktree list, add, and the one new entry
+  // IS the identity — the exact spelling every later sweep will list. This
+  // removes the whole aliasing class: there is no separate resolution step
+  // to race (R0-EX8's mid-creation ENOENT), and cleanup can always address
+  // the registration by the path git itself holds, so a vanished alias can
+  // no longer strand a canonical registration (this round's finding).
+  const listedLinked = () => {
+    const l = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
+    if (l.error || l.status !== 0) return null;
+    return (l.stdout || '').split('\n').filter((x) => x.startsWith('worktree ')).slice(1)
+      .map((x) => x.slice('worktree '.length).trim());
+  };
+  const before = listedLinked();
   const dir = path.join(parent, 'checkout');
   const added = runGit(['-C', repoDir, 'worktree', 'add', '--detach', dir, commit]);
   if (added.error || added.status !== 0) {
     fs.rmSync(parent, { recursive: true, force: true });
     return { error: 'worktree add failed: ' + ((added.stderr || '').trim() || 'git error') };
   }
-
-  // Canonical identity, captured NOW while every path component should be
-  // resolvable — and captured FAIL-CLOSED (R0-EX8): if the canonical path
-  // cannot be established, there is no checkout, because a lexical guess
-  // stored here would be trusted by a later sweep, which would then delete
-  // the live canonical directory (normPath's lexical fallback exists for
-  // already-gone SWEPT paths, never for a live identity).
-  let canonical;
-  try {
-    canonical = fs.realpathSync.native ? fs.realpathSync.native(dir) : fs.realpathSync(dir);
-  } catch (e) {
+  const after = listedLinked();
+  const created = before === null || after === null ? null : after.filter((p) => !before.includes(p));
+  if (!created || created.length !== 1) {
+    // Ambiguous or unreadable records (e.g. a concurrent add — the
+    // dispatcher-serialization trade violated): refuse, cleaning every
+    // registration we might own, by the spellings git holds.
+    for (const p of created || []) runGit(['-C', repoDir, 'worktree', 'remove', '--force', p]);
     runGit(['-C', repoDir, 'worktree', 'remove', '--force', dir]);
     runGit(['-C', repoDir, 'worktree', 'prune']);
     try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
-    return { error: 'cannot establish the checkout\'s canonical identity (' + (e.message || e) + ') — refusing rather than guessing (fail closed)' };
+    return { error: 'cannot establish the checkout\'s canonical identity from git\'s records — refusing rather than guessing (fail closed)' };
   }
+  // The entry's working handle IS git's spelling: usable and removable even
+  // if the alias the caller's tmpRoot came through disappears later.
+  const gitDir = created[0];
 
-  const fingerprintBefore = treeFingerprint(dir);
+  const fingerprintBefore = treeFingerprint(gitDir);
   let torndown = false;
 
   const entry = {
-    dir,
+    dir: gitDir,
     commit,
     parent,
-    realDir: normPath(canonical),
+    realDir: normPath(gitDir),
     fingerprintBefore,
     // The before/after comparison, classified. Callers pass project-declared
     // churn patterns; the defaults cover the common generated artifacts.
     delta(generatedPatterns) {
-      const after = treeFingerprint(dir);
-      if (!fingerprintBefore || !after) return null;
+      const afterFp = treeFingerprint(gitDir);
+      if (!fingerprintBefore || !afterFp) return null;
       const patterns = DEFAULT_GENERATED_PATTERNS.concat(generatedPatterns || []);
-      return fingerprintDelta(fingerprintBefore, after, patterns);
+      return fingerprintDelta(fingerprintBefore, afterFp, patterns);
     },
     teardown() {
       if (torndown) return;
@@ -387,9 +400,15 @@ function createCheckout(repoDir, commitish, opts) {
       ACTIVE.delete(entry);
       // `worktree remove` also unregisters the checkout from the real repo's
       // metadata; --force because the whole point is that the copy is dirty.
-      runGit(['-C', repoDir, 'worktree', 'remove', '--force', dir]);
+      // Removal addresses git's own spelling, then both parent spellings
+      // (the alias-side mkdtemp parent and the canonical parent) best-effort.
+      runGit(['-C', repoDir, 'worktree', 'remove', '--force', gitDir]);
       runGit(['-C', repoDir, 'worktree', 'prune']);
-      fs.rmSync(parent, { recursive: true, force: true });
+      try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+      const canonParent = path.dirname(gitDir);
+      if (path.basename(canonParent).startsWith(PARENT_PREFIX)) {
+        try { fs.rmSync(canonParent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+      }
     },
   };
   ACTIVE.add(entry);

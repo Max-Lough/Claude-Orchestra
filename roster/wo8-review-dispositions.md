@@ -54,6 +54,46 @@ From the Red Team (E7-EX1), **architectural / owner decision — not a mechanica
 - **[LOW] teardown not guaranteed on SIGINT/SIGTERM** — leaves writable checkouts + stale worktree registrations (already observable on this machine). Add signal handlers that sweep then re-raise, plus a startup `git worktree prune`.
 - **[LOW] git refs interpolated without `--`** — defense-in-depth for the day a ref comes from an artifact.
 
+## WO-14 re-review (R0-EX1 round 2, landed post-halt)
+
+The Anthropic-lane re-review of the WO-14 fixes: **10 of 11 FIXED, 1 PARTIALLY**
+(the six original MAJORs are all resolved and independently re-probed). Verdict
+REVISE on new MINORs, all small/local, to fold into the next round:
+
+- **[MINOR] `router.js:385` `cast()` `role.rungs[rungName]`** — a bare bracket read with a
+  caller-chosen key (the one site the "hasOwn everywhere" comment names but missed).
+  `castOpts:{rung:'__proto__'}` sails past `if (!rung) throw` and dies with an uncaught
+  TypeError at effectiveState instead of the typed "no rung" error. Fail-closed in effect
+  (crashes, doesn't fabricate) but wrong. Fix: `hasOwn(role.rungs||{}, rungName)`.
+- **[MINOR] `router.js:280` `normalizeBuckets` `buckets[b]`** — prototype-chain read; with
+  global pollution `normalizeBuckets({})` fabricates all-Green (the one remaining way to
+  fabricate Green). `hasOwn(buckets, b)` closes it.
+- **[MINOR] `router.js:126` `bucketsFor`** — same bare read; only reachable via tampered
+  castings.json (low severity).
+- **[MINOR] dispatch never normalizes risk onto the order** (`router.js:612`) — `dispatch({
+  class:'E5', risk:'T3 '})` returns ok:true and emits a Q0 companion carrying `risk:"T3 "`
+  verbatim, which is **schema-invalid** (order.schema risk enum is exactly T0–T3). Corroborates
+  the cross-vendor "order.schema / schema-invalid Q0" findings. Normalize onto the order or
+  reject at dispatch.
+- **[MINOR] `cast()` compares raw `o.risk`** (`:363/:422`) — two risk oracles for one field:
+  `reviewPolicy('D0','t1')`→preferred while `cast(...,{risk:'t1'})`→FORBIDDEN. Apply
+  normalizeRisk consistently.
+- **[MINOR] Q0 nonce provenance is asserted but not enforced** — `q0Required` reads
+  `order.integrity_nonce` straight off the caller; dispatch never writes one for the impl
+  order, so (a) an evading nonce is grindable and (b) calibration-eligible orders with no
+  nonce now spawn 100% Q0 (safe but an unremarked cost change). The dispatcher must mint the
+  nonce for the sample to be unforgeable.
+- NITs: `reviewer()` still has the `o.buckets || allGreen()` fail-open on the exported API
+  (not reachable from dispatch); `ALIAS_PINS[name]` bare read gives a nonsense diagnostic on a
+  polluted key (fails closed); resolveSeat buries the gate at `target.cast.ok` with no
+  top-level `ok` (dispatch surfaces it) — worth a README line.
+- **[out of scope, WO-5 owner] `verifier.js` `confine()` is purely lexical** (no
+  `fs.realpathSync`) — a symlink committed inside the checkout by the party under audit passes
+  confine() and is then followed by read/write: the exact escape the function claims to
+  prevent. Not reproduced (privileged symlink creation), CI is ubuntu. **Add to the WO-5
+  outstanding list** — my confinement fix this round is necessary but not sufficient against a
+  symlinked checkout.
+
 ## Note
 
 This tranche's mandatory cross-vendor review (R0-EX2) is **REVISE**, so

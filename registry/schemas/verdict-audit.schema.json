@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orchestra/verdict-audit",
+  "title": "Verdict audit",
+  "description": "The Verifier's mechanical audit of a verdict (final-plan.md Investigator verdict checks; §3.4 'Verifier evidence audit'; §7.3 substitution check). Runs on every verdict: cited evidence must replay, refutation duty must be present (a verdict with no discarded alternatives fails), and gate-class CONFIRMED verdicts require the cross-family falsification pass. Recursive semantic review of verdicts is forbidden — this audit checks evidence, never judgment.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "verdict",
+    "citation_replay",
+    "refutation_duty_present",
+    "cross_family",
+    "gate_class",
+    "outcome"
+  ],
+  "properties": {
+    "task_id": { "type": "string", "minLength": 1 },
+    "verdict": { "enum": ["APPROVE", "REVISE"] },
+    "citation_replay": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["citation", "replayed", "result"],
+        "properties": {
+          "citation": { "type": "string", "description": "The cited command, path:line, or search the verdict rests on" },
+          "replayed": { "type": "boolean" },
+          "result": { "enum": ["MATCHES", "DIVERGES", "UNREPLAYABLE"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "refutation_duty_present": { "type": "boolean", "description": "The verdict names its two strongest discarded alternatives with citations; false fails the audit" },
+    "cross_family": { "type": "boolean", "description": "Copied from the dispatch record, never from the verdict text" },
+    "gate_class": { "type": "boolean", "description": "Whether this verdict authorizes Principal-tier, data, or security work" },
+    "falsification_run": {
+      "type": ["object", "null"],
+      "description": "Required content when gate_class is true and the verdict is a CONFIRMED-grade authorization; absent otherwise",
+      "properties": {
+        "family": { "enum": ["anthropic", "openai"] },
+        "outcome": { "enum": ["SURVIVED", "REFUTED", "UNAVAILABLE"] },
+        "note": { "type": "string", "description": "UNAVAILABLE downgrades the verdict to LIKELY; it cannot authorize gate-class work" }
+      },
+      "additionalProperties": false
+    },
+    "issued_against_substituted_output": { "type": "boolean", "description": "P15 check: whether the audited verdict was issued against output later found to be served by a substituted model" },
+    "outcome": { "enum": ["PASS", "FAIL"] },
+    "notes": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "gate_class": { "const": true } } },
+      "then": { "required": ["falsification_run"] }
+    }
+  ],
+  "additionalProperties": false
+}

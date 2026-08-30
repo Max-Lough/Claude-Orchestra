@@ -262,9 +262,28 @@ legit-worktree-with-sibling shape). Residual, accepted: a user directory
 deliberately named `orchestra-verifier-*/checkout` and registered as a
 worktree would still be swept — the mkdtemp prefix is the namespace claim.
 
+## R0-EX6 (delta re-review of round 5) and the round-5b disposition
+
+R0-EX6 (Sol · high, pinned `e7a5e31..ceeaabc`; verdict verbatim at
+`roster/r0-ex6-verdict.md`): **REVISE** — the R0-EX5 CRITICAL confirmed
+CLOSED (both reproducer shapes independently re-probed, reclaim behavior
+verified not regressed), one MAJOR remaining in `ceeaabc`: the sweep's
+live-set (ACTIVE) exemption compared LEXICAL paths, while git registers
+worktrees under canonical paths — through a junction/symlink (or macOS
+`/var`→`/private/var`, or a Windows 8.3 tmpdir) the compare misses and the
+sweep deletes a still-live checkout.
+
+**Detected twice again, CI first**: the same defect broke PR #28 CI on
+macOS/Windows (live checkout deleted mid-`runVerification`, invariant probes
+dying on a vanished cwd) and was **already fixed at `09a824e`** — `normPath`
+resolves real paths (lexical fallback for paths already gone), with an
+aliased-tmp-root (junction/symlink) regression that reproduces the class on
+every platform — before the R0-EX6 verdict landed. R0-EX6's junction probe
+is the same shape as the pinned regression.
+
 ## Note
 
 The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-5 diff (R0-EX6) comes back clean. Open items are process, not
-code: (1) R0-EX6, and (2) the registered follow-on — the verification-time
-diff-derived `touches` cross-check.
+the round-5b diff (R0-EX7, pinned `ceeaabc..09a824e`) comes back clean. Open
+items are process, not code: (1) R0-EX7, and (2) the registered follow-on —
+the verification-time diff-derived `touches` cross-check.

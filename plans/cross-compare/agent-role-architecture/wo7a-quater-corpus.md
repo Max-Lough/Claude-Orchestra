@@ -63,26 +63,26 @@ found ambiguous.
 
 | # | Request | Your class |
 |---|---------|------------|
-| 1 | Add server-authoritative broadside combat to the multiplayer game — cannon fire, hull damage, sinking, and respawn — with headless test coverage. | |
-| 2 | A user who is already paired with a partner can still land on the Connect screen instead of their Home — figure out why and get them where they belong. | |
-| 3 | The public health endpoint returns internal database error details to any caller — make it answer with a generic status instead. | |
-| 4 | Port the approved water-look probe into the shipping game — wake trails and idle ripples on the live ocean — and bake in the ratified water and wake settings. | |
-| 5 | Expand graphics quality from two tiers to three with the new medium tier's rendering knobs, migrating every player's saved settings from the old low-spec flag — existing callers keep working. | |
-| 6 | Verification shows request bodies and session JWTs can reach Sentry — stop the leakage while keeping crash reports diagnosable. | |
-| 7 | Stand up the new Godot project: standard input map, a global signal boundary, and the source/assets/tools directory layout. | |
-| 8 | Find and attribute the source of the SpawnDirector stalls in a solo release-export run. | |
-| 9 | Add test coverage where it counts — the deterministic aggregation logic and the security-critical resource-access checks — and inventory what gaps remain. | |
-| 10 | CI keeps re-downloading the full Git LFS store — tune the cache policy so runs stop pulling assets they already had. | |
-| 11 | On mobile browsers the web pages overflow horizontally, Profile shows up twice in the navigation, and the affected pages are unreadable in dark mode — fix all three. | |
-| 12 | Add host FPS and frame-time to the periodic telemetry snapshots — emitted by the client, parsed by the worker, stored with the rest, and older snapshots without the new fields must keep loading. | |
-| 13 | Players hit a long stall at spawn while the game searches for a free dock — eliminate the dock-search spawn stall. | |
-| 14 | Retire the standalone inventory panel and its control binding — each seat's ship inventory should live in the ScoreScreen's My Ship section instead. | |
-| 15 | The asset fracture and validation tools fail on Windows with Blender 5.1 — make the toolchain work there again. | |
-| 16 | Establish the authoritative ship roster and dimension canon — record the approved brigantine proportions and the future-lineup decisions in one place. | |
-| 17 | Gamepad confirm and back should work consistently everywhere — no double activations, no in-match side effects when closing menus. | |
-| 18 | Add the bomb ketch to the playable ship roster — hull data, visual package, rigging, and its catalog registrations. | |
-| 19 | ship_logic.gd is over the line and public-method ceilings — carve it back under without changing behavior. | |
-| 20 | Write down how display-value clamping works at load — values are clamped in memory only, and a later save can persist them — so maintainers know why a large-monitor preference can get replaced. | |
+| 1 | Add server-authoritative broadside combat to the multiplayer game — cannon fire, hull damage, sinking, and respawn — with headless test coverage. | E3 |
+| 2 | A user who is already paired with a partner can still land on the Connect screen instead of their Home — figure out why and get them where they belong. | I1 |
+| 3 | The public health endpoint returns internal database error details to any caller — make it answer with a generic status instead. | E2 |
+| 4 | Port the approved water-look probe into the shipping game — wake trails and idle ripples on the live ocean — and bake in the ratified water and wake settings. | E6 |
+| 5 | Expand graphics quality from two tiers to three with the new medium tier's rendering knobs, migrating every player's saved settings from the old low-spec flag — existing callers keep working. | E4 |
+| 6 | Verification shows request bodies and session JWTs can reach Sentry — stop the leakage while keeping crash reports diagnosable. | E2 |
+| 7 | Stand up the new Godot project: standard input map, a global signal boundary, and the source/assets/tools directory layout. | E2 |
+| 8 | Find and attribute the source of the SpawnDirector stalls in a solo release-export run. | I1 |
+| 9 | Add test coverage where it counts — the deterministic aggregation logic and the security-critical resource-access checks — and inventory what gaps remain. | Q0 |
+| 10 | CI keeps re-downloading the full Git LFS store — tune the cache policy so runs stop pulling assets they already had. | E0 |
+| 11 | On mobile browsers the web pages overflow horizontally, Profile shows up twice in the navigation, and the affected pages are unreadable in dark mode — fix all three. | E0 |
+| 12 | Add host FPS and frame-time to the periodic telemetry snapshots — emitted by the client, parsed by the worker, stored with the rest, and older snapshots without the new fields must keep loading. | E3 |
+| 13 | Players hit a long stall at spawn while the game searches for a free dock — eliminate the dock-search spawn stall. | E2 |
+| 14 | Retire the standalone inventory panel and its control binding — each seat's ship inventory should live in the ScoreScreen's My Ship section instead. | E5 |
+| 15 | The asset fracture and validation tools fail on Windows with Blender 5.1 — make the toolchain work there again. | E0 |
+| 16 | Establish the authoritative ship roster and dimension canon — record the approved brigantine proportions and the future-lineup decisions in one place. | D0 |
+| 17 | Gamepad confirm and back should work consistently everywhere — no double activations, no in-match side effects when closing menus. | I1 |
+| 18 | Add the bomb ketch to the playable ship roster — hull data, visual package, rigging, and its catalog registrations. | E6 |
+| 19 | ship_logic.gd is over the line and public-method ceilings — carve it back under without changing behavior. | E2 |
+| 20 | Write down how display-value clamping works at load — values are clamped in memory only, and a later save can persist them — so maintainers know why a large-monitor preference can get replaced. | D0 |
 
 ## Comparison with the sealed pass
 

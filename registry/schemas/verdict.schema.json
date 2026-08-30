@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orchestra/verdict",
+  "title": "Review verdict",
+  "description": "The reviewer's return contract (final-plan.md §3.5). review.cross_family is dispatcher-written from the dispatch record — never asserted by the reviewer — and a user-facing report omitting it fails the contract lint (§3.4).",
+  "type": "object",
+  "required": ["verdict", "findings", "claims_checked", "review"],
+  "properties": {
+    "verdict": { "enum": ["APPROVE", "REVISE"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "location", "defect", "failure_scenario"],
+        "properties": {
+          "severity": { "enum": ["CRITICAL", "MAJOR", "MINOR"] },
+          "location": { "type": "string", "description": "path:line" },
+          "defect": { "type": "string", "minLength": 1 },
+          "failure_scenario": { "type": "string", "minLength": 1, "description": "concrete failure scenario" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "claims_checked": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "result", "how"],
+        "properties": {
+          "claim": { "type": "string" },
+          "result": { "enum": ["CONFIRMED", "REFUTED", "UNVERIFIED"] },
+          "how": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["cross_family"],
+      "properties": {
+        "cross_family": { "type": "boolean", "description": "dispatcher-set, from the dispatch record" }
+      },
+      "additionalProperties": false
+    },
+    "nits": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

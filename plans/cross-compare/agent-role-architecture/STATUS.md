@@ -246,6 +246,22 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   (with the reserved B/W synthetic edges) is the remaining validation. The cross-probe
   pair ledger is closed and dispositioned in `wo7a-quater-corpus.md`. Next: **WO-4**
   (schemas; encode §4.0 as ordered data, 23-class invariant, RECLASSIFY status).
+- **WO-4 EXECUTED (2026-08-29):** the registry lives in `registry/` at the repo root —
+  `classes.json` (23 active classes with primaries/castings/reviewers/escalations, the
+  `I1 → I0` alias, risk tiers, **§4.0 as ordered data** with per-clause discriminator
+  citations, §4.1 with B retired, §4.2 phase rules, residual rule, error stance), the six
+  §3.5 schemas (order, report with first-class `RECLASSIFY` + conditional
+  `reclassify.{recommended_class, evidence}`, verdict with dispatcher-written
+  `review.cross_family`, authorization packet with T3-forces-named-human, casting record
+  with the P15 substitution detector, verdict audit with refutation-duty and gate-class
+  falsification checks), and `load.js`, which asserts the ownership invariant
+  mechanically: 23/23 bijection, alias resolution, §4.0 closed over the table (every
+  route target active, every class reachable, no retired citations), schema class/risk
+  enums byte-identical to the registry. `tests/registry.test.js`: 29 checks green,
+  including fourteen tamper tests proving each corruption fails the load. The load-time
+  count immediately caught one prose miscount the ruling introduced — Part 4's preamble
+  said "twenty-two active"; the table has 23 active rows — fixed in `final-plan.md`.
+  Next: **WO-5** (Verifier substrate; validates artifacts against these schemas).
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -267,18 +283,18 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-08-29, final ruling applied)
 
-1. **WO-4 is the active step — the validation-gate cycle is closed.** The 2026-08-29
-   owner-delegated final ruling (see the FINAL RULING bullet above) merged I0/I1 into one
-   Investigator seat, restructured Part 4 around the §4.0 total decision procedure, and
-   demoted class to a routing hypothesis with `RECLASSIFY` recovery. WO-4 encodes §4.0 as
-   ordered data with the 23-class invariant (`I1` alias) and the RECLASSIFY report
-   status; no redraw #4 and no fifth mined corpus. B's persisted-generated-output horn
-   and W's values-only horn remain untested until WO-7b synthetics, which now measure
-   misroute recovery (restated 7.2 gate), not one-shot agreement.
+1. **WO-5 is the active step — WO-4 is done.** The 2026-08-29 owner-delegated final
+   ruling (see the FINAL RULING bullet above) merged I0/I1, restructured Part 4 around
+   the §4.0 total decision procedure, and demoted class to a routing hypothesis with
+   `RECLASSIFY` recovery; WO-4 then encoded it all in `registry/` (classes.json + six
+   schemas + `load.js` invariant assertion; `node tests/registry.test.js` is the check).
+   B's persisted-generated-output horn and W's values-only horn remain untested until
+   WO-7b synthetics, which now measure misroute recovery (restated 7.2 gate), not
+   one-shot agreement.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
-3. Sequence (taxonomy gate closed by the ruling): WO-4 (schemas) → WO-5
+3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → WO-5
    (Verifier substrate) → WO-6 (router) → WO-7b (synthetics through the router — the
    remaining routing validation). The P3→P2→P1 deferred backlog
    (`plans/proposed-orchestra-improvements.md`) remains schedulable meanwhile — P3

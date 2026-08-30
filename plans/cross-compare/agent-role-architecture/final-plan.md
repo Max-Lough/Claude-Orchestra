@@ -1192,7 +1192,7 @@ fixed-order steps that cite the discriminators — replacing free entry into §4
 correctness-gated contract (residual rule; WO-4 encodes it). The validation-gate cycle is
 closed; WO-4 proceeds; WO-7b validates through the implemented router.
 
-Twenty-three classes (twenty-two active, plus `I1` retired as a registered alias of I0);
+Twenty-three active classes, plus `I1` retired as a registered alias of I0;
 each active class has exactly one primary role; the ownership invariant (every class
 exactly one primary; no identifier owned twice; every role's declared classes a subset of
 this table) is asserted mechanically at registry load (WO-4). Risk (T0–T3) modifies review

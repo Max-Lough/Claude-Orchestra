@@ -198,13 +198,24 @@ section('1. Disposable-checkout substrate: outside the repo, torn down, deregist
     check('source edit classified as suspect (INTEGRITY WARNING bucket)',
       delta2 && delta2.suspect.some((c) => c.path === 'lib.js'), delta2 && JSON.stringify(delta2.suspect));
 
-    const coDirNorm = co.dir.replace(/\\/g, '/');
-    check('checkout registered as a worktree before teardown',
-      git(fixture.dir, ['worktree', 'list']).replace(/\\/g, '/').includes(coDirNorm));
+    // Path identity, not string identity: on Windows CI, os.tmpdir() hands out
+    // an 8.3 short path (RUNNER~1) while git stores the resolved long path, so
+    // a substring compare both misses the registration AND lets the
+    // deregistration check pass vacuously. Resolve before comparing.
+    const normPath = (p) => {
+      let r = p;
+      try { r = fs.realpathSync.native ? fs.realpathSync.native(p) : fs.realpathSync(p); } catch (_) { /* gone */ }
+      r = path.resolve(r).replace(/\\/g, '/');
+      return process.platform === 'win32' ? r.toLowerCase() : r;
+    };
+    const listWorktrees = () => git(fixture.dir, ['worktree', 'list', '--porcelain'])
+      .split('\n').filter((l) => l.startsWith('worktree ')).map((l) => normPath(l.slice('worktree '.length)));
+    const coReal = normPath(co.dir);
+    check('checkout registered as a worktree before teardown', listWorktrees().includes(coReal),
+      coReal + ' not in [' + listWorktrees().join(', ') + ']');
     co.teardown();
     check('teardown removes the checkout', !fs.existsSync(co.dir));
-    check('teardown deregisters the worktree',
-      !git(fixture.dir, ['worktree', 'list']).replace(/\\/g, '/').includes(coDirNorm));
+    check('teardown deregisters the worktree', !listWorktrees().includes(coReal));
     check('teardown is idempotent', (() => { co.teardown(); return true; })());
   }
 

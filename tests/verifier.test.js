@@ -681,6 +681,29 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
       !fs.existsSync(underPoison.dir) &&
       !git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(
         underPoison.dir.replace(/\\/g, '/').toLowerCase()));
+
+    // R0-EX10: the residual compound race (records unreadable during
+    // creation + alias vanished) can strand a canonical registration whose
+    // alias spelling cleanup cannot address. That strand is by construction
+    // a <prefix>/checkout-shaped UNOWNED leftover — prove the standing
+    // sweep reclaims it: register one exactly that way (added through an
+    // alias, alias removed, never entering ACTIVE) and run a checkout.
+    const strandTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-alias-target-'));
+    const strandLink = path.join(os.tmpdir(), 'orchestra-alias-link3-' + process.pid);
+    fs.symlinkSync(strandTmp, strandLink, process.platform === 'win32' ? 'junction' : 'dir');
+    cleanups.push(() => fs.rmSync(strandTmp, { recursive: true, force: true }));
+    cleanups.push(() => { try { fs.rmSync(strandLink, { recursive: true, force: true }); } catch (_) { /* gone */ } });
+    const strandParent = fs.mkdtempSync(path.join(strandLink, 'orchestra-verifier-'));
+    const strandDir = path.join(strandParent, 'checkout');
+    git(fixture.dir, ['worktree', 'add', '--detach', strandDir, fixture.base]);
+    try { fs.unlinkSync(strandLink); } catch (_) { fs.rmdirSync(strandLink); } // strand it: alias gone, registration canonical
+    const healer = checkoutLib.createCheckout(fixture.dir, fixture.base); // standing sweep runs
+    const listAfterHeal = git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase();
+    check('R0-EX10: a stranded alias-created registration is reclaimed by the standing sweep (self-healing, not permanent)',
+      !healer.error && !listAfterHeal.includes(path.basename(strandParent).toLowerCase()) &&
+      fs.readdirSync(strandTmp).length === 0,
+      'strand survived: ' + fs.readdirSync(strandTmp).join(', '));
+    healer.teardown();
   } else {
     check('CI: real-path live-set regression [skipped: cannot create links here]', true);
     check('R0-EX7: alias-removal regression [skipped: cannot create links here]', true);

@@ -354,19 +354,32 @@ function createCheckout(repoDir, commitish, opts) {
     return (l.stdout || '').split('\n').filter((x) => x.startsWith('worktree ')).slice(1)
       .map((x) => x.slice('worktree '.length).trim());
   };
+  // The pre-add snapshot is a HARD prerequisite (R0-EX10): if git's records
+  // cannot be read now, nothing has been registered yet and refusing here
+  // costs nothing — whereas discovering the records are unreadable AFTER an
+  // add leaves a registration whose spelling we may no longer know.
   const before = listedLinked();
+  if (before === null) {
+    try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+    return { error: 'cannot read git\'s worktree records before creating a checkout — refusing (fail closed)' };
+  }
   const dir = path.join(parent, 'checkout');
   const added = runGit(['-C', repoDir, 'worktree', 'add', '--detach', dir, commit]);
   if (added.error || added.status !== 0) {
     fs.rmSync(parent, { recursive: true, force: true });
     return { error: 'worktree add failed: ' + ((added.stderr || '').trim() || 'git error') };
   }
-  const after = listedLinked();
-  const created = before === null || after === null ? null : after.filter((p) => !before.includes(p));
+  let after = listedLinked();
+  for (let i = 0; after === null && i < 3; i++) after = listedLinked(); // a transient read failure gets retried
+  const created = after === null ? null : after.filter((p) => !before.includes(p));
   if (!created || created.length !== 1) {
-    // Ambiguous or unreadable records (e.g. a concurrent add — the
-    // dispatcher-serialization trade violated): refuse, cleaning every
-    // registration we might own, by the spellings git holds.
+    // Ambiguous or unreadable records (a concurrent add — the
+    // dispatcher-serialization trade violated — or a post-add list
+    // failure): refuse, cleaning every registration we might own by the
+    // spellings we have. If the alias also vanished and a registration
+    // survives this best-effort pass, it is by construction a
+    // <prefix>/checkout-shaped UNOWNED leftover — exactly what the standing
+    // sweep at the next createCheckout reclaims (regression-pinned).
     for (const p of created || []) runGit(['-C', repoDir, 'worktree', 'remove', '--force', p]);
     runGit(['-C', repoDir, 'worktree', 'remove', '--force', dir]);
     runGit(['-C', repoDir, 'worktree', 'prune']);

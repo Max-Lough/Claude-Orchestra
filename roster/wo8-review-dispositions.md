@@ -355,10 +355,31 @@ records correction CONFIRMED; one MAJOR and one MINOR, both fixed in round
   is put down with SIGKILL and the kill-dependent sub-checks are skipped —
   the guard's own failed check is the suite's loud signal.
 
+## R0-EX10 (delta re-review of round 5e) and the round-5f disposition
+
+R0-EX10 (Sol · high, pinned `5fb5142..2c24df7`; verdict verbatim at
+`roster/r0-ex10-verdict.md`): **REVISE** — the git-records identity, the
+ambiguity refusal, and the guard-timeout gating all CONFIRMED; one MAJOR on
+a three-condition compound: pre-add porcelain snapshot fails once + add
+succeeds through an alias + the alias vanishes → `created` is null and
+cleanup addresses the dead alias, stranding the canonical registration.
+
+**Fixed in round 5f**:
+- the pre-add snapshot is a HARD prerequisite — unreadable records refuse
+  BEFORE anything is registered (nothing to clean but the empty parent),
+  which removes the reviewed compound outright;
+- a post-add list failure is retried (transient reads), and the refusal path
+  documents the residual: a strand surviving the best-effort cleanup is by
+  construction a `<prefix>/checkout`-shaped UNOWNED leftover;
+- that self-healing is now regression-PINNED: a registration created through
+  an alias, alias removed, never entering ACTIVE, is reclaimed by the
+  standing sweep at the next `createCheckout` — directory and registration
+  both gone.
+
 ## Note
 
 The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-5e diff (R0-EX10) comes back clean. Open items are process, not
-code: (1) R0-EX10, and (2) the registered follow-ons — the verification-time
+the round-5f diff (R0-EX11) comes back clean. Open items are process, not
+code: (1) R0-EX11, and (2) the registered follow-ons — the verification-time
 diff-derived `touches` cross-check, and the reference runner's
 single-`--force` sweep vs locked worktrees.

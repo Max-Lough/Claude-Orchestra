@@ -50,8 +50,17 @@ runners, per the field-tested cross-vendor lane.
 | Assurance | `reviewer-openai.md` | R0 openai lane — Sol · high via Codex CLI | R0-EX2 (gate-class tranche review) |
 | Assurance | `sweeper.md` | S0 mirror — Sonnet 5 · med (Terra · med primary via codex engine) | S0-EX1 |
 | Assurance | `red-team.md` | E7 mirror — Opus 5 · high (Sol · high primary via codex engine) | E7-EX1 |
+| Evidence | `scout-anthropic.md` | N0 primary — Haiku 4.5 · off (Luna · low mirror via codex engine) | pending (WO-9 stage 2) |
+| Evidence | `researcher.md` | N1 primary — Sol · med via Codex CLI (Opus 5 · med mirror, no file yet) | pending (WO-9 stage 2) |
+| Evidence | `lc-analyst.md` | N2 primary — Terra · med via Codex CLI (Opus 5 · med mirror, no file yet) | pending (WO-9 stage 2) |
+| Evidence | `investigator.md` | I0 primary — Opus 5 · high, read-only tool pin (Sol · high mirror / Fable 5 · high ceiling, no files yet) | pending (WO-9 stage 2) |
+| Evidence | `archivist-documents.md` | M0 documents lane — Terra · med via Codex CLI | pending (WO-9 stage 2) |
+| Evidence | `archivist-images.md` | M0 images lane — Opus 5 · med, also the video/audio degradation path's landing point | pending (WO-9 stage 2) |
 
-Exercise records and the review dispositions they produced:
+Exercise records and the review dispositions they produced (assurance band):
 `wo8-review-dispositions.md`. **The tranche's mandatory cross-vendor review
 is REVISE — WO-5/WO-6 have not yet cleared their gate; see the outstanding
 findings there.**
+
+Evidence band (WO-9) exercise records and naming/rung decisions:
+`wo9-band-record.md`.

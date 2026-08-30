@@ -102,6 +102,7 @@ function createRouter(opts) {
     throw new Error('router refused: registry invalid (' + loaded.problems.length + ' violation(s)):\n  - ' + loaded.problems.join('\n  - '));
   }
   const registry = loaded.registry;
+  const registrySchemas = loaded.schemas || {};
 
   let castings;
   try {
@@ -123,7 +124,7 @@ function createRouter(opts) {
     for (const model of (castings.families || {})[fam] || []) familyByModel.set(model, fam);
   }
   const familyOf = (model) => familyByModel.get(model) || null;
-  const bucketsFor = (model) => (castings.modelBuckets || {})[model] || null;
+  const bucketsFor = (model) => (hasOwn(castings.modelBuckets, model) ? castings.modelBuckets[model] : null);
 
   // ---- cross-check castings against the registry ------------------------
   const activeById = new Map(registry.classes.map((c) => [c.id, c]));
@@ -171,6 +172,20 @@ function createRouter(opts) {
   const q0cfg = castings.q0Triggers || {};
   for (const id of [].concat(q0cfg.classes || [], q0cfg.sourceChangeClasses || [], (q0cfg.calibrationSample || {}).classes || [])) {
     if (!activeById.has(id)) fail('Q0 trigger names unknown class ' + id);
+  }
+  // Ruling 3a (WO-8): the order schema's `touches` enum must equal the union
+  // of the Q0 touch triggers and the security trigger list — a touch area the
+  // schema rejects is an unreachable trigger, because no schema-valid order
+  // could ever carry the field that fires it.
+  {
+    const orderSchema = registrySchemas['order.schema.json'] || {};
+    const touchesEnum = (((orderSchema.properties || {}).touches || {}).items || {}).enum;
+    const touchUnion = [...new Set([].concat(q0cfg.touchAreas || [], castings.securityTriggerList || []))].sort();
+    if (!Array.isArray(touchesEnum)) {
+      fail('order.schema.json must declare a typed `touches` enum — the Q0/security touch triggers read that field');
+    } else if (touchesEnum.slice().sort().join(' ') !== touchUnion.join(' ')) {
+      fail('order.schema.json touches enum diverges from q0Triggers.touchAreas ∪ securityTriggerList');
+    }
   }
   const rm = castings.reviewMatrix || {};
   for (const fam of ['anthropic', 'openai', 'human']) {
@@ -255,7 +270,7 @@ function createRouter(opts) {
       if (n.pin !== undefined && n.pin !== 'read-only') {
         fail('alias ' + name + ' carries unknown pin ' + JSON.stringify(n.pin) + ' (only "read-only" is defined)');
       }
-      if (ALIAS_PINS[name] && n.pin !== ALIAS_PINS[name]) {
+      if (hasOwn(ALIAS_PINS, name) && n.pin !== ALIAS_PINS[name]) {
         fail('alias ' + name + ' must carry pin ' + JSON.stringify(ALIAS_PINS[name]) + ' (§6.6)');
       }
     }
@@ -277,7 +292,10 @@ function createRouter(opts) {
     if (!buckets || typeof buckets !== 'object') throw new Error('bucket_state required (all of: ' + castings.buckets.join(', ') + ')');
     const out = {};
     for (const b of castings.buckets) {
-      const raw = buckets[b];
+      // Own property only: an inherited (or prototype-polluted) bucket value
+      // must not satisfy the requirement — that is the one remaining way to
+      // fabricate Green (WO-14 re-review).
+      const raw = hasOwn(buckets, b) ? buckets[b] : undefined;
       if (raw === undefined) throw new Error('bucket_state missing bucket ' + b + ' — fail closed, not Green');
       if (typeof raw === 'string') {
         out[b] = { state: poolState(raw, ladderCfg), belowReserve: false, quartermasterConfirmation: false };
@@ -355,12 +373,16 @@ function createRouter(opts) {
     }
     const nb = normalizeBuckets(buckets);
     const purpose = o.purpose || 'authoring';
+    // One risk oracle (WO-14 re-review): the same normalizer every other
+    // risk read uses. A tier that is provided but unrecognizable normalizes
+    // to null and takes the fail-closed branch of every comparison below.
+    const tier = o.risk === undefined ? undefined : normalizeRisk(o.risk);
 
     // Declared no-mirror halves refuse before any rung is consulted.
     if (roleName === 'Archivist' && (o.rung === 'videoAudio' || o.medium === 'videoAudio')) {
       return { ok: false, outcome: 'UNAVAILABLE', role: roleName, reason: role.noMirrorFor.videoAudio };
     }
-    if (roleName === 'Data Engineer' && o.rung === 'reversibleT1' && o.risk && o.risk !== 'T1') {
+    if (roleName === 'Data Engineer' && o.rung === 'reversibleT1' && o.risk !== undefined && tier !== 'T1') {
       return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'Terra is permitted only for reversible T1 sub-work — ' + role.noMirrorFor.irreversible };
     }
 
@@ -382,7 +404,9 @@ function createRouter(opts) {
       }
     }
     if (!rungName) rungName = role.defaultRung || 'primary';
-    const rung = (role.rungs || {})[rungName];
+    // Own property only: a caller-chosen rung name like '__proto__' must hit
+    // the typed "no rung" refusal, never a prototype-chain read.
+    const rung = hasOwn(role.rungs || {}, rungName) ? role.rungs[rungName] : null;
     if (!rung) throw new Error(roleName + ' has no rung ' + JSON.stringify(rungName));
 
     // Hard guardrails that no pool state relaxes.
@@ -412,14 +436,14 @@ function createRouter(opts) {
     // Authoring (or another disallowed purpose) on a degraded bucket:
     // re-cast to the healthy pool's mirror, per role; else wait.
     const noMirrorReason =
-      roleName === 'Data Engineer' && (o.irreversible || o.risk === 'T2' || o.risk === 'T3')
+      roleName === 'Data Engineer' && (o.irreversible || (o.risk !== undefined && tier !== 'T0' && tier !== 'T1'))
         ? role.noMirrorFor.irreversible
         : null;
     if (noMirrorReason) {
       return { ok: false, outcome: 'WAIT', role: roleName, rung: rungName, reason: noMirrorReason + ' (bucket ' + state + ')' };
     }
     const mirror = (role.rungs || {}).mirror;
-    const fallbackName = mirror ? 'mirror' : (roleName === 'Data Engineer' && o.risk === 'T1' ? 'reversibleT1' : null);
+    const fallbackName = mirror ? 'mirror' : (roleName === 'Data Engineer' && tier === 'T1' ? 'reversibleT1' : null);
     const fallback = mirror || (fallbackName ? role.rungs[fallbackName] : null);
     if (fallback && familyOf(fallback.model) !== familyOf(rung.model)) {
       const mState = effectiveState(fallback.model, nb);
@@ -446,18 +470,25 @@ function createRouter(opts) {
   }
 
   // ---- review policy (§3.4) ---------------------------------------------
+  // Mandatory is computed FIRST and nothing overrides it: `inert` is an
+  // affordance for provably-inert T0/T1 work, never a bypass — an inert flag
+  // on a mandatory class, an unrecognized or T2/T3 tier, or a security touch
+  // changes nothing (WO-8 gate finding: flags.inert must never relax the
+  // mandatory set, and inert never applies above T1).
   function reviewPolicy(classId, risk, flags) {
     const f = flags || {};
-    if (f.inert) return 'none';
     const cls = resolveClass(classId);
     const tier = normalizeRisk(risk);
-    if (tier === null) return 'mandatory'; // unrecognized tier fails closed
     const mr = castings.mandatoryReview;
-    if (mr.riskTiers.includes(tier)) return 'mandatory';
-    if (mr.classes.includes(cls)) return 'mandatory';
-    for (const flag of mr.flags) if (f[flag]) return 'mandatory';
     const touches = f.touches || [];
-    if (touches.some((t) => castings.securityTriggerList.includes(t))) return 'mandatory';
+    const mandatory =
+      tier === null || // unrecognized tier fails closed
+      mr.riskTiers.includes(tier) ||
+      mr.classes.includes(cls) ||
+      mr.flags.some((flag) => !!f[flag]) ||
+      touches.some((t) => castings.securityTriggerList.includes(t));
+    if (mandatory) return 'mandatory';
+    if (f.inert && (tier === 'T0' || tier === 'T1')) return 'none';
     return 'preferred';
   }
 
@@ -473,7 +504,13 @@ function createRouter(opts) {
     if (!['mandatory', 'preferred', 'none'].includes(policy)) throw new Error('unknown review policy: ' + policy);
     risk = normalizeRisk(risk);
     if (risk === null) throw new Error('unknown risk tier — refusing rather than guessing a lane');
-    const nb = normalizeBuckets(o.buckets || allGreen());
+    // Bucket state is required, not defaulted: `|| allGreen()` on the
+    // exported API was the last fabricated-Green fail-open (WO-14 re-review
+    // NIT, ruling C). A caller that measured Green passes allGreen() itself.
+    if (o.buckets === undefined) {
+      throw new Error('reviewer requires bucket_state — fail closed, not Green (P15)');
+    }
+    const nb = normalizeBuckets(o.buckets);
 
     const raw = authorFamilies === undefined || authorFamilies === null ? [] : [].concat(authorFamilies);
     const unattributed = raw.length === 0 || raw.some((f) => !AUTHOR_FAMILIES.includes(f)) || o.unattributed === true;
@@ -485,7 +522,18 @@ function createRouter(opts) {
       if (famSet.has(fam)) {
         throw new Error('no-self-family violated: reviewer ' + casting.model + ' (' + fam + ') against author set [' + [...famSet].join(', ') + '] — refusing');
       }
-      return Object.assign({ closes: true, casting, reviewerFamily: fam, review_cross_family: true, gate: preDispatchGate(casting, nb) }, extra || {});
+      // A gated reviewer must not close (WO-8 gate finding): the embedded
+      // pre-dispatch gate is a refusal, never an annotation on a close.
+      const gate = preDispatchGate(casting, nb);
+      if (!gate.allowed) {
+        return Object.assign({
+          closes: false, outcome: 'GATED', gate, casting, reviewerFamily: fam,
+          review_cross_family: true,
+          reason: 'review lane gated: ' + gate.reason,
+          options: gate.lawfulResponses || castings.mandatoryReview.unavailableOptions,
+        }, extra || {});
+      }
+      return Object.assign({ closes: true, casting, reviewerFamily: fam, review_cross_family: true, gate }, extra || {});
     };
     const doesNotClose = (why, options) => ({
       closes: false, outcome: 'DOES_NOT_CLOSE', reason: why,
@@ -633,6 +681,26 @@ function createRouter(opts) {
     } catch (e) {
       return { ok: false, rejected: 'class', reason: e.message };
     }
+
+    // Risk is normalized ONTO the order at the door — whitespace/case only;
+    // an unrecognizable tier is refused, not guessed, so no schema-invalid
+    // `risk` can ride the order or its Q0 companion out of dispatch.
+    const tier = normalizeRisk(order.risk);
+    if (tier === null) {
+      return { ok: false, rejected: 'risk', reason: 'unrecognized risk tier ' + JSON.stringify(order.risk) + ' — dispatch refuses rather than guessing a lane (fail closed)' };
+    }
+    // The integrity nonce is MINTED HERE, never taken from the caller: the
+    // Q0 calibration sample is keyed on it, and a requester-chosen nonce is
+    // a grindable sample (WO-14 re-review). The minted order is returned in
+    // the result so the ledger records the nonce the draw actually used.
+    order = Object.assign({}, order, { risk: tier, integrity_nonce: crypto.randomBytes(12).toString('hex') });
+    // The order is the canonical `touches` carrier (schema-typed, ruling
+    // 3a); caller flags may only ADD trigger areas — union — never remove.
+    const flagTouches = (o.flags && o.flags.touches) || [];
+    if (flagTouches.length > 0 || (order.touches || []).length > 0) {
+      order.touches = [...new Set([].concat(order.touches || [], flagTouches))];
+    }
+
     const roleName = classToRole.get(cls);
     const role = roles[roleName];
 
@@ -647,12 +715,46 @@ function createRouter(opts) {
       }
     }
 
-    const policy = reviewPolicy(cls, order.risk, o.flags);
+    const policy = reviewPolicy(cls, order.risk, Object.assign({}, o.flags, { touches: order.touches || [] }));
 
     // Casting for the executor, through the degradation machine…
-    const casting = role.computed
+    let casting = role.computed
       ? null
       : cast(roleName, buckets, Object.assign({ risk: order.risk, purpose: o.purpose || 'authoring' }, o.castOpts));
+
+    // …then the mechanical pre-dispatch gate on whatever came out — BEFORE
+    // Q0 creation, so the companion is cast opposite the family that will
+    // ACTUALLY author (a recast changes the author family).
+    let gate = { allowed: true };
+    if (casting && casting.ok && !casting.substrate) {
+      gate = preDispatchGate(casting.casting, buckets);
+      if (!gate.allowed && roleName === 'Conductor' && gate.gate === 'AU-F reserve (P15)') {
+        // Ruling 2a: the AU-fable reserve re-casts the Conductor's turns to
+        // the Sol mirror at matched effort — the plan's promised reserve
+        // path, disclosed, with the mirror rung's restrictions carried —
+        // but only when the mirror itself casts and gates clean; otherwise
+        // the order stays GATED (lawful response: wait).
+        const mirror = cast(roleName, buckets, Object.assign({}, o.castOpts, { risk: order.risk, purpose: o.purpose || 'authoring', rung: 'mirror' }));
+        if (mirror.ok && !mirror.substrate) {
+          const mirrorGate = preDispatchGate(mirror.casting, buckets);
+          if (mirrorGate.allowed) {
+            casting = Object.assign({}, mirror, {
+              recastFrom: casting.rung,
+              recastReason: gate.reason,
+              disclosed: true,
+              restrictions: ((role.rungs || {}).mirror && role.rungs.mirror.restrictions) || [],
+            });
+            gate = mirrorGate;
+          }
+        }
+      }
+      if (!gate.allowed) {
+        return { ok: false, outcome: 'GATED', gate, role: roleName, class: cls, order, reason: gate.reason };
+      }
+    }
+    if (casting && !casting.ok) {
+      return { ok: false, outcome: casting.outcome, role: roleName, class: cls, order, reason: casting.reason };
+    }
 
     // Automatic Q0: created with the implementation order, cast opposite the
     // family that will actually author it; a missing required Q0 blocks the
@@ -661,24 +763,23 @@ function createRouter(opts) {
     let q0Companion = null;
     if (q0.required) {
       if (o.q0OrderPresent === false) {
-        return { ok: false, blocked: 'Q0', reason: 'required Q0 order missing (' + q0.reason + ') — a policy violation, not a shortcut; Q0 is Director-created' };
+        return { ok: false, blocked: 'Q0', order, reason: 'required Q0 order missing (' + q0.reason + ') — a policy violation, not a shortcut; Q0 is Director-created' };
       }
       q0Companion = createQ0Order(order, buckets, {
         implementationAuthorFamily: (casting && casting.ok && !casting.substrate) ? familyOf(casting.casting.model) : order.author_family,
       });
       q0Companion.trigger = q0.reason;
-    }
-
-    // …then the mechanical pre-dispatch gate on whatever came out.
-    let gate = { allowed: true };
-    if (casting && casting.ok && !casting.substrate) {
-      gate = preDispatchGate(casting.casting, buckets);
-      if (!gate.allowed) {
-        return { ok: false, outcome: 'GATED', gate, role: roleName, class: cls, q0: q0Companion, reason: gate.reason };
+      // A required Q0 that cannot be cast blocks the dispatch (WO-8 gate
+      // finding): emitting a companion with a null casting is schema-invalid,
+      // and a required Q0 that silently cannot exist is the suppressed-Q0
+      // case wearing a different coat.
+      if (!q0Companion.cast.ok) {
+        return {
+          ok: false, blocked: 'Q0', outcome: q0Companion.cast.outcome || 'WAIT',
+          role: roleName, class: cls, order, q0: q0Companion,
+          reason: 'required Q0 companion cannot be cast (' + (q0Companion.cast.reason || q0Companion.cast.outcome) + ') — dispatch blocks rather than emitting an uncastable Q0',
+        };
       }
-    }
-    if (casting && !casting.ok) {
-      return { ok: false, outcome: casting.outcome, role: roleName, class: cls, q0: q0Companion, reason: casting.reason };
     }
 
     // Prospective review of the artifact this order will produce, computed
@@ -690,7 +791,7 @@ function createRouter(opts) {
       ? { closes: true, policy: 'none', reason: 'provably inert — lint + targeted checks; inertness verified from the diff first' }
       : reviewer(authorFams, order.risk, { policy, buckets, terraT1Qualified: o.terraT1Qualified, authorModel: casting && casting.ok ? casting.casting.model : undefined, unattributed: o.flags && o.flags.unattributed });
 
-    return { ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion };
+    return { ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion, order };
   }
 
   // ---- RECLASSIFY hop machinery (Part 4 error stance, WO-4 encoding) ----

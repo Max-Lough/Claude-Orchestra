@@ -462,14 +462,17 @@ check('non-triggering work spawns no Q0 (T1 E0 plain; N0 lookup; D0 doc)',
 }
 {
   // Sweep: for every implementation class × tier × touch shape, a
-  // trigger-matching dispatch always carries a Q0 companion.
+  // trigger-matching dispatch always carries a Q0 companion. The trigger is
+  // recomputed from the MINTED order the dispatch returns — the calibration
+  // sample is keyed on the dispatcher-minted nonce, so the caller's copy of
+  // the order cannot predict the draw (that unpredictability is the point).
   let bad = [];
   for (const cls of ['E0', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8']) {
     for (const risk of ['T1', 'T2', 'T3']) {
       for (const touches of [[], ['concurrency']]) {
         const o = order(cls, risk, { touches, task_id: 'sweep-' + cls + risk + touches.length });
-        const need = router.q0Required(o).required;
         const d = router.dispatch(o, G, { flags: {} });
+        const need = router.q0Required(d.order || o).required;
         const spawned = !!(d.q0 && d.q0.order && d.q0.order.class === 'Q0');
         if (need && !spawned) bad.push(cls + '@' + risk + (touches.length ? '+touch' : '') + ' (outcome ' + (d.ok ? 'ok' : d.outcome || d.blocked) + ')');
         if (!need && spawned) bad.push(cls + '@' + risk + ' spawned without a trigger');
@@ -638,5 +641,97 @@ section('12. WO-14: alias layer and the roster kill switch');
   check('the max→xhigh ceiling downgrade is carried as a ledgered note',
     (() => { const r = router.resolveSeat('architect-claude-max', { roster: 'new', buckets: qc }); return /downgrade is deliberate/.test(r.target.note || ''); })());
 }
+
+// -------- 13. WO-8 round-2 fixes (rulings 1a-adjacent, 2a, 3a, 4; A/B/C)
+section('13. WO-8 round-2: inert, order-carried touches, gated reviewer, Q0 blocking, AU-F recast, risk/nonce hygiene');
+
+check('flags.inert never overrides a mandatory class, T2/T3, an unrecognized tier, or a security touch',
+  router.reviewPolicy('E7', 'T1', { inert: true }) === 'mandatory' &&
+  router.reviewPolicy('E2', 'T3', { inert: true }) === 'mandatory' &&
+  router.reviewPolicy('E2', 'T2', { inert: true }) === 'preferred' &&
+  router.reviewPolicy('E2', 'T1', { inert: true, touches: ['auth'] }) === 'mandatory' &&
+  router.reviewPolicy('E2', 'bogus', { inert: true }) === 'mandatory');
+check('order-carried touches fire mandatory review AND the Q0 touch trigger through dispatch (ruling 3a)',
+  (() => {
+    const d = router.dispatch(order('E2', 'T1', { touches: ['auth'] }), G);
+    return d.ok && d.review_policy === 'mandatory' && !!d.q0 && /touch trigger/.test(d.q0.trigger);
+  })());
+check('a schema-valid order can carry every touch area the triggers read (the unreachable-trigger fix)',
+  (() => {
+    const { validate } = require(path.join(MASTER, 'verifier', 'schema-check.js'));
+    const { schemas } = require(path.join(MASTER, 'registry', 'load.js')).load();
+    const union = [...new Set([].concat(router.castings.q0Triggers.touchAreas, router.castings.securityTriggerList))];
+    const o = order('E2', 'T1', { touches: union, requested_casting: { vendor: 'anthropic', model: 'Sonnet 5', effort: 'med' } });
+    return validate(schemas['order.schema.json'], o).length === 0;
+  })());
+check('caller flag touches may only ADD (union) — order-declared touches survive',
+  (() => {
+    const d = router.dispatch(order('E2', 'T1', { touches: ['concurrency'] }), G, { flags: { touches: ['auth'] } });
+    return d.ok && d.review_policy === 'mandatory' && d.order.touches.includes('concurrency') && d.order.touches.includes('auth');
+  })());
+check('a drifted touches enum fails the router load closed (the schema/trigger lint)',
+  (() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-touch-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(dir, 'schemas'), { recursive: true });
+    fs.copyFileSync(path.join(MASTER, 'registry', 'classes.json'), path.join(dir, 'classes.json'));
+    for (const f of fs.readdirSync(path.join(MASTER, 'registry', 'schemas'))) {
+      fs.copyFileSync(path.join(MASTER, 'registry', 'schemas', f), path.join(dir, 'schemas', f));
+    }
+    const osJson = JSON.parse(fs.readFileSync(path.join(dir, 'schemas', 'order.schema.json'), 'utf8'));
+    osJson.properties.touches.items.enum = osJson.properties.touches.items.enum.filter((t) => t !== 'auth');
+    fs.writeFileSync(path.join(dir, 'schemas', 'order.schema.json'), JSON.stringify(osJson), 'utf8');
+    try { createRouter({ registryBaseDir: dir }); return false; } catch (e) { return /touches enum diverges/.test(e.message); }
+  })());
+check('a gated review lane does not close — closes flips with the embedded gate',
+  (() => {
+    const r = router.reviewer(['openai'], 'T2', { policy: 'mandatory', buckets: buckets({ 'AU-opus': { state: 'Green', belowReserve: true } }) });
+    return r.closes === false && r.outcome === 'GATED' && r.gate.allowed === false && r.casting.model === 'Opus 5';
+  })());
+check('a required Q0 that cannot be cast BLOCKS dispatch (never a null-casting companion)',
+  (() => {
+    const d = router.dispatch(order('E4', 'T2'), buckets({ OU: 'Red' })); // Q0-vs-anthropic lives on Terra/OU
+    return d.ok === false && d.blocked === 'Q0' && !!d.q0 && d.q0.cast.ok === false;
+  })());
+check('AU-fable reserve re-casts the Conductor to the Sol mirror at matched effort, disclosed with restrictions (ruling 2a)',
+  (() => {
+    const d = router.dispatch(order('O0', 'T1'), buckets({ 'AU-fable': { state: 'Green', belowReserve: true } }));
+    return d.ok && d.casting.casting.model === 'GPT-5.6 Sol' && d.casting.casting.effort === 'matched' &&
+      d.casting.recastFrom === 'primary' && d.casting.disclosed === true &&
+      (d.casting.restrictions || []).some((x) => /author-and-approve/.test(x));
+  })());
+check('a non-Conductor Fable seat under the same reserve stays GATED (the recast is the O0 reserve path, not a bypass)',
+  (() => {
+    const d = router.dispatch(order('A0', 'T1'), buckets({ 'AU-fable': { state: 'Green', belowReserve: true } }), { castOpts: { rung: 'nebulous' } });
+    return d.ok === false && d.outcome === 'GATED';
+  })());
+check('dispatch normalizes a sloppy tier onto the order AND its Q0 companion (never a schema-invalid risk downstream)',
+  (() => {
+    const d = router.dispatch(order('E4', 't2 '), G);
+    return d.ok && d.order.risk === 'T2' && !!d.q0 && d.q0.order.risk === 'T2';
+  })());
+check('dispatch refuses an unrecognizable tier outright (fail closed at the door)',
+  (() => { const d = router.dispatch(order('E2', 'T9'), G); return d.ok === false && d.rejected === 'risk'; })());
+check('dispatch mints the integrity nonce — a caller-chosen nonce never keys the calibration draw',
+  (() => {
+    const d1 = router.dispatch(order('E0', 'T1'), G);
+    const d2 = router.dispatch(order('E0', 'T1'), G);
+    return d1.order.integrity_nonce !== 'deadbeefdeadbeef' && d1.order.integrity_nonce.length >= 16 &&
+      d1.order.integrity_nonce !== d2.order.integrity_nonce;
+  })());
+check('reviewer() without bucket_state fails closed — no fabricated Green on the exported API (ruling C)',
+  (() => { try { router.reviewer(['anthropic'], 'T2', { policy: 'mandatory' }); return false; } catch (e) { return /bucket_state/.test(e.message); } })());
+check('a caller-chosen prototype-key rung hits the typed refusal, not a prototype-chain read',
+  (() => { try { router.cast('Builder', G, { rung: '__proto__' }); return false; } catch (e) { return /has no rung/.test(e.message); } })());
+check('inherited bucket values never satisfy the requirement (own properties only)',
+  (() => { try { router.cast('Builder', Object.create(G)); return false; } catch (e) { return /fail closed/.test(e.message); } })());
+check('bucketsFor never reads the prototype chain', router.bucketsFor('constructor') === null && router.bucketsFor('__proto__') === null);
+check('cast() uses the same risk oracle as every other risk read (sloppy T1 allowed; sloppy T2 and garbage FORBIDDEN on the Terra E4 lane)',
+  (() => {
+    const ok = router.cast('Data Engineer', G, { rung: 'reversibleT1', risk: 't1' });
+    const no = router.cast('Data Engineer', G, { rung: 'reversibleT1', risk: 'T2 ' });
+    const garbage = router.cast('Data Engineer', G, { rung: 'reversibleT1', risk: 'bogus' });
+    return ok.ok === true && no.outcome === 'FORBIDDEN' && garbage.outcome === 'FORBIDDEN';
+  })());
 
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

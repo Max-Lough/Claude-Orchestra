@@ -176,6 +176,14 @@ section('3. Tampering is caught — the invariant can actually fail');
     'error stance losing RECLASSIFY',
     tamper((r) => { r.errorStance.reclassify.reportStatus = 'REROUTE'; }).length > 0
   );
+  check(
+    'duplicate alias identifier (a second I1→I0) is refused',
+    tamper((r) => { r.aliases.push({ id: 'I1', resolvesTo: 'I0' }); }).some((p) => /registered twice/.test(p))
+  );
+  check(
+    'a REORDERED class enum is caught — byte-identical means in registry order, not merely the same set',
+    tamper((r, s) => { s['order.schema.json'].properties.class.enum.reverse(); }).some((p) => /diverges from the registry/.test(p))
+  );
 }
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');

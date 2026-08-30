@@ -105,7 +105,10 @@ function load(baseDir) {
   // ---- aliases ----------------------------------------------------------
   const aliases = registry.aliases || [];
   const aliasIds = aliases.map((a) => a.id);
+  const seenAliasIds = new Set();
   for (const a of aliases) {
+    if (seenAliasIds.has(a.id)) fail('alias identifier registered twice: ' + a.id);
+    seenAliasIds.add(a.id);
     if (seenIds.has(a.id)) fail('alias collides with an active identifier: ' + a.id);
     if (!seenIds.has(a.resolvesTo)) fail('alias ' + a.id + ' resolves to unknown class ' + a.resolvesTo);
   }
@@ -223,24 +226,26 @@ function load(baseDir) {
     if (!conditional) fail('report.schema.json must make reclassify required when status is RECLASSIFY');
   }
 
-  // Class and risk enums in the schemas must be byte-identical to the registry.
-  const sortedActive = activeIds.slice().sort().join(',');
+  // Class and risk enums in the schemas must be byte-identical to the
+  // registry — compared IN ORDER, as the claim says, not sorted first (a
+  // sorted compare would bless a reordered enum as "identical").
+  const activeInOrder = activeIds.join(',');
   const checkEnum = (name, getEnum, expected, label) => {
     const s = schemas[name];
     if (!s) return;
     const values = getEnum(s);
     if (!values) { fail(name + ' is missing its ' + label + ' enum'); return; }
-    if (values.slice().sort().join(',') !== expected) {
-      fail(name + ' ' + label + ' enum diverges from the registry');
+    if (values.join(',') !== expected) {
+      fail(name + ' ' + label + ' enum diverges from the registry (byte-identical in registry order required)');
     }
   };
-  checkEnum('order.schema.json', (s) => (s.properties.class || {}).enum, sortedActive, 'class');
-  checkEnum('casting-record.schema.json', (s) => (s.properties.class || {}).enum, sortedActive, 'class');
-  checkEnum('report.schema.json', (s) => ((s.properties.recommended_next_class || {}).enum), sortedActive, 'recommended_next_class');
-  checkEnum('report.schema.json', (s) => (((s.properties.reclassify || {}).properties || {}).recommended_class || {}).enum, sortedActive, 'reclassify.recommended_class');
-  const sortedTiers = 'T0,T1,T2,T3';
-  checkEnum('order.schema.json', (s) => (s.properties.risk || {}).enum, sortedTiers, 'risk');
-  checkEnum('casting-record.schema.json', (s) => (s.properties.risk || {}).enum, sortedTiers, 'risk');
+  checkEnum('order.schema.json', (s) => (s.properties.class || {}).enum, activeInOrder, 'class');
+  checkEnum('casting-record.schema.json', (s) => (s.properties.class || {}).enum, activeInOrder, 'class');
+  checkEnum('report.schema.json', (s) => ((s.properties.recommended_next_class || {}).enum), activeInOrder, 'recommended_next_class');
+  checkEnum('report.schema.json', (s) => (((s.properties.reclassify || {}).properties || {}).recommended_class || {}).enum, activeInOrder, 'reclassify.recommended_class');
+  const tiersInOrder = 'T0,T1,T2,T3';
+  checkEnum('order.schema.json', (s) => (s.properties.risk || {}).enum, tiersInOrder, 'risk');
+  checkEnum('casting-record.schema.json', (s) => (s.properties.risk || {}).enum, tiersInOrder, 'risk');
 
   return { registry, schemas, problems };
 }

@@ -129,8 +129,12 @@ const g2 = crossings.length === 0 && tierGateViolations.length === 0;
 
 const hopCounts = rows.map((r) => r.hops).sort((a, b) => a - b);
 const p95 = hopCounts[Math.ceil(0.95 * hopCounts.length) - 1];
-const landed = rows.filter((r) => r.caught && r.hop1 === 'ACCEPT');
-const g3 = p95 <= 1;
+// The pre-registered gate text in full (WO-8 gate finding: the percentile
+// alone left the negative path unenforced): P95 ≤ 1 AND every caught
+// misroute landed at hop-1 ACCEPT AND no escalation occurred.
+const caughtRows = rows.filter((r) => r.caught);
+const landed = caughtRows.filter((r) => r.hop1 === 'ACCEPT');
+const g3 = p95 <= 1 && landed.length === caughtRows.length && escalations.length === 0;
 
 // ---- report ---------------------------------------------------------------
 console.log('WO-7b — misroute recovery through the implemented router');
@@ -149,7 +153,7 @@ for (const r of rows) {
 
 console.log('\nG1 recovery: ' + (g1 ? 'PASS' : 'FAIL') + ' — ' + (misroutes.length - missed.length) + '/' + misroutes.length + ' seeded misroutes caught' + (missed.length ? ' (missed: ' + missed.map((r) => r.id).join(', ') + ')' : ''));
 console.log('G2 no gate crossing: ' + (g2 ? 'PASS' : 'FAIL') + ' — ' + gateRelevant.length + ' gate-relevant misroutes, ' + crossings.length + ' crossed' + (crossings.length ? ' (' + crossings.map((r) => r.id).join(', ') + ')' : '') + '; tier-borne gates identical under both dispatches for all items: ' + (tierGateViolations.length === 0 ? 'yes' : 'NO — ' + tierGateViolations.join(', ')));
-console.log('G3 hops: ' + (g3 ? 'PASS' : 'FAIL') + ' — P95 hop count ' + p95 + ' (≤1 required); ' + landed.length + '/' + rows.filter((r) => r.caught).length + ' caught misroutes landed with hop-1 ACCEPT; escalations: ' + (escalations.length ? escalations.join(', ') : 'none'));
+console.log('G3 hops: ' + (g3 ? 'PASS' : 'FAIL') + ' — P95 hop count ' + p95 + ' (≤1 required); ' + landed.length + '/' + caughtRows.length + ' caught misroutes landed with hop-1 ACCEPT (all required); escalations: ' + (escalations.length ? escalations.join(', ') : 'none') + ' (none allowed)');
 
 console.log('\nTelemetry (non-gating):');
 console.log('  false bounces on controls: ' + falseBounces.length + '/' + controls.length + (falseBounces.length ? ' — ' + falseBounces.join('; ') : ''));

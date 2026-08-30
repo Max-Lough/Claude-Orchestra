@@ -74,6 +74,17 @@ of its rungs (e.g. Red Team must carry never-Fable). A missing bucket in a
   `reviewMatrix.terraT1Qualified` (false until WO-12f).
 - **Q0 vs a human-authored implementation** takes whichever pool is
   healthier, tie → the Anthropic lane (protects the OpenAI review reserve).
+- **Dispatch owns risk and the nonce:** `dispatch()` normalizes the order's
+  risk tier onto the order (whitespace/case only; anything unrecognizable is
+  refused at the door) and MINTS `integrity_nonce` itself — the Q0
+  calibration draw is keyed on it, so a caller-chosen nonce never decides the
+  sample. The returned result carries the minted order; ledger from that.
+- **`touches` lives on the order** (schema-typed enum, linted at load against
+  the trigger lists); caller flags may only add areas, never remove one.
+- **`resolveSeat()` buries its gate in the target:** for a new-roster alias
+  the pre-dispatch gate outcome lives at `target.cast.ok` / `target.gate` —
+  there is no top-level `ok` on a seat resolution. `dispatch()` surfaces
+  gates at the top level; seat resolution intentionally does not.
 
 ## WO-6 defaults where the plan is silent
 

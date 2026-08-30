@@ -5,10 +5,10 @@ the four exercises surfaced genuine defects in the already-committed
 substrate tranche (WO-4/5/6/14) — the seats working as designed. This file
 records the exercises and the disposition of every finding.
 
-**Status: the gate-class tranche is under REVISE. Do not treat WO-5/WO-6 as
-having passed their mandatory review yet — outstanding findings below remain
-open.** A first round of fixes is applied (working tree, this commit); a
-second round is required before the gate closes.
+**Status: round-2 fixes are applied under owner rulings (2026-08-30, below).
+Every outstanding finding is closed in code. The tranche remains REVISE until
+the cross-vendor lane re-reviews the round-2 diff — re-review is the one
+remaining step before the gate closes.**
 
 ## Exercises
 
@@ -31,9 +31,80 @@ second round is required before the gate closes.
 - **Sweeper findings**: router/README stale count removed; `wo7b/score.js` and `roster/lint.js` wired into CI; roster/ committed.
 - **planner-gpt** plan/code reconciliation (both reviews, MINOR) — final-plan.md §6.6 annotated.
 
-## OUTSTANDING — required before the gate closes (next session)
+## Owner rulings (2026-08-30) and the round-2 application
 
-From the cross-vendor gate review (Sol · high), independently real, **not yet fixed**:
+Walked item-by-item with the owner; every ruling recorded here, all fixes
+applied and proven this round (129 router / 89 verifier / 31 registry checks,
+full CI-equivalent green).
+
+- **Ruling 1a — Verifier trust model** (E7 CRITICAL): the manifest is pinned
+  OUTSIDE the commit under audit. `runVerification` reads it from an owner
+  ref (`manifestRef`, default the base ref) at `.claude/orchestra.json` via
+  `git show` against the real repo — never from the head checkout; a
+  caller-supplied manifest records `pinned:false` provenance (the dispatcher
+  is then the trust boundary). Proven: a head commit that breaks the code AND
+  rewrites its own manifest to a vacuous oracle still fails. Blast-radius
+  reductions applied regardless: `runShell` env allowlist (no inherited
+  secrets), credential redaction over recorded output tails, leading-dash
+  ref rejection + `--` before git revs, and `confine()` is now
+  real-path-based (a symlink/junction committed inside the checkout can no
+  longer smuggle a read/write outside — the WO-14 re-review corollary).
+  **Documented residual under (a):** artifact-sourced citation/invariant
+  commands remain free-form shell strings behind the minimal env — the (c)
+  argv-allowlist extension was considered and not taken.
+- **Ruling 2a — AU-fable reserve**: implemented as planned. The Conductor's
+  turns re-cast to the Sol mirror at matched effort when the AU-F reserve
+  gate fires — disclosed (`recastFrom`/`recastReason`), the mirror rung's
+  restrictions carried on the casting; any other Fable seat stays GATED.
+- **Ruling 3a — `touches` declared, not derived** (Fable-agent analysis):
+  pure derivation is temporally incoherent with the plan — Q0 fires at order
+  creation, before a diff exists — and a diff-derived sole source would
+  trust the artifact under audit (the 1a precedent). `touches` is now a
+  typed enum on `order.schema.json` (union of `q0Triggers.touchAreas` ∪
+  `securityTriggerList`, linted at router load — drift refuses to
+  construct); the order is the canonical carrier and caller flags may only
+  ADD areas (union). **Registered follow-on, not built:** a
+  verification-time diff-derived cross-check (union semantics, escalate on
+  disagreement) in the Verifier/E7 lane.
+- **Ruling 4 — schema semantic gates**: verdict-audit gates are in-schema
+  (a PASS with `refutation_duty_present:false` cannot exist; a gate-class
+  PASS requires `cross_family:true` and falsification SURVIVED — the same
+  facts stay expressible on a FAIL). `served_model_mismatch` is a COMPUTED
+  detector: the Verifier's artifact validation recomputes it and refuses a
+  record that contradicts or omits a computable mismatch; the schema
+  documents this.
+- **Ruling A** — dispatch normalizes sloppy risk tiers onto the order
+  (whitespace/case only) and refuses unrecognizable tiers at the door; the
+  Q0 companion can no longer carry a schema-invalid risk.
+- **Ruling B** — dispatch MINTS `integrity_nonce` (caller value never keys
+  the calibration draw); the minted order rides the result for the ledger.
+  Direct `q0Required()` calls without a nonce stay sampled-closed.
+- **Ruling C** — `reviewer()` requires bucket_state on the exported API (the
+  `|| allGreen()` fabricated-Green default is gone); resolveSeat's
+  buried-gate shape got its README line.
+
+**Applied round-2 mechanical fixes** (cross-vendor #1–#11 + WO-14 minors +
+E7 mediums/lows): mutations wired into `runVerification` and the CLI
+(`--mutations`); a gated reviewer returns `closes:false` (typed GATED); a
+required-but-uncastable Q0 blocks dispatch; `flags.inert` can never relax a
+mandatory class, T2/T3, an unrecognized tier, or a security touch (and never
+applies above T1); `score.js` G3 enforces the full pre-registered text (P95
+AND all-caught-at-hop-1-ACCEPT AND zero escalations); `load.js` compares
+enums in registry order and rejects duplicate alias ids; the remaining
+`hasOwn` family closed (`cast()` rung lookup, `normalizeBuckets`,
+`bucketsFor`, `ALIAS_PINS`); `cast()` uses `normalizeRisk` everywhere risk
+enters; glob compilation collapses star-runs and caches (ReDoS: ~7.9 s → <5
+ms, regression-tested); SIGINT/SIGTERM/SIGHUP sweep checkouts then re-raise,
+and `createCheckout` prunes stale worktree registrations at start.
+Item #11 (the "21 live discriminators" prose): the string no longer exists
+anywhere in the tree — already removed by the round-1 sweep; the loader
+prints the correct 22. `roster/lint.js` now exempts this dispositions log
+from the role-file contract (it broke the CI lint it itself wired in).
+
+## Findings addressed above, as originally recorded (historical)
+
+From the cross-vendor gate review (Sol · high), independently real, **fixed
+in round 2 as recorded in the rulings section**:
 
 1. **[MAJOR] `runVerification` ignores `opts.mutations`; the CLI never passes them** (`verifier.js:494`). The integrated path returns PASS with `deterministic_only_closure:true` without ever running the mutation check. Wire mutations into `runVerification` and the CLI.
 2. **[MAJOR] `reviewer()` returns `closes:true` while its embedded pre-dispatch gate says `allowed:false`** (`router.js`). A gated Opus reviewer must not close. Flip `closes` on a failed gate.
@@ -96,9 +167,9 @@ REVISE on new MINORs, all small/local, to fold into the next round:
 
 ## Note
 
-This tranche's mandatory cross-vendor review (R0-EX2) is **REVISE**, so
-WO-5 and WO-6 have **not** cleared their gate. The applied fixes address the
-CRITICAL breach and the class of findings that violated the commits' own
-claims; the outstanding list above must be closed and re-reviewed before the
-substrate is treated as gate-passed. The verifier trust-model finding is an
-owner decision, not an autonomous fix.
+This tranche's mandatory cross-vendor review (R0-EX2) is **REVISE**, and the
+verdict stands until the round-2 diff is re-reviewed by the cross-vendor
+lane. Everything the review found is now fixed in code under the owner
+rulings of 2026-08-30 (see above); the two open items are process, not code:
+(1) the cross-vendor re-review of this round, and (2) the registered
+follow-on — the verification-time diff-derived `touches` cross-check.

@@ -64,16 +64,24 @@ function runGit(args, opts) {
 
 // Minimal glob matcher for the classification patterns: `**` crosses path
 // separators, `*` does not; paths are normalized to forward slashes first.
+// Compiled regexes are cached and star-runs collapsed (a run of `**` compiled
+// to stacked `.*.*` groups was measured at 7.9 s for 8 stars — quadratic
+// backtracking, the E7 ReDoS finding) so a pattern from any future
+// agent-editable source cannot stall the audit.
+const GLOB_CACHE = new Map();
 function globToRegExp(pattern) {
   const norm = pattern.replace(/\\/g, '/');
+  const cached = GLOB_CACHE.get(norm);
+  if (cached) return cached;
   let re = '';
   for (let i = 0; i < norm.length; i++) {
     const ch = norm[i];
     if (ch === '*') {
-      if (norm[i + 1] === '*') {
-        re += '.*';
-        i++;
+      let stars = 1;
+      while (norm[i + 1] === '*') { stars++; i++; } // collapse the whole run
+      if (stars >= 2) {
         if (norm[i + 1] === '/') i++; // `**/` also matches zero directories
+        if (!re.endsWith('.*')) re += '.*'; // never stack adjacent .*
       } else {
         re += '[^/]*';
       }
@@ -83,7 +91,9 @@ function globToRegExp(pattern) {
       re += ch;
     }
   }
-  return new RegExp('^' + re + '$');
+  const compiled = new RegExp('^' + re + '$');
+  GLOB_CACHE.set(norm, compiled);
+  return compiled;
 }
 
 function matchesAny(p, patterns) {
@@ -161,16 +171,32 @@ function fingerprintDelta(before, after, generatedPatterns) {
 const ACTIVE = new Set();
 let exitHandlerInstalled = false;
 
+function sweepActive() {
+  for (const entry of [...ACTIVE]) {
+    try { entry.teardown(); } catch (_) { /* best effort — see below */ }
+    // Even if git refused, the parent tmpdir must not survive the process.
+    try { fs.rmSync(entry.parent, { recursive: true, force: true }); } catch (_) { /* gone */ }
+  }
+}
+
 function installExitHandler() {
   if (exitHandlerInstalled) return;
   exitHandlerInstalled = true;
-  process.on('exit', () => {
-    for (const entry of [...ACTIVE]) {
-      try { entry.teardown(); } catch (_) { /* best effort — see below */ }
-      // Even if git refused, the parent tmpdir must not survive the process.
-      try { fs.rmSync(entry.parent, { recursive: true, force: true }); } catch (_) { /* gone */ }
-    }
-  });
+  process.on('exit', sweepActive);
+  // SIGINT/SIGTERM do not fire 'exit' unless something handles them — the
+  // E7 LOW finding: an interrupted run left writable checkouts and stale
+  // worktree registrations behind (observed on this machine). Sweep, then
+  // re-raise the signal so the exit status stays honest; if re-raising is
+  // unsupported (Windows), fall back to a plain non-zero exit.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    try {
+      process.on(sig, () => {
+        sweepActive();
+        process.removeAllListeners(sig);
+        try { process.kill(process.pid, sig); } catch (_) { process.exit(1); }
+      });
+    } catch (_) { /* signal not supported on this platform */ }
+  }
 }
 
 /**
@@ -181,11 +207,19 @@ function installExitHandler() {
  */
 function createCheckout(repoDir, commitish, opts) {
   const options = opts || {};
+  // A commitish beginning with '-' could be read by git as an option; refs
+  // may be artifact-adjacent one day, so reject at the door.
+  if (typeof commitish !== 'string' || commitish === '' || commitish.startsWith('-')) {
+    return { error: 'commitish rejected (empty, non-string, or leading dash): ' + String(commitish) };
+  }
   const top = runGit(['-C', repoDir, 'rev-parse', '--show-toplevel']);
   if (top.error || top.status !== 0) {
     return { error: 'not a git repository (or git unavailable): ' + repoDir };
   }
   const toplevel = path.resolve(top.stdout.trim());
+  // Sweep stale registrations from previously interrupted runs (the same E7
+  // finding): a dangling worktree entry can block re-adding a path.
+  runGit(['-C', repoDir, 'worktree', 'prune']);
   const resolved = runGit(['-C', repoDir, 'rev-parse', '--verify', String(commitish) + '^{commit}']);
   if (resolved.error || resolved.status !== 0) {
     return { error: 'cannot resolve commit ' + commitish + ': ' + ((resolved.stderr || '').trim() || 'git error') };

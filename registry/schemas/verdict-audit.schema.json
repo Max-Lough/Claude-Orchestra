@@ -50,6 +50,27 @@
     {
       "if": { "properties": { "gate_class": { "const": true } } },
       "then": { "required": ["falsification_run"] }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "PASS" } } },
+      "then": {
+        "properties": { "refutation_duty_present": { "const": true } },
+        "description": "A verdict with no discarded alternatives fails the audit — outcome PASS asserts the duty was present"
+      }
+    },
+    {
+      "if": { "properties": { "gate_class": { "const": true }, "outcome": { "const": "PASS" } } },
+      "then": {
+        "properties": {
+          "cross_family": { "const": true },
+          "falsification_run": {
+            "type": "object",
+            "required": ["family", "outcome"],
+            "properties": { "outcome": { "const": "SURVIVED" } }
+          }
+        },
+        "description": "A gate-class PASS requires the cross-family falsification pass to have run and SURVIVED — UNAVAILABLE downgrades the verdict and cannot authorize gate-class work; a contradictory document must not be able to exist"
+      }
     }
   ],
   "additionalProperties": false

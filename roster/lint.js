@@ -35,6 +35,10 @@ const MASTER = path.resolve(ROSTER_DIR, '..');
 const castings = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'castings.json'), 'utf8'));
 const charters = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charters.json'), 'utf8'));
 
+// Non-role documents living in roster/ — everything else *.md must be a
+// role file with full frontmatter and the nine fields.
+const NON_ROLE_DOCS = new Set(['README.md', 'EXERCISES.md', 'wo8-review-dispositions.md']);
+
 const NINE_FIELDS = [
   'Purpose', 'Casting', 'Rationale', 'Tools', 'Strengths',
   'Weaknesses / failure modes', 'Owns / must not receive', 'Escalation', 'Review',
@@ -64,7 +68,7 @@ function lint() {
   const legacyNames = new Set(
     fs.readdirSync(path.join(MASTER, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''))
   );
-  const files = fs.readdirSync(ROSTER_DIR).filter((f) => f.endsWith('.md') && f !== 'README.md' && f !== 'EXERCISES.md');
+  const files = fs.readdirSync(ROSTER_DIR).filter((f) => f.endsWith('.md') && !NON_ROLE_DOCS.has(f));
   const seen = new Set();
 
   for (const file of files) {
@@ -155,7 +159,7 @@ if (require.main === module) {
     for (const p of problems) console.error('  - ' + p);
     process.exitCode = 1;
   } else {
-    const n = fs.readdirSync(ROSTER_DIR).filter((f) => f.endsWith('.md') && f !== 'README.md' && f !== 'EXERCISES.md').length;
+    const n = fs.readdirSync(ROSTER_DIR).filter((f) => f.endsWith('.md') && !NON_ROLE_DOCS.has(f)).length;
     console.log('roster contract lint OK: ' + n + ' role file(s), all nine fields populated, castings cross-checked, mirror-or-declared-exception verified');
   }
 }

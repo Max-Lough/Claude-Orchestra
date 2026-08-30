@@ -345,6 +345,24 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   judgment call recorded in the file: §6.6 wrote `planner-gpt → Architect(mirror)` before
   the same-day Sol-default re-cast — operatively it maps to the Architect's Sol casting,
   with WO-13 owning its transport migration.
+- **WO-9 EXECUTED (2026-08-30):** the evidence band (Band B, seats 4-8: Scout,
+  Researcher, LC Analyst, Investigator, Archivist) staffed per the WO-8-11 order — six
+  role files shipped (`roster/wo9-band-record.md`: naming decisions, Archivist's two lane
+  files, the Investigator read-only pin). `node roster/lint.js` and `node install.js
+  --lint` (roster/ and repo-wide) pass; all five required test suites pass in full. Stage
+  2 exercised all five seats: Scout (N0, Haiku 4.5 in-harness) and Investigator (I0, Opus
+  5 in-harness) both PASS; N1/N2/M0 ran via the `orchestra_exec` codex runner (closest
+  existing cross-vendor call — no dedicated research/long-context/extraction runner
+  exists yet). N1's first run (ex1) fabricated citations while its own VERIFICATION
+  admitted the command runner was down — discarded per the charter's fabrication rule;
+  the retry under an integrity addendum correctly returned BLOCKED (honest, evidence for
+  the charter's named failure mode) — provisionally accepted as the exercised order,
+  owner may override. M0's documents-lane ex1 hit the same transient codex sandbox fault
+  (`unsupported protocol version 6`) and typed BLOCKED honestly; ex2 PASS. N2 PASS
+  cleanly. M0's images lane ships staffed but unexercised. Follow-ons registered: the
+  codex sandbox protocol fault (investigate/upstream), a `verifier/checkout.js:322-327`
+  prune-comment fix (incidental I0 finding), and the standing no-dedicated-runner gap.
+  Full record: `roster/wo9-band-record.md`. Next: **WO-10**.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -366,7 +384,8 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-08-29, final ruling applied)
 
-1. **WO-8–11 are the active steps — WO-4, WO-5, WO-6, and WO-7b are done.** The
+1. **WO-8–11 are the active steps — WO-4, WO-5, WO-6, WO-7b, WO-8, and WO-9 are
+   done; WO-10 is next.** The
    2026-08-29 owner-delegated final ruling merged I0/I1, restructured Part 4 around the
    §4.0 total decision procedure, and demoted class to a routing hypothesis with
    `RECLASSIFY` recovery; WO-4 encoded it in `registry/` (`node tests/registry.test.js`);
@@ -381,7 +400,8 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
    readout against the manual readings file.
 3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → ~~WO-5
    (Verifier substrate)~~ → ~~WO-6 (router)~~ → ~~WO-7b (misroute recovery — PASSED)~~
-   → WO-8–11 (staff the bands, in dependency order) → WO-12 trials → WO-15 shadow.
+   → ~~WO-8~~ → ~~WO-9 (evidence band staffed + exercised)~~ → **WO-10** →
+   WO-11 → WO-12 trials → WO-15 shadow.
    Parallelizable now per the plan's dependency line:
    WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
    against the `/deep-plan` retirement), WO-12f (Terra T1 qualification trial, "any

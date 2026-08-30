@@ -137,7 +137,136 @@ full (counts in the WO-9 report).
 
 | Seat | Order | Casting used | Outcome |
 |---|---|---|---|
-| _(pending — stage 2)_ | | | |
+| Scout (N0) | Bounded inventory of `engine:codex` roster files | Haiku 4.5 (in-harness, primary rung) | PASS (`wo9-n0-ex1-report.md`) |
+| Investigator (I0) | Causal account: worktree lock mechanism | Opus 5 (in-harness, primary rung) | PASS, VERDICT CONFIRMED (`wo9-i0-ex1-report.md`) |
+| Researcher (N1) | Roster model-facts verification | GPT-5.6 Sol · med via `orchestra_exec` runner | ex1 DISCARDED (fabrication incident); ex2 DEGRADED-ACCEPTED (honest BLOCKED under integrity addendum; web evidence quoted; local shell channel blocked by sandbox fault). Director's provisional acceptance as the exercised order; owner may override. (`wo9-n1-ex1-transcript.md`, `wo9-n1-ex2-transcript.md`) |
+| LC Analyst (N2) | Synthesis over the nine R0-EX verdicts | GPT-5.6 Terra · med via `orchestra_exec` runner | PASS (`wo9-n2-ex1-transcript.md`) |
+| Archivist (M0), documents lane | Owner-rulings extraction from `wo8-review-dispositions.md` | GPT-5.6 Terra · med via `orchestra_exec` runner | ex1 typed BLOCKED (honest); ex2 PASS (`wo9-m0-ex1-transcript.md`, `wo9-m0-ex2-transcript.md`). Images lane ships staffed but unexercised; first real image order will exercise it. |
+
+## Incidents
+
+1. **N1-ex1 fabrication.** The run returned `STATUS: DONE` with claimed web fetches while
+   its own VERIFICATION section admitted the command runner was down
+   (`unsupported protocol version 6`); the citations self-contradicted the run's own
+   evidence trail. Discarded per the charter's fabricated-citations rule. The retry
+   (`wo9-n1-ex2-transcript.md`) ran under an integrity addendum requiring quoted fetch
+   transcripts for every citation and correctly returned `STATUS: BLOCKED` rather than
+   repeat the fabrication. Live evidence for the charter's named failure mode.
+2. **Transient codex sandbox command-runner fault** (`unsupported protocol version 6`).
+   Hit m0-ex1 (full block — could not read the source document at all), n1-ex1 (partial —
+   papered over with fabricated citations), and n1-ex2 (local shell channel only; the web
+   fetch channel worked and produced the honest BLOCKED report); did NOT hit n2-ex1 or
+   m0-ex2 in the same windows. Environment fault, codex CLI 0.151.0, doctor exit 0 —
+   intermittent, not tied to a specific order class.
+
+## Follow-ons registered
+
+1. **Codex sandbox command-runner protocol fault** (above) — investigate/upstream
+   (codex lane).
+2. **`verifier/checkout.js:322-327` prune-comment incompleteness** — the comment describes
+   prune as clearing registrations whose directory is gone; it is incomplete, since prune
+   also skips LOCKED registrations even with the directory gone (surfaced incidentally by
+   the I0-ex1 investigation) — doc fix, verifier lane.
+3. **No research/long-context/extraction-specific MCP runner** — N1/N2/M0 launchers
+   declare `orchestra_exec` as the closest existing cross-vendor call; already noted in
+   this record's stage-1 section ("Where the plan was silent, or sources needed
+   reconciling") — kept here as one canonical cross-reference, not a second open item.
+
+## Order texts
+
+### n1-order.txt (N1-ex1)
+
+```
+Class N1 research order, read-only. Do NOT modify any files in the repository or working
+tree — this is a research and reporting task only, not an implementation task. Write
+nothing to disk except your final report message.
+
+Verify the roster's model facts: confirm the current stable release version of the codex
+CLI and the publicly documented GPT-5.6 model family names, citing the upstream sources
+you used. If network access is unavailable in this sandbox, say so explicitly and report
+what you can establish from the local installation itself (codex --version, help output),
+labeling it as local evidence, not research.
+
+Report using the standard executor report format (STATUS / CHANGES / VERIFICATION /
+DEVIATIONS / CONCERNS). Since this is a read-only research task, CHANGES should read
+"none" unless you made no file edits (expected), and your research findings belong under
+CONCERNS or as an additional clearly-labeled RESEARCH FINDINGS section before the STATUS
+block's closing.
+```
+
+### n1-order-v2.txt (N1-ex2, retry with integrity addendum)
+
+```
+Class N1 research order, read-only. Do NOT modify any files in the repository or working
+tree — this is a research and reporting task only, not an implementation task. Write
+nothing to disk except your final report message.
+
+Verify the roster's model facts: confirm the current stable release version of the codex
+CLI and the publicly documented GPT-5.6 model family names, citing the upstream sources
+you used. If network access is unavailable in this sandbox, say so explicitly and report
+what you can establish from the local installation itself (codex --version, help output),
+labeling it as local evidence, not research.
+
+Report using the standard executor report format (STATUS / CHANGES / VERIFICATION /
+DEVIATIONS / CONCERNS). Since this is a read-only research task, CHANGES should read
+"none" unless you made no file edits (expected), and your research findings belong under
+CONCERNS or as an additional clearly-labeled RESEARCH FINDINGS section before the STATUS
+block's closing.
+
+INTEGRITY ADDENDUM (retry after a fabrication incident): You may only cite a source you
+actually fetched in THIS run, with the fetch command and its observed output quoted in
+your VERIFICATION section. If your command runner or network is unavailable, you MUST
+return STATUS: BLOCKED or an explicitly-labeled local-evidence-only note — a DONE with
+unverifiable citations is a charter violation. Any claim without a quoted fetch transcript
+will be treated as absent.
+```
+
+### n2-order.txt (N2-ex1)
+
+```
+Class N2 long-context synthesis order, read-only, over supplied material only. Do NOT
+modify any files in the repository or working tree — this is a synthesis and reporting
+task only, not an implementation task.
+
+Supplied material: the nine verdict files roster/r0-ex3-verdict.md through
+roster/r0-ex11-verdict.md in this checkout (that is: roster/r0-ex3-verdict.md,
+roster/r0-ex4-verdict.md, roster/r0-ex5-verdict.md, roster/r0-ex6-verdict.md,
+roster/r0-ex7-verdict.md, roster/r0-ex8-verdict.md, roster/r0-ex9-verdict.md,
+roster/r0-ex10-verdict.md, roster/r0-ex11-verdict.md).
+
+Synthesize:
+(a) the trajectory of the review rounds (findings per round, severity trend),
+(b) every finding class that recurred across rounds,
+(c) any CONFLICTS between verdicts (one round asserting what a later round contradicts) —
+surface conflicts, do not resolve them.
+
+Cite file + section for every claim.
+
+Report using the standard executor report format (STATUS / CHANGES / VERIFICATION /
+DEVIATIONS / CONCERNS), with CHANGES reading "none" (read-only task), and the synthesis
+itself presented as a clearly-labeled SYNTHESIS section ahead of the STATUS block's
+closing.
+```
+
+### m0-order.txt (M0-ex1, M0-ex2)
+
+```
+Class M0 document-intake order, read-only, single bounded extraction. Do NOT modify any
+files in the repository or working tree — this is an extraction and reporting task only,
+not an implementation task.
+
+From roster/wo8-review-dispositions.md, extract every owner ruling recorded in the
+"## Owner rulings" section (or equivalently-titled section) into structured JSON:
+[{id_or_topic, ruling, residual_accepted (bool/na)}]
+
+Extraction only — no conclusions, no recommendations. Emit the JSON verbatim in your
+report.
+
+Report using the standard executor report format (STATUS / CHANGES / VERIFICATION /
+DEVIATIONS / CONCERNS), with CHANGES reading "none" (read-only task), and the extracted
+JSON presented in a clearly-labeled EXTRACTION section ahead of the STATUS block's
+closing.
+```
 
 ## Review dispositions
 

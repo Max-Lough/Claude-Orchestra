@@ -86,10 +86,52 @@ found ambiguous.
 
 ## Comparison with the sealed pass
 
-*(To be completed after the independent pass above is done, committed, and pushed. Score
-against the primary Claude pass; the Sol pass is logged, never gating. A sealed
-provisional class is treated as that pass's class; an ambiguity flag does not erase a
-class disagreement.)*
+The independent pass above was committed as `2965c04` and pushed to
+`origin/claude/wo7a-bis-corpus` before
+`wo7a-quater-model-classification-SEALED.md` was opened. This pass and the primary Claude
+pass flagged zero ambiguities; the supplementary Sol pass flagged one (item 17), which is
+logged below but does not gate.
+
+**Full-corpus result: 14/20 agreement (70%) — FAIL.** The zero-ambiguity count satisfies
+the ≤1 limb, but agreement is below the required 18/20. WO-4 remains blocked, and the
+pre-registered rule requires a fourth boundary redraw scoped to the findings below.
+
+**Redraw-#3 subset result: 4/8 agreement (50%) — FAIL.** The sealed subset is items 2, 3,
+6, 8, 11, 13, 14, and 17. Items 3, 6, 8, and 14 agree; items 2, 11, 13, and 17 do not.
+Redraw #3 is therefore **not validated** by its own gate.
+
+### Primary disagreement ledger
+
+| # | This pass | Primary Claude | Class pair | Boundary finding |
+|---|-----------|----------------|------------|------------------|
+| 2 | I1 | I0 | I0/I1 | This pass treated landing on the wrong screen as runtime-only interaction evidence under B; the primary treated the evidence location as unanswerable from intake and took B's I0 default. B does not say when the requested observation itself is enough to establish the live-run limb. |
+| 11 | E0 | E5 | E0/E5 | This pass engaged the diagnosis chain at A because mobile browsers are the stated environment axis; the primary treated layout and styling as specified interface work under W. The supplementary I1 reading makes the missing order among environment diagnosis, live-symptom diagnosis, and interface acceptance explicit. |
+| 12 | E3 | E4 | E3/E4 | This pass gave the coupled client/worker/storage contract to the E3 parent; the primary gave the persisted snapshot compatibility risk to E4. No rule says whether cross-component coupling or schema risk owns an order that has both. |
+| 13 | E2 | I1 | E2/I1 | This pass read “dock-search spawn stall” as a stated mechanism and routed directly to the fix; the primary applied L because no profile or numeric target is present. The direct-fix corollary and L are not ordered, and “while” leaves the cause-stated threshold borderline. |
+| 17 | I1 | E5 | E5/I1 | This pass diagnosed runtime-only interaction symptoms first; the primary routed specified interaction behavior through W. The supplementary pass also found E5/E8 ambiguous, exposing both diagnosis-vs-W precedence and the missing E5/E8 boundary. |
+| 18 | E6 | E2 | E2/E6 | This pass treated the visual package and rigging as the spatial acceptance artifact; the primary treated one ship plus roster mirroring as a separable E2 component. Sol independently chose E6. Precedence and G do not resolve E2/E6. |
+
+### Supplementary cross-family ledger
+
+The primary Claude and supplementary Sol passes agree on 16/20. Their four divergences
+are non-gating but remain required decidability findings:
+
+| # | Primary Claude | Supplementary Sol | Class pair |
+|---|----------------|-------------------|------------|
+| 2 | I0 | I1 | I0/I1 |
+| 11 | E5 | I1 | E5/I1 |
+| 17 | E5 | AMBIGUOUS (E5/E8) | E5/E8 |
+| 18 | E2 | E6 | E2/E6 |
+
+Counting each corpus item once per implicated pair, I0/I1 advances from four standing
+entries to five. E5/I1 gains two entries (items 11 and 17); E0/E5, E3/E4, E2/I1,
+E5/E8, and E2/E6 gain one each. E2/E3 remains at two; D0/N2, I0/E2, and E2/E5 remain
+at one. The I0/I1 recurrence survived the redraw intended to absorb it; together with the
+failed seeded gate, that boundary must be addressed by redraw #4 or a merge.
+
+**Coverage caveat.** The source pool supplied no persisted-generated-output I0 case for
+B's other redraw-#3 clause and no values-only E2 case for W's data horn. This probe cannot
+validate either edge; both remain explicitly deferred to WO-7b's synthetic cases.
 
 <!--
 Source commits (audit trail; repo + one short sha per item — the commit whose work the

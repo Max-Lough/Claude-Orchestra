@@ -206,8 +206,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   empty cwd — an isolation tightening over ter; never gating), and the seeded-subset
   key. **Gates, pre-registered: full ≥18/20 with ≤1 genuine ambiguity → WO-4; sealed
   redraw-#3 subset ≥7/8 validates the redraw.** New seal protocol: the owner commits and
-  pushes the filled corpus **before** opening the sealed file. Next: the owner
-  classifies blind in `wo7a-quater-corpus.md`.
+  pushes the filled corpus **before** opening the sealed file.
+- **WO-7a-quater SCORED — full FAIL; redraw #3 FAIL (2026-08-29):** the owner filled all
+  20 classes, committed them as `2965c04`, and pushed that commit before opening the
+  seal. Agreement with the primary Claude pass was **14/20 (70%)**, with zero owner or
+  primary ambiguity flags: below the 18/20 full gate, so WO-4 remains blocked. The sealed
+  redraw-#3 subset was **4/8 (50%)**: items 3, 6, 8, and 14 agreed; items 2, 11, 13, and
+  17 missed, so redraw #3 is not validated. Full-corpus misses were 2 (I0/I1), 11
+  (E0/E5), 12 (E3/E4), 13 (E2/I1), 17 (E5/I1), and 18 (E2/E6). The supplementary
+  Claude/Sol divergences add findings on items 2, 11, 17, and 18; Sol's sole ambiguity
+  flag was item 17 (E5/E8), non-gating. I0/I1 advances from four distinct-item entries
+  to five, while E5/I1 gains two. The pre-registered outcome is a scoped redraw #4 (or
+  merge where recurrence warrants), not WO-4. Coverage remains incomplete by construction:
+  no persisted-generated-output I0 case for B and no values-only E2 case for W existed in
+  the source pool; both edges stay untested until WO-7b synthetics. Full tables and ledger:
+  `wo7a-quater-corpus.md`.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -225,26 +238,23 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 - PR #26 — WO-7a scored (31/40 FAIL), the Part-4 boundary redraw + owner wording pass.
 - PR #27 — the full WO-7a-bis + WO-7a-ter validation cycle: both corpora with sealed
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
-  record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus.
+  record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-29, WO-7a-quater corpus ready)
+## Fresh-session quick start (as of 2026-08-29, WO-7a-quater scored)
 
-1. **The owner's blind pass on WO-7a-quater is the active step.** Redraw #3 — applied
-   after the ter FAIL and amended after the PR #27 cross-vendor review (disc. W
-   values-are-data clarification, codified disagreement trigger) — needs independent
-   validation before WO-4. The 20-item corpus is drawn from the unburned cross-repo
-   remainder with both model passes sealed (see the WO-7a-quater entry above). The owner
-   fills the "Your class" column of `wo7a-quater-corpus.md` against the amended Part 4 as
-   written — **without opening `wo7a-quater-model-classification-SEALED.md`** — then,
-   per the new seal protocol, **commits and pushes the filled corpus BEFORE opening the
-   sealed file**, then scores the two pre-registered gates: full ≥18/20 with ≤1 genuine
-   ambiguity (unblocks WO-4) and the sealed redraw-#3 subset ≥7/8 (validates redraw #3
-   specifically). Cross-probe pair ledger standing: I0/I1 at four entries (trigger
-   already tripped and absorbed by redraw #3), E2/E3 at two, D0/N2, I0/E2, and E2/E5 at
-   one each — a third entry on any standing pair trips the merge/redraw trigger.
+1. **A scoped boundary redraw #4 is the active step; WO-4 remains blocked.** WO-7a-quater
+   failed both gates: 14/20 full and 4/8 on redraw #3's sealed subset. Start from the six
+   primary disagreements and four supplementary divergences in `wo7a-quater-corpus.md`.
+   The recurring I0/I1 boundary now has five distinct-item entries despite redraw #3;
+   E5/I1 gained two in this probe, and E0/E5, E3/E4, E2/I1, E5/E8, and E2/E6 each gained
+   one. Redraw #4 must decide where phase diagnosis yields to a specified fix, order L
+   against the cause-stated corollary, and resolve cross-specialty ownership for
+   E3/E4 and E2/E6. Do not claim coverage for B's persisted-generated-output horn or W's
+   values-only horn: those await WO-7b synthetics.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
-3. Sequence from here: WO-4 (schemas) → WO-5 (Verifier substrate) → WO-6 (router), with the
-   P3→P2→P1 deferred backlog (`plans/proposed-orchestra-improvements.md`) schedulable any
-   time — P3 (verification manifest) is the cheapest and benefits every review immediately.
+3. Sequence after a fresh validation clears the taxonomy gate: WO-4 (schemas) → WO-5
+   (Verifier substrate) → WO-6 (router). The P3→P2→P1 deferred backlog
+   (`plans/proposed-orchestra-improvements.md`) remains schedulable meanwhile — P3
+   (verification manifest) is the cheapest and benefits every review immediately.

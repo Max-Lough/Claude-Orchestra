@@ -1786,9 +1786,30 @@ specifically** — a full fail concentrated outside the subset indicts the other
 boundaries, not the redraw. Seal protocol per the cross-vendor review: the owner's filled
 pass is committed and pushed before the seal is opened.
 
+**WO-7a-quater outcome (2026-08-29): full FAIL; redraw #3 FAIL.** The owner pass was fixed
+in remote history as commit `2965c04` before the seal was opened. It agreed with the
+primary Claude pass on **14/20 (70%)**, with zero owner or primary ambiguity flags, so the
+full 18/20 gate failed and WO-4 remains blocked. The sealed redraw-#3 subset agreed on
+**4/8 (50%)** — matches on items 3, 6, 8, and 14; misses on 2, 11, 13, and 17 — so redraw
+#3 is not independently validated. The six full-corpus disagreements are I0/I1, E0/E5,
+E3/E4, E2/I1, E5/I1, and E2/E6; the supplementary Claude/Sol pass adds an E5/E8
+ambiguity and reinforces I0/I1, E5/I1, and E2/E6. Full scoring and the distinct-item pair
+ledger are in `wo7a-quater-corpus.md`. The next taxonomy action is a scoped redraw #4 (or
+merge for a recurrent boundary) followed by fresh validation; this outcome does not
+authorize WO-4.
+
+**Quater coverage limit.** The real-history pool contained neither a
+persisted-generated-output I0 case for B's other redraw-#3 clause nor a values-only E2 case
+for W's data horn. Those two edges remain untested and are reserved for WO-7b synthetics;
+the failed quater gates neither validate nor falsify them.
+
 ### WO-7b: Classification corpus — through the implemented router
-The same corpus re-run through the implemented router after WO-6, router vs human, same
-thresholds. A WO-7a pass that WO-7b fails indicts the router implementation, not the taxonomy.
+The same corpus re-run through the implemented router after WO-6, augmented by the
+synthetic cases reserved by WO-7a's real-history coverage gaps — at minimum B's
+persisted-generated-output I0 horn and W's values-only E2 horn. Router vs human, same
+thresholds, with each reserved edge also reported separately so aggregate agreement cannot
+hide a missing boundary. A WO-7a pass that WO-7b fails indicts the router implementation,
+not the taxonomy.
 
 ### WO-8–11: Staff the bands, in dependency order
 Assurance first (Reviewer both castings, Sweeper, Red Team), then evidence (Scout, Detective

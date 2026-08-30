@@ -109,6 +109,15 @@ jobs:
         # stays green, and a broken row-count invariant.
         run: node tests/verifier.test.js
 
+      - name: Router suite
+        # WO-6: route/cast/reviewer, the pool-state degradation machine, the
+        # pre-dispatch AU-O gate, and automatic Q0 creation. Proves
+        # no-self-family for every author family, that no mandatory-class
+        # dispatch can produce a same-family closing verdict under any bucket
+        # state including Red/exhausted, context-shape rejection, every rung's
+        # documented casting set, and Q0 spawn on every trigger.
+        run: node tests/router.test.js
+
       - name: MCP-lane suite
         # The orchestra-engine MCP server — the typed transport that replaced
         # the launcher shell pipeline. Speaks real JSON-RPC to the server over

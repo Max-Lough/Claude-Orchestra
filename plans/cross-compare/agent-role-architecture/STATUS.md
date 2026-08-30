@@ -286,6 +286,34 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   (PowerShell's Out-File writes one by default). WO-5 is **gate-class** per the plan's
   review routing — cross-vendor review before merge. Next: **WO-6** (router, casting
   tables, review matrix, degradation machine, Q0 triggers).
+- **WO-6 EXECUTED (2026-08-30):** the router lives in `router/` at the repo root.
+  `castings.json` carries the Part-2 casting tables as data (58 rungs across the 23 roles,
+  hard never-rules included), the §3.4 computed R0 review matrix with the mandatory set,
+  the §5.5 pool-state ladder, the seat-19 Q0 triggers, and WO-2's measured liveness and
+  reserve numbers. `router.js` implements `route(class) → role` (alias-resolving, loading
+  the WO-4 registry and failing closed on any invariant violation), `cast(role,
+  bucket_state) → (vendor, model, effort)` through the degradation machine (Amber re-casts
+  authoring to the healthy pool's mirror, Orange suspends authoring and defers ceiling
+  rungs, Red permits only closing calls; E4's irreversible half and M0 video/audio wait or
+  return typed UNAVAILABLE — no substitute), `reviewer(author_families, risk)` (computed
+  no-self-family matrix; unattributed and both-family authorship fail closed; mandatory
+  review rides the frontier T2/T3 lane even at nominal T1, so a Sol-authored mutation gets
+  Opus 5 · high per Part 2; Terra T1 relief stays behind the WO-12f qualification flag),
+  the pre-dispatch AU-O gate (P15: below-reserve AU-opus blocks every Opus dispatch with
+  mirror/wait the only lawful responses; Amber arms Quartermaster confirmation; the
+  AU-fable twin re-casts Conductor turns to the Sol mirror), automatic Q0 creation
+  (Director-created companion cast opposite the implementing family; a missing required Q0
+  blocks dispatch), and the assembled `dispatch()`. Proof per the order:
+  `tests/router.test.js`, 74 checks green — no-self-family for every author family set; no
+  mandatory-class dispatch produces a same-family closing verdict under any of the 625
+  bucket-state combinations including Red/Exhausted (9,375-call sweep, every non-close
+  typed DOES_NOT_CLOSE); context-shape violations rejected; every rung matches an
+  independent transcription of Part 2 in both directions; every trigger-matching
+  implementation spawns Q0 and never a non-trigger one. Three WO-6 defaults where the plan
+  is silent are marked `unstatedInPlan` in castings.json (E5 critic effort, E8/D0 context
+  shapes). WO-6 is **gate-class** per the plan's review routing — cross-vendor review
+  before merge. Next: **WO-7b** (synthetic corpus through `dispatch()`, scored on misroute
+  recovery per the restated 7.2 gate, including the reserved B/W edges).
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -307,25 +335,28 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-08-29, final ruling applied)
 
-1. **WO-6 is the active step — WO-4 and WO-5 are done.** The 2026-08-29 owner-delegated
-   final ruling (see the FINAL RULING bullet above) merged I0/I1, restructured Part 4
-   around the §4.0 total decision procedure, and demoted class to a routing hypothesis
-   with `RECLASSIFY` recovery; WO-4 encoded it all in `registry/` (classes.json + six
-   schemas + `load.js` invariant assertion; `node tests/registry.test.js` is the check);
-   WO-5 built the Verifier substrate in `verifier/` (disposable-checkout substrate +
-   deterministic checks; `node tests/verifier.test.js` is the check, 63 green). WO-5 is
-   gate-class and needs its cross-vendor review pass at PR time. B's
-   persisted-generated-output horn and W's values-only horn remain untested until
-   WO-7b synthetics, which now measure misroute recovery (restated 7.2 gate), not
-   one-shot agreement.
+1. **WO-7b is the active step — WO-4, WO-5, and WO-6 are done.** The 2026-08-29
+   owner-delegated final ruling (see the FINAL RULING bullet above) merged I0/I1,
+   restructured Part 4 around the §4.0 total decision procedure, and demoted class to a
+   routing hypothesis with `RECLASSIFY` recovery; WO-4 encoded it all in `registry/`
+   (`node tests/registry.test.js` is the check); WO-5 built the Verifier substrate in
+   `verifier/` (`node tests/verifier.test.js`, 63 green); WO-6 built the router in
+   `router/` (`node tests/router.test.js`, 74 green — casting tables, review matrix,
+   degradation machine, AU-O gate, Q0 triggers). WO-5 and WO-6 are gate-class and need
+   their cross-vendor review pass at PR time. B's persisted-generated-output horn and W's
+   values-only horn remain untested until WO-7b synthetics, which measure misroute
+   recovery through the implemented `dispatch()` (restated 7.2 gate), not one-shot
+   agreement.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
 3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → ~~WO-5
-   (Verifier substrate)~~ → WO-6 (router) → WO-7b (synthetics through the router — the
-   remaining routing validation). Parallelizable now per the plan's dependency line:
+   (Verifier substrate)~~ → ~~WO-6 (router)~~ → WO-7b (synthetics through the router —
+   the remaining routing validation; then WO-8–11 open). Parallelizable now per the
+   plan's dependency line:
    WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
-   against the `/deep-plan` retirement) and WO-12f (Terra T1 qualification trial, "any
-   time after WO-2"; consumes real allowance). The P3→P2→P1 deferred backlog
+   against the `/deep-plan` retirement), WO-12f (Terra T1 qualification trial, "any
+   time after WO-2"; consumes real allowance), and WO-14 (alias layer + kill switch,
+   "after WO-6" — now unblocked). The P3→P2→P1 deferred backlog
    (`plans/proposed-orchestra-improvements.md`) remains schedulable meanwhile — P3
    (verification manifest) is the cheapest and benefits every review immediately.

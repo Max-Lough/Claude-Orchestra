@@ -86,13 +86,38 @@ function tail(text) {
   return s.length > TAIL_CHARS ? '…' + s.slice(-TAIL_CHARS) : s;
 }
 
+// Confine an artifact-supplied relative path to `baseDir`. Mutation targets
+// and path:line citations come from the party under audit, so a `../` or
+// absolute path must never let a read or write escape the disposable
+// checkout — bound (1)/(2) of the substrate's own write model. Returns the
+// resolved absolute path, or null if it would escape.
+function confine(baseDir, relPath) {
+  if (typeof relPath !== 'string' || relPath === '') return null;
+  if (path.isAbsolute(relPath)) return null;
+  const base = path.resolve(baseDir);
+  const resolved = path.resolve(base, relPath);
+  const rel = path.relative(base, resolved);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return resolved;
+}
+
+// A minimum floor and an explicit output ceiling: a manifest-supplied
+// `timeout_ms: 1` or a suite that floods stdout must not silently become
+// UNAVAILABLE and mask a red-reported-green (the contradiction check now
+// fires on UNAVAILABLE too, but the floor/ceiling keep the common case a
+// real result rather than a spawn artifact).
+const MIN_TIMEOUT_MS = 1000;
+const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+
 function runShell(command, cwd, timeoutMs) {
   const started = Date.now();
+  const effectiveTimeout = Math.max(MIN_TIMEOUT_MS, timeoutMs || DEFAULT_TIMEOUT_MS);
   const r = spawnSync(command, {
     shell: true,
     cwd,
     encoding: 'utf8',
-    timeout: timeoutMs || DEFAULT_TIMEOUT_MS,
+    timeout: effectiveTimeout,
+    maxBuffer: MAX_OUTPUT_BYTES,
     windowsHide: true,
   });
   return {
@@ -339,7 +364,14 @@ function mutationCheck(repoDir, commitish, manifest, mutations, opts) {
     }
     const items = [];
     for (const mut of mutations) {
-      const target = path.join(checkout.dir, mut.path);
+      const target = confine(checkout.dir, mut.path);
+      if (!target) {
+        // A mutation path that escapes the checkout is not a survivable
+        // test — it is an attempted write outside the sandbox. FAIL, never
+        // a silent write to the real tree.
+        items.push({ mutation: mut, result: 'ESCAPE', reason: 'mutation path escapes the disposable checkout — refused' });
+        continue;
+      }
       let content;
       try {
         content = fs.readFileSync(target, 'utf8');
@@ -353,8 +385,15 @@ function mutationCheck(repoDir, commitish, manifest, mutations, opts) {
       }
       fs.writeFileSync(target, content.replace(mut.find, mut.replace), 'utf8');
       const mutated = runManifest(checkout.dir, manifest);
-      // Restore from the commit so mutations never compound.
-      runGit(['checkout', '--', mut.path], checkout.dir);
+      // Restore from the commit so mutations never compound. A restore that
+      // does not clean the tree is itself a failure — a dirty checkout means
+      // the next mutation runs against corrupted state.
+      const restore = runGit(['checkout', '--', mut.path], checkout.dir);
+      const restored = !restore.error && restore.status === 0;
+      if (!restored) {
+        items.push({ mutation: mut, result: 'UNAVAILABLE', reason: 'restore failed — checkout left dirty, results after this point are void' });
+        break;
+      }
       if (mutated.outcome === 'FAIL') {
         items.push({ mutation: mut, result: 'CAUGHT' });
       } else if (mutated.outcome === 'UNAVAILABLE') {
@@ -364,8 +403,10 @@ function mutationCheck(repoDir, commitish, manifest, mutations, opts) {
       }
     }
     const survived = items.filter((i) => i.result === 'SURVIVED');
+    const escaped = items.filter((i) => i.result === 'ESCAPE');
     const unavailable = items.filter((i) => i.result === 'UNAVAILABLE');
-    const outcome = survived.length > 0 ? 'FAIL' : unavailable.length > 0 ? 'UNAVAILABLE' : 'PASS';
+    const outcome = (survived.length > 0 || escaped.length > 0) ? 'FAIL'
+      : unavailable.length > 0 ? 'UNAVAILABLE' : 'PASS';
     return result('mutation', outcome, { commit: checkout.commit, items });
   } finally {
     checkout.teardown();
@@ -451,9 +492,15 @@ function citationReplay(dir, citations) {
     }
     const parsed = /^(.*?):(\d+)$/.exec(String(c.citation || ''));
     if (!parsed) return { citation: String(c.citation || ''), replayed: false, result: 'UNREPLAYABLE' };
+    const citedPath = confine(dir, parsed[1]);
+    if (!citedPath) {
+      // A citation resolving outside the checkout is not a comparison — it
+      // would be an arbitrary-file oracle over the host. Refuse to replay.
+      return { citation: c.citation, replayed: false, result: 'UNREPLAYABLE', reason: 'citation path escapes the checkout' };
+    }
     let lines;
     try {
-      lines = fs.readFileSync(path.join(dir, parsed[1]), 'utf8').split(/\r?\n/);
+      lines = fs.readFileSync(citedPath, 'utf8').split(/\r?\n/);
     } catch (_) {
       return { citation: c.citation, replayed: true, result: 'DIVERGES' }; // cited file does not exist — the claim is refuted
     }
@@ -513,10 +560,14 @@ function runVerification(opts) {
       // work is done while the declared verification is red is a refuted
       // claim in its own right, not just a failing manifest.
       const report = opts.report;
-      if (report && manifestResult.outcome === 'FAIL' &&
+      if (report && (manifestResult.outcome === 'FAIL' || manifestResult.outcome === 'UNAVAILABLE') &&
           (report.status === 'DONE' || report.status === 'WAITING_FOR_REVIEW')) {
+        // Red OR un-runnable both refute a DONE claim: a suite that could
+        // not run (timeout, output overflow, spawn error) is not evidence
+        // of green, so a report calling it done is contradicted either way.
         checks.push(result('report-contradiction', 'FAIL', {
-          reason: 'report status ' + report.status + ' but the declared verification manifest is red',
+          reason: 'report status ' + report.status + ' but the declared verification manifest is ' +
+            (manifestResult.outcome === 'FAIL' ? 'red' : 'un-runnable (' + manifestResult.outcome + ') — absence of a green run is not a green run'),
         }));
       }
 

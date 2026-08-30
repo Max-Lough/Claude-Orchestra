@@ -14,7 +14,9 @@ run before any dispatch.
 | `router.js` | `route(class) → role` · `cast(role, bucket_state) → (vendor, model, effort)` · `reviewer(author_families, risk) → casting` · the pool-state machine · the pre-dispatch AU-O gate (P15) · automatic Q0 creation · the assembled `dispatch()` pipeline |
 
 `node router/router.js` loads and cross-checks everything (exit 0/1);
-`node tests/router.test.js` is the proof suite (74 checks).
+`node tests/router.test.js` is the proof suite — run it for the live check
+count (a hardcoded number here went stale within a day; the S0 sweep caught
+it).
 
 ## Fail-closed loading
 

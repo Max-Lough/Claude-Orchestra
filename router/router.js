@@ -112,6 +112,10 @@ function createRouter(opts) {
 
   const problems = [];
   const fail = (m) => problems.push(m);
+  // Own-property lookup — bare bracket reads on JSON-shaped maps resolve
+  // Object.prototype keys ('constructor', '__proto__', …) as hits; every
+  // name-keyed lookup in this file goes through this instead.
+  const hasOwn = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 
   // ---- family / bucket lookups ------------------------------------------
   const familyByModel = new Map();
@@ -200,26 +204,59 @@ function createRouter(opts) {
   }
 
   // ---- WO-14 alias layer (§6.6: alias layer before any rename) -----------
+  // Every §6.6 retired name must be present — a map that parses but lacks
+  // the aliases (or a name) fails CLOSED at construction, because the kill
+  // switch's rollback direction depends on the map existing.
+  const REQUIRED_ALIASES = [
+    'executor', 'executor-heavy', 'executor-heavy-xhigh', 'executor-codex',
+    'executor-codex-heavy', 'reviewer', 'reviewer-codex', 'scout', 'detective',
+    'modeler', 'architect-claude', 'architect-claude-xhigh', 'architect-claude-max',
+    'architect-codex', 'planner-gpt', 'plan-synthesizer',
+  ];
+  const ALIAS_PINS = { 'detective': 'read-only' }; // §6.6: detective → Investigator(read-only pinned)
   let seatAliases;
   try {
     seatAliases = JSON.parse(fs.readFileSync(options.aliasesFile || path.join(path.dirname(castingsFile), 'aliases.json'), 'utf8'));
   } catch (e) {
     fail('aliases.json unreadable or unparseable: ' + e.message);
   }
-  if (seatAliases) {
+  if (!seatAliases || typeof seatAliases !== 'object' || !seatAliases.aliases || typeof seatAliases.aliases !== 'object') {
+    fail('alias map missing or shapeless — the kill switch cannot exist without it (fail closed)');
+    seatAliases = null;
+  } else {
     if (!['legacy', 'new'].includes(seatAliases.rosterDefault)) {
       fail('aliases rosterDefault must be legacy or new; got ' + JSON.stringify(seatAliases.rosterDefault));
     }
-    for (const [name, a] of Object.entries(seatAliases.aliases || {})) {
+    for (const required of REQUIRED_ALIASES) {
+      if (!hasOwn(seatAliases.aliases, required)) fail('required §6.6 alias missing: ' + required);
+    }
+    const legacyAgents = new Set();
+    for (const [name, a] of Object.entries(seatAliases.aliases)) {
+      if (hasOwn(roles, name)) fail('alias ' + JSON.stringify(name) + ' shadows a live role name');
       if (!a.deprecation) fail('alias ' + name + ' has no deprecation line');
       if (!a.legacy || !a.legacy.agent || !a.legacy.model) fail('alias ' + name + ' has no legacy identity');
-      else if (!familyOf(a.legacy.model)) fail('alias ' + name + ' legacy model unknown: ' + a.legacy.model);
+      else {
+        if (!familyOf(a.legacy.model)) fail('alias ' + name + ' legacy model unknown: ' + a.legacy.model);
+        if (legacyAgents.has(a.legacy.agent)) fail('two aliases claim the same legacy agent: ' + a.legacy.agent);
+        legacyAgents.add(a.legacy.agent);
+      }
       const n = a.new || {};
-      if (!n.role || !roles[n.role]) fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
-      else if (!n.computed && (!n.rung || !(roles[n.role].rungs || {})[n.rung])) {
+      if (!n.role || !hasOwn(roles, n.role)) fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
+      else if (!n.computed && (!n.rung || !hasOwn(roles[n.role].rungs || {}, n.rung))) {
         fail('alias ' + name + ' names rung ' + JSON.stringify(n.rung) + ' that ' + n.role + ' does not have');
       } else if (n.computed && !roles[n.role].computed) {
         fail('alias ' + name + ' claims a computed casting but ' + n.role + ' is not computed');
+      } else if (n.computed && n.rung) {
+        fail('alias ' + name + ' declares a rung on a computed casting — the lane is computed, not pinned');
+      }
+      // The pin carries a safety law (§6.6) — unvalidated, it could be
+      // silently dropped or rewritten by a bad merge. Enum + required where
+      // the plan requires it.
+      if (n.pin !== undefined && n.pin !== 'read-only') {
+        fail('alias ' + name + ' carries unknown pin ' + JSON.stringify(n.pin) + ' (only "read-only" is defined)');
+      }
+      if (ALIAS_PINS[name] && n.pin !== ALIAS_PINS[name]) {
+        fail('alias ' + name + ' must carry pin ' + JSON.stringify(ALIAS_PINS[name]) + ' (§6.6)');
       }
     }
   }
@@ -310,8 +347,8 @@ function createRouter(opts) {
   // video/audio) wait or return typed UNAVAILABLE — never a substitute.
   function cast(roleName, buckets, castOpts) {
     const o = castOpts || {};
+    if (!hasOwn(roles, roleName)) throw new Error('unknown role: ' + JSON.stringify(roleName));
     const role = roles[roleName];
-    if (!role) throw new Error('unknown role: ' + JSON.stringify(roleName));
     if (role.computed) throw new Error(roleName + ' casting is computed from the author family set — use reviewer(), never cast()');
     if (role.substrate) {
       return { ok: true, substrate: true, role: roleName, casting: { vendor: 'none', model: 'deterministic', effort: 'none' }, modelAssist: role.modelAssist, note: 'deterministic substrate — code first; model assist only per its contract' };
@@ -397,13 +434,26 @@ function createRouter(opts) {
     };
   }
 
+  // Risk tier is the gate oracle — an unrecognized tier must fail CLOSED to
+  // mandatory, never fall through to preferred. `"T3 "`, `"t3"`, a
+  // zero-width space, or any typo silently downgrading mandatory review is
+  // exactly the P15 silent-relaxation failure. One normalizer, used
+  // everywhere risk enters.
+  const RISK_TIERS = ['T0', 'T1', 'T2', 'T3'];
+  function normalizeRisk(risk) {
+    const r = typeof risk === 'string' ? risk.trim().toUpperCase() : risk;
+    return RISK_TIERS.includes(r) ? r : null;
+  }
+
   // ---- review policy (§3.4) ---------------------------------------------
   function reviewPolicy(classId, risk, flags) {
     const f = flags || {};
     if (f.inert) return 'none';
     const cls = resolveClass(classId);
+    const tier = normalizeRisk(risk);
+    if (tier === null) return 'mandatory'; // unrecognized tier fails closed
     const mr = castings.mandatoryReview;
-    if (mr.riskTiers.includes(risk)) return 'mandatory';
+    if (mr.riskTiers.includes(tier)) return 'mandatory';
     if (mr.classes.includes(cls)) return 'mandatory';
     for (const flag of mr.flags) if (f[flag]) return 'mandatory';
     const touches = f.touches || [];
@@ -421,7 +471,8 @@ function createRouter(opts) {
     const o = revOpts || {};
     const policy = o.policy || 'mandatory';
     if (!['mandatory', 'preferred', 'none'].includes(policy)) throw new Error('unknown review policy: ' + policy);
-    if (!['T0', 'T1', 'T2', 'T3'].includes(risk)) throw new Error('unknown risk tier: ' + JSON.stringify(risk));
+    risk = normalizeRisk(risk);
+    if (risk === null) throw new Error('unknown risk tier — refusing rather than guessing a lane');
     const nb = normalizeBuckets(o.buckets || allGreen());
 
     const raw = authorFamilies === undefined || authorFamilies === null ? [] : [].concat(authorFamilies);
@@ -520,18 +571,29 @@ function createRouter(opts) {
   function q0Required(order) {
     const cls = resolveClass(order.class);
     if (cls === 'Q0') return { required: false, reason: 'the order IS the Q0 order' };
+    const risk = normalizeRisk(order.risk);
     const cfg = castings.q0Triggers;
     if (cfg.classes.includes(cls)) return { required: true, reason: 'every ' + cls + ' change (class trigger)' };
     const touches = order.touches || [];
     const hit = touches.find((t) => cfg.touchAreas.includes(t));
     if (hit) return { required: true, reason: hit + ' change regardless of nominal tier (touch trigger)' };
-    if (cfg.riskTiers.includes(order.risk) && cfg.sourceChangeClasses.includes(cls)) {
-      return { required: true, reason: 'every ' + order.risk + ' source change (tier trigger)' };
+    // An unrecognized risk tier fails closed to the highest gated tier, so a
+    // malformed tier cannot dodge the tier trigger.
+    const effRisk = risk === null ? 'T3' : risk;
+    if (cfg.riskTiers.includes(effRisk) && cfg.sourceChangeClasses.includes(cls)) {
+      return { required: true, reason: 'every ' + effRisk + ' source change (tier trigger)' };
     }
     const cal = cfg.calibrationSample;
-    if (cal.riskTiers.includes(order.risk) && cal.classes.includes(cls)) {
-      if (fnv1a(String(order.task_id)) % 100 < cal.rate * 100) {
-        return { required: true, reason: 'calibration sample (' + cal.rate * 100 + '% of T1 ' + cal.classes.join('/') + ' work; deterministic on task_id)' };
+    if (cal.riskTiers.includes(effRisk) && cal.classes.includes(cls)) {
+      // Sample on the dispatcher-written integrity_nonce, never the
+      // requester-chosen task_id: an unkeyed hash over a caller-controlled id
+      // lets a requester grind an id that evades the independent-test-oracle
+      // audit. The nonce is unpredictable to the requester; absent one, the
+      // audit fails closed (required), never open.
+      const sampleKey = order.integrity_nonce;
+      if (!sampleKey) return { required: true, reason: 'calibration-eligible with no integrity_nonce — sampled closed (required)' };
+      if (fnv1a(String(sampleKey)) % 100 < cal.rate * 100) {
+        return { required: true, reason: 'calibration sample (' + cal.rate * 100 + '% of T1 ' + cal.classes.join('/') + ' work; keyed on the dispatcher nonce)' };
       }
       return { required: false, reason: 'calibration-eligible, not sampled' };
     }
@@ -672,13 +734,15 @@ function createRouter(opts) {
   // reload, demonstrated per-call.
   function resolveSeat(name, seatOpts) {
     const o = seatOpts || {};
-    const roster = o.roster || seatAliases.rosterDefault;
-    if (!['legacy', 'new'].includes(roster)) throw new Error('unknown roster flag: ' + JSON.stringify(roster));
-    const a = (seatAliases.aliases || {})[name];
-    if (!a) {
-      if (roles[name]) return { roster, alias: false, target: { kind: 'role', role: name } };
-      return { roster, alias: false, error: 'unknown seat name: ' + JSON.stringify(name) };
+    if (o.roster !== undefined && !['legacy', 'new'].includes(o.roster)) {
+      throw new Error('unknown roster flag: ' + JSON.stringify(o.roster) + ' — the flag is explicit or absent, never falsy-and-ignored');
     }
+    const roster = o.roster === undefined ? seatAliases.rosterDefault : o.roster;
+    if (!hasOwn(seatAliases.aliases, name)) {
+      if (hasOwn(roles, name)) return { roster, alias: false, target: { kind: 'role', role: name } };
+      return { roster, alias: false, error: 'unknown seat name: ' + JSON.stringify(name), target: null };
+    }
+    const a = seatAliases.aliases[name];
     const ledger = 'DEPRECATED "' + name + '" (roster: ' + roster + ') — ' + a.deprecation;
     if (roster === 'legacy') {
       return { roster, alias: true, ledger, target: Object.assign({ kind: 'legacy-agent' }, a.legacy) };
@@ -686,10 +750,25 @@ function createRouter(opts) {
     if (a.new.computed) {
       return { roster, alias: true, ledger, target: { kind: 'computed-reviewer', role: a.new.role, laneNote: a.new.laneNote } };
     }
-    const c = cast(a.new.role, o.buckets || allGreen(), Object.assign({ rung: a.new.rung, purpose: o.purpose }, o.castOpts));
+    // The alias's declared rung ALWAYS wins over caller castOpts — a caller
+    // override here would silently re-cast a §6.6 mapping while the ledger
+    // records the alias's rung (the silent-substitution failure, P15/§7.1).
+    if (o.buckets === undefined) {
+      throw new Error('new-roster resolution requires bucket_state — fail closed, not Green (P15)');
+    }
+    const castOpts = Object.assign({}, o.castOpts, { rung: a.new.rung });
+    if (o.purpose !== undefined) castOpts.purpose = o.purpose;
+    let c = cast(a.new.role, o.buckets, castOpts);
+    let gate = { allowed: true };
+    if (c.ok && !c.substrate) {
+      gate = preDispatchGate(c.casting, o.buckets);
+      if (!gate.allowed) {
+        c = { ok: false, outcome: 'GATED', role: a.new.role, rung: c.rung, gate, reason: gate.reason };
+      }
+    }
     return {
       roster, alias: true, ledger,
-      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung, pin: a.new.pin || null, cast: c },
+      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung, pin: a.new.pin || null, cast: c, gate, note: a.new.downgradeNote },
     };
   }
 
@@ -698,6 +777,20 @@ function createRouter(opts) {
     for (const b of castings.buckets) out[b] = 'Green';
     return out;
   }
+
+  // The validated config is exposed read-only: a caller mutating the live
+  // maps would change routing behind the validator's back.
+  function deepFreeze(obj) {
+    if (obj && typeof obj === 'object' && !Object.isFrozen(obj)) {
+      Object.freeze(obj);
+      for (const v of Object.values(obj)) deepFreeze(v);
+    }
+    return obj;
+  }
+  deepFreeze(registry);
+  deepFreeze(castings);
+  deepFreeze(charters);
+  deepFreeze(seatAliases);
 
   return {
     registry, castings, charters, aliases: seatAliases, resolveSeat, problems: [],

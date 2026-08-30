@@ -118,6 +118,23 @@ jobs:
         # documented casting set, and Q0 spawn on every trigger.
         run: node tests/router.test.js
 
+      - name: WO-7b misroute-recovery gates
+        # Re-scores the committed WO-7b probe results through the live
+        # router, so a router change that would break the pre-registered
+        # G1/G2/G3 gates (recovery, no gate crossing, P95 hops) fails CI
+        # instead of silently invalidating the probe. (Added on an S0
+        # sweep finding — the same class of gap the registry suite had.)
+        run: node plans/cross-compare/agent-role-architecture/wo7b/score.js
+
+      - name: Roster contract lint
+        # WO-8-11: every staffed roster file carries all nine Part-2.0
+        # fields, its frontmatter matches the documented casting rung/lane,
+        # and mirror-or-declared-exception holds (plus the installer's
+        # frontmatter lint over the same files).
+        run: |
+          node roster/lint.js
+          node install.js --lint roster
+
       - name: MCP-lane suite
         # The orchestra-engine MCP server — the typed transport that replaced
         # the launcher shell pipeline. Speaks real JSON-RPC to the server over

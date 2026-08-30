@@ -365,6 +365,13 @@ check('review policy: E3/E4/E7/A1 and T3 are mandatory; security touches are man
   router.reviewPolicy('E7', 'T1') === 'mandatory' && router.reviewPolicy('A1', 'T1') === 'mandatory' &&
   router.reviewPolicy('E2', 'T3') === 'mandatory' && router.reviewPolicy('E2', 'T1', { touches: ['auth'] }) === 'mandatory' &&
   router.reviewPolicy('E2', 'T1') === 'preferred' && router.reviewPolicy('E2', 'T1', { inert: true }) === 'none');
+check('the risk-tier gate oracle fails CLOSED: a malformed tier never downgrades mandatory review',
+  router.reviewPolicy('E2', 'T3 ') === 'mandatory' && router.reviewPolicy('E2', 't3') === 'mandatory' &&
+  router.reviewPolicy('E2', 'T3​') === 'mandatory' && router.reviewPolicy('E2', 'bogus') === 'mandatory' &&
+  router.reviewPolicy('E2', 'T1 ') === 'preferred' /* normalized, still a real tier */);
+check('a malformed tier cannot dodge the Q0 tier trigger (fails closed to T3)',
+  router.q0Required({ class: 'E2', risk: 'T3 ', integrity_nonce: 'x' }).required === true &&
+  router.q0Required({ class: 'E2', risk: 'bogus', integrity_nonce: 'x' }).required === true);
 check('dispatch(): a Sol-authored E0 mutation gets the mandatory Opus review lane (flags.solAuthoredMutation)',
   (() => {
     const d = router.dispatch(order('E0', 'T1'), G, { flags: { solAuthoredMutation: true } });
@@ -422,16 +429,24 @@ check('touch triggers: auth/authz/concurrency/persisted-data/public-API force Q0
 check('non-triggering work spawns no Q0 (T1 E0 plain; N0 lookup; D0 doc)',
   !router.q0Required(order('E0', 'T1')).required && !router.q0Required(order('N0', 'T0')).required && !router.q0Required(order('D0', 'T1')).required);
 {
-  // Calibration sample: deterministic 25% of T1 E2/E5/E6 on task_id.
+  // Calibration sample: deterministic 25% of T1 E2/E5/E6, keyed on the
+  // dispatcher-written integrity_nonce (NOT the requester's task_id — an
+  // unkeyed hash over a caller-chosen id is grindable).
   let sampled = null, unsampled = null;
-  for (let i = 0; i < 200 && (!sampled || !unsampled); i++) {
-    const id = 'cal-' + i;
-    if (fnv1a(id) % 100 < 25) sampled = sampled || id; else unsampled = unsampled || id;
+  for (let i = 0; i < 400 && (!sampled || !unsampled); i++) {
+    const n = 'nonce-cal-' + i;
+    if (fnv1a(n) % 100 < 25) sampled = sampled || n; else unsampled = unsampled || n;
   }
-  const rIn = router.q0Required(order('E2', 'T1', { task_id: sampled }));
-  const rIn2 = router.q0Required(order('E2', 'T1', { task_id: sampled }));
-  const rOut = router.q0Required(order('E2', 'T1', { task_id: unsampled }));
-  check('calibration: 25% of T1 E2/E5/E6 sampled, deterministically on task_id', rIn.required === true && rIn2.required === true && rOut.required === false);
+  const rIn = router.q0Required(order('E2', 'T1', { integrity_nonce: sampled }));
+  const rIn2 = router.q0Required(order('E2', 'T1', { integrity_nonce: sampled }));
+  const rOut = router.q0Required(order('E2', 'T1', { integrity_nonce: unsampled }));
+  check('calibration: 25% of T1 E2/E5/E6 sampled, deterministically on the dispatcher nonce', rIn.required === true && rIn2.required === true && rOut.required === false);
+  // The grind defense: the same task_id with different nonces samples
+  // differently, so a requester cannot pick an evading id.
+  check('the calibration sample cannot be gamed by a caller-chosen task_id (varying only task_id does not move the sample)',
+    router.q0Required(order('E2', 'T1', { integrity_nonce: sampled, task_id: 'attacker-picks-this' })).required === true);
+  check('a calibration-eligible order with no integrity_nonce samples closed (required), never open',
+    router.q0Required({ class: 'E2', risk: 'T1' }).required === true);
 }
 {
   const d = router.dispatch(order('E4', 'T2'), G);
@@ -546,27 +561,82 @@ section('12. WO-14: alias layer and the roster kill switch');
     router.resolveSeat('executor-codex-heavy', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Sol');
   check('modeler is promoted to the Spatial Specialist (Opus 5 · high)',
     router.resolveSeat('modeler', { roster: 'new', buckets: qc }).target.cast.casting.model === 'Opus 5');
-  check('every retired-name resolution emits a ledger deprecation line, under both flags',
-    /DEPRECATED "executor"/.test(legacyEx.ledger) && /DEPRECATED "executor"/.test(newEx.ledger) &&
+  check('every retired-name resolution emits ITS OWN deprecation text, under both flags',
     Object.keys(router.aliases.aliases).every((n) => {
+      const dep = router.aliases.aliases[n].deprecation;
       const l = router.resolveSeat(n, { roster: 'legacy' });
-      return typeof l.ledger === 'string' && l.ledger.includes(n);
+      const w = router.resolveSeat(n, { roster: 'new', buckets: qc });
+      return l.ledger.includes(dep) && w.ledger.includes(dep);
     }));
   check('the roster default comes from the alias map when the order carries no flag (kill-switch home position: legacy)',
     router.aliases.rosterDefault === 'legacy' && router.resolveSeat('scout', {}).target.kind === 'legacy-agent');
   check('a current role name passes through un-aliased; an unknown name is an error, not a guess',
     router.resolveSeat('Builder', { roster: 'new' }).alias === false &&
     typeof router.resolveSeat('warlock', {}).error === 'string');
-  // Tamper: an alias naming a rung its role does not have must fail the load.
-  const aliasesRaw = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'aliases.json'), 'utf8'));
-  aliasesRaw.aliases.executor.new.rung = 'turbo';
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-alias-'));
-  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const file = path.join(dir, 'aliases.json');
-  fs.writeFileSync(file, JSON.stringify(aliasesRaw), 'utf8');
-  let threw = null;
-  try { createRouter({ aliasesFile: file }); } catch (e) { threw = e; }
-  check('a tampered alias map (rung the role lacks) fails the load closed', !!threw && /does not have/.test(threw.message));
+  // Tampered alias maps must fail the load CLOSED — each corruption caught.
+  function tamperedAliases(mutateOrRaw) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-alias-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'aliases.json');
+    if (typeof mutateOrRaw === 'string') {
+      fs.writeFileSync(file, mutateOrRaw, 'utf8');
+    } else {
+      const raw = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'aliases.json'), 'utf8'));
+      mutateOrRaw(raw);
+      fs.writeFileSync(file, JSON.stringify(raw), 'utf8');
+    }
+    try { createRouter({ aliasesFile: file }); return null; } catch (e) { return e; }
+  }
+  check('a rung the role lacks fails the load closed',
+    (() => { const e = tamperedAliases((r) => { r.aliases.executor.new.rung = 'turbo'; }); return !!e && /does not have/.test(e.message); })());
+  check('a map whose aliases key is missing fails closed (the kill switch cannot exist without it)',
+    (() => { const e = tamperedAliases((r) => { delete r.aliases; }); return !!e && /kill switch cannot exist/.test(e.message); })());
+  check('a file whose entire content is null fails closed at construction, not at first call',
+    (() => { const e = tamperedAliases('null'); return !!e && /kill switch cannot exist/.test(e.message); })());
+  check('a missing required §6.6 alias fails closed',
+    (() => { const e = tamperedAliases((r) => { delete r.aliases.detective; }); return !!e && /required §6.6 alias missing: detective/.test(e.message); })());
+  check('the detective pin is validated: dropped or rewritten pins fail the load',
+    (() => {
+      const dropped = tamperedAliases((r) => { delete r.aliases.detective.new.pin; });
+      const rewritten = tamperedAliases((r) => { r.aliases.detective.new.pin = 'read-write'; });
+      return !!dropped && /must carry pin "read-only"/.test(dropped.message) && !!rewritten && /unknown pin/.test(rewritten.message);
+    })());
+  check('an alias shadowing a live role name fails closed',
+    (() => { const e = tamperedAliases((r) => { r.aliases.Builder = r.aliases.executor; }); return !!e && /shadows a live role/.test(e.message); })());
+  check('two aliases claiming one legacy agent fail closed',
+    (() => { const e = tamperedAliases((r) => { r.aliases.scout.legacy.agent = 'executor'; }); return !!e && /same legacy agent/.test(e.message); })());
+  check('a rung declared on a computed alias fails closed',
+    (() => { const e = tamperedAliases((r) => { r.aliases.reviewer.new.rung = 'primary'; }); return !!e && /computed, not pinned/.test(e.message); })());
+  // The MAJOR findings of the R0-EX1 exercise review, pinned:
+  check('Object.prototype keys are unknown seat names, not fabricated aliases',
+    ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'].every((k) => {
+      const r = router.resolveSeat(k, { roster: 'legacy' });
+      return r.alias === false && typeof r.error === 'string' && r.target === null;
+    }));
+  check('the new-roster path without bucket_state fails closed, never fabricating Green',
+    (() => { try { router.resolveSeat('executor-heavy', { roster: 'new' }); return false; } catch (e) { return /fail closed, not Green/.test(e.message); } })());
+  check('the pre-dispatch AU-O gate holds on the alias path too',
+    (() => {
+      const r = router.resolveSeat('executor-heavy', { roster: 'new', buckets: buckets({ 'AU-opus': { state: 'Green', belowReserve: true } }) });
+      return r.target.cast.ok === false && r.target.cast.outcome === 'GATED' && r.target.gate.allowed === false;
+    })());
+  check('caller castOpts cannot override the alias’s declared rung',
+    (() => {
+      const r = router.resolveSeat('executor-heavy-xhigh', { roster: 'new', buckets: qc, castOpts: { rung: 'primary' } });
+      return r.target.rung === 'effortPoint2' && r.target.cast.rung === 'effortPoint2' && r.target.cast.casting.effort === 'xhigh';
+    })());
+  check('pool degradation reaches the alias path (Amber AU-opus re-casts detective to the Sol mirror)',
+    (() => {
+      const r = router.resolveSeat('detective', { roster: 'new', buckets: buckets({ 'AU-opus': 'Amber' }) });
+      return r.target.cast.ok && r.target.cast.casting.model === 'GPT-5.6 Sol' && r.target.cast.rung === 'mirror';
+    })());
+  check('a falsy-but-set roster flag is rejected, never silently defaulted',
+    (() => { try { router.resolveSeat('executor', { roster: '' }); return false; } catch (e) { return /never falsy-and-ignored/.test(e.message); } })());
+  check('the validated config is exposed frozen — mutation cannot re-route behind the validator',
+    Object.isFrozen(router.aliases) && Object.isFrozen(router.aliases.aliases.executor.new) &&
+    Object.isFrozen(router.castings.roles.Builder.rungs.primary) && Object.isFrozen(router.charters.charters.Builder));
+  check('the max→xhigh ceiling downgrade is carried as a ledgered note',
+    (() => { const r = router.resolveSeat('architect-claude-max', { roster: 'new', buckets: qc }); return /downgrade is deliberate/.test(r.target.note || ''); })());
 }
 
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

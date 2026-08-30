@@ -65,7 +65,7 @@
       "deprecation": "architect-claude-xhigh is retired: it is the Architect's Anthropic ceiling casting (comparative sessions)"
     },
     "architect-claude-max": {
-      "new": { "role": "Architect", "rung": "ceilingAnthropic" },
+      "new": { "role": "Architect", "rung": "ceilingAnthropic", "downgradeNote": "legacy max effort point lands on the xhigh ceiling — §6.4/§8.1.7: past xhigh, extra thinking buys latency; the downgrade is deliberate and ledgered" },
       "legacy": { "agent": "architect-claude-max", "model": "Fable 5", "effort": "max" },
       "deprecation": "architect-claude-max is retired: the Anthropic ceiling is Fable · xhigh (comparative sessions); the max point does not survive into the new roster"
     },

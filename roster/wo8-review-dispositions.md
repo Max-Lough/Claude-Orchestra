@@ -5,12 +5,16 @@ the four exercises surfaced genuine defects in the already-committed
 substrate tranche (WO-4/5/6/14) — the seats working as designed. This file
 records the exercises and the disposition of every finding.
 
-**Status: round-2 fixes applied under owner rulings (2026-08-30, below); the
-R0-EX3 re-review (Sol · high, pinned `fb07668..d00a7ae`) confirmed every
-round-1/2 closure real but returned REVISE with 3 MAJOR + 2 MINOR defects in
-the NEW round-2 code — all five reproduced locally and fixed in round 3 (see
-§R0-EX3 below). The tranche remains REVISE until a re-review of the round-3
-diff (R0-EX4) comes back clean.**
+**Status: GATE PASSED, 2026-08-30. R0-EX11 (Sol · high, pinned
+`2c24df7..e04005b`) returned APPROVE with zero findings and zero nits —
+WO-5 and WO-6 have cleared their mandatory cross-vendor review. The full
+chain ran nine delta rounds (R0-EX3…EX11, every verdict recorded verbatim in
+this directory), burning down from 11 MAJOR to zero, with PR #28 CI and the
+Sol lane independently converging on the same defects twice along the way.
+The owner rulings of 2026-08-30 (below) governed every fix. Registered
+follow-ons (their own lanes, not gate blockers): the verification-time
+diff-derived `touches` cross-check, and the reference runner's
+single-`--force` sweep vs locked worktrees.**
 
 ## Exercises
 
@@ -376,10 +380,20 @@ cleanup addresses the dead alias, stranding the canonical registration.
   standing sweep at the next `createCheckout` — directory and registration
   both gone.
 
+## R0-EX11 (delta re-review of round 5f): APPROVE — the gate closes
+
+R0-EX11 (Sol · high, pinned `2c24df7..e04005b`; verdict verbatim at
+`roster/r0-ex11-verdict.md`): **APPROVE, zero findings, zero nits.** Every
+claim independently confirmed with the reviewer's own probes: fault-injected
+pre-add refusal (zero add calls, no temporary child, typed error), the
+four-read retry recovering from three injected failures, and the exact
+compound strand (four list failures + vanished alias) reclaimed in full by
+the next healthy creation. The declared residual bound was examined and not
+flagged — the self-healing recovery model stands as the accepted bound.
+
 ## Note
 
-The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-5f diff (R0-EX11) comes back clean. Open items are process, not
-code: (1) R0-EX11, and (2) the registered follow-ons — the verification-time
-diff-derived `touches` cross-check, and the reference runner's
-single-`--force` sweep vs locked worktrees.
+**WO-5 and WO-6 are GATE-PASSED as of 2026-08-30.** The remaining open items
+are registered follow-ons in their own lanes, not gate blockers: the
+verification-time diff-derived `touches` cross-check (Verifier/E7 lane) and
+the reference runner's single-`--force` sweep vs locked worktrees.

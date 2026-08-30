@@ -297,12 +297,42 @@ live canonical checkout. It also (fairly) refuted the executor report's
 CREATION (`entry.realDir`, resolved while every path component is guaranteed
 to exist) and the sweep's live set compares that — never a sweep-time
 re-resolution. Sol's alias-removal probe pinned as a regression alongside
-the stable-alias one. PR #28 CI went fully green (9/9 jobs) on `09a824e`;
-this fix hardens the edge CI cannot reach.
+the stable-alias one. PR #28 CI went 9/9 green on run 33333118636 (the PR
+head after `4e509b5`; the workflow on `09a824e` itself was superseded — 4
+passes, 4 cancelled, and one Windows review-lane failure that was the very
+flake later root-caused in round 5c — corrected per the R0-EX8 MINOR); this
+fix hardens the edge CI cannot reach.
+
+## R0-EX8 (delta re-review of round 5c) and the round-5d dispositions
+
+R0-EX8 (Sol · high, pinned `09a824e..3a9cc73`; verdict verbatim at
+`roster/r0-ex8-verdict.md`): **REVISE** — the ordinary alias-removal case
+confirmed fixed, with two MAJORs on the newest fixes and one records MINOR.
+All fixed in round 5d:
+
+- **[MAJOR] identity capture degraded to a lexical guess on realpath
+  failure** — if the alias vanished DURING creation-time resolution,
+  `normPath`'s lexical fallback stored the alias spelling as identity and a
+  later sweep deleted the live canonical checkout. Fixed fail-CLOSED:
+  `createCheckout` resolves the canonical path itself and REFUSES the
+  checkout (cleaning its own registration) when resolution fails — the
+  lexical fallback now serves only already-gone swept paths, never a live
+  identity. Poisoned-realpath regression pinned (no checkout, no stray
+  registration).
+- **[MAJOR] the flake guard waited a duration, not the condition** — a slow
+  checkout stays locked past any fixed sleep (Sol's 15,000-file probe held
+  the lock well past 250 ms). Fixed: both kill branches now poll
+  `worktree list --porcelain` for the lock to actually clear
+  (`waitWorktreesUnlocked`, bounded), asserted as its own check.
+- **[MINOR] records precision** — "9/9 green on `09a824e`" conflated the PR
+  head's run with the superseded run on `09a824e` itself (4 pass / 4
+  cancelled / 1 Windows review-lane flake — the same race, firing in CI).
+  Corrected in the round-5c section above.
 
 ## Note
 
 The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
-the round-5c diff (R0-EX8) comes back clean. Open items are process, not
-code: (1) R0-EX8, and (2) the registered follow-on — the verification-time
-diff-derived `touches` cross-check.
+the round-5d diff (R0-EX9) comes back clean. Open items are process, not
+code: (1) R0-EX9, and (2) the registered follow-ons — the verification-time
+diff-derived `touches` cross-check, and the reference runner's
+single-`--force` sweep vs locked worktrees.

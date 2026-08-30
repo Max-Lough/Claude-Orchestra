@@ -181,6 +181,23 @@ function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
 
+// Wait for git's registration LOCK to clear on every non-main worktree —
+// polling the actual condition, never a fixed duration (R0-EX8: a slow
+// checkout can stay locked long past any sleep; killing while locked
+// freezes a worktree single-`--force` can never reclaim). `git worktree
+// add` holds the lock for the whole checkout while the entry is already
+// list-visible, so list-visibility alone is not "finished registering".
+async function waitWorktreesUnlocked(repo, timeoutMs) {
+  const deadline = Date.now() + (timeoutMs || 30000);
+  for (;;) {
+    const blocks = git(['worktree', 'list', '--porcelain'], repo).split(/\n\n+/);
+    const lockedLinked = blocks.slice(1).some((b) => /^locked/m.test(b));
+    if (!lockedLinked) return true;
+    if (Date.now() > deadline) return false;
+    await sleep(100);
+  }
+}
+
 // The runner spawns the engine binary DIRECTLY — no shell, deliberately, since
 // a shell would change quoting and argument handling. Windows cannot
 // CreateProcess a `.js` file, so there the "codex binary" handed to the runner
@@ -358,11 +375,12 @@ async function case4() {
   // remove with a single `--force`, which git flatly refuses on a locked
   // worktree ("cannot remove a locked working tree ... use 'remove -f -f' to
   // override") — no amount of waiting or re-running the sweep changes that.
-  // So this delay is not pacing a flaky assertion; it is the difference
+  // So this wait is not pacing a flaky assertion; it is the difference
   // between "killed mid-review" (recoverable, what this case tests) and
-  // "killed mid-registration" (unrecoverable by design, a different case the
-  // SIGKILL block below already knows to avoid the same way).
-  await sleep(250);
+  // "killed mid-registration" (unrecoverable by design, a different case).
+  // R0-EX8: wait on the LOCK CONDITION itself, never a fixed duration — a
+  // slow checkout stays locked long past any sleep.
+  check('checkout finished registering (lock cleared) before the SIGTERM', await waitWorktreesUnlocked(fx.repo, 30000));
   child.kill('SIGTERM');
   await new Promise((res) => child.on('exit', res));
   await sleep(300);
@@ -418,8 +436,9 @@ async function case4() {
   // Let `worktree add` finish its checkout before pulling the plug, so the case
   // under test is "killed mid-review", not "killed mid-registration" — the
   // latter is a different (and much rarer) shape, and testing it by accident
-  // makes this case flaky rather than strict.
-  await sleep(250);
+  // makes this case flaky rather than strict. R0-EX8: wait on the lock
+  // condition itself, never a fixed duration.
+  check('checkout finished registering (lock cleared) before the SIGKILL', await waitWorktreesUnlocked(fx2.repo, 30000));
   check('SIGKILL: the worktree was live before the kill', registered2, 'never registered within 30s');
   c2.kill('SIGKILL');
   await new Promise((res) => c2.on('exit', res));

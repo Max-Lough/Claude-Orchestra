@@ -348,6 +348,22 @@ function createCheckout(repoDir, commitish, opts) {
     return { error: 'worktree add failed: ' + ((added.stderr || '').trim() || 'git error') };
   }
 
+  // Canonical identity, captured NOW while every path component should be
+  // resolvable — and captured FAIL-CLOSED (R0-EX8): if the canonical path
+  // cannot be established, there is no checkout, because a lexical guess
+  // stored here would be trusted by a later sweep, which would then delete
+  // the live canonical directory (normPath's lexical fallback exists for
+  // already-gone SWEPT paths, never for a live identity).
+  let canonical;
+  try {
+    canonical = fs.realpathSync.native ? fs.realpathSync.native(dir) : fs.realpathSync(dir);
+  } catch (e) {
+    runGit(['-C', repoDir, 'worktree', 'remove', '--force', dir]);
+    runGit(['-C', repoDir, 'worktree', 'prune']);
+    try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+    return { error: 'cannot establish the checkout\'s canonical identity (' + (e.message || e) + ') — refusing rather than guessing (fail closed)' };
+  }
+
   const fingerprintBefore = treeFingerprint(dir);
   let torndown = false;
 
@@ -355,11 +371,7 @@ function createCheckout(repoDir, commitish, opts) {
     dir,
     commit,
     parent,
-    // Canonical identity, captured NOW while every path component is
-    // guaranteed resolvable. The sweep's live-set exemption compares this —
-    // an alias (symlink/junction tmpRoot, 8.3 short path) removed later
-    // must not strip a live checkout of its identity (R0-EX7).
-    realDir: normPath(dir),
+    realDir: normPath(canonical),
     fingerprintBefore,
     // The before/after comparison, classified. Callers pass project-declared
     // churn patterns; the defaults cover the common generated artifacts.

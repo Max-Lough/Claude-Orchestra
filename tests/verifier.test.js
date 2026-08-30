@@ -654,6 +654,23 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
     git(fixture.dir, ['worktree', 'remove', '--force', canonical]);
     fs.rmSync(path.dirname(canonical), { recursive: true, force: true });
     liveViaAlias2.teardown();
+
+    // R0-EX8: identity capture is fail-CLOSED. If the canonical path cannot
+    // be resolved at creation (the alias vanished mid-creation), a lexical
+    // guess stored as identity would be trusted by a later sweep — so there
+    // must be NO checkout at all, and no stray registration left behind.
+    const before = git(fixture.dir, ['worktree', 'list', '--porcelain']);
+    const realFn = fs.realpathSync;
+    const poisoned = () => { throw new Error('ENOENT: poisoned by the R0-EX8 regression'); };
+    poisoned.native = poisoned;
+    fs.realpathSync = poisoned;
+    let failClosed;
+    try { failClosed = checkoutLib.createCheckout(fixture.dir, fixture.base); }
+    finally { fs.realpathSync = realFn; }
+    check('R0-EX8: an unresolvable canonical identity refuses the checkout (fail closed, no lexical guess, registration cleaned)',
+      !!failClosed.error && /canonical identity/.test(failClosed.error) &&
+      git(fixture.dir, ['worktree', 'list', '--porcelain']) === before,
+      failClosed.error || 'checkout was handed out');
   } else {
     check('CI: real-path live-set regression [skipped: cannot create links here]', true);
     check('R0-EX7: alias-removal regression [skipped: cannot create links here]', true);

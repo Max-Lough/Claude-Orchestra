@@ -50,12 +50,12 @@ runners, per the field-tested cross-vendor lane.
 | Assurance | `reviewer-openai.md` | R0 openai lane — Sol · high via Codex CLI | R0-EX2 (gate-class tranche review) |
 | Assurance | `sweeper.md` | S0 mirror — Sonnet 5 · med (Terra · med primary via codex engine) | S0-EX1 |
 | Assurance | `red-team.md` | E7 mirror — Opus 5 · high (Sol · high primary via codex engine) | E7-EX1 |
-| Evidence | `scout-anthropic.md` | N0 primary — Haiku 4.5 · off (Luna · low mirror via codex engine) | pending (WO-9 stage 2) |
-| Evidence | `researcher.md` | N1 primary — Sol · med via Codex CLI (Opus 5 · med mirror, no file yet) | pending (WO-9 stage 2) |
-| Evidence | `lc-analyst.md` | N2 primary — Terra · med via Codex CLI (Opus 5 · med mirror, no file yet) | pending (WO-9 stage 2) |
-| Evidence | `investigator.md` | I0 primary — Opus 5 · high, read-only tool pin (Sol · high mirror / Fable 5 · high ceiling, no files yet) | pending (WO-9 stage 2) |
-| Evidence | `archivist-documents.md` | M0 documents lane — Terra · med via Codex CLI | pending (WO-9 stage 2) |
-| Evidence | `archivist-images.md` | M0 images lane — Opus 5 · med, also the video/audio degradation path's landing point | pending (WO-9 stage 2) |
+| Evidence | `scout-anthropic.md` | N0 primary — Haiku 4.5 · off (Luna · low mirror via codex engine) | DEGRADED-ACCEPTED (ex1 superseded, ex2 miscounted exhaustion — see band record) |
+| Evidence | `researcher.md` | N1 primary — Sol · med via Codex CLI (Opus 5 · med mirror, no file yet) | DEGRADED-ACCEPTED (ex1 discarded, ex2 rule-compliant BLOCKED — see band record) |
+| Evidence | `lc-analyst.md` | N2 primary — Terra · med via Codex CLI (Opus 5 · med mirror, no file yet) | PASS |
+| Evidence | `investigator.md` | I0 primary — Opus 5 · high, read-only tool pin (Sol · high mirror / Fable 5 · high ceiling, no files yet) | PASS |
+| Evidence | `archivist-documents.md` | M0 documents lane — Terra · med via Codex CLI | PASS (ex2; ex1 typed BLOCKED honestly — see band record) |
+| Evidence | `archivist-images.md` | M0 images lane — Opus 5 · med, also the video/audio degradation path's landing point | unexercised — see band record |
 
 Exercise records and the review dispositions they produced (assurance band):
 `wo8-review-dispositions.md`. **The tranche's mandatory cross-vendor review

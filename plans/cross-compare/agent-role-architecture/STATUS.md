@@ -353,11 +353,16 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   2 exercised all five seats: Scout (N0, Haiku 4.5 in-harness) and Investigator (I0, Opus
   5 in-harness) both PASS; N1/N2/M0 ran via the `orchestra_exec` codex runner (closest
   existing cross-vendor call — no dedicated research/long-context/extraction runner
-  exists yet). N1's first run (ex1) fabricated citations while its own VERIFICATION
-  admitted the command runner was down — discarded per the charter's fabrication rule;
-  the retry under an integrity addendum correctly returned BLOCKED (honest, evidence for
-  the charter's named failure mode) — provisionally accepted as the exercised order,
-  owner may override. M0's documents-lane ex1 hit the same transient codex sandbox fault
+  exists yet). N1's first run (ex1) returned DONE after completing real, cited web
+  research, but without disclosing that its local shell channel had separately failed, with
+  no retrieval dates, and with local verification duties unrun — a report-integrity/
+  verification-discipline defect, not demonstrated fabrication (corrected in round 2 after
+  R0 review; the original "fabrication"/"live evidence of the charter's named failure mode"
+  framing is withdrawn). Discarded on that narrower ground; the retry, under an integrity
+  addendum, independently corroborated ex1's same three URLs and conclusions (evidence
+  against fabrication) and correctly returned BLOCKED — rule-compliant, conservative typing,
+  not a choice against fabricating — provisionally accepted as the exercised order, owner
+  may override. M0's documents-lane ex1 hit the same transient codex sandbox fault
   (`unsupported protocol version 6`) and typed BLOCKED honestly; ex2 PASS. N2 PASS
   cleanly. M0's images lane ships staffed but unexercised. Follow-ons registered: the
   codex sandbox protocol fault (investigate/upstream), a `verifier/checkout.js:322-327`

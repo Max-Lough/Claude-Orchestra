@@ -163,7 +163,8 @@
         "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "med" }
       },
       "never": ["GPT-5.6 Luna", "Haiku 4.5"],
-      "neverReason": "the corpus is a haystack by definition"
+      "neverReason": "the corpus is a haystack by definition",
+      "$comment": "`never` binds the CASTING (the engine doing the work, e.g. GPT-5.6 Sol) — not a thin OpenAI-launcher file's own `model: haiku` shell, which carries no judgment and is a different actor from the casting it dispatches to"
     },
     "LC Analyst": {
       "class": "N2",

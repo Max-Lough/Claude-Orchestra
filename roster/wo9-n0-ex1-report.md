@@ -1,3 +1,5 @@
+> superseded by wo9-n0-ex2-report.md (round 2)
+
 Seat: Scout (N0) · Casting used: Claude Haiku 4.5 · off (primary rung, in-harness)
 Date: 2026-08-30 · Dispatched in-harness via the Claude Code Agent tool at the charter's
 casting. Order: bounded inventory of `engine:codex` roster files.

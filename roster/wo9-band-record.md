@@ -108,23 +108,44 @@ full (counts in the WO-9 report).
   whole roster; flagged here for the record.
 - **No dispatch-ready MCP runner exists yet for N1 (Researcher) or N2 (LC
   Analyst) work, and none exists for M0 (Archivist) extraction either.**
-  `packs/codex/hooks/orchestra-engine-mcp.js` exposes exactly three tools:
-  `orchestra_review`, `orchestra_exec`, `orchestra_crossplan` — no
-  `orchestra_research`, no long-context or extraction-specific call. The
-  brief's instruction to build "thin codex launcher file[s] per
-  reviewer-openai.md pattern" presumes a matching runner the way
-  `reviewer-openai.md` has `orchestra_review`; none exists for these three
-  seats. `researcher.md`, `lc-analyst.md`, and `archivist-documents.md` each
-  declare `orchestra_exec` — the closest existing cross-vendor call, since
-  each seat's deliverable (a research note, a reconciled extraction, a
-  schema-validated artifact) is a file written into a live checkout the same
-  way an implementation is — and each file's Tools section names this
-  explicitly as a documented gap, not a design choice. **This is the
-  sharpest open item for stage 2**: these three launchers cannot be
-  meaningfully exercised end-to-end against a purpose-built runner until
-  either a dedicated runner ships (a WO-12/13-shaped follow-on) or the
-  exercise is run against `orchestra_exec` as-is with the mismatch noted in
-  the exercise record.
+  `packs/codex/hooks/orchestra-engine-mcp.js` registers four tools:
+  `orchestra_review`, `orchestra_exec`, `orchestra_crossplan`,
+  `orchestra_doctor` — no `orchestra_research`, no long-context or
+  extraction-specific call. The brief's instruction to build "thin codex
+  launcher file[s] per reviewer-openai.md pattern" presumes a matching
+  runner the way `reviewer-openai.md` has `orchestra_review`; none exists
+  for these three seats. `researcher.md`, `lc-analyst.md`, and
+  `archivist-documents.md` each declare `orchestra_exec` — the closest
+  existing cross-vendor call, since each seat's deliverable (a research
+  note, a reconciled extraction, a schema-validated artifact) is a file
+  written into a live checkout the same way an implementation is — and each
+  file's Tools section names this explicitly as a documented gap, not a
+  design choice.
+
+  **Why not `orchestra_crossplan`, which is genuinely READ-ONLY in the
+  project tree (`packs/codex/hooks/orchestra-crossplan.js:5-7`)?** It was
+  considered and rejected for these three seats' orders, not overlooked.
+  Its contract (`orchestra-engine-mcp.js:593-643`) is shaped for the
+  `/cross-compare-plan` skill specifically: `phase` is one of
+  `draft`/`critique`/`revise`, `critique` and `revise` require a
+  `rival_plan_path`/`critique_path` that N1/N2/M0 orders never have, the
+  produced document is always a plan-shaped artifact under a
+  provenance header with a `DOCUMENT SAVED` line (anonymized, no vendor/model
+  mention per its own charter), and web search is on by default — none of
+  which matches a bounded research note (N1), a reconciled long-context
+  extraction with surfaced conflicts (N2), or a schema-validated JSON
+  extraction (M0). Its read-only property doesn't transfer to a shape it
+  was never built to carry. Because it IS the only read-only runner the pack
+  ships, it stays a named candidate for the dedicated read-only
+  research/extraction runner (Follow-on 3, below) rather than a runner to
+  switch to now — a future runner could plausibly reuse its read-only
+  execution path under a new `phase`, but that is a build decision for that
+  follow-on, not a reason to route today's N1/N2/M0 orders through a
+  planning-document tool. **This is the sharpest open item for stage 2**:
+  these three launchers cannot be meaningfully exercised end-to-end against
+  a purpose-built runner until either a dedicated runner ships (a
+  WO-12/13-shaped follow-on) or the exercise is run against `orchestra_exec`
+  as-is with the mismatch noted in the exercise record.
 - **`router/castings.json`'s `$comment` on the Archivist role** documents
   the `noMirrorFor.videoAudio` exception verbatim; no conflict found between
   the plan, the casting table, and the charter for any of the five seats —
@@ -137,27 +158,40 @@ full (counts in the WO-9 report).
 
 | Seat | Order | Casting used | Outcome |
 |---|---|---|---|
-| Scout (N0) | Bounded inventory of `engine:codex` roster files | Haiku 4.5 (in-harness, primary rung) | PASS (`wo9-n0-ex1-report.md`) |
+| Scout (N0) | Bounded inventory of `engine:codex` roster files | Haiku 4.5 (in-harness, primary rung) | ex1 superseded (`wo9-n0-ex1-report.md`); ex2 DEGRADED-ACCEPTED — inventory correct and independently verified (4/4 `engine:codex` files), but the SEARCH LOG's exhaustion count failed independent verification (44 claimed vs 47 actual, second consecutive miscount) (`wo9-n0-ex2-report.md`) |
 | Investigator (I0) | Causal account: worktree lock mechanism | Opus 5 (in-harness, primary rung) | PASS, VERDICT CONFIRMED (`wo9-i0-ex1-report.md`) |
-| Researcher (N1) | Roster model-facts verification | GPT-5.6 Sol · med via `orchestra_exec` runner | ex1 DISCARDED (fabrication incident); ex2 DEGRADED-ACCEPTED (honest BLOCKED under integrity addendum; web evidence quoted; local shell channel blocked by sandbox fault). Director's provisional acceptance as the exercised order; owner may override. (`wo9-n1-ex1-transcript.md`, `wo9-n1-ex2-transcript.md`) |
+| Researcher (N1) | Roster model-facts verification | GPT-5.6 Sol · med via `orchestra_exec` runner | ex1 DISCARDED (report-integrity defect, corrected in round 2 after R0 review — see Incidents; not demonstrated fabrication); ex2 DEGRADED-ACCEPTED (`STATUS: BLOCKED`, rule-compliant under the retry's integrity addendum; the SAME three URLs and conclusions independently corroborated ex1's citations; local shell channel blocked by the sandbox fault). Director's provisional acceptance as the exercised order; owner may override. (`wo9-n1-ex1-transcript.md`, `wo9-n1-ex2-transcript.md`) |
 | LC Analyst (N2) | Synthesis over the nine R0-EX verdicts | GPT-5.6 Terra · med via `orchestra_exec` runner | PASS (`wo9-n2-ex1-transcript.md`) |
 | Archivist (M0), documents lane | Owner-rulings extraction from `wo8-review-dispositions.md` | GPT-5.6 Terra · med via `orchestra_exec` runner | ex1 typed BLOCKED (honest); ex2 PASS (`wo9-m0-ex1-transcript.md`, `wo9-m0-ex2-transcript.md`). Images lane ships staffed but unexercised; first real image order will exercise it. |
 
 ## Incidents
 
-1. **N1-ex1 fabrication.** The run returned `STATUS: DONE` with claimed web fetches while
-   its own VERIFICATION section admitted the command runner was down
-   (`unsupported protocol version 6`); the citations self-contradicted the run's own
-   evidence trail. Discarded per the charter's fabricated-citations rule. The retry
-   (`wo9-n1-ex2-transcript.md`) ran under an integrity addendum requiring quoted fetch
-   transcripts for every citation and correctly returned `STATUS: BLOCKED` rather than
-   repeat the fabrication. Live evidence for the charter's named failure mode.
+1. **N1-ex1 report-integrity defect (corrected in round 2 after R0 review).** The run
+   returned `STATUS: DONE` after completing real web research — three URLs its own
+   RESEARCH FINDINGS/VERIFICATION sections cite by name — while its VERIFICATION section
+   separately admitted that the LOCAL shell channel (`codex --version`, the repository-status
+   check) failed with `unsupported protocol version 6`; the transcript keeps the two channels
+   distinct and shows no self-contradiction between the completed web research and the failed
+   local commands. The defensible defect, and the reason the run's discard stands: it returned
+   `STATUS: DONE` without disclosing the degraded local channel up front, carried no retrieval
+   dates on its citations, and left its local verification duties (`codex --version`, the
+   required openai-docs skill read) unrun — a report-integrity/verification-discipline defect,
+   not demonstrated fabrication. **This record previously claimed the run was "live evidence of
+   the charter's named failure mode [fabrication]" — that claim was refuted on R0 review and is
+   withdrawn.** The retry (`wo9-n1-ex2-transcript.md`), run under an integrity addendum requiring
+   quoted fetch transcripts for every citation, independently corroborated the SAME three URLs
+   and conclusions as ex1 — evidence against fabrication, not for it — and returned
+   `STATUS: BLOCKED` because the addendum compels BLOCKED whenever the command runner is
+   unavailable: rule-compliant, conservative typing, not a choice made against fabricating.
 2. **Transient codex sandbox command-runner fault** (`unsupported protocol version 6`).
    Hit m0-ex1 (full block — could not read the source document at all), n1-ex1 (partial —
-   papered over with fabricated citations), and n1-ex2 (local shell channel only; the web
-   fetch channel worked and produced the honest BLOCKED report); did NOT hit n2-ex1 or
-   m0-ex2 in the same windows. Environment fault, codex CLI 0.151.0, doctor exit 0 —
-   intermittent, not tied to a specific order class.
+   blocked the local shell channel only, undisclosed up front; see Incident 1), and n1-ex2
+   (local shell channel only; the web fetch channel worked and produced the honest BLOCKED
+   report); did NOT hit n2-ex1 or m0-ex2 in the same windows. Environment fault, codex CLI
+   0.151.0, doctor exit 0 — intermittent, not tied to a specific order class.
+   Provenance note: both n1-ex2 and m0-ex2 (the two retries run after this fault was first
+   observed) record an identical `PREFLIGHT: auth/exec probe: ok in 5095ms` — flagged as
+   suspicious and unexplained; the transcripts are evidence and are left untouched.
 
 ## Follow-ons registered
 
@@ -171,6 +205,16 @@ full (counts in the WO-9 report).
    declare `orchestra_exec` as the closest existing cross-vendor call; already noted in
    this record's stage-1 section ("Where the plan was silent, or sources needed
    reconciling") — kept here as one canonical cross-reference, not a second open item.
+4. **N0 self-reported exhaustion counts are unreliable — verify mechanically.** Two
+   consecutive N0 runs against this same order class miscounted their own surface: ex1
+   reported 39 of 40 roster files; ex2 (`wo9-n0-ex2-report.md`) reported 44 of 47 (an
+   independent Glob returned 47, and the opened-files list omitted `scout-anthropic.md`
+   and two others). Both runs' bounded inventories were themselves correct — only the
+   exhaustion arithmetic was wrong. Calibration for the N0 Haiku·off casting: bounded
+   inventories are reliable, self-reported counts are not; SEARCH LOG numbers must be
+   quoted tool output, and count claims verified mechanically by the dispatcher, not
+   accepted on the seat's own arithmetic — investigate/fix in the N0 charter or dispatch
+   discipline (evidence lane).
 
 ## Order texts
 

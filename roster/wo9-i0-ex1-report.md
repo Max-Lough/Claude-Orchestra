@@ -51,3 +51,21 @@ registrations even with the directory gone.
 
 Fixtures cleaned up; repository verified untouched (empty porcelain status, main worktree
 only).
+
+## Phase declaration and execution grant (restored round 2)
+
+The exercise's original output DID carry the mandatory PHASE line; it was dropped in the
+Director's condensation of this report. Restored here verbatim.
+
+PHASE: execution — the causal question is about a timing window in an external tool's state
+machine; no amount of reading `checkout.js` establishes what git does to
+`.git/worktrees/<id>/locked` mid-add. All execution was confined to a throwaway fixture under
+the scratchpad; the repository under examination was read only and is verified clean.
+
+Dispatch-time grant (verbatim from the Conductor's order): "read-only with respect to the
+repository; you may create throwaway fixture repos ONLY under the scratchpad directory ... if
+reproduction needs one. You must not modify anything inside
+C:\Users\maxtl\Projects\Claude-Orchestra."
+
+Note: the grant was issued at dispatch but not recorded in the repo at the time — a process
+gap now closed by recording it here.

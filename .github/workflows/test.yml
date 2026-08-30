@@ -94,6 +94,21 @@ jobs:
         # asserts on settings resolution, the tree audit, and the no-retry law.
         run: node tests/exec-lane.test.js
 
+      - name: Registry suite
+        # WO-4: the class registry, six schemas, and the mechanical ownership
+        # invariant — plus tamper tests proving each corruption fails the
+        # load. (Added alongside the verifier suite; the step was missed when
+        # WO-4 landed.)
+        run: node tests/registry.test.js
+
+      - name: Verifier suite
+        # WO-5: the deterministic Verifier substrate. Builds a fixture
+        # project whose suite cannot run read-only, then proves the
+        # disposable-checkout substrate catches a red suite reported green,
+        # changes claimed against an untouched tree, an invertible test that
+        # stays green, and a broken row-count invariant.
+        run: node tests/verifier.test.js
+
       - name: MCP-lane suite
         # The orchestra-engine MCP server — the typed transport that replaced
         # the launcher shell pipeline. Speaks real JSON-RPC to the server over

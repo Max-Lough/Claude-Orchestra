@@ -262,6 +262,30 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   count immediately caught one prose miscount the ruling introduced — Part 4's preamble
   said "twenty-two active"; the table has 23 active rows — fixed in `final-plan.md`.
   Next: **WO-5** (Verifier substrate; validates artifacts against these schemas).
+- **WO-5 EXECUTED (2026-08-29):** the Verifier substrate lives in `verifier/` at the repo
+  root. The disposable-checkout substrate first, per the order (`checkout.js`: throwaway
+  detached worktree created outside the repository, before/after fingerprint with
+  generated-artifact classification — expected churn is an INTEGRITY NOTE, anything else
+  an INTEGRITY WARNING — guaranteed teardown with a process-exit sweep, and the
+  dispatcher-side guard fingerprinting the *real* tree across the Verifier's own run).
+  Then the deterministic checks (`verifier.js`): manifest execution + exit-code capture
+  (commands, versions, durations, tree identity, declared-never-derived coverage), nonce
+  echo, artifact validation against the WO-4 registry schemas via `schema-check.js` (a
+  dependency-free subset validator that fails closed on unsupported keywords), diff
+  parsing + claimed-changes replay, mutation check (green baseline required), invariant
+  comparison, citation replay emitting verdict-audit-conformant items, both tree audits,
+  and PASS/FAIL/UNAVAILABLE/COVERAGE_GAP aggregation with the deterministic-only-closure
+  gate; every result carries `evidence_not_approval` and model-assist provenance as
+  fields (this core always `used: false`). Proof per the order, on a fixture project
+  whose suite cannot run read-only (it writes `.test-cache/` every run):
+  `tests/verifier.test.js`, 63 checks green — catches a red suite reported green, changes
+  claimed against an untouched tree, an invertible test that stays green (vacuous
+  assertion survives its inversion), and a broken row-count invariant. Two incidental
+  fixes: the CI workflow now runs the registry suite (the step was missed when WO-4
+  landed) and the new verifier suite; the CLI strips UTF-8 BOMs from artifact files
+  (PowerShell's Out-File writes one by default). WO-5 is **gate-class** per the plan's
+  review routing — cross-vendor review before merge. Next: **WO-6** (router, casting
+  tables, review matrix, degradation machine, Q0 triggers).
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -283,19 +307,25 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-08-29, final ruling applied)
 
-1. **WO-5 is the active step — WO-4 is done.** The 2026-08-29 owner-delegated final
-   ruling (see the FINAL RULING bullet above) merged I0/I1, restructured Part 4 around
-   the §4.0 total decision procedure, and demoted class to a routing hypothesis with
-   `RECLASSIFY` recovery; WO-4 then encoded it all in `registry/` (classes.json + six
-   schemas + `load.js` invariant assertion; `node tests/registry.test.js` is the check).
-   B's persisted-generated-output horn and W's values-only horn remain untested until
+1. **WO-6 is the active step — WO-4 and WO-5 are done.** The 2026-08-29 owner-delegated
+   final ruling (see the FINAL RULING bullet above) merged I0/I1, restructured Part 4
+   around the §4.0 total decision procedure, and demoted class to a routing hypothesis
+   with `RECLASSIFY` recovery; WO-4 encoded it all in `registry/` (classes.json + six
+   schemas + `load.js` invariant assertion; `node tests/registry.test.js` is the check);
+   WO-5 built the Verifier substrate in `verifier/` (disposable-checkout substrate +
+   deterministic checks; `node tests/verifier.test.js` is the check, 63 green). WO-5 is
+   gate-class and needs its cross-vendor review pass at PR time. B's
+   persisted-generated-output horn and W's values-only horn remain untested until
    WO-7b synthetics, which now measure misroute recovery (restated 7.2 gate), not
    one-shot agreement.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
-3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → WO-5
-   (Verifier substrate) → WO-6 (router) → WO-7b (synthetics through the router — the
-   remaining routing validation). The P3→P2→P1 deferred backlog
+3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → ~~WO-5
+   (Verifier substrate)~~ → WO-6 (router) → WO-7b (synthetics through the router — the
+   remaining routing validation). Parallelizable now per the plan's dependency line:
+   WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
+   against the `/deep-plan` retirement) and WO-12f (Terra T1 qualification trial, "any
+   time after WO-2"; consumes real allowance). The P3→P2→P1 deferred backlog
    (`plans/proposed-orchestra-improvements.md`) remains schedulable meanwhile — P3
    (verification manifest) is the cheapest and benefits every review immediately.

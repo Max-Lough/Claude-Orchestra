@@ -1,0 +1,88 @@
+{
+  "$comment": "WO-14 alias layer — every retired roster name resolves declaratively to its new (role, rung) pair per final-plan.md §6.6, alongside the legacy identity it carries while the legacy roster is installed. The kill switch is the roster flag: 'legacy' resolves a name to the installed legacy agent unchanged; 'new' resolves it through the WO-6 casting tables. Evaluated PER ORDER (router.resolveSeat opts.roster overrides rosterDefault); rollback is a flag flip, no file changes. Every resolution of a retired name emits a ledger deprecation line. Class alias I1 → I0 lives in registry/classes.json, not here.",
+  "version": "2026-08-30",
+  "source": "plans/cross-compare/agent-role-architecture/final-plan.md — §6.6 transition safety; ORCHESTRA.md §2 for the legacy identities",
+  "rosterDefault": "legacy",
+  "aliases": {
+    "executor": {
+      "new": { "role": "Builder", "rung": "primary" },
+      "legacy": { "agent": "executor", "model": "Sonnet 5" },
+      "deprecation": "executor is retired: routine implementation is Builder (E2); the Luna preferred-bounded lane and Terra mirror replace engine flags"
+    },
+    "executor-heavy": {
+      "new": { "role": "Principal", "rung": "primary" },
+      "legacy": { "agent": "executor-heavy", "model": "Opus 5", "effort": "high" },
+      "deprecation": "executor-heavy is retired: hard-tier authoring is Principal (E3) at the high effort point"
+    },
+    "executor-heavy-xhigh": {
+      "new": { "role": "Principal", "rung": "effortPoint2" },
+      "legacy": { "agent": "executor-heavy-xhigh", "model": "Opus 5", "effort": "xhigh" },
+      "deprecation": "executor-heavy-xhigh is retired as a second definition: it is Principal's routed xhigh effort point, one tier, two effort points"
+    },
+    "executor-codex": {
+      "new": { "role": "Builder", "rung": "mirror" },
+      "legacy": { "agent": "executor-codex", "model": "GPT-5.6 Terra" },
+      "deprecation": "executor-codex is retired as a role: it is Builder's Terra mirror casting; executorEngine fallback logic is removed"
+    },
+    "executor-codex-heavy": {
+      "new": { "role": "Principal", "rung": "mirror" },
+      "legacy": { "agent": "executor-codex-heavy", "model": "GPT-5.6 Sol", "effort": "high" },
+      "deprecation": "executor-codex-heavy is retired as a role: it is Principal's Sol mirror casting"
+    },
+    "reviewer": {
+      "new": { "role": "Reviewer", "computed": true },
+      "legacy": { "agent": "reviewer", "model": "Opus 5" },
+      "deprecation": "reviewer is no longer a fixed Opus seat: R0's casting is computed from the recorded author/co-author family set — use reviewer(), never a static casting"
+    },
+    "reviewer-codex": {
+      "new": { "role": "Reviewer", "computed": true, "laneNote": "the OpenAI casting of the computed Reviewer (Sol · high at mandatory class)" },
+      "legacy": { "agent": "reviewer-codex", "model": "GPT-5.6 Sol" },
+      "deprecation": "reviewer-codex is retired as a role: it is the OpenAI lane of the computed Reviewer matrix"
+    },
+    "scout": {
+      "new": { "role": "Scout", "rung": "primary" },
+      "legacy": { "agent": "scout", "model": "Haiku 4.5" },
+      "deprecation": "scout keeps its seat, re-contracted: N0 only — external research is N1, long-context reconciliation N2, media intake M0"
+    },
+    "detective": {
+      "new": { "role": "Investigator", "rung": "primary", "pin": "read-only" },
+      "legacy": { "agent": "detective", "model": "Opus 5" },
+      "deprecation": "detective is merged into the Investigator (I0, 2026-08-29 ruling): the read-only law survives as the read-only-first law plus this alias's read-only tool pin"
+    },
+    "modeler": {
+      "new": { "role": "Spatial Specialist", "rung": "primary" },
+      "legacy": { "agent": "modeler", "model": "Sonnet 5", "specialist": true },
+      "deprecation": "modeler is promoted: spatial/procedural work is the first-class Spatial Specialist (E6, Opus 5 · high); specialists remain for project-specific domains only"
+    },
+    "architect-claude": {
+      "new": { "role": "Architect", "rung": "nebulous" },
+      "legacy": { "agent": "architect-claude", "model": "Fable 5" },
+      "deprecation": "architect-claude is retired as a role: it is the Architect's Anthropic casting (Fable, nebulous/ambiguous goals)"
+    },
+    "architect-claude-xhigh": {
+      "new": { "role": "Architect", "rung": "ceilingAnthropic" },
+      "legacy": { "agent": "architect-claude-xhigh", "model": "Fable 5", "effort": "xhigh" },
+      "deprecation": "architect-claude-xhigh is retired: it is the Architect's Anthropic ceiling casting (comparative sessions)"
+    },
+    "architect-claude-max": {
+      "new": { "role": "Architect", "rung": "ceilingAnthropic" },
+      "legacy": { "agent": "architect-claude-max", "model": "Fable 5", "effort": "max" },
+      "deprecation": "architect-claude-max is retired: the Anthropic ceiling is Fable · xhigh (comparative sessions); the max point does not survive into the new roster"
+    },
+    "architect-codex": {
+      "new": { "role": "Architect", "rung": "primary" },
+      "legacy": { "agent": "architect-codex", "model": "GPT-5.6 Sol" },
+      "deprecation": "architect-codex is retired as a role: it is the Architect's Sol casting — the default primary under the 2026-08-28 owner re-cast"
+    },
+    "planner-gpt": {
+      "new": { "role": "Architect", "rung": "primary" },
+      "legacy": { "agent": "planner-gpt", "model": "GPT-5.6 Sol", "transport": "metered API — the lane WO-13 migrates" },
+      "deprecation": "planner-gpt is retired: §6.6 wrote it as Architect(mirror) before the same-day Sol-default re-cast made the GPT lane the primary; operatively it is the Architect's Sol casting, and its metered API transport is replaced by the subscription Codex CLI (WO-13) or reported unavailable"
+    },
+    "plan-synthesizer": {
+      "new": { "role": "Synthesizer", "rung": "primary" },
+      "legacy": { "agent": "plan-synthesizer", "model": "Opus 5" },
+      "deprecation": "plan-synthesizer keeps its charter as the Synthesizer (A1); the blind-merge anonymity law carries over unchanged"
+    }
+  }
+}

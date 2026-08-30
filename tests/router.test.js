@@ -520,4 +520,53 @@ check('an alias in recommended_class resolves before re-dispatch',
     return r.dispatch.class === 'I0' && r.dispatch.role === 'Investigator';
   })());
 
+// -------------------------- 12. WO-14 alias layer and roster kill switch
+section('12. WO-14: alias layer and the roster kill switch');
+
+{
+  const qc = buckets({ 'AU-opus': { state: 'Green', quartermasterConfirmation: true } });
+  const legacyEx = router.resolveSeat('executor', { roster: 'legacy' });
+  const newEx = router.resolveSeat('executor', { roster: 'new', buckets: qc });
+  check('an order written against "executor" dispatches correctly under BOTH flag values',
+    legacyEx.target.kind === 'legacy-agent' && legacyEx.target.agent === 'executor' && legacyEx.target.model === 'Sonnet 5' &&
+    newEx.target.kind === 'new-roster' && newEx.target.role === 'Builder' && newEx.target.cast.ok && newEx.target.cast.casting.model === 'Sonnet 5');
+  check('the flip is per-order, mid-session: same router, alternating flags, no reload',
+    router.resolveSeat('executor-heavy', { roster: 'new', buckets: qc }).target.role === 'Principal' &&
+    router.resolveSeat('executor-heavy', { roster: 'legacy' }).target.agent === 'executor-heavy' &&
+    router.resolveSeat('executor-heavy', { roster: 'new', buckets: qc }).target.cast.casting.effort === 'high');
+  check('executor-heavy-xhigh maps to Principal’s routed xhigh effort point, not a second seat',
+    (() => { const r = router.resolveSeat('executor-heavy-xhigh', { roster: 'new', buckets: qc }); return r.target.rung === 'effortPoint2' && r.target.cast.casting.effort === 'xhigh'; })());
+  check('detective maps to the merged Investigator with the read-only pin carried',
+    (() => { const r = router.resolveSeat('detective', { roster: 'new', buckets: qc }); return r.target.role === 'Investigator' && r.target.pin === 'read-only' && r.target.cast.casting.model === 'Opus 5'; })());
+  check('reviewer and reviewer-codex resolve to the COMPUTED Reviewer, never a static casting',
+    router.resolveSeat('reviewer', { roster: 'new' }).target.kind === 'computed-reviewer' &&
+    router.resolveSeat('reviewer-codex', { roster: 'new' }).target.kind === 'computed-reviewer');
+  check('codex executors become mirror castings (Builder Terra, Principal Sol)',
+    router.resolveSeat('executor-codex', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Terra' &&
+    router.resolveSeat('executor-codex-heavy', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Sol');
+  check('modeler is promoted to the Spatial Specialist (Opus 5 · high)',
+    router.resolveSeat('modeler', { roster: 'new', buckets: qc }).target.cast.casting.model === 'Opus 5');
+  check('every retired-name resolution emits a ledger deprecation line, under both flags',
+    /DEPRECATED "executor"/.test(legacyEx.ledger) && /DEPRECATED "executor"/.test(newEx.ledger) &&
+    Object.keys(router.aliases.aliases).every((n) => {
+      const l = router.resolveSeat(n, { roster: 'legacy' });
+      return typeof l.ledger === 'string' && l.ledger.includes(n);
+    }));
+  check('the roster default comes from the alias map when the order carries no flag (kill-switch home position: legacy)',
+    router.aliases.rosterDefault === 'legacy' && router.resolveSeat('scout', {}).target.kind === 'legacy-agent');
+  check('a current role name passes through un-aliased; an unknown name is an error, not a guess',
+    router.resolveSeat('Builder', { roster: 'new' }).alias === false &&
+    typeof router.resolveSeat('warlock', {}).error === 'string');
+  // Tamper: an alias naming a rung its role does not have must fail the load.
+  const aliasesRaw = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'aliases.json'), 'utf8'));
+  aliasesRaw.aliases.executor.new.rung = 'turbo';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-alias-'));
+  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'aliases.json');
+  fs.writeFileSync(file, JSON.stringify(aliasesRaw), 'utf8');
+  let threw = null;
+  try { createRouter({ aliasesFile: file }); } catch (e) { threw = e; }
+  check('a tampered alias map (rung the role lacks) fails the load closed', !!threw && /does not have/.test(threw.message));
+}
+
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

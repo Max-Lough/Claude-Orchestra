@@ -330,6 +330,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   provenance, not organic ambiguity). Full record: `wo7b/wo7b-report.md`. The restated
   7.2 routing gate is validated; live P95 telemetry continues during shadow (WO-15).
   Next: **WO-8–11** (staff the bands), with WO-13/WO-14/WO-12f parallelizable.
+- **WO-14 EXECUTED (2026-08-30):** the alias layer and roster kill switch, in
+  `router/aliases.json` + `router.resolveSeat()`. Every §6.6 retired name resolves
+  declaratively to its new (role, rung) pair AND carries its legacy identity; the
+  `roster: legacy | new` flag is evaluated per order (opts override; declarative default
+  `legacy` — the kill-switch home position), so rollback is a flag flip with no reload.
+  Proof per the order, in `tests/router.test.js` §12 (93 total green): an order written
+  against `executor` dispatches correctly under both flag values; the flip demonstrated
+  mid-session on one router instance; `executor-heavy-xhigh` lands on Principal's routed
+  xhigh effort point (not a second seat); `detective` lands on the merged Investigator
+  with the read-only pin carried; `reviewer`/`reviewer-codex` resolve to the computed
+  Reviewer (never a static casting); every retired-name resolution emits its ledger
+  deprecation line under both flags; a tampered alias map fails the load closed. One
+  judgment call recorded in the file: §6.6 wrote `planner-gpt → Architect(mirror)` before
+  the same-day Sol-default re-cast — operatively it maps to the Architect's Sol casting,
+  with WO-13 owning its transport migration.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

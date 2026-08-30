@@ -199,6 +199,31 @@ function createRouter(opts) {
     }
   }
 
+  // ---- WO-14 alias layer (§6.6: alias layer before any rename) -----------
+  let seatAliases;
+  try {
+    seatAliases = JSON.parse(fs.readFileSync(options.aliasesFile || path.join(path.dirname(castingsFile), 'aliases.json'), 'utf8'));
+  } catch (e) {
+    fail('aliases.json unreadable or unparseable: ' + e.message);
+  }
+  if (seatAliases) {
+    if (!['legacy', 'new'].includes(seatAliases.rosterDefault)) {
+      fail('aliases rosterDefault must be legacy or new; got ' + JSON.stringify(seatAliases.rosterDefault));
+    }
+    for (const [name, a] of Object.entries(seatAliases.aliases || {})) {
+      if (!a.deprecation) fail('alias ' + name + ' has no deprecation line');
+      if (!a.legacy || !a.legacy.agent || !a.legacy.model) fail('alias ' + name + ' has no legacy identity');
+      else if (!familyOf(a.legacy.model)) fail('alias ' + name + ' legacy model unknown: ' + a.legacy.model);
+      const n = a.new || {};
+      if (!n.role || !roles[n.role]) fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
+      else if (!n.computed && (!n.rung || !(roles[n.role].rungs || {})[n.rung])) {
+        fail('alias ' + name + ' names rung ' + JSON.stringify(n.rung) + ' that ' + n.role + ' does not have');
+      } else if (n.computed && !roles[n.role].computed) {
+        fail('alias ' + name + ' claims a computed casting but ' + n.role + ' is not computed');
+      }
+    }
+  }
+
   if (problems.length > 0) {
     throw new Error('router refused: casting tables invalid (' + problems.length + ' violation(s)):\n  - ' + problems.join('\n  - '));
   }
@@ -638,6 +663,36 @@ function createRouter(opts) {
     return { escalated: false, hop, ledger: ledgerEntry, order: newOrder, dispatch: dispatch(newOrder, buckets, dispatchOpts) };
   }
 
+  // ---- resolveSeat: the WO-14 kill switch, evaluated per order -----------
+  // A name written against the OLD roster resolves under whichever roster
+  // flag the order carries: 'legacy' → the installed legacy agent identity,
+  // unchanged; 'new' → the (role, rung) pair from the casting tables, cast
+  // through the degradation machine. Either way a retired name emits its
+  // ledger deprecation line. Rollback is a flag flip — same router, no
+  // reload, demonstrated per-call.
+  function resolveSeat(name, seatOpts) {
+    const o = seatOpts || {};
+    const roster = o.roster || seatAliases.rosterDefault;
+    if (!['legacy', 'new'].includes(roster)) throw new Error('unknown roster flag: ' + JSON.stringify(roster));
+    const a = (seatAliases.aliases || {})[name];
+    if (!a) {
+      if (roles[name]) return { roster, alias: false, target: { kind: 'role', role: name } };
+      return { roster, alias: false, error: 'unknown seat name: ' + JSON.stringify(name) };
+    }
+    const ledger = 'DEPRECATED "' + name + '" (roster: ' + roster + ') — ' + a.deprecation;
+    if (roster === 'legacy') {
+      return { roster, alias: true, ledger, target: Object.assign({ kind: 'legacy-agent' }, a.legacy) };
+    }
+    if (a.new.computed) {
+      return { roster, alias: true, ledger, target: { kind: 'computed-reviewer', role: a.new.role, laneNote: a.new.laneNote } };
+    }
+    const c = cast(a.new.role, o.buckets || allGreen(), Object.assign({ rung: a.new.rung, purpose: o.purpose }, o.castOpts));
+    return {
+      roster, alias: true, ledger,
+      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung, pin: a.new.pin || null, cast: c },
+    };
+  }
+
   function allGreen() {
     const out = {};
     for (const b of castings.buckets) out[b] = 'Green';
@@ -645,7 +700,7 @@ function createRouter(opts) {
   }
 
   return {
-    registry, castings, charters, problems: [],
+    registry, castings, charters, aliases: seatAliases, resolveSeat, problems: [],
     route, resolveClass, cast, reviewer, reviewPolicy, dispatch, processReclassify,
     poolState: (r) => poolState(r, ladderCfg),
     preDispatchGate, q0Required, createQ0Order,

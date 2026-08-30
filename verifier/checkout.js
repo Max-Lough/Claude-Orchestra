@@ -247,8 +247,17 @@ function installExitHandler() {
 // its own leftovers by it and touches nothing else.
 const PARENT_PREFIX = 'orchestra-verifier-';
 
+// Path identity, not string identity: git records RESOLVED worktree paths,
+// while our handles may be spelled through a symlink (macOS /var →
+// /private/var) or an 8.3 short path (Windows CI's RUNNER~1 tmpdir). A
+// lexical compare misses, the live-set exemption fails, and the sweep
+// deletes a LIVE checkout mid-verification (observed on macOS+Windows CI;
+// ubuntu and long-named local users pass by accident). Resolve for real
+// when the path exists; fall back to lexical for paths already gone.
 function normPath(p) {
-  const r = path.resolve(String(p)).replace(/\\/g, '/');
+  let r = String(p);
+  try { r = fs.realpathSync.native ? fs.realpathSync.native(r) : fs.realpathSync(r); } catch (_) { /* not on disk — lexical */ }
+  r = path.resolve(r).replace(/\\/g, '/');
   return process.platform === 'win32' ? r.toLowerCase() : r;
 }
 

@@ -609,6 +609,31 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
     'legit worktree damaged');
   co3.teardown();
   git(fixture.dir, ['worktree', 'remove', '--force', legitWt]);
+
+  // The macOS/Windows CI incident, pinned: git records RESOLVED worktree
+  // paths while a live checkout's handle may be spelled through a symlink
+  // (macOS /var → /private/var) or an 8.3 short path (RUNNER~1). A lexical
+  // live-set compare misses and the sweep deletes the LIVE checkout mid-
+  // verification. Reproduce the class with an aliased tmp root.
+  const realTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-alias-target-'));
+  const aliasLink = path.join(os.tmpdir(), 'orchestra-alias-link-' + process.pid);
+  let aliased = true;
+  try {
+    fs.symlinkSync(realTmp, aliasLink, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (_) { aliased = false; }
+  cleanups.push(() => { try { fs.rmSync(aliasLink, { recursive: true, force: true }); } catch (_) { /* gone */ } });
+  cleanups.push(() => fs.rmSync(realTmp, { recursive: true, force: true }));
+  if (aliased) {
+    const liveViaAlias = checkoutLib.createCheckout(fixture.dir, fixture.base, { tmpRoot: aliasLink });
+    const trigger = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep must NOT kill liveViaAlias
+    check('CI: the live-checkout exemption compares REAL paths — an aliased tmp root does not orphan a live checkout to the sweep',
+      !liveViaAlias.error && !trigger.error && fs.existsSync(liveViaAlias.dir),
+      (liveViaAlias.error || trigger.error || 'live checkout deleted by the sweep'));
+    trigger.teardown();
+    liveViaAlias.teardown();
+  } else {
+    check('CI: real-path live-set regression [skipped: cannot create links here]', true);
+  }
 }
 
 section('13. The mutation check is wired into the integrated round and the CLI');

@@ -384,3 +384,50 @@ Revised owner action: `codex update` (the CLI offers it; verified present on
 was live during this addendum. The swapped files are left in place (both
 candidate helpers fault identically; a reinstall overwrites this directory
 anyway); the `.bak-0147era` backups preserve the original state.
+
+---
+
+## Addendum 2 (2026-08-31, evening) — FAULT CLEARED by the 0.152.0-alpha.7 runner
+
+The owner ran `codex update` with no other codex session live. It installed
+nothing: 0.151.0 is still the latest stable on npm (`npm view @openai/codex
+version` → 0.151.0; 0.152.0 exists only as alphas, `-alpha.7` published
+2026-08-31), so the update correctly reported nothing newer — and since the
+stale helper is a packaging defect *inside* the 0.151.0 release, no
+update/reinstall of 0.151.0 can repair it. A live re-probe (same protocol:
+orchestra-exec, gpt-5.6-luna low, `--cd` fresh scratch git dir, one forced
+read-only shell command) confirmed the identical v6 fault persisted
+post-update (nonce `79883e019824345d`).
+
+**The untested flag lead from §7 is now REFUTED.** Probe with
+`ORCHESTRA_EXEC_ARGS="-c experimental_use_unified_exec_tool=false"` (the
+binary's actual key spelling, found by a strings scan): codex's own stderr
+printed *"deprecated: `[features].experimental_use_unified_exec_tool` is
+deprecated. Use `[features].unified_exec` instead"* — every spelling
+collapses onto `features.unified_exec`, already refuted 3/3 — and the probe
+faulted identically (nonce `d989de3418e2f09e`). The same transcript shows a
+plain `powershell.exe -Command Get-ChildItem` exec routed through
+"unified exec process" creation, so on 0.151.0 the runner sits under the
+ordinary exec path too; no flag routes around it.
+
+**The repair that worked:** `codex-command-runner.exe` extracted from the
+npm tarball `@openai/codex@0.152.0-alpha.7-win32-x64` (published
+2026-08-31; `vendor\x86_64-pc-windows-msvc\codex-resources\`), 8,197,424
+bytes, sha256 `f0cbcc339587…` — distinct from both the stale `3a70491d…`
+and the refuted `8e47f597…`. Staged as
+`scratchpad\alpha-runner\apply-runner-swap.ps1` (the write into `.codex`
+is owner-scope; the session's classifier blocked the direct copy, matching
+this file's original scope note); the owner ran it, swapping the runner
+into both `releases\0.151.0…\bin\` and `releases\0.151.0…\codex-resources\`
+with backups (`.bak-8e47f597`, `.bak-0147era`). Re-probe (nonce
+`6ce1ec298f174b72`): **the engine spawned the shell, `Get-ChildItem` ran,
+real output returned, no protocol error** — the first clean shell spawn on
+this fault path since WO-9. (The probe's outer `EXEC_UNAVAILABLE` is a
+probe-order artifact: the order told the engine to put command output in
+its CHANGES section, which the runner's no-edits audit correctly flags;
+the engine-level report is STATUS: DONE.)
+
+Conclusion: the 0.152.0-alpha.7 runner speaks spawn protocol v6; the fault
+is **CLEARED**. Standing state: 0.151.0 CLI + alpha.7 helper. When 0.152.0
+stable ships, a plain `codex update` supersedes this swap wholesale.
+Backups preserve every prior state.

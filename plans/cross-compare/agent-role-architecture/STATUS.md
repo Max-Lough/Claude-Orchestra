@@ -765,12 +765,19 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   per xiv, in `corpus/BLIND-TEST-round8.md`); `run-lane.js --lane X-Sol --phase 0
   --dry-run` clean end-to-end. Human-facing reads across generations: 41.7% → 33%
   → 25%, all at or below chance. Nothing further is permitted on WO-12 pre-trial
-  work without a new owner order. **The trial waits on exactly two owner actions:
-  (1) `codex update` (or reinstall) run while no other codex session is live — the
-  staged helper swap was executed and REFUTED the same day (the 8e47f597 runner is
-  the 0.150.0-alpha.8 helper, older than 0.151.0; it faults identically; no runner
-  on disk speaks spawn protocol v6 — addendum in
-  `roster/wo11-codex-fault-investigation-2026-08-31.md`); (2) record the four P0 readings
+  work without a new owner order. **The codex fault is CLEARED (2026-08-31 evening,
+  addendum 2 in `roster/wo11-codex-fault-investigation-2026-08-31.md`):** `codex
+  update` was a no-op (0.151.0 is still latest stable; the defect is inside the
+  0.151.0 package itself) and the last flag lead was refuted (every spelling
+  collapses to `features.unified_exec`, refuted 3/3; on 0.151.0 the runner sits
+  under the plain exec path too, so no flag routes around it). The repair: the
+  `codex-command-runner.exe` from npm `@openai/codex@0.152.0-alpha.7-win32-x64`
+  (published 2026-08-31; sha256 `f0cbcc339587…`), owner-swapped into both helper
+  locations with backups; the re-probe spawned a shell cleanly (nonce
+  `6ce1ec298f174b72`) — the first clean spawn on this path since WO-9. Standing
+  state: 0.151.0 CLI + alpha.7 helper; a future `codex update` to 0.152.0 stable
+  supersedes the swap wholesale. **The trial now waits on ONE owner action:
+  record the four P0 readings
   (`node quartermaster/quartermaster.js --record <AU-all|AU-opus|AU-fable|OU>
   <remaining-fraction> --source "..."`). Then: phase-0 pilot with `--yes`, the
   in-harness 12d arms, and the owed E8/E1/A0 exercises.**
@@ -796,10 +803,11 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 ## Fresh-session quick start (as of 2026-08-31, WO-12 in progress)
 
 0. **Read the three 2026-08-31 entries above first** (WO-13 disposed; codex fault
-   root-caused — owner repairs the helper; WO-12 protocol + corpora built, no pass
-   run). The two owner actions that gate everything downstream: record `/status`
-   readings per bucket (`node quartermaster/quartermaster.js --record …`, once per
-   24h) and repair the codex command-runner helper. Then: WO-12 phase-0 pilot
+   root-caused AND CLEARED — alpha.7 runner swap, addendum 2; WO-12 protocol +
+   corpora built, no pass run). The one owner action that gates everything
+   downstream: record `/status` readings per bucket
+   (`node quartermaster/quartermaster.js --record …`, once per
+   24h). Then: WO-12 phase-0 pilot
    (`node wo12/run-lane.js --lane X-Sol --phase 0 --dry-run` first), the owed
    E8/E1/A0 exercises (orders in the band-record appendices), and the exercise-debt
    ledger in `roster/wo11-band-record.md`.

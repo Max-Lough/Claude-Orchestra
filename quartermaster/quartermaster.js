@@ -51,8 +51,13 @@
  *
  * `bucketState()` returns EXACTLY the router's `normalizeBuckets` input
  * (router/router.js:297-318) — all four buckets, own properties, each
- * `{state:{remainingFraction, reserveBreached?, throttleObserved?, exhausted?},
- * belowReserve, quartermasterConfirmation?}`. The router owns the ladder and
+ * `{state:{remainingFraction, stale?, ageMs?, reserveBreached?, throttleObserved?, exhausted?},
+ * belowReserve, quartermasterConfirmation?}`. `stale`/`ageMs` (round 3, WO-11
+ * Sol·max holistic review) are present whenever the reading is inside
+ * maxFreshMs < age ≤ maxStaleMs — on the PUBLISHED state object itself, not
+ * only in the human report, so a snapshot consumer or dispatcher sees the
+ * disclosure too; router.js's normalizeBuckets/poolState ignore unrecognized
+ * keys, so this is additive. The router owns the ladder and
  * the reserve formula; this file owns the EVIDENCE. `requiredReserve` is
  * imported from the router rather than reimplemented, so the reserve
  * arithmetic can never drift between the seat that computes it and the gate
@@ -95,12 +100,23 @@ const LIVENESS = castings.liveness;
 const KINDS = ['reading', 'throttle', 'confirmation'];
 const SEVERITIES = ['soft', 'hard'];
 
-// Ruling R3 (Director-set operational values; the plan sets no window):
-//   fresh  ≤ 24h — a reading of a rolling weekly allowance is still decision-grade a day later
-//   stale  ≤ 7d  — usable but DISCLOSED; one weekly window is the outer bound of meaning
-//   older        — refused; a reading older than the window it describes is not evidence
+// Ruling R3 (Director-set operational values; the plan sets no window).
+// REVISED round 3 (WO-11, after the owner-requested Sol·max holistic review):
+// the original 7d maxStaleMs is STRUCK — a weekly window moves ~15-20%/day
+// under load, so a week-old reading is obsolete, not evidence; a 48h window
+// replaces it. Confirmations, and any gate-lifting, already require FRESH
+// (≤24h, maxFreshMs) evidence per the round-2 R5 fix (analyze() re-validates
+// against LIVE evidence every call) — R3's window only governs whether a
+// stale-but-usable reading may still be PUBLISHED, disclosed, never a gate
+// grant.
+//   fresh  ≤ 24h        — a reading of a rolling weekly allowance is still decision-grade a day later
+//   ~~stale ≤ 7d~~ (round-1 text, struck round 3 — see above)
+//   stale  ≤ 48h        — usable but DISCLOSED on the PUBLISHED reading object itself
+//                          (`stale: true, ageMs`), so the router/dispatcher sees it too,
+//                          not merely the human report
+//   older                — refused; a reading older than the window it describes is not evidence
 const DEFAULT_MAX_FRESH_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_MAX_STALE_MS = 48 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Ruling R4 — the default review-draw forecast, derived from castings.json.
@@ -526,6 +542,18 @@ function analyze(opts) {
     const exhausted = remainingFraction <= 0 || info.hardThrottleFresh;
 
     const state = { remainingFraction };
+    // Round 3 (Sol·max holistic review, MAJOR B): staleness must ride on the
+    // PUBLISHED reading object itself, not just the human report / analysis
+    // metadata (info.stale, above) — otherwise a stale-but-usable reading
+    // reaches the router/snapshot indistinguishable from a fresh one.
+    // router.js's normalizeBuckets/poolState (router/router.js:53-70,
+    // 297-318) read only state.remainingFraction/reserveBreached/
+    // throttleObserved/exhausted and ignore unrecognized keys, so adding
+    // stale/ageMs here is additive and does not perturb routing.
+    if (info.stale) {
+      state.stale = true;
+      state.ageMs = info.ageMs;
+    }
     if (belowReserve) state.reserveBreached = true;
     if (throttleObserved) state.throttleObserved = true;
     if (exhausted) state.exhausted = true;

@@ -203,18 +203,39 @@ section('3. Fail-closed: absent, too stale, malformed-latest');
   check('the stale refusal invents no burn rate', /no burn rate is invented/.test(e.message));
 }
 {
-  // Stale but inside the 7d window: USED AS-IS and DISCLOSED, never discounted.
+  // R3 revised round 3 (Sol·max holistic review, MAJOR B): 24h fresh / 48h
+  // usable (struck-through 7d text preserved in README.md). 47h is stale but
+  // inside the 48h window: USED AS-IS and DISCLOSED, never discounted — and
+  // now disclosed on the PUBLISHED READING OBJECT ITSELF (state.stale /
+  // state.ageMs), the same object router.js's normalizeBuckets consumes, not
+  // only the analysis/report metadata.
   const f = newFile();
   for (const b of qm.BUCKETS) {
-    qm.recordReading(b, 0.62, 'vendor UI', undefined, { file: f, now: b === 'OU' ? ago(72) : ago(3) });
+    qm.recordReading(b, 0.62, 'vendor UI', undefined, { file: f, now: b === 'OU' ? ago(47) : ago(3) });
   }
   const st = qm.bucketState({ file: f, now: NOW, forecast: FC0 });
-  check('a 3-day-old reading is still published — at its recorded value, undiscounted',
+  check('a 47h-old reading is still published — at its recorded value, undiscounted',
     st.OU.state.remainingFraction === 0.62);
+  check('…and the PUBLISHED reading object itself carries stale:true + ageMs (round 3)',
+    st.OU.state.stale === true && typeof st.OU.state.ageMs === 'number' && st.OU.state.ageMs > 0);
+  check('a fresh bucket\'s published object carries no stale/ageMs keys at all',
+    !('stale' in st['AU-all'].state) && !('ageMs' in st['AU-all'].state));
+  check('the published stale/ageMs keys pass through router.normalizeBuckets harmlessly (unknown keys ignored)',
+    (() => { const nb = router.normalizeBuckets(st); return nb.OU && typeof nb.OU.state === 'string'; })());
   const d = qm.bucketStateDetail({ file: f, now: NOW, forecast: FC0 });
   check('…and the accompanying report marks it stale: true', d.analysis.buckets.OU.stale === true);
   check('a fresh bucket is not marked stale', d.analysis.buckets['AU-all'].stale === false);
   check('the report text discloses staleness in words', /STALE \(disclosed, not discounted\)/.test(qm.report({ file: f, now: NOW, forecast: FC0 })));
+}
+{
+  // 49h old — past the revised 48h maxStaleMs default (round 3) — REFUSED.
+  const f = newFile();
+  for (const b of qm.BUCKETS) {
+    qm.recordReading(b, 0.62, 'vendor UI', undefined, { file: f, now: b === 'OU' ? ago(49) : ago(3) });
+  }
+  const e = threw(() => qm.bucketState({ file: f, now: NOW, forecast: FC0 }));
+  check('a 49h-old reading is refused under the revised 48h default maxStaleMs (round 3)',
+    e !== null && e.failClosed === true && /OU/.test(e.message) && /2\.0d old/.test(e.message));
 }
 {
   // A malformed line in the LATEST position for a bucket is fatal, by line number.
@@ -838,7 +859,7 @@ section('16. MINOR (round 2) — predictThrottle staleness refusal and RangeErro
   qm.recordReading('AU-all', 0.90, 'vendor UI', undefined, { file: f, now: new Date(NOW.getTime() - 40 * 24 * H) });
   qm.recordReading('AU-all', 0.50, 'vendor UI', undefined, { file: f, now: new Date(NOW.getTime() - 30 * 24 * H) });
   const p = qm.predictThrottle('AU-all', { file: f, now: NOW });
-  check('predictThrottle refuses when the latest reading is older than maxStaleMs (30d old > 7d default)',
+  check('predictThrottle refuses when the latest reading is older than maxStaleMs (30d old > 48h default, round 3)',
     p.ok === false && /too stale to be evidence/.test(p.reason));
 
   // 1e-12 decline vector: an extremely slow decline puts every crossing time

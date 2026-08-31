@@ -10,9 +10,9 @@ round. All nine Part 2.0 fields transcribed faithfully from
 full — named explicitly here rather than left as a dangling "(counts below)"
 with no table to land in: `tests/router.test.js` (135), `tests/registry.test.js`
 (31), `tests/review-lane.test.js` (116), `tests/verifier.test.js` (101),
-`tests/frontmatter-lint.test.js` (37), and `tests/quartermaster.test.js` (187
-as of the round-2 review fixes; 154 at this band's own build — see the
-Exercises row below). Reconciled against
+`tests/frontmatter-lint.test.js` (37), and `tests/quartermaster.test.js` (191
+as of the round-3 R3 test additions; 187 as of the round-2 review fixes; 154
+at this band's own build — see the Exercises row below). Reconciled against
 `plans/cross-compare/agent-role-architecture/STATUS.md`'s WO-11 entry, which
 this round corrects from "seven" to the same six (round-2 MINOR fix).
 
@@ -180,7 +180,7 @@ terms below rather than forced into one uniform table.
 | Conductor (O0) | Fresh-context retrospective discipline audit of the Conductor's own conduct across the 2026-08-30/31 session (WO-9/WO-10/WO-11 execution on this branch), dispatched to an agent carrying no prior session context, checked against `roster/conductor.md` as shipped and the plan text it transcribes | Claude Opus 5 (fresh-context dispatched auditor, no prior context) | **EXERCISED.** VERDICT: **1 VIOLATION** — the session used Glob/Bash directly (independent mechanical verification of dispatched-seat claims, and one file-count check), on at least four exercises across two work orders, narrated in the session's own first person; corrective adopted (see Conductor audit dispositions below). **2 COMPLIANT** — author≠approve (every closing verdict in both review chains is attributed to an R0 review, never to the Conductor, and the Conductor's own content inside reviewed diffs was corrected/overturned under review like anyone else's); restricted decisions (no T3 without a named human; every REVISE was obeyed, no Anthropic verdict overridden). **2 INDETERMINATE** — plan-authoring above the size threshold (the threshold is defined nowhere in the repository, so the routing rule is unenforceable and unauditable as written); disclosure duties (no rung was ever computed this session, since P0 did not exist until this same round, so §5.5's rung-change announcement duty never triggered — no unmet duty is shown, but the audit cannot rule out an undisclosed degradation state either). See `roster/wo11-conductor-ex1-audit.md` for the full five-question audit, its verbatim charter citations, and six named findings/gaps (F-1, G-1..G-5). |
 | Architect (A0) | Class A0 planning order, T0, plan-only: design the extension of the `orchestra-telemetry.js` hook so its ledger records what P0 allowance accounting needs (role/seat, vendor, model, effort, bucket(s), tokens, remaining-allowance signal), stating precisely what the hook's own stdin parsing can evidence vs. what needs an external contract, forbidding fabricated stdin fields and forbidding a padded two-file-fix plan — deliver `plan-telemetry-extension.md`. Full order text in the appendix below | GPT-5.6 Sol · xhigh, via `orchestra-exec` (Codex CLI launcher) | **BLOCKED-PENDING-ENVIRONMENT.** 2 attempts (initial + one bounded retry, both engine-reaching — preflight auth/exec probe ok both times), both hit the standing `unsupported protocol version 6` sandbox fault at the identical point: `Get-Content -Raw reference\orchestra-telemetry.js` failed repeatedly before any read succeeded, before the model reached the reference source it needed to plan against. Neither attempt fabricated a single claim about the hook's fields or wrote a guessed plan — both returned honest `STATUS: BLOCKED` with `CHANGES: none`, a tree audit confirming no source paths changed, and a `CONCERNS` line naming the actual proximate cause; the order's own forbid-fabrication clause held under a broken toolchain rather than being tested against a working one. Report-format discipline (verbatim runner relay, no invented architecture) was the one thing still checkable from a BLOCKED transcript, and it held on both attempts. No competency signal on GPT-5.6 Sol at this mission was obtained — the casting itself never got a chance to plan. Exercise owed once the fault clears; the planning goal itself (the telemetry-hook extension design) is a registered follow-on deliverable independent of when the seat is re-exercised. See `roster/wo11-architect-ex1-transcript.md` (attempt 2, the bounded retry) and `roster/wo11-architect-ex1-transcript-attempt1.md` (attempt 1). |
 | Synthesizer (A1) | — (not dispatched this round) | — | **DEFERRED-DECLARED.** The Synthesizer's cast is max-reserved and once-per-project (`roster/wo11-band-record.md`'s own Seats-shipped notes; `synthesizer.md` Casting section); a toy comparative merge invented for the sole purpose of exercising the seat would prove little about a casting whose entire value is a genuine multi-source contest under real stakes, and would spend the once-per-project reservation on a synthetic problem. Declared rather than silently skipped: the seat is exercised at its first real comparative session, whenever that arrives in this program's own work, not on a schedule invented to close this row. Owner override invited if a synthetic exercise is wanted sooner. |
-| Quartermaster (P0) | substrate — no dispatch order; exercised by running the shipped code live: extract the one evidenced reading from `.claude/orchestra-manual-readings.md`, record it into the real (previously nonexistent) `.claude/orchestra-pool-readings.jsonl` via the module API, run `--report`/`--state`/`--publish` against that real file, then demonstrate the complete-state pipeline (`bucketState()` → real `router.dispatch()`) against a separate temp-file fixture completing the other three buckets | deterministic code substrate (`quartermaster/quartermaster.js`), no model in the loop | **EXERCISED LIVE: PASS with DEGRADED evidence coverage.** Real coverage is 1 of 4 buckets (OU only, 0.86 remaining, sourced from the WO-2 Codex-window probe row in the manual-readings file) — the manual-readings file currently carries no Claude `/status` row at all for any AU-side bucket, a genuine gap in operator practice, not a substrate defect. Fail-closed demonstrated verbatim for the three unevidenced buckets: `--state` and `--publish` both exit 1, name every missing bucket by name, and print the exact `--record` command that fixes each one, never defaulting to Green (fabricated capacity) or Red (fabricated scarcity); `--publish` wrote no snapshot file on the refusal. `--report` never throws — it printed the one real OU line (disclosed STALE at 2 days old, undiscounted) and the three REFUSED blocks in the same run. The full pipeline was proven end-to-end on a labeled, non-real fixture completing all four buckets: `bucketState()` fed into the real `router.dispatch()` for an I0 order casts the Investigator to its Opus 5 primary rung (Green, gate allowed) with the cross-family review closing on GPT-5.6 Sol — the mechanism works; the fixture readings are explicitly not a real operational routing decision. The real readings file now holds exactly one real, sourced, honestly timestamped line and stays on disk (gitignored, untouched by anything else this round). The 152/154-check `tests/quartermaster.test.js` suite (152 checks at P0's own build; 154 after commit `acbf8f2`'s R4 test changes — the corrected-forecast test additions, not a readings-file check fix as an earlier draft of this row mis-attributed it) plus the router-interop section within it (§7, a P0-produced state fed through the real router end to end: Green path, the P15 reserve gate, the §5.5 Amber arm and its confirmation lift, the exhaustion-matrix recast, and the mandatory-review-does-not-close-same-family refusal) are the substrate's primary exercise — the same standing that WO-5's own unit suite was accepted as the Verifier substrate's exercise. See `roster/wo11-p0-ex1-report.md` for the full run transcript. |
+| Quartermaster (P0) | substrate — no dispatch order; exercised by running the shipped code live: extract the one evidenced reading from `.claude/orchestra-manual-readings.md`, record it into the real (previously nonexistent) `.claude/orchestra-pool-readings.jsonl` via the module API, run `--report`/`--state`/`--publish` against that real file, then demonstrate the complete-state pipeline (`bucketState()` → real `router.dispatch()`) against a separate temp-file fixture completing the other three buckets | deterministic code substrate (`quartermaster/quartermaster.js`), no model in the loop | **EXERCISED LIVE: PASS with DEGRADED evidence coverage.** Real coverage is 1 of 4 buckets (OU only, 0.86 remaining, sourced from the WO-2 Codex-window probe row in the manual-readings file) — the manual-readings file currently carries no Claude `/status` row at all for any AU-side bucket, a genuine gap in operator practice, not a substrate defect. Fail-closed demonstrated verbatim for the three unevidenced buckets: `--state` and `--publish` both exit 1, name every missing bucket by name, and print the exact `--record` command that fixes each one, never defaulting to Green (fabricated capacity) or Red (fabricated scarcity); `--publish` wrote no snapshot file on the refusal. `--report` never throws — it printed the one real OU line (disclosed STALE at 2 days old, undiscounted) and the three REFUSED blocks in the same run. The full pipeline was proven end-to-end on a labeled, non-real fixture completing all four buckets: `bucketState()` fed into the real `router.dispatch()` for an I0 order casts the Investigator to its Opus 5 primary rung (Green, gate allowed) with the cross-family review closing on GPT-5.6 Sol — the mechanism works; the fixture readings are explicitly not a real operational routing decision. The real readings file now holds exactly one real, sourced, honestly timestamped line and stays on disk (gitignored, untouched by anything else this round). The 152/154/191-check `tests/quartermaster.test.js` suite (152 checks at P0's own build; 154 after commit `acbf8f2`'s R4 test changes — the corrected-forecast test additions, not a readings-file check fix as an earlier draft of this row mis-attributed it; 191 after round 3's R3 stale-window test additions, below) plus the router-interop section within it (§7, a P0-produced state fed through the real router end to end: Green path, the P15 reserve gate, the §5.5 Amber arm and its confirmation lift, the exhaustion-matrix recast, and the mandatory-review-does-not-close-same-family refusal) are the substrate's primary exercise — the same standing that WO-5's own unit suite was accepted as the Verifier substrate's exercise. See `roster/wo11-p0-ex1-report.md` for the full run transcript. |
 
 ## Conductor audit dispositions (Director, 2026-08-31; D1 re-ruled round 2, 2026-08-31)
 
@@ -435,6 +435,35 @@ _(pending — stage 2/3, following an R0 review of this staffing round)_
    follow-on 1 above (or R2's own follow-on) extends the telemetry hook to
    carry role/effort/vendor/bucket attribution.
 
+## Exercise debt
+
+Added round 3, applying the owner-requested Sol·max holistic review's MAJOR A
+(completion-gate relabeling): the WO-8–11 order's contract is "each with one
+end-to-end exercised order." Every seat below has shipped (file present, lint
+green) but has NOT discharged that contract yet. This is the single
+consolidated ledger STATUS.md's quick-start and the WO-9/10/11 headers now
+point to, rather than each restating its own partial list. What IS done is
+stated precisely in each seat's own Exercises row (this record, and
+`roster/wo9-band-record.md` / `roster/wo10-band-record.md`) — this ledger
+covers only what remains owed.
+
+| Class | Seat | Band / WO | Status | What unblocks it |
+|---|---|---|---|---|
+| E8 | Refactorer | Band C, WO-10 | BLOCKED-PENDING-ENVIRONMENT — 3 attempts, all engine-reaching, all hit the `unsupported protocol version 6` codex sandbox fault before the mandatory pre-edit census could run; zero competency signal | The fault clearing (ESCALATED follow-on, `roster/wo10-band-record.md` Incidents §1/Follow-ons §1). Order reproducible from `roster/wo10-band-record.md`'s order-text appendix. |
+| E1 | Runner | Band C, WO-10 | BLOCKED-PENDING-ENVIRONMENT — 3 attempts, all engine-reaching, all hit the same fault (one attempt got a single `rg` command through before the fault recurred); zero competency signal | Same fault-clear follow-on as E8. Order reproducible from `roster/wo10-band-record.md`'s order-text appendix. |
+| A0 | Architect | Band A, WO-11 | BLOCKED-PENDING-ENVIRONMENT — 2 attempts (initial + one bounded retry), both engine-reaching (preflight probe ok both times), both hit the same fault before reaching the reference source; zero competency signal | Same fault-clear follow-on. Order reproducible verbatim from this record's "Codex order text, verbatim" section above. |
+| A1 | Synthesizer | Band A, WO-11 | DEFERRED-DECLARED — not dispatched; the cast is max-reserved and once-per-project, so a toy exercise would spend the reservation on a synthetic problem | The seat's first real multi-source comparative session (owner override available for a synthetic exercise sooner — see Follow-ons registered §4). |
+| E5 render loop | Interface Artisan | Band C, WO-10 | Unexercisable in this harness — the seat's own DEGRADED-ACCEPTED exercise verified all 3 shipped files including the load-bearing contrast computation, but the pre-registered browser/render-loop path stayed unexercised as expected (no live browser environment in this harness) | An environment with a live browser/render-loop capability reachable from an exercise dispatch — pre-registered gap, still open (`roster/wo10-band-record.md` Follow-ons). |
+| — | Archivist (M0), images lane | Band B, WO-9 | Ships staffed but unexercised — the documents lane was exercised (ex1 BLOCKED honest, ex2 PASS); the images lane never received an order | The first real image order (`roster/wo9-band-record.md`'s Seats-shipped notes). |
+
+**Band completion for WO-9/WO-10/WO-11 is gated on this ledger clearing**,
+per the Sol·max holistic review's MAJOR A finding that STATUS.md's prior
+"ALL DONE"/"EXECUTED" language advanced to WO-12 without holding the
+staffing gate open against final-plan.md's own per-role exercise
+requirement. Nothing above blocks WO-12/WO-13/WO-14/WO-12f, which do not
+depend on these specific seats' exercises; it blocks only the claim that
+WO-9–11 are *complete*.
+
 ## Order texts
 
 The Architect exercise is the only stage-2 exercise this band dispatched via
@@ -503,4 +532,33 @@ after the WO-9/WO-10 gap (G-2) — not summarized into a ledger row alone.
 
 ## Review rounds
 
-_(pending)_
+1. **Round 1 — R0 review: REVISE** (1 CRITICAL, 5 MAJOR). Verbatim verdict
+   committed as `roster/wo11-r0-review-1.md` (round 3, per D3 below). Fixed
+   in round 2.
+2. **Round 2 (commit `7bf8e79`)** — all round-1 findings fixed: the
+   confirmation-outlives-its-evidence CRITICAL (R5 re-anchored to live
+   evidence at every `analyze()` call), `confirm()`'s blind-grant MAJORs,
+   module-boundary validation, D1 re-ruled in full, and STATUS.md's false
+   "all four Band A exercises" line corrected.
+3. **Owner-requested Sol·max holistic review** (GPT-5.6 Sol,
+   `model_reasoning_effort=max`, via `orchestra-review.js`, cross-family
+   lane, range `1ab4a19..9fe143f`) — **REVISE** (4 MAJOR, 2 MINOR). Verbatim
+   verdict committed as `roster/wo11-sol-holistic-verdict.md` (D3 below).
+   **Two of its four MAJORs were already closed at round 2** before this
+   review ran: the R5 confirmation-outlives-its-evidence finding and the D1
+   self-audit-disposition finding — an independent cross-family engine
+   converging on the same two defects the round-1 R0 review (a different
+   family/lane) had already found and round 2 had already fixed. The
+   remaining two MAJORs (completion-gate relabeling; R3 staleness) and both
+   MINORs (the N1-ex1 discard ground; n1-ex2 mislabeled a full block) were
+   open and are fixed in round 3 (this commit).
+4. **Round 3 (this commit)** — Sol·max holistic review's four open findings
+   applied: exercise debt ledgered (STATUS.md quick-start, the WO-9/10/11
+   sequence lines, the STATUS.md band headers, and this record's new
+   "## Exercise debt" section); R3 staleness window cut from 7d to 48h with
+   staleness now disclosed on the published reading object itself
+   (`state.stale`/`state.ageMs`); the N1-ex1 discard ground reworded to the
+   accurate status-typing defect; the n1-ex2 full-block mislabel in
+   `roster/wo10-band-record.md` corrected to partial (local shell channel
+   only). All three verdict files (this review, R0-1, and this ledger)
+   committed verbatim per D3. **Delta re-review pending.**

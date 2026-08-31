@@ -363,8 +363,12 @@ _(pending — stage 3)_
 
    Fault-hit (10): WO-9 `m0-ex1` (1 attempt, full block); WO-9 `n1-ex1` (1
    attempt, local shell channel degraded — the web-fetch channel kept
-   working, so the run still returned DONE); WO-9 `n1-ex2` (1 attempt, full
-   block); WO-10 Refactorer — 3 attempts total (2 in `ex1`, 1 final retry in
+   working, so the run still returned DONE); WO-9 `n1-ex2` (1 attempt,
+   PARTIAL — local shell channel only; the web-fetch channel worked and
+   produced the honest BLOCKED report — reworded round 3 after the Sol·max
+   holistic review, which found this line mislabeled it a full block against
+   `wo9-band-record.md`'s own accurate "local shell channel only"
+   characterization; the 10/14 tally is unaffected); WO-10 Refactorer — 3 attempts total (2 in `ex1`, 1 final retry in
    `ex2`), every one BLOCKED before the mandatory pre-edit census could run;
    WO-10 Runner — 3 attempts total (2 in `ex1`, 1 final retry in `ex2`),
    every one BLOCKED — **not** "outright" for all three: the third attempt

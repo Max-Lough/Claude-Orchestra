@@ -177,9 +177,13 @@ full (counts in the WO-9 report).
    protocol version 6`; the transcript keeps the two channels distinct and shows no
    self-contradiction between the completed web research and the failed local commands.
    The anchored grounds, and the reason the run's
-   discard stands: (1) it returned `STATUS: DONE` without disclosing the degraded local
-   channel up front — the command runner was down and the report did not surface that as a
-   limitation — and (2) it carried no retrieval dates on its citations, a charter duty
+   discard stands, reworded round 3 after the Sol·max holistic review (which found the
+   original ground below inaccurate — the transcript's own VERIFICATION section DID disclose
+   the failed local commands, at the two bullets quoted above; the defect is not
+   non-disclosure): (1) it returned `STATUS: DONE` despite its own VERIFICATION section
+   disclosing that the local shell channel had failed on both commands it attempted — a
+   status-typing defect (DONE where BLOCKED or an explicitly-labeled degraded status was
+   warranted), not a failure to disclose — and (2) it carried no retrieval dates on its citations, a charter duty
    (`researcher.md:41`, "every load-bearing claim... must carry a resolvable source and
    retrieval date"). Two grounds previously stated alongside these are withdrawn as
    unsupported: `codex --version` was conditional in the order text on network being

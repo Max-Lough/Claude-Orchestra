@@ -18,7 +18,7 @@ back-derivation from call counts, no decay applied to an old number.
 |---|---|
 | `quartermaster.js` | The whole substrate: recording + hard validation, the fail-closed bucket-state builder (the router's `normalizeBuckets` input), the Amber-arm confirmation protocol, two-point throttle prediction, the human report, the snapshot publisher, and the CLI |
 | `README.md` | This file — the rulings, the CLI reference, the plan citations |
-| `../tests/quartermaster.test.js` | 187 checks, including the router-interop proof (a P0-produced state fed to the real `router/router.js`) and the round-2 adversarial suite (confirmation-validity exploit reproduction, `confirm()` blind-grant refusals, module-boundary validation, `predictThrottle` staleness/horizon guards) |
+| `../tests/quartermaster.test.js` | 191 checks, including the router-interop proof (a P0-produced state fed to the real `router/router.js`), the round-2 adversarial suite (confirmation-validity exploit reproduction, `confirm()` blind-grant refusals, module-boundary validation, `predictThrottle` staleness/horizon guards), and the round-3 R3 revision's 47h/49h stale-window vectors proving the published reading object itself carries `stale`/`ageMs` |
 
 Data files, both **gitignored** (operator data about a personal allowance; it
 never enters version control):
@@ -97,22 +97,49 @@ role / model / effort / vendor / bucket per row, and add an OU-side record, in
 **WO-1's lane** (the hook is WO-1 instrumentation; changing it here would fork
 the instrument out from under its own probe).
 
-### R3 — Staleness windows: 24h fresh / 7d usable · *unstatedInPlan (Director-set operational values)*
+### R3 — Staleness windows: 24h fresh / 48h usable · *unstatedInPlan (Director-set operational values), REVISED round 3 after the Sol·max holistic review*
 
-The plan sets no freshness window. The Director set: `maxFreshMs = 24h`,
-`maxStaleMs = 7d`, both overridable per call.
+The plan sets no freshness window. The Director originally set: `maxFreshMs =
+24h`, ~~`maxStaleMs = 7d`~~, both overridable per call.
+
+**Revised round 3 (WO-11, owner-requested Sol·max holistic review, MAJOR B):**
+`maxStaleMs` is cut from 7d to **48h**. Rationale: a weekly window moves
+~15-20% of its remaining fraction per day under normal load, so a reading a
+full week old describes a pool state that no longer exists — it is obsolete,
+not evidence, and publishing it unchanged (even disclosed) invites a
+dispatcher to treat a stale number as current. 48h is the outer bound at
+which a reading is still recognizably describing *approximately* the current
+state.
 
 - age ≤ 24h — **fresh**. Full standing: it can arm the confirmation gate.
-- 24h < age ≤ 7d — **usable and DISCLOSED**. The fraction is published *exactly
-  as recorded* and the report marks `stale: true`. Staleness is never
+- 24h < age ≤ 48h — **usable and DISCLOSED**. The fraction is published
+  *exactly as recorded*, and — round 3 — the staleness now rides on the
+  **published reading object itself** (`state.stale: true, state.ageMs`),
+  the same object `router.js`'s `normalizeBuckets` consumes, not only on the
+  human report or the `analyze()` metadata — so a snapshot consumer or a live
+  dispatcher sees the disclosure even if it never calls `--report`.
+  `router/router.js`'s `normalizeBuckets` (:297-318) and `poolState`
+  (:53-70) read only `state.remainingFraction` / `reserveBreached` /
+  `throttleObserved` / `exhausted` and ignore unrecognized keys — no strict
+  key check exists — so `stale`/`ageMs` pass through harmlessly; they are
+  disclosure, not a routing input. Staleness is never
   discounted: aging a reading forward requires a burn rate, and a burn rate is
   a fabricated number (R2).
-- age > 7d, or **no reading at all** — **REFUSED**. Not Green (fabricated
+- age > 48h, or **no reading at all** — **REFUSED**. Not Green (fabricated
   capacity), not Red (fabricated scarcity). The error names the bucket and
   prints the exact `--record` command that fixes it.
 
 A **future-dated** reading is also refused: clock skew or tamper, either way not
 evidence.
+
+**Confirmations and gate-lifting already require FRESH evidence, unaffected
+by this revision.** The round-2 R5 fix (above) re-validates a recorded
+Amber-arm confirmation against **live** state at every `analyze()` call —
+`confirm()` itself refuses outright on anything past `maxFreshMs` (24h,
+unchanged), and `analyze()` voids a stale confirmation the instant a newer
+reading supersedes it. Nothing about R3's stale-but-usable window loosens
+that: a stale (24h-48h) reading can be *published*, disclosed, but it can
+never *arm* or *satisfy* a gate — only a fresh (≤24h) reading can.
 
 ### R4 — `belowReserve` via the router's own `requiredReserve`, on a WO-2-measured default forecast · *plan-cited formula (final-plan.md:1003-1006) + unstatedInPlan default (ESTIMATE), CORRECTED by Director ruling (WO-11 P0 review)*
 
@@ -383,7 +410,7 @@ suite run entirely on temp fixtures and never touch the real `.claude/` files.
 
 ## Proof
 
-`node tests/quartermaster.test.js` — **187 checks**, all on `mkdtemp` fixtures.
+`node tests/quartermaster.test.js` — **191 checks**, all on `mkdtemp` fixtures.
 The load-bearing ones are the **interop** section, which feeds a P0-produced
 state into the real `router/router.js`:
 
@@ -409,7 +436,12 @@ eleven hand-corrupted JSONL tamper cases; and, round 2: the confirmation-voids-
 on-superseded/failed-predicate/fresh-throttle matrix (§13), `confirm()`'s three
 blind-grant refusals (§14), the module-boundary validation set including the
 exact `'0.3'+'0.1'` string-concat NaN exploit vector (§15), and `predictThrottle`'s
-staleness refusal plus its 1e-12-decline RangeError guard (§16).
+staleness refusal plus its 1e-12-decline RangeError guard (§16). Round 3 (§3):
+the revised R3 48h-usable window — a 47h-old reading still publishes undiscounted
+AND now carries `stale:true`/`ageMs` on the published reading object itself
+(not just the analysis/report metadata), a 49h-old reading is REFUSED under
+the new default, and the `stale`/`ageMs` keys are proven to round-trip through
+the real `router.normalizeBuckets` harmlessly.
 
 ## Plan and work-order citations
 

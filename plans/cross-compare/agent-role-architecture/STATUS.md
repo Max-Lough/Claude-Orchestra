@@ -345,7 +345,10 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   judgment call recorded in the file: §6.6 wrote `planner-gpt → Architect(mirror)` before
   the same-day Sol-default re-cast — operatively it maps to the Architect's Sol casting,
   with WO-13 owning its transport migration.
-- **WO-9 EXECUTED (2026-08-30):** the evidence band (Band B, seats 4-8: Scout,
+- **WO-9 STAFFED (2026-08-30); exercise contract INCOMPLETE** (round 3, after
+  the Sol·max holistic review — files shipped, lint green, five seats
+  exercised; the Archivist images lane ships staffed but unexercised, and is
+  ledgered debt, not a closed exercise): the evidence band (Band B, seats 4-8: Scout,
   Researcher, LC Analyst, Investigator, Archivist) staffed per the WO-8-11 order — six
   role files shipped (`roster/wo9-band-record.md`: naming decisions, Archivist's two lane
   files, the Investigator read-only pin). `node roster/lint.js` and `node install.js
@@ -356,14 +359,19 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   44/47); a calibration follow-on is registered. N1/N2/M0 ran via the `orchestra_exec`
   codex runner (closest existing cross-vendor call — no dedicated research/long-context/
   extraction runner exists yet). N1's first run (ex1) returned DONE after completing real, cited web
-  research, but without disclosing that its local shell channel had separately failed (the
-  command runner was down and the report did not surface that as a limitation) and with no
+  research, despite its own VERIFICATION section disclosing that its local shell channel had
+  separately failed (the command runner was down, and both attempted local commands are
+  recorded failing with the exact error) — a status-typing defect (DONE where BLOCKED or a
+  disclosed-degraded status was warranted), not a non-disclosure — and with no
   retrieval dates on its citations, a charter duty — a report-integrity/verification-
   discipline defect, not demonstrated fabrication (corrected in round 2 after R0 review; the
   original "fabrication"/"live evidence of the charter's named failure mode" framing is
   withdrawn, and two previously-cited grounds — a conditional `codex --version` duty that
   never fired since network was available, and an openai-docs skill read never owed to ex1 —
-  are withdrawn as unsupported). Discarded on the two anchored grounds; the retry, under an
+  are withdrawn as unsupported; ground reworded round 3 after the Sol·max holistic review, which
+  found the transcript's VERIFICATION section did in fact disclose the shell failure).
+  Discarded on the two anchored grounds — the status-typing defect plus the missing
+  retrieval dates; the retry, under an
   integrity addendum, independently corroborated three of ex1's four cited sources and
   conclusions (evidence against fabrication) — the npm-registry citation, ex1's sole source
   for the 0.151.0-on-npm claim, lacks independent cross-run corroboration (opened only in
@@ -377,7 +385,11 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   N0's self-reported exhaustion counts requiring mechanical verification (calibration
   follow-on).
   Full record: `roster/wo9-band-record.md`. Next: **WO-10**.
-- **WO-10 EXECUTED (2026-08-30):** the construction band (Band C, seats
+- **WO-10 STAFFED (2026-08-30); exercise contract INCOMPLETE** (round 3, after
+  the Sol·max holistic review — files shipped, lint green, 8/10 seats
+  exercised; Refactorer/E8 and Runner/E1 environment-blocked with zero
+  competency signal, and Interface Artisan's E5 browser/render loop is
+  unexercisable in this harness — all three ledgered debt): the construction band (Band C, seats
   9-20 minus retired 13: Operator, Runner, Builder, Principal, Data
   Engineer, Interface Artisan, Spatial Specialist, Refactorer, Test
   Designer, Doc Writer; Red Team shipped already in WO-8) staffed per the
@@ -436,13 +448,17 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   Artisan's browser/render-loop gap (pre-registered, still open), and
   Spatial Specialist's visual/critic path (mechanical validity only this
   round). Full record: `roster/wo10-band-record.md`. Next: **WO-11**.
-- **WO-11 EXECUTED (2026-08-31):** Band A (seats 1-3: Conductor, Architect,
+- **WO-11 STAFFED (2026-08-31); exercise contract INCOMPLETE** (round 3, after
+  the Sol·max holistic review — files shipped, lint green, 2 of 4 Band A
+  seats exercised; Architect/A0 environment-blocked with zero competency
+  signal and Synthesizer/A1 deferred-declared — both ledgered debt): Band A (seats 1-3: Conductor, Architect,
   Synthesizer) staffed — three role files — plus the **P0 Quartermaster
   substrate** built separately (`quartermaster/`), a deterministic code
   substrate, not an agent file. `node roster/lint.js` / `node install.js
   --lint` pass; all six required suites pass, including
   `tests/quartermaster.test.js` (154 checks at this band's own build, 187
-  after the round-2 review fixes below: recording, validation
+  after the round-2 review fixes below, 191 after round 3's R3 48h-staleness
+  test additions: recording, validation
   rejections, fail-closed on absent/stale/malformed evidence, threshold
   exactness, throttle/Exhausted precedence, confirmation, prediction, and —
   load-bearing — real `router.js` interop: Green path, the P15 AU-O reserve
@@ -506,10 +522,22 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-08-31, WO-11 executed)
 
-1. **WO-8–11 are ALL DONE, WO-11's round-2 review fixes landed** (WO-4,
-   WO-5, WO-6, WO-7b, WO-8, WO-9, WO-10 done; WO-11 executed 2026-08-31,
-   staffing + the P0 Quartermaster substrate — see the WO-11 EXECUTED entry
-   above). Band A's four seats do NOT all carry the same exercise
+1. **WO-4–WO-8 are DONE. WO-9–WO-11 are STAFFED; exercise contract
+   INCOMPLETE** (round 3, applying the owner-requested Sol·max holistic
+   review's MAJOR A) — **debt ledgered: E8 (Refactorer, WO-10,
+   environment-blocked), E1 (Runner, WO-10, environment-blocked), A0
+   (Architect, WO-11, environment-blocked), A1 (Synthesizer, WO-11,
+   deferred), E5 render loop (Interface Artisan, WO-10, unexercisable in
+   harness); plus WO-9's Archivist images lane (unexercised). Band
+   completion is gated on those exercises** — full ledger in
+   `roster/wo11-band-record.md`'s "## Exercise debt" section. What IS done,
+   stated precisely: every WO-9/10/11 role file shipped, `roster/lint.js`
+   and `install.js --lint` green, and the seats that WERE dispatched carry
+   real (including degraded) outcomes — WO-9: 5/5 seats exercised (images
+   lane excepted); WO-10: 8/10 seats exercised; WO-11 Band A: 2/4 seats
+   exercised. WO-11's round-2 review fixes landed on top of the P0
+   Quartermaster substrate — see the WO-11 entry above. Band A's four seats
+   do NOT all carry the same exercise
    outcome — stated precisely, not rounded up to "all four exercises":
    **Conductor** exercised (1 VIOLATION, dispositions re-ruled in full on
    round 2); **Quartermaster** live-exercised (1/4 buckets evidenced,
@@ -532,16 +560,24 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
    readout against the manual readings file.
 3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → ~~WO-5
    (Verifier substrate)~~ → ~~WO-6 (router)~~ → ~~WO-7b (misroute recovery — PASSED)~~
-   → ~~WO-8~~ → ~~WO-9 (evidence band staffed + exercised)~~ →
-   ~~WO-10 (construction band staffed + exercised, 8/10 complete, 2
-   environment-blocked — pending review)~~ →
-   ~~WO-11 (Band A staffed; 2 of 4 seats exercised, 1 env-blocked, 1
-   deferred; P0 substrate live — round-2 review fixes landed)~~
+   → ~~WO-8~~ → **WO-9 (evidence band STAFFED; exercise contract
+   INCOMPLETE — Archivist images lane unexercised)** →
+   **WO-10 (construction band STAFFED; exercise contract INCOMPLETE — 8/10
+   exercised, Refactorer/E8 and Runner/E1 environment-blocked, Interface
+   Artisan's E5 render loop unexercisable in harness)** →
+   **WO-11 (Band A STAFFED; exercise contract INCOMPLETE — 2 of 4 seats
+   exercised, Architect/A0 environment-blocked, Synthesizer/A1 deferred; P0
+   substrate live — round-2 review fixes landed)**
    → **WO-12 trials** (12f any time) → **WO-13 scope check** → **WO-15
-   shadow** after. **Exercises owed on the standing codex sandbox fault**:
+   shadow** after. Neither WO-9, WO-10, nor WO-11 is struck through above:
+   staffing is done, but the WO-8–11 order's contract — "each with one
+   end-to-end exercised order" — is not yet fully discharged for any of the
+   three, so none is marked complete (round 3, Sol·max holistic review
+   MAJOR A). **Exercises owed on the standing codex sandbox fault**:
    Refactorer (E8, WO-10), Runner (E1, WO-10), Architect (A0, WO-11) — all
    three BLOCKED-PENDING-ENVIRONMENT, reproducible from their band records'
-   order-text appendices once the fault clears.
+   order-text appendices once the fault clears. Full debt ledger:
+   `roster/wo11-band-record.md`'s "## Exercise debt" section.
    Parallelizable now per the plan's dependency line:
    WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
    against the `/deep-plan` retirement), WO-12f (Terra T1 qualification trial, "any

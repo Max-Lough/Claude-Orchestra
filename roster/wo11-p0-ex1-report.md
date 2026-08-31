@@ -145,6 +145,13 @@ PREDICTED vs OBSERVED (the seat's review criterion):
   a detectable, fixable defect; v1 records the raw material and scores nothing
   it cannot yet compute.
 ```
+[Editorial note, round 5: the `OU ... STALE (disclosed, not discounted)` line
+above was produced under the round-3 48h staleness rule. Round 4 refuses
+readings older than 24h (fail closed); the same command run today against a
+2.0d-old reading prints `REFUSED-FOR-ROUTING`, not this STALE-but-routable
+line. The transcript above is left unaltered as the historical record of a
+round-3 run.]
+
 `EXIT: 0` (report never throws — it prints refusals instead of becoming one).
 
 ### `node quartermaster/quartermaster.js --state`

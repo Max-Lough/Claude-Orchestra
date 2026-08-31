@@ -458,7 +458,8 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   --lint` pass; all six required suites pass, including
   `tests/quartermaster.test.js` (154 checks at this band's own build, 187
   after the round-2 review fixes below, 191 after round 3's R3 48h-staleness
-  test additions: recording, validation
+  test additions, 195 after round 4's fail-closed >24h test additions:
+  recording, validation
   rejections, fail-closed on absent/stale/malformed evidence, threshold
   exactness, throttle/Exhausted precedence, confirmation, prediction, and —
   load-bearing — real `router.js` interop: Green path, the P15 AU-O reserve

@@ -463,6 +463,12 @@ qm.defaultForecast();                                            // the R4 estim
 Every function takes an injectable `file` and `now`, which is what lets the
 suite run entirely on temp fixtures and never touch the real `.claude/` files.
 
+A caller that invokes `predictThrottle()` directly (rather than through
+`report()`) may still receive trend estimates fit to readings up to 48h old
+even though routing itself refuses anything past 24h — `predictThrottle`'s
+own trend-window bound is deliberately wider (R6, see above), and `report()`
+is what skips prediction for refused buckets, not `predictThrottle()` itself.
+
 ## Proof
 
 `node tests/quartermaster.test.js` — **195 checks**, all on `mkdtemp` fixtures.

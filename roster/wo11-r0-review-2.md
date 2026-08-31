@@ -1,5 +1,5 @@
 <!-- R0 delta re-review of rounds 2-3. Claude Opus 5 · high, scope 9fe143f..772a688, verdict REVISE — 1 new MAJOR. -->
-<!-- Closed in round 4 at fc9e0b8 (this round's own commit — see `git log` for the final hash; self-reference is necessarily approximate). -->
+<!-- closed in round 4 at ff638b7 (the round-4 commit; an earlier amend chain cited unreachable intermediates dbd9aef/fc9e0b8 — corrected in the round-5 cleanup). -->
 
 REVIEW ENGINE: Claude Opus 5 · high (R0 anthropic lane, fresh context, tier: full)
 

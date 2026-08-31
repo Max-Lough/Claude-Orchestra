@@ -154,6 +154,22 @@ saw it.
   of band), a lint refuses any hex-sha token in a brief, and blind draws are
   pair-aware and seeded. Round 3's chance-level result stands as the content
   measure; a third blind test on the regenerated briefs confirms it.
+- **Round 7 (pre-run): a stopping rule, stated.** The rounds-4–5 delta review put a
+  fresh reader at 33% — below chance — and then built a style-only classifier at
+  90% precision from two features no lint gated: seeds ended claims with clipped
+  sentences ("Done."; shortest sentence 5.6 words vs 12.5) and controls alone used
+  diff-stat vocabulary ("deletions", "insertions", "touching"). Both are now gated
+  (a sentence floor; unigram exclusivity at 8+ artifacts) and the content re-authored
+  once more. It also found a CRITICAL in the identity gate — a bare substring made
+  "served_model not reported" read as independent evidence, and an explicit
+  contradicting served model could still return MATCHED — fixed so that only an
+  explicit served model equal to the lane's model counts as evidence, a contradiction
+  fails the gate, and absence is `LIMITED`. The FINDINGS extractor now stops at any
+  header, not two named ones. And the protocol now says when this ends: the corpus
+  is accepted when every gated feature passes and the delta reviewer's best ungated
+  style classifier no longer reaches 80% precision over 84 artifacts — an adversary
+  with all 84 labels will always find *something*; the standard is that it is
+  disclosed, not that it is zero.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

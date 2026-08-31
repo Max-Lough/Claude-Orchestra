@@ -650,7 +650,20 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   content, which the evaluator itself put at ~6 confident calls. A single-packet
   reviewer cannot chain packets; the blind-test instrument can. **Round 6 opened**
   (protocol amendment xi): shas leave the brief text, a hex-token lint, pair-aware
-  blind draws; a third blind test and the rounds-4–5 delta reviews follow.
+  blind draws — tooling landed at `e3dde34` (711 checks). **Rounds-4–5 delta verdict,
+  Anthropic lane: REVISE — 1 CRITICAL, 4 MAJOR, 6 MINOR** (`roster/wo12-r0-review-
+  anthropic-4.md`): its fresh blind reader scored **33%** (below chance — the best
+  human-facing result yet), but the identity classifier could return MATCHED on an
+  engine line whose served model contradicts it (CRITICAL), the FINDINGS extractor
+  stopped only at two headers, and a style-only classifier still reached 90%
+  precision on sentence shape (seeds' shortest sentences — "Done." — vs controls') and
+  diff-stat vocabulary ("deletions", "insertions", "touching" only in controls); the
+  head-sha resolvability oracle it named was already closed by round 6. **Round 7**
+  (protocol amendment xii): the identity and extractor fixes, a sentence floor and a
+  unigram-exclusivity gate, a content pass on all 84 files, and a stated stopping
+  standard — every gated feature passes and the delta reviewer's best ungated style
+  classifier stays under 80% precision; the human-facing standard (≤65%) has been
+  met since round 3. A third blind test on the round-7 briefs follows.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

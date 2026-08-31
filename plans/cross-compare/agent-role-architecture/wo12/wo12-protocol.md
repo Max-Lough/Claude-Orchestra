@@ -159,7 +159,17 @@ refuses any 7–40-hex token in a brief; the blind-test draw (`blind-draw.js`) n
 includes both members of a reused-base pair and is recorded with its seed; the pairs
 stay disclosed. A per-packet reviewer, which sees one sanitized clone and one packet,
 was never exposed to this channel; the blind-test instrument, a many-packet reader,
-was.
+was. (xii) *Round-7 amendment, after the rounds-4–5 delta review put a fresh blind
+reader at 33% (below chance) but a style-only classifier at 90% precision on sentence
+shape and diff-stat vocabulary:* two more gated features — a **sentence floor** (no
+sentence under 8 words in ORDER or CLAIMS; per-population mean of the shortest sentence
+within 3 words) and **unigram exclusivity** (any content word in ≥8 artifacts of one
+population and 0 of the other fails) — and a stated **stopping standard** for the
+classifier-facing measure: the corpus is accepted when every gated feature passes and
+the delta reviewer's best *ungated* style classifier no longer reaches 80% precision
+over 84 artifacts. Any residual is disclosed with its features in CONSTRUCTION.md. The
+human-facing standard (a fresh reader at or below 65%) has been met in every round
+since round 3.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

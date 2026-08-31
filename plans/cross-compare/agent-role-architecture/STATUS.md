@@ -713,9 +713,13 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   `CODEX_BIN` was set in the invoking environment (source undetermined). Ruled VOID.
   `orchestra-review.js` must print the resolved engine path + hash in every verdict
   header and refuse an engine under `tests/fixtures/` outside an explicit test mode.
-  The OpenAI-lane delta of tooling rounds 3–7 is OUTSTANDING (two REVIEW_UNAVAILABLE
-  at the 30-min cap, one VOID); the re-attempt pins `CODEX_BIN` to the real binary and
-  quotes the environment in the record.
+  **Closed at `5f83486`:** the runner prints `ENGINE BIN: <path> sha256=<hex>` in its
+  header block, ends that block with a literal `=== ENGINE OUTPUT ===` delimiter
+  (occurrences inside engine output are neutralised), and refuses a fixture engine
+  unless `ORCHESTRA_ALLOW_STUB_ENGINE=1`. It emits no `served_model:` — codex-cli
+  0.151.0 exposes no served-model field (the `--json` stream carries none; the rollout
+  log echoes the request) — so gate 5 reads LIMITED honestly on every codex lane until
+  the CLI reports one. The OpenAI-lane delta itself was delivered on attempt 6.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

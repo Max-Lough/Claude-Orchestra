@@ -1,0 +1,139 @@
+﻿assemble-key --check-only: nothing missing — all 84 slots have their required inputs.
+  every brief on disk matches generation exactly.
+  every lint passes.
+
+### Distribution gates (round 5)
+
+A mean is not enough. Round 4 gated Δmean ORDER, Δmean CLAIMS and the hardness ratio; all three passed while
+`ORDER < 135` still identified 8 seeds and 0 controls, backticks 10 seeds and 0 controls, and "leave … alone"
+15 controls and 0 seeds. These gates check ranges, dispersion, punctuation and vocabulary.
+
+**(1) Word-count ranges and dispersion**
+
+| field | population | min | max | sd | floor Δ (≤8) | ceiling Δ (≤8) | sd ratio (0.6–1.6) |
+|---|---|---|---|---|---|---|---|
+| ORDER | seeded | 136 | 160 | 7.2 | 1 | 2 | 1.01 |
+| ORDER | control | 135 | 158 | 7.2 | | | |
+| CLAIMS | seeded | 69 | 95 | 6.4 | 3 | 3 | 0.95 |
+| CLAIMS | control | 66 | 92 | 6.7 | | | |
+
+**(2) Backticks** — forbidden outright in `order` and `claims`, both populations.
+
+pass — no content file carries a backtick.
+
+**(3) Digit density** (digits per 100 words, `order` + `claims`)
+
+| population | mean | sd |
+|---|---|---|
+| seeded | 1.03 | 0.54 |
+| control | 1.01 | 0.46 |
+
+Δmean 0.02 (limit 1.5) — pass
+
+**(4) N-gram exclusivity** — a lowercase 3-gram carrying ≥2 content words (stopwords and bare
+numbers excluded), occurring in ≥6 artifacts of one population and 0 of the other.
+
+pass — no 3-gram is exclusive to one population at ≥6 documents.
+
+*Reported, not gated:* 4 3-gram(s) are exclusive to one population at 4–5 documents. That band is published rather than enforced — see
+the topic-asymmetry disclosure above for why.
+
+| 3-gram | population | documents |
+|---|---|---|
+| `the roster directory` | control | 5 |
+| `and nothing beyond` | control | 4 |
+| `stays exactly as` | control | 4 |
+| `the plan s` | control | 4 |
+
+**(6) Sentence shape** — amendment (xii)(a): every sentence in `order` and `claims` carries ≥8 words,
+and the two populations' mean SHORTEST sentence agree within 3 words.
+
+| population | shortest sentence (mean ± sd) | min | max |
+|---|---|---|---|
+| seeded | 10.10 ± 1.16 | 8 | 12 |
+| control | 10.30 ± 1.14 | 9 | 12 |
+
+Δmean 0.20 (limit 3) — pass
+
+Δfloor 1 (limit 1) — pass · Δceiling 0 (limit 3) — pass
+
+pass — no sentence is below the 8-word floor.
+
+**(7) Unigram exclusivity** — amendment (xii)(b), widened by (xiii): ANY lowercase token of ≥2 characters —
+stopwords and bare numbers INCLUDED — present in ≥8 artifacts of one population and 0 of the other.
+Round 7 exempted words under 4 characters, stopwords and numbers, and the separating vocabulary moved
+straight under all three: `we` 0S/13C, `md` 0S/8C, `135` 7S/0C.
+
+pass — no word is exclusive to one population at ≥8 documents.
+
+*Reported, not gated:* 32 word(s) exclusive at 5–7 documents.
+
+| word | population | documents |
+|---|---|---|
+| `beyond` | control | 7 |
+| `closing` | control | 6 |
+| `confirm` | control | 6 |
+| `disposition` | control | 6 |
+| `downstream` | control | 6 |
+| `flagged` | control | 6 |
+| `noted` | control | 6 |
+| `redraw` | control | 6 |
+| `uninstall` | seeded | 6 |
+| `altogether` | control | 5 |
+| `blind` | control | 5 |
+| `border` | control | 5 |
+| `confined` | control | 5 |
+| `follow-on` | control | 5 |
+| `forward` | control | 5 |
+| …17 more | | |
+
+**(5) Idiom balance** — the five watched idioms, gated on three arms.
+
+The watched idioms are "leave … alone", "and nothing else", "as it stands", "must never", "byte-identical".
+
+1. **Present in both populations** — the per-artifact frequency ratio must fall within 0.5–2. This is the arm amendment (x) describes.
+2. **Present in one population and absent from the other** — a hard failure. No ratio exists
+   here (the denominator is zero), so arm 1 cannot see this case, and it is the *strongest*
+   form of the tell rather than a lesser one: an idiom no artifact of the other population
+   ever uses is a 100%-precision authorship rule. **This arm is stricter than amendment (x)'s
+   text and is enforced regardless.**
+3. **Absent from both populations** — passes. An idiom nobody uses cannot separate anyone.
+
+A caution the round-4 review earned: gating a LITERAL string is not the same as removing the
+habit behind it. `and nothing else` reads 0/0 here and passes on arm 3, while the habit it
+stood for — `with nothing else touched`, `nowhere else`, `anything else`, `anywhere else` —
+survived at 12 controls to 0 seeds. The generic test that catches that class is the unigram
+exclusivity gate (7) below, not this hand-written list.
+
+| idiom | seeded (total / per artifact) | control (total / per artifact) | ratio | verdict |
+|---|---|---|---|---|
+| "leave … alone" | 0 / 0.000 | 0 / 0.000 | n/a | absent from both — pass |
+| "and nothing else" | 0 / 0.000 | 0 / 0.000 | n/a | absent from both — pass |
+| "as it stands" | 0 / 0.000 | 0 / 0.000 | n/a | absent from both — pass |
+| "must never" | 3 / 0.100 | 5 / 0.093 | 1.08 | pass |
+| "byte-identical" | 1 / 0.033 | 1 / 0.019 | 1.80 | pass |
+
+**(8) Single-threshold purity** — amendment (xiii): over a family of 15 derived features, scanned exhaustively at every observed value in both directions, no rule
+`feature <= t` or `feature >= t` may fire on ≥5 artifacts of one population and 0 of the other.
+
+pass — no single-threshold rule reaches 100% precision on ≥5 artifacts.
+
+| feature | best rule | seeded | control | precision |
+|---|---|---|---|---|
+| ORDER words | `ORDER words >= 159` | 4 | 0 | 100.0% |
+| CLAIMS words | `CLAIMS words <= 67` | 0 | 2 | 100.0% |
+| ORDER sentence count | `ORDER sentence count <= 3` | 0 | 1 | 100.0% |
+| CLAIMS sentence count | `CLAIMS sentence count <= 2` | 0 | 1 | 100.0% |
+| mean sentence length | `mean sentence length <= 20.36` | 4 | 0 | 100.0% |
+| shortest sentence | `shortest sentence <= 8` | 1 | 0 | 100.0% |
+| longest sentence | `longest sentence <= 35` | 2 | 0 | 100.0% |
+| sentence-length sd | `sentence-length sd <= 7.23` | 0 | 1 | 100.0% |
+| commas per 100 words | `commas per 100 words <= 4.56` | 2 | 0 | 100.0% |
+| semicolons per 100 words | `semicolons per 100 words >= 1.45` | 0 | 1 | 100.0% |
+| colons per 100 words | `colons per 100 words >= 1.65` | 1 | 0 | 100.0% |
+| em/en dashes per 100 words | `em/en dashes per 100 words >= 1.24` | 4 | 0 | 100.0% |
+| "and" per 100 words | `"and" per 100 words >= 5.65` | 3 | 0 | 100.0% |
+| connectives per 100 words | `connectives per 100 words >= 3.94` | 3 | 0 | 100.0% |
+| digits per 100 words | `digits per 100 words <= 0.40` | 2 | 0 | 100.0% |
+
+SEAL: PASS — every gated lint passes | arm (8) purity clean | blind read within (vi)'s ceiling (precision 25.0%, accuracy 25.0%)

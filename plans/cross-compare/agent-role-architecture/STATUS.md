@@ -754,6 +754,22 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   committed → `run-lane.js --dry-run` (X-Sol only) → STOP at the two owner gates.
   Oracle cadence is standing policy: a high-effort oracle reviews scope every few
   rounds; stopping rules are oracle-authored, never worker-authored.
+- **WO-12 PRE-TRIAL WORK CLOSED — SEAL: PASS (2026-08-31, v2.4.1):** the full
+  amendment-xiv sequence executed same-day. Batch G5 (`bd88222`) cleared all three
+  residue findings on the 20 ids (Sonnet agent, one pass, fact-preservation
+  spot-checked); corpus regenerated idempotently and resealed (`61bda5c`); blind
+  test #4 drawn verbatim (`blind-draw-round8.json`, seed round8-blind4), read by a
+  fresh-context Opus evaluator over an isolated packet copy, scored mechanically —
+  **25% precision / 25% accuracy, below chance** (`check-only-transcript-round8.txt`
+  committed; raw evaluator output + the sub-chance disclosure, recorded-not-gated
+  per xiv, in `corpus/BLIND-TEST-round8.md`); `run-lane.js --lane X-Sol --phase 0
+  --dry-run` clean end-to-end. Human-facing reads across generations: 41.7% → 33%
+  → 25%, all at or below chance. Nothing further is permitted on WO-12 pre-trial
+  work without a new owner order. **The trial waits on exactly two owner actions:
+  (1) run the staged codex-helper repair script; (2) record the four P0 readings
+  (`node quartermaster/quartermaster.js --record <AU-all|AU-opus|AU-fable|OU>
+  <remaining-fraction> --source "..."`). Then: phase-0 pilot with `--yes`, the
+  in-harness 12d arms, and the owed E8/E1/A0 exercises.**
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

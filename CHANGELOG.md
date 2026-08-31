@@ -9,6 +9,34 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.4.1 — WO-12 pre-trial work closed under an oracle-authored bound; 12f withdrawn
+
+What prompted this release is a postmortem, not a finding. Rounds 4–8 of the
+WO-12 blinding work had escalated a met reader standard (a fresh blind reader
+at or below chance since round 3) into an arms race against a label-informed
+style classifier — a threat outside the trial's model, since a per-packet
+reviewer holds one clone and one brief, never 84 labels. The owner called the
+creep, directed a hard turn to live pilot testing, and dropped Terra as a
+reviewer candidate outright ("attempting to find cheaper reviewers is
+unnecessary"), and a session scope oracle ratified a bounded close-out and
+authored the stopping rule — worker-authored stopping rules being the round-7
+lesson (amendment xii built its own treadmill).
+
+Landed: protocol amendments xiv (the stopping rule: one completion pass on
+the 20 residue ids plus at most one repair pass; blind test #4 once with one
+bounded retry; the pre-registered rounds-8 delta review struck; every later
+classifier finding a disclosure, never a gate) and xv (12f withdrawn, X-Terra
+struck from every phase, the served-model identity follow-on moot; the
+corpus's consumers are 12d and 12h). Content batch G5 cleared the three
+residue findings; the corpus regenerated idempotently; blind test #4 — drawn
+by `blind-draw.js`, read by a fresh-context evaluator, scored mechanically —
+came in below chance, and `--check-only` now prints **SEAL: PASS** with the
+transcript committed. A sub-chance disclosure (the evaluator's honesty
+heuristics fired on real history, not the seeds) is recorded in
+`BLIND-TEST-round8.md` and, per amendment xiv, gates nothing. The X-Sol
+phase-0 dry-run is clean. The trial now waits on exactly two owner actions:
+the codex helper repair and the P0 `/status` readings.
+
 ## 2.4.0 — WO-12 round 8: the stopping standard enforced, not described; the review runner made observable
 
 What prompted this release is a verdict, not a feature request. The first

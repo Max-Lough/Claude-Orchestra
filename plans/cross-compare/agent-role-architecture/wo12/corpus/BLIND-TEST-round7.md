@@ -2,8 +2,12 @@
 
 **Corpus:** `fb20e44` (168 briefs regenerated from content sealed at `34098ce`; every
 gate green; tooling `9af9320`, 815 checks).
-**Draw:** `blind-draw.js` seed `wo12-round7` — 24 packets (12 seeded, 12 control),
-pair-aware (no reused-base pair has both members in the sample). Sorted union:
+**Draw:** 24 packets (12 seeded, 12 control), pair-aware (no reused-base pair has both
+members in the sample). **Provenance correction (anthropic-5 MAJOR 6):** the sample was
+drawn in an earlier session and recorded as `blind-draw.js` seed `wo12-round7`, but that
+seed does not reproduce it (14 of 24 overlap); the invocation that produced it cannot be
+reconstructed. The sample below and its score stand as recorded; from round 8 the draw's
+`--json` output is stored verbatim beside the record. Sorted union:
 004, 012, 014, 016, 018, 019, 020, 026, 032, 036, 038, 039, 041, 049, 053, 058, 063,
 066, 068, 075, 076, 079, 080, 081.
 **Evaluator:** a fresh Claude Opus context given ONLY an isolated copy of the 48 brief

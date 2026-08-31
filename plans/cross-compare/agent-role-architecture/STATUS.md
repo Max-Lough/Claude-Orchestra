@@ -675,8 +675,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   "the seeding taxonomy" (4/11 precision) and read the V2 author line as a control
   marker (3 of its 4 packets were seeds); its one content-only call was wrong.
   Human-facing accuracy is at or below chance on both content-only reads (41.7%,
-  33.3%). The rounds-6–7 delta reviews (Anthropic `anthropic-5`; OpenAI `openai-5`,
-  CODEX_BIN pinned) measure the label-informed classifier arm of the stopping standard.
+  33.3%). **Rounds-6–7 delta (Anthropic, `wo12-r0-review-anthropic-5.md`): REVISE —
+  2 CRITICAL / 6 MAJOR / 4 MINOR, all accepted; round 8 opened.** The label-informed
+  arm of the stopping standard fails: a style-only classifier reaches 85.7% precision
+  under leave-one-out CV and a nine-rule threshold list labels 58 of 84 with zero
+  errors (`and` ≥ 13, zero digits, commas ≤ 4.02/100w, mean ORDER sentence ≤ 22.14,
+  both shortest-sentence tails). Also: gate 5's `served_model` is parsed from the
+  engine's own transcript (spoofable both ways); the FINDINGS terminator drops
+  findings under `### CRITICAL` subheads or after a `---` rule; `we` 0S/13C and `md`
+  sit under the unigram gate's exclusions; the `Commit subject:` line still pairs the
+  reused bases; run clones are named by artifact id; the round-7 draw seed does not
+  reproduce (record corrected). Round 8 = a generic single-threshold purity gate over
+  a feature family + the specific fixes, then content re-authored against its report,
+  blind test #4 with the draw stored verbatim, and a rounds-8 delta. Ships as 2.4.0.
+  OpenAI lane: attempts 4 (stub engine) and 5 (foreground cap, Conductor dispatch
+  error) VOID; attempt 6 running with the runner backgrounded and `CODEX_BIN` pinned.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

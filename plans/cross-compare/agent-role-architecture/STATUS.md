@@ -766,7 +766,11 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   --dry-run` clean end-to-end. Human-facing reads across generations: 41.7% → 33%
   → 25%, all at or below chance. Nothing further is permitted on WO-12 pre-trial
   work without a new owner order. **The trial waits on exactly two owner actions:
-  (1) run the staged codex-helper repair script; (2) record the four P0 readings
+  (1) `codex update` (or reinstall) run while no other codex session is live — the
+  staged helper swap was executed and REFUTED the same day (the 8e47f597 runner is
+  the 0.150.0-alpha.8 helper, older than 0.151.0; it faults identically; no runner
+  on disk speaks spawn protocol v6 — addendum in
+  `roster/wo11-codex-fault-investigation-2026-08-31.md`); (2) record the four P0 readings
   (`node quartermaster/quartermaster.js --record <AU-all|AU-opus|AU-fable|OU>
   <remaining-fraction> --source "..."`). Then: phase-0 pilot with `--yes`, the
   in-harness 12d arms, and the owed E8/E1/A0 exercises.**

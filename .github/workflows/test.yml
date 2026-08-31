@@ -118,6 +118,17 @@ jobs:
         # documented casting set, and Q0 spawn on every trigger.
         run: node tests/router.test.js
 
+      - name: Quartermaster suite
+        # WO-11: the P0 allowance substrate — recorded readings in, the
+        # router's bucket_state out. Proves it fails CLOSED on absent, stale,
+        # future-dated or malformed-latest evidence (never Green, never Red),
+        # that staleness is disclosed rather than discounted, and — the
+        # load-bearing part — that a P0-produced state drives the REAL router
+        # end-to-end: Green dispatches, a below-reserve AU-opus reading fires
+        # the P15 gate, an unconfirmed Amber fires the §5.5 arm, and a
+        # hard-throttled bucket takes the exhaustion-matrix path.
+        run: node tests/quartermaster.test.js
+
       - name: WO-7b misroute-recovery gates
         # Re-scores the committed WO-7b probe results through the live
         # router, so a router change that would break the pre-registered

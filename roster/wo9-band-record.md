@@ -160,29 +160,43 @@ full (counts in the WO-9 report).
 |---|---|---|---|
 | Scout (N0) | Bounded inventory of `engine:codex` roster files | Haiku 4.5 (in-harness, primary rung) | ex1 superseded (`wo9-n0-ex1-report.md`); ex2 DEGRADED-ACCEPTED — inventory correct and independently verified (4/4 `engine:codex` files), but the SEARCH LOG's exhaustion count failed independent verification (44 claimed vs 47 actual, second consecutive miscount) (`wo9-n0-ex2-report.md`) |
 | Investigator (I0) | Causal account: worktree lock mechanism | Opus 5 (in-harness, primary rung) | PASS, VERDICT CONFIRMED (`wo9-i0-ex1-report.md`) |
-| Researcher (N1) | Roster model-facts verification | GPT-5.6 Sol · med via `orchestra_exec` runner | ex1 DISCARDED (report-integrity defect, corrected in round 2 after R0 review — see Incidents; not demonstrated fabrication); ex2 DEGRADED-ACCEPTED (`STATUS: BLOCKED`, rule-compliant under the retry's integrity addendum; the SAME three URLs and conclusions independently corroborated ex1's citations; local shell channel blocked by the sandbox fault). Director's provisional acceptance as the exercised order; owner may override. (`wo9-n1-ex1-transcript.md`, `wo9-n1-ex2-transcript.md`) |
+| Researcher (N1) | Roster model-facts verification | GPT-5.6 Sol · med via `orchestra_exec` runner | ex1 DISCARDED (report-integrity defect, corrected in round 2 after R0 review — see Incidents; not demonstrated fabrication); ex2 DEGRADED-ACCEPTED (`STATUS: BLOCKED`, rule-compliant under the retry's integrity addendum; three of ex1's four cited sources — github release tag, model guidance, launch announcement — independently corroborated by ex2's own fetches; the npm-registry citation, ex1's sole source for the 0.151.0-on-npm claim, was never touched by ex2 and remains uncorroborated by either run's VERIFICATION; local shell channel blocked by the sandbox fault). Director's provisional acceptance as the exercised order; owner may override. (`wo9-n1-ex1-transcript.md`, `wo9-n1-ex2-transcript.md`) |
 | LC Analyst (N2) | Synthesis over the nine R0-EX verdicts | GPT-5.6 Terra · med via `orchestra_exec` runner | PASS (`wo9-n2-ex1-transcript.md`) |
 | Archivist (M0), documents lane | Owner-rulings extraction from `wo8-review-dispositions.md` | GPT-5.6 Terra · med via `orchestra_exec` runner | ex1 typed BLOCKED (honest); ex2 PASS (`wo9-m0-ex1-transcript.md`, `wo9-m0-ex2-transcript.md`). Images lane ships staffed but unexercised; first real image order will exercise it. |
 
 ## Incidents
 
 1. **N1-ex1 report-integrity defect (corrected in round 2 after R0 review).** The run
-   returned `STATUS: DONE` after completing real web research — three URLs its own
-   RESEARCH FINDINGS/VERIFICATION sections cite by name — while its VERIFICATION section
-   separately admitted that the LOCAL shell channel (`codex --version`, the repository-status
-   check) failed with `unsupported protocol version 6`; the transcript keeps the two channels
-   distinct and shows no self-contradiction between the completed web research and the failed
-   local commands. The defensible defect, and the reason the run's discard stands: it returned
-   `STATUS: DONE` without disclosing the degraded local channel up front, carried no retrieval
-   dates on its citations, and left its local verification duties (`codex --version`, the
-   required openai-docs skill read) unrun — a report-integrity/verification-discipline defect,
-   not demonstrated fabrication. **This record previously claimed the run was "live evidence of
-   the charter's named failure mode [fabrication]" — that claim was refuted on R0 review and is
-   withdrawn.** The retry (`wo9-n1-ex2-transcript.md`), run under an integrity addendum requiring
-   quoted fetch transcripts for every citation, independently corroborated the SAME three URLs
-   and conclusions as ex1 — evidence against fabrication, not for it — and returned
-   `STATUS: BLOCKED` because the addendum compels BLOCKED whenever the command runner is
-   unavailable: rule-compliant, conservative typing, not a choice made against fabricating.
+   returned `STATUS: DONE` after completing real web research — four distinct sources its
+   own RESEARCH FINDINGS section cites by name (github release tag, npm registry record,
+   OpenAI model guidance, OpenAI launch announcement), of which its VERIFICATION section
+   opened three (github, npm, model guidance; the launch announcement was cited but never
+   opened) — while its VERIFICATION section separately admitted that the LOCAL shell channel
+   (the repository-status check) failed with `unsupported protocol version 6`; the transcript
+   keeps the two channels distinct and shows no self-contradiction between the completed web
+   research and the failed local command. The anchored grounds, and the reason the run's
+   discard stands: (1) it returned `STATUS: DONE` without disclosing the degraded local
+   channel up front — the command runner was down and the report did not surface that as a
+   limitation — and (2) it carried no retrieval dates on its citations, a charter duty
+   (`researcher.md:41`, "every load-bearing claim... must carry a resolvable source and
+   retrieval date"). Two grounds previously stated alongside these are withdrawn as
+   unsupported: `codex --version` was conditional in the order text on network being
+   unavailable (`n1-order.txt`, "If network access is unavailable... report what you can
+   establish from the local installation"), and ex1's own network access worked (its web
+   research completed) — the conditional branch never fired, so `codex --version` was never
+   an owed duty for this run. The "required openai-docs skill read" was never a duty given to
+   ex1 at all — it appears only in the retry's transcript (`wo9-n1-ex2-transcript.md:16,20`)
+   and was retro-attributed to ex1 in error. **This record previously claimed the run was
+   "live evidence of the charter's named failure mode [fabrication]" — that claim was refuted
+   on R0 review and is withdrawn.** The retry (`wo9-n1-ex2-transcript.md`), run under an
+   integrity addendum requiring quoted fetch transcripts for every citation, independently
+   corroborated three of ex1's four cited sources — the github release tag, OpenAI's model
+   guidance, and the launch announcement — and their conclusions; the npm-registry citation,
+   ex1's sole source for the 0.151.0-on-npm claim, was not touched by ex2 and remains
+   uncorroborated by either run's VERIFICATION — evidence against fabrication, not for it —
+   and returned `STATUS: BLOCKED` because the addendum compels BLOCKED whenever the command
+   runner is unavailable: rule-compliant, conservative typing, not a choice made against
+   fabricating.
 2. **Transient codex sandbox command-runner fault** (`unsupported protocol version 6`).
    Hit m0-ex1 (full block — could not read the source document at all), n1-ex1 (partial —
    blocked the local shell channel only, undisclosed up front; see Incident 1), and n1-ex2
@@ -208,9 +222,13 @@ full (counts in the WO-9 report).
 4. **N0 self-reported exhaustion counts are unreliable — verify mechanically.** Two
    consecutive N0 runs against this same order class miscounted their own surface: ex1
    reported 39 of 40 roster files; ex2 (`wo9-n0-ex2-report.md`) reported 44 of 47 (an
-   independent Glob returned 47, and the opened-files list omitted `scout-anthropic.md`
-   and two others). Both runs' bounded inventories were themselves correct — only the
-   exhaustion arithmetic was wrong. Calibration for the N0 Haiku·off casting: bounded
+   independent Glob returned 47; the opened-files list omitted `scout-anthropic.md` by
+   name — the naive 47−44=3 arithmetic was never verified against actual filenames, so
+   only this one omission is confirmed). The SEARCH LOG's own opened-files list carries a
+   further inconsistency: its numbered ranges run to position 49 while the SEARCH LOG and
+   report both declare a total of 44 files. Both runs' bounded inventories were themselves
+   correct — only the exhaustion arithmetic was wrong. Calibration for the N0 Haiku·off
+   casting: bounded
    inventories are reliable, self-reported counts are not; SEARCH LOG numbers must be
    quoted tool output, and count claims verified mechanically by the dispatcher, not
    accepted on the seat's own arithmetic — investigate/fix in the N0 charter or dispatch
@@ -239,6 +257,10 @@ block's closing.
 ```
 
 ### n1-order-v2.txt (N1-ex2, retry with integrity addendum)
+
+[Editorial note: order text preserved verbatim as dispatch evidence; its preamble's "retry
+after a fabrication incident" framing below is the wording Incident 1 (above) withdraws —
+order text unaltered, framing corrected in round 2/3.]
 
 ```
 Class N1 research order, read-only. Do NOT modify any files in the repository or working

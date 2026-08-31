@@ -350,23 +350,32 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   role files shipped (`roster/wo9-band-record.md`: naming decisions, Archivist's two lane
   files, the Investigator read-only pin). `node roster/lint.js` and `node install.js
   --lint` (roster/ and repo-wide) pass; all five required test suites pass in full. Stage
-  2 exercised all five seats: Scout (N0, Haiku 4.5 in-harness) and Investigator (I0, Opus
-  5 in-harness) both PASS; N1/N2/M0 ran via the `orchestra_exec` codex runner (closest
-  existing cross-vendor call — no dedicated research/long-context/extraction runner
-  exists yet). N1's first run (ex1) returned DONE after completing real, cited web
-  research, but without disclosing that its local shell channel had separately failed, with
-  no retrieval dates, and with local verification duties unrun — a report-integrity/
-  verification-discipline defect, not demonstrated fabrication (corrected in round 2 after
-  R0 review; the original "fabrication"/"live evidence of the charter's named failure mode"
-  framing is withdrawn). Discarded on that narrower ground; the retry, under an integrity
-  addendum, independently corroborated ex1's same three URLs and conclusions (evidence
-  against fabrication) and correctly returned BLOCKED — rule-compliant, conservative typing,
+  2 exercised all five seats: Investigator (I0, Opus 5 in-harness) PASS; Scout (N0, Haiku
+  4.5 in-harness) DEGRADED-ACCEPTED — the bounded inventory was correct and independently
+  verified, but the seat miscounted its own surface in both exercises (39/40, then
+  44/47); a calibration follow-on is registered. N1/N2/M0 ran via the `orchestra_exec`
+  codex runner (closest existing cross-vendor call — no dedicated research/long-context/
+  extraction runner exists yet). N1's first run (ex1) returned DONE after completing real, cited web
+  research, but without disclosing that its local shell channel had separately failed (the
+  command runner was down and the report did not surface that as a limitation) and with no
+  retrieval dates on its citations, a charter duty — a report-integrity/verification-
+  discipline defect, not demonstrated fabrication (corrected in round 2 after R0 review; the
+  original "fabrication"/"live evidence of the charter's named failure mode" framing is
+  withdrawn, and two previously-cited grounds — a conditional `codex --version` duty that
+  never fired since network was available, and an openai-docs skill read never owed to ex1 —
+  are withdrawn as unsupported). Discarded on the two anchored grounds; the retry, under an
+  integrity addendum, independently corroborated three of ex1's four cited sources and
+  conclusions — the npm-registry citation, ex1's sole source for the 0.151.0-on-npm claim,
+  remains uncorroborated by either run (evidence against fabrication) — and correctly
+  returned BLOCKED — rule-compliant, conservative typing,
   not a choice against fabricating — provisionally accepted as the exercised order, owner
   may override. M0's documents-lane ex1 hit the same transient codex sandbox fault
   (`unsupported protocol version 6`) and typed BLOCKED honestly; ex2 PASS. N2 PASS
   cleanly. M0's images lane ships staffed but unexercised. Follow-ons registered: the
   codex sandbox protocol fault (investigate/upstream), a `verifier/checkout.js:322-327`
-  prune-comment fix (incidental I0 finding), and the standing no-dedicated-runner gap.
+  prune-comment fix (incidental I0 finding), the standing no-dedicated-runner gap, and
+  N0's self-reported exhaustion counts requiring mechanical verification (calibration
+  follow-on).
   Full record: `roster/wo9-band-record.md`. Next: **WO-10**.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).

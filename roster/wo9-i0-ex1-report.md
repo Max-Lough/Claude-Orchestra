@@ -69,3 +69,10 @@ C:\Users\maxtl\Projects\Claude-Orchestra."
 
 Note: the grant was issued at dispatch but not recorded in the repo at the time — a process
 gap now closed by recording it here.
+
+The restored PHASE line above still falls short of `investigator.md:67`'s full field shape
+(`PHASE: read-only | execution (probe manifest attached)`): the fixture commands used for
+this exercise are summarized in the report body (the mechanism section above) but no probe
+manifest was attached at dispatch or recorded alongside this PHASE line. Residual acknowledged;
+future I0 dispatches crossing into execution must require the probe manifest in the order
+itself, not rely on the report body to stand in for it.

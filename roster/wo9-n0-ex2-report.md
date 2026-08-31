@@ -1,3 +1,6 @@
+Seat: Scout (N0) · Casting used: Claude Haiku 4.5 · off (primary rung, in-harness via the Agent tool)
+Date: 2026-08-30 · Dispatched by the Director as a round-2 re-exercise.
+
 SCOUT (N0) — mission: exact inventory of roster files declaring `engine: codex` in frontmatter (declared surface: files matching `roster/*.md` in C:\Users\maxtl\Projects\Claude-Orchestra)
 
 RESULT
@@ -30,8 +33,12 @@ UNSEARCHED / TRUNCATED
 ## Director verification postscript
 
 An independent Glob of `roster/*.md` at the same tree returned **47 files, not the 44** this
-report's SEARCH LOG claims. The report's opened-files list omits `scout-anthropic.md` (and two
-others) — it is never named individually and no numbered range in the list accounts for it. The
+report's SEARCH LOG claims. The report's opened-files list omits `scout-anthropic.md` by name —
+it is never named individually and no numbered range in the list accounts for it. The naive
+47−44=3 arithmetic was never verified against actual filenames; only this one omission is
+confirmed. The SEARCH LOG's own opened-files list carries a further inconsistency: its numbered
+ranges run to position 49 (items 42–49) while the SEARCH LOG (line 10) and the report (line 28)
+both declare a total of 44 files. The
 4-file `engine:codex` inventory itself (the RESULT table above) is verified correct: exactly
 `archivist-documents.md`, `lc-analyst.md`, `researcher.md`, and `reviewer-openai.md` declare
 `engine: codex`, and no fifth file does.

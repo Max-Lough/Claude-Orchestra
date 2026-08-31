@@ -56,6 +56,12 @@ runners, per the field-tested cross-vendor lane.
 | Evidence | `investigator.md` | I0 primary — Opus 5 · high, read-only tool pin (Sol · high mirror / Fable 5 · high ceiling, no files yet) | PASS |
 | Evidence | `archivist-documents.md` | M0 documents lane — Terra · med via Codex CLI | PASS (ex2; ex1 typed BLOCKED honestly — see band record) |
 | Evidence | `archivist-images.md` | M0 images lane — Opus 5 · med, also the video/audio degradation path's landing point | unexercised — see band record |
+| Construction | `builder.md` | E2 primary — Sonnet 5 · medium | pending (WO-10 stage 2) |
+| Construction | `principal.md` | E3 primary — Opus 5 · high (xhigh effort point routed, not a separate file) | pending (WO-10 stage 2) |
+| Construction | `operator.md` | E0 primary — Sol · high via Codex CLI | pending (WO-10 stage 2) |
+| Construction | `test-designer-vs-anthropic.md` | Q0 vsAnthropicAuthor — Terra · med via Codex CLI | pending (WO-10 stage 2) |
+| Construction | `test-designer-vs-openai.md` | Q0 vsOpenaiAuthor — Sonnet 5 · medium | pending (WO-10 stage 2) |
+| Construction | `refactorer.md` | E8 primary — Terra · med via Codex CLI | pending (WO-10 stage 2) |
 
 Exercise records and the review dispositions they produced (assurance band):
 `wo8-review-dispositions.md`. **The tranche's mandatory cross-vendor review
@@ -64,3 +70,8 @@ findings there.**
 
 Evidence band (WO-9) exercise records and naming/rung decisions:
 `wo9-band-record.md`.
+
+Construction band (WO-10) staffing record, naming/rung decisions, the
+Builder/Principal legacy-validation table, and two flagged `router/`
+mirror-or-declared-exception gaps (Test Designer, Interface Artisan) found
+but left unedited per the WO-10 no-router-changes rule: `wo10-band-record.md`.

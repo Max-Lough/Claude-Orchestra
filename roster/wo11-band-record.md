@@ -502,7 +502,7 @@ covers only what remains owed.
 
 | Class | Seat | Band / WO | Status | What unblocks it |
 |---|---|---|---|---|
-| E8 | Refactorer | Band C, WO-10 | BLOCKED-PENDING-ENVIRONMENT — **5 attempts** (3 in WO-10; attempts 4–5 on 2026-08-31, `roster/wo10-e8-exercise-ex3.md`), all engine-reaching, all hit `unsupported protocol version 6` before the mandatory pre-edit census could run; fixture tree unchanged throughout; zero competency signal | **Owner repairs the codex install** — the fault is root-caused (`roster/codex-fault-investigation-2026-08-31.md`): the 0.151.0 install ships a 0.147-era `codex-command-runner.exe` that rejects spawn protocol v6; not cwd, model, effort, or time; no per-invocation flag clears it (`features.unified_exec=false` refuted 3/3). Order reproducible from `roster/wo10-band-record.md`'s order-text appendix. |
+| E8 | Refactorer | Band C, WO-10 | BLOCKED-PENDING-ENVIRONMENT — **5 attempts** (3 in WO-10; attempts 4–5 on 2026-08-31, `roster/wo10-e8-exercise-ex3.md`), all engine-reaching, all hit `unsupported protocol version 6` before the mandatory pre-edit census could run; fixture tree unchanged throughout; zero competency signal | **Owner repairs the codex install** — the fault is root-caused (`roster/wo11-codex-fault-investigation-2026-08-31.md`): the 0.151.0 install ships a 0.147-era `codex-command-runner.exe` that rejects spawn protocol v6; not cwd, model, effort, or time; no per-invocation flag clears it (`features.unified_exec=false` refuted 3/3). Order reproducible from `roster/wo10-band-record.md`'s order-text appendix. |
 | E1 | Runner | Band C, WO-10 | BLOCKED-PENDING-ENVIRONMENT — **5 attempts** (3 in WO-10; attempts 4–5 on 2026-08-31, `roster/wo10-e1-exercise-ex3.md`), all engine-reaching, all hit the same fault before any file read; fixture tree unchanged; zero competency signal | Same as E8. Order reproducible from `roster/wo10-band-record.md`'s order-text appendix. |
 | A0 | Architect | Band A, WO-11 | BLOCKED-PENDING-ENVIRONMENT — **5 attempts** (2 in WO-11; attempts 3–5 on 2026-08-31, `roster/wo11-a0-exercise-ex3.md`): attempt 3 reached the engine fault-free but returned BLOCKED on a **dispatcher staging error** (the `reference/` fixture was not recreated — the Conductor's dispatch text omitted `--cd`; not a seat signal); attempts 4–5, correctly staged, hit the fault before reaching the reference source; zero competency signal | Same as E8. Order reproducible verbatim from this record's "Codex order text, verbatim" section above. |
 | A1 | Synthesizer | Band A, WO-11 | DEFERRED-DECLARED — not dispatched; the cast is max-reserved and once-per-project, so a toy exercise would spend the reservation on a synthetic problem | The seat's first real multi-source comparative session (owner override available for a synthetic exercise sooner — see Follow-ons registered §4). |
@@ -527,7 +527,7 @@ ESCALATED follow-on (`roster/wo10-band-record.md` Follow-ons §1) is re-scoped t
 repair; (3) attempt 3 of A0 is charged to the Conductor as a dispatch staging error, not
 to the seat; (4) every Codex-side WO-12 pass (the X-Sol/X-Terra review lanes must run test
 suites) is blocked on the same repair, which makes it the campaign's critical path. The
-Investigator's record is committed verbatim: `roster/codex-fault-investigation-2026-08-31.md`.
+Investigator's record is committed verbatim: `roster/wo11-codex-fault-investigation-2026-08-31.md`.
 
 **Band completion for WO-9/WO-10/WO-11 is gated on this ledger clearing**,
 per the Sol·max holistic review's MAJOR A finding that STATUS.md's prior

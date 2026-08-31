@@ -525,7 +525,7 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   fresh-context Investigator (historical faults at the repo root; live probes 5/5
   faults across repo root, `%TEMP%`, `Projects\`), and the per-invocation disable
   (`-c features.unified_exec=false`) was REFUTED 3/3. Record verbatim:
-  `roster/codex-fault-investigation-2026-08-31.md`. **Owner action: repair the
+  `roster/wo11-codex-fault-investigation-2026-08-31.md`. **Owner action: repair the
   helper (replace with the newer runner already on disk, hash `8e47f597…`) or
   reinstall codex 0.151.0.** Until then every Codex-side dispatch that must spawn a
   shell — the owed E8/E1/A0 exercises (re-attempted today: 2 clean engine reaches,

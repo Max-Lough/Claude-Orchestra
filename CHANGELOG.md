@@ -64,7 +64,7 @@ saw it.
   on a turn (23 engine-reaching attempts, 18 faults; `-c
   features.unified_exec=false` refuted 3/3). Repairing the helper is an owner
   action on the install, outside this repository — recorded, not patched.
-  `roster/codex-fault-investigation-2026-08-31.md`.
+  `roster/wo11-codex-fault-investigation-2026-08-31.md`.
 - **Records:** the owed Refactorer/Runner/Architect exercises re-attempted
   (5 attempts each, all BLOCKED on the fault, fixtures untouched; one Architect
   attempt charged to the Conductor as a dispatch staging error); WO-13 disposed

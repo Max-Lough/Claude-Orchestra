@@ -9,6 +9,67 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.3.0 — WO-12 trial substrate: a pre-registered protocol, a sealed seeded-defect corpus, and the lanes to run it; the codex sandbox fault root-caused
+
+The plan's paired-casting trials (WO-12) exist as runnable, pre-registered
+instruments rather than intentions — but **no trial pass has run**: every
+pass is gated on the Quartermaster showing a usable pool and on the codex
+helper repair below. What prompted the shape of this release is the
+review-qualification problem the plan names in § 3.4: no measurement of
+GPT-5.6 Terra's review recall exists, so the T1 relief lane is neither
+granted nor denied on evidence — it is qualification-gated, and a
+qualification needs a corpus whose answer key was sealed before any reviewer
+saw it.
+
+- **New: `plans/cross-compare/agent-role-architecture/wo12/wo12-protocol.md`** —
+  decision rules, corpus design, lanes, phases and scoring for trials 12a/12c/
+  12d/12e/12f/12h committed before any model pass (the WO-7b precedent); 12b
+  deferred to the shadow period with its rule fixed now; allowance governance
+  bound to P0 bucket state. One pre-run amendment recorded in place (the 12h
+  variant rotation, which the first draft skewed 18/6/6).
+- **New: the seeded-defect corpus (`wo12/corpus/`)** — 84 review packets drawn
+  from this repository's own history: 30 seeded variants (6 complementarity
+  types × 5 — constraint violation, over-obedience, long-context miss,
+  falsified test state, unsupported claim, race/lifetime; 6 CRITICAL, 24 MAJOR,
+  0 MINOR) and 54 unmodified controls, packet variants 10/10/10 and 18/18/18
+  for the blinding factor. Each seed was produced by a fresh-context seeder
+  that saw only its own base commit, type definition and rubric — never the
+  key — as a `P → C'` patch that re-applies in a fresh clone with the suite
+  green (an escaped defect, not a red one). The key is sealed in
+  `corpus/key.json`; `CONSTRUCTION.md` records every tally, head sha,
+  deviation and brief normalization.
+- **New: the lane tooling** — `build-corpus.js` (reproducible variant
+  materialization in a throwaway clone; the variant's commit message is the
+  real commit's subject, so the reviewer reads the intent the packet claims),
+  `run-lane.js` (P0-gated, `--yes`/`--dry-run`, one retry on UNAVAILABLE,
+  verbatim results; refuses unless the Quartermaster shows OU usable),
+  `score.js` (mechanical hits with `exact-path` vs `basename-only` tiers and a
+  `--strict-paths` mode, Wilson intervals, the 12f gate table, the 12d
+  seed-level union table), `assemble-key.js` (all-or-nothing key assembly,
+  brief sha normalization, leakage and template-conformance lints scoped to
+  the author sentence and exempting transcribed commit subjects). Suite:
+  `tests/wo12-tooling.test.js`, in CI.
+- **New: the 12a, 12e and 12c corpora** — 8 bounded Builder orders with
+  hidden acceptance tests (red on baseline, green on a private reference), 12
+  hard-environment tasks with a scope-audited resolver check (`check-task.js`
+  reports out-of-scope mutation as NOT_RESOLVED even when the check passes),
+  and 6 static-component orders with a dependency-free markup/contrast checker
+  reusing the WO-10 contrast algorithm.
+- **Found: the "intermittent codex sandbox fault" was never intermittent.**
+  A fresh-context Investigator refuted the working-directory hypothesis and
+  located the emitter by hash and binary search: the `codex-command-runner.exe`
+  inside the 0.151.0 install is byte-identical to 0.147.0's and rejects the
+  0.151.0 CLI's spawn protocol v6 on the unified-exec tool path; the legacy
+  shell path works, so the discriminator was which exec tool the model picked
+  on a turn (23 engine-reaching attempts, 18 faults; `-c
+  features.unified_exec=false` refuted 3/3). Repairing the helper is an owner
+  action on the install, outside this repository — recorded, not patched.
+  `roster/codex-fault-investigation-2026-08-31.md`.
+- **Records:** the owed Refactorer/Runner/Architect exercises re-attempted
+  (5 attempts each, all BLOCKED on the fault, fixtures untouched; one Architect
+  attempt charged to the Conductor as a dispatch staging error); WO-13 disposed
+  as having no target (the metered planning lane was deleted in 2.0.0).
+
 ## 2.2.0 — the Quartermaster substrate; the next-generation roster staffed; freshness becomes the pool state's only routing gate
 
 The agent-role-architecture plan (`plans/cross-compare/agent-role-architecture/`,

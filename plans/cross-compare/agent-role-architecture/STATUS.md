@@ -551,6 +551,18 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   as pre-registered corpora. **Runs are gated twice:** P0 must show OU usable (owner
   `/status` readings — all four buckets fail closed as of this date) and the codex
   helper must be repaired (above). Phase 0 = 12-artifact pilot, 24 Codex reviews.
+  **Incidental findings registered during corpus construction (follow-ons, own
+  lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
+  assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak
+  under the buggy order begins one character later, so the test passes with or
+  without the fix it pins (found by the sdc-041 seeder while surveying; not used as a
+  seed); (ii) `tests/review-lane.test.js`'s helper-sibling repair and orphan-sweep
+  sections flicker 5–7 failures on this host at historical commits while the current
+  HEAD runs 116/116 green — environment-dependent (the stale codex helper is the
+  plausible cause), worth pinning once the helper is repaired; (iii) the sdc-039
+  seeder independently rediscovered the round-4 `sweepAbandoned` main-worktree
+  rm-rf (R0-EX5's CRITICAL, fixed at `ceeaabc`) — a confirmation of the record, not a
+  live defect.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

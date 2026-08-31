@@ -153,3 +153,12 @@ jobs:
         # and asserts the server relays reports verbatim and speaks only in
         # MCP TRANSPORT terms when the transport itself fails.
         run: node tests/mcp-lane.test.js
+
+      - name: WO-12 tooling suite
+        # The seeded-defect-corpus (SDC) tooling: build-corpus.js's
+        # reproducible variant materialization (same head sha from two
+        # independent clones) and fail-closed patch handling, run-lane.js's
+        # P0/OU Quartermaster gate and --yes/--dry-run refusals (stubbed
+        # quartermaster, no real codex invocation), and score.js's mechanical
+        # hit logic, Wilson intervals, and the 12d seed-level union table.
+        run: node tests/wo12-tooling.test.js

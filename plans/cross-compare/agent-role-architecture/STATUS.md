@@ -668,8 +668,15 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   failures, shortest-sentence means 10.9 vs 9.6 (Δ1.3, limit 3), unigram exclusivity 0
   at df≥8, plus all earlier gates. The identity gate now parses `served_model` first
   (a contradiction fails gate 5; absence reads LIMITED; only an explicit match is
-  evidence). Regeneration, the third blind test (seeded draw `wo12-round7`), and the
-  round-7 delta review follow.
+  evidence). **Round-7 corpus regenerated and committed `fb20e44`** (168 briefs,
+  idempotent, zero sha-like tokens, sanitized run clones re-verified; CI 9/9 green).
+  **Blind test #3 (`corpus/BLIND-TEST-round7.md`): 8/24 = 33%** — a fresh Opus reader
+  over an isolated copy of the 24-packet seeded draw called the V3 hazard-checklist arm
+  "the seeding taxonomy" (4/11 precision) and read the V2 author line as a control
+  marker (3 of its 4 packets were seeds); its one content-only call was wrong.
+  Human-facing accuracy is at or below chance on both content-only reads (41.7%,
+  33.3%). The rounds-6–7 delta reviews (Anthropic `anthropic-5`; OpenAI `openai-5`,
+  CODEX_BIN pinned) measure the label-informed classifier arm of the stopping standard.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

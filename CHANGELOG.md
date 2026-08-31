@@ -134,6 +134,16 @@ saw it.
   re-admitted the suffix tier is gone and hits are minted only from the FINDINGS
   section; per-finding adjudication coverage needs an exact, length-bounded match;
   a truncated sibling results file refuses instead of disarming the phase-0 halt.
+  Two things the n-gram lint taught, recorded rather than smoothed over: its first
+  cut (any 3-gram, 4+ documents) flagged 133 phrases, almost all connective
+  scaffolding, and had to be re-scoped to content-word 3-grams in 6+ documents;
+  what survived was not subject matter but one author's sentence repeated across
+  nine consecutive control files — a fingerprint the rule exists to catch, fixed
+  by varying the prose. The genuine asymmetry — docs/records commits exist only
+  among the controls, because every seeded base has to be a code commit — cannot
+  be authored away and is disclosed in `CONSTRUCTION.md` with the exclusive
+  n-grams as evidence: a whole-corpus classifier can see it; a per-packet reviewer
+  in a sanitized clone cannot.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

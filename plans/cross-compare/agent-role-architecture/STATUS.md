@@ -633,9 +633,14 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   seeded base is a code commit) is disclosed in CONSTRUCTION.md as a corpus-level
   property that gives a per-packet reviewer nothing. The stray `p0-overrides.log` was
   the tooling suite's own SIGTERM-interrupted run — the ledger now lives beside the
-  results file and a guard test asserts the repo stays clean. Round-5 assembly/
-  verification, the second blind test on a disjoint draw, and the round-5 delta
-  review follow.
+  results file and a guard test asserts the repo stays clean. The first round-5
+  `--check-only` on the varied content left three residues — digit density (controls
+  5.39 vs seeds 3.40 per 100 words, from stacked suite counts and short shas one
+  author had added), one more shared control phrase ("the status file", 6 files), and
+  the last "leave … alone" — all being cleared by per-file caps (≤3 numerals, no
+  shas) and phrase variation. CI on the sealed-content push `f992947`: 9/9 green.
+  Round-5 assembly/verification, the second blind test on a disjoint draw, and the
+  round-5 delta review follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

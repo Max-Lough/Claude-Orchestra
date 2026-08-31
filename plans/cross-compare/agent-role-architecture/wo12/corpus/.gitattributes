@@ -1,2 +1,3 @@
 *.patch -text
 briefs/* -text
+content/*.json -text

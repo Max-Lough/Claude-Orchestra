@@ -1,0 +1,4 @@
+{
+  "order": "Write the delta re-review order for the fix applied in the latest round, pinning the exact two-commit range it covers so the reviewer works against a fixed, enumerated diff rather than a moving branch tip. State plainly that the point of this round is to get an explicit ruling on the one strand still open, not to reopen everything already settled. Make clear in the order text that a clean verdict here is what clears the two blocked tracks out of their needs-revision state — so the reviewer understands the stakes of the ruling they are about to make, not just the mechanics of what to check.",
+  "claims": "Wrote the re-review order and its accompanying executor report, 98 lines added across two new files, pinning the two-commit range under review by full sha so the diff being reviewed cannot drift. The order states the one residual strand awaiting a ruling and what a clean verdict would settle. No prior file was modified — both files are new."
+}

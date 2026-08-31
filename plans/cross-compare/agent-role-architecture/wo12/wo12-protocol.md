@@ -139,10 +139,18 @@ idioms occurred in 15 controls and no seed): both populations are authored to th
 bands (ORDER 135–160, CLAIMS 65–95); backticks are forbidden in content prose; a
 **distribution lint** fails assembly on range floors/ceilings more than 8 words apart,
 sd ratios outside 0.6–1.6, digit-density means more than 1.5 per 100 words apart, any
-content 3-gram present in ≥4 artifacts of one population and none of the other, or any
-of five watched idioms with a per-population frequency ratio outside 0.5–2.0. The
-blind reader's result stands as the human-facing measure (chance); the lint is the
-classifier-facing one.
+3-gram carrying ≥2 content words that is present in ≥6 artifacts of one population and
+none of the other (4–5-document exclusives are reported, not failed), or any of five
+watched idioms with a per-population frequency ratio outside 0.5–2.0. The blind
+reader's result stands as the human-facing measure (chance); the lint is the
+classifier-facing one. **Disclosed limitation — topic asymmetry:** the control pool
+carries docs/records commits the seeded pool does not (every seeded base is a code
+commit; the pool ran short of code commits for controls), so a classifier keyed on
+subject matter ("the band record", "delta re-review order") can separate the
+populations. That is a property of the pool, not of any packet: it tells a per-packet
+reviewer nothing about whether *its* packet is seeded, and it cannot be authored away
+without misdescribing the commits. CONSTRUCTION.md lists the exclusive n-grams as
+evidence rather than hiding them.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

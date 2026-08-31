@@ -377,6 +377,54 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   N0's self-reported exhaustion counts requiring mechanical verification (calibration
   follow-on).
   Full record: `roster/wo9-band-record.md`. Next: **WO-10**.
+- **WO-10 EXECUTED (2026-08-30):** the construction band (Band C, seats
+  9-20 minus retired 13: Operator, Runner, Builder, Principal, Data
+  Engineer, Interface Artisan, Spatial Specialist, Refactorer, Test
+  Designer, Doc Writer; Red Team shipped already in WO-8) staffed per the
+  WO-8-11 order — eleven role files across ten seats (Test Designer splits
+  into two lane files, Archivist precedent) shipped in two commits (Builder/
+  Principal/Operator/Test Designer/Refactorer first, then the five domain
+  seats), plus a third commit closing the Director's lint-conflict ruling
+  (`roster/wo10-band-record.md`: naming/rung decisions, the Builder/
+  Principal legacy-validation table, two flagged `router/castings.json`
+  mirror-or-declared-exception gaps for Test Designer and Interface Artisan,
+  closed by adding declared exceptions — `crossFamilyByConstruction` for
+  Q0, `noMirrorFor.primary` for E5 — that `roster/lint.js` was taught to
+  accept). `node roster/lint.js` and `node install.js --lint` (roster/ and
+  repo-wide) pass; all five required test suites pass in full. Stage 2
+  exercised all ten seats: **8/10 complete** — Builder (E2, Sonnet 5) PASS;
+  Principal (E3, Opus 5) PASS with a self-disclosed acceptance-log scope
+  deviation; Operator (E0, Sol via Codex) PASS (MODULE_NOT_FOUND root cause,
+  minimal fix, independently reproven); Data Engineer (E4, Opus 5) PASS
+  (byte-exact rollback round-trip, poisoned record refused as a verified
+  no-op); Spatial Specialist (E6, Opus 5) PASS (15-check mesh validator,
+  non-vacuity proven by a negative control, self-caught its own report
+  transcription error); Doc Writer (D0, Sonnet 5) PASS (28 citations, the
+  checker proven to fail closed); Interface Artisan (E5, Sol via Codex)
+  DEGRADED-ACCEPTED (all 3 files independently verified including the
+  load-bearing contrast computation; the pre-registered browser/render-loop
+  gap stayed unexercised as expected). **The Q0 cross-family exercise pair
+  is the highlight**: both Test Designer lanes ran the same mission — an
+  independent pinning suite plus 2 required mutants, built from contract
+  alone — against an implementation from the *other* family (vsOpenaiAuthor,
+  Sonnet 5, pinned Sol-authored `contrast.js`; vsAnthropicAuthor, Terra via
+  Codex, pinned Sonnet-authored `parse-duration.js`), both PASS, both
+  mutants caught non-vacuously in each direction, and the vsOpenaiAuthor run
+  surfaced a genuine implementation finding (a `0.04045`-vs-spec-quoted-
+  `0.03928` sRGB threshold constant) proven behaviorally unobservable across
+  all 256 8-bit hex channel values. **2/10 environment-blocked**: Refactorer
+  (E8, Terra via Codex) and Runner (E1, Luna via Codex) each hit the
+  `unsupported protocol version 6` codex sandbox fault on all 3 authorized
+  attempts (2 in ex1, 1 final retry in ex2) with zero competency signal
+  obtained on either seat — the same fault this round also degraded
+  Interface Artisan's own mid-run self-check, and across WO-9+WO-10 has now
+  hit 6 of the program's ~15 codex-launched exercise attempts. Follow-ons
+  registered: the codex sandbox protocol fault (ESCALATED, investigate/
+  upstream), the two owed E8/E1 exercises (orders reproducible from the band
+  record's appendix once the fault clears), Interface Artisan's browser/
+  render-loop gap (pre-registered, still open), and Spatial Specialist's
+  visual/critic path (mechanical validity only this round). Full record:
+  `roster/wo10-band-record.md`. Next: **WO-11**.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -396,10 +444,10 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-29, final ruling applied)
+## Fresh-session quick start (as of 2026-08-30, WO-10 executed)
 
-1. **WO-8–11 are the active steps — WO-4, WO-5, WO-6, WO-7b, WO-8, and WO-9 are
-   done; WO-10 is next.** The
+1. **WO-8–11 are the active steps — WO-4, WO-5, WO-6, WO-7b, WO-8, WO-9, and
+   WO-10 are done (WO-10 pending review); WO-11 is next.** The
    2026-08-29 owner-delegated final ruling merged I0/I1, restructured Part 4 around the
    §4.0 total decision procedure, and demoted class to a routing hypothesis with
    `RECLASSIFY` recovery; WO-4 encoded it in `registry/` (`node tests/registry.test.js`);
@@ -414,8 +462,10 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
    readout against the manual readings file.
 3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → ~~WO-5
    (Verifier substrate)~~ → ~~WO-6 (router)~~ → ~~WO-7b (misroute recovery — PASSED)~~
-   → ~~WO-8~~ → ~~WO-9 (evidence band staffed + exercised)~~ → **WO-10** →
-   WO-11 → WO-12 trials → WO-15 shadow.
+   → ~~WO-8~~ → ~~WO-9 (evidence band staffed + exercised)~~ →
+   ~~WO-10 (construction band staffed + exercised, 8/10 complete, 2
+   environment-blocked — pending review)~~ → **WO-11** →
+   WO-12 trials → WO-15 shadow.
    Parallelizable now per the plan's dependency line:
    WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
    against the `/deep-plan` retirement), WO-12f (Terra T1 qualification trial, "any

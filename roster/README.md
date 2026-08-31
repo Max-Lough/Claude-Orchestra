@@ -56,17 +56,17 @@ runners, per the field-tested cross-vendor lane.
 | Evidence | `investigator.md` | I0 primary — Opus 5 · high, read-only tool pin (Sol · high mirror / Fable 5 · high ceiling, no files yet) | PASS |
 | Evidence | `archivist-documents.md` | M0 documents lane — Terra · med via Codex CLI | PASS (ex2; ex1 typed BLOCKED honestly — see band record) |
 | Evidence | `archivist-images.md` | M0 images lane — Opus 5 · med, also the video/audio degradation path's landing point | unexercised — see band record |
-| Construction | `builder.md` | E2 primary — Sonnet 5 · medium | pending (WO-10 stage 2) |
-| Construction | `principal.md` | E3 primary — Opus 5 · high (xhigh effort point routed, not a separate file) | pending (WO-10 stage 2) |
-| Construction | `operator.md` | E0 primary — Sol · high via Codex CLI | pending (WO-10 stage 2) |
-| Construction | `test-designer-vs-anthropic.md` | Q0 vsAnthropicAuthor — Terra · med via Codex CLI | pending (WO-10 stage 2) |
-| Construction | `test-designer-vs-openai.md` | Q0 vsOpenaiAuthor — Sonnet 5 · medium | pending (WO-10 stage 2) |
-| Construction | `refactorer.md` | E8 primary — Terra · med via Codex CLI | pending (WO-10 stage 2) |
-| Construction | `runner.md` | E1 primary — Luna · low–med via Codex CLI | pending (WO-10 stage 2) |
-| Construction | `data-engineer.md` | E4 primary — Opus 5 · high | pending (WO-10 stage 2) |
-| Construction | `interface-artisan.md` | E5 primary — Sol · med–high via Codex CLI, browser/screenshot loop | pending (WO-10 stage 2) |
-| Construction | `spatial-specialist.md` | E6 primary — Opus 5 · high | pending (WO-10 stage 2) |
-| Construction | `doc-writer.md` | D0 primary — Sonnet 5 · medium | pending (WO-10 stage 2) |
+| Construction | `builder.md` | E2 primary — Sonnet 5 · medium | PASS — `node test.js` all-pass, separate baseline/impl commits (see band record) |
+| Construction | `principal.md` | E3 primary — Opus 5 · high (xhigh effort point routed, not a separate file) | PASS — 4/4 acceptance steps, coupling invariant named, honest split-resistance concession (see band record) |
+| Construction | `operator.md` | E0 primary — Sol · high via Codex CLI | PASS — MODULE_NOT_FOUND root cause, minimal fix, install+run independently reproven (see band record) |
+| Construction | `test-designer-vs-anthropic.md` | Q0 vsAnthropicAuthor — Terra · med via Codex CLI | PASS — 25-case suite vs. Sonnet-authored implementation, both mutants red, all claims independently reproduced (see band record) |
+| Construction | `test-designer-vs-openai.md` | Q0 vsOpenaiAuthor — Sonnet 5 · medium | PASS — suite vs. Sol-authored implementation, both mutants red, 3 informational findings (see band record) |
+| Construction | `refactorer.md` | E8 primary — Terra · med via Codex CLI | BLOCKED-PENDING-ENVIRONMENT — 3 attempts, all `unsupported protocol version 6`, no competency signal (see band record) |
+| Construction | `runner.md` | E1 primary — Luna · low–med via Codex CLI | BLOCKED-PENDING-ENVIRONMENT — 3 attempts, all `unsupported protocol version 6`, no competency signal (see band record) |
+| Construction | `data-engineer.md` | E4 primary — Opus 5 · high | PASS — byte-exact rollback round-trip, poison record refused as verified no-op (see band record) |
+| Construction | `interface-artisan.md` | E5 primary — Sol · med–high via Codex CLI, browser/screenshot loop | DEGRADED-ACCEPTED — all 3 files delivered and independently verified; pre-registered render-loop gap unexercised (see band record) |
+| Construction | `spatial-specialist.md` | E6 primary — Opus 5 · high | PASS — 15-check validator, negative control proves non-vacuity, byte-identical regeneration (see band record) |
+| Construction | `doc-writer.md` | D0 primary — Sonnet 5 · medium | PASS — 28 citations, mechanical checker fails closed (see band record) |
 
 Exercise records and the review dispositions they produced (assurance band):
 `wo8-review-dispositions.md`. **The tranche's mandatory cross-vendor review
@@ -77,6 +77,8 @@ Evidence band (WO-9) exercise records and naming/rung decisions:
 `wo9-band-record.md`.
 
 Construction band (WO-10) staffing record, naming/rung decisions, the
-Builder/Principal legacy-validation table, and two flagged `router/`
-mirror-or-declared-exception gaps (Test Designer, Interface Artisan) found
-but left unedited per the WO-10 no-router-changes rule: `wo10-band-record.md`.
+Builder/Principal legacy-validation table, the two flagged `router/`
+mirror-or-declared-exception gaps (Test Designer, Interface Artisan) — later
+closed by Director ruling, see the record's Dispositions section — and the
+stage-2 exercise record (8/10 seats PASS or DEGRADED-ACCEPTED, 2 seats
+BLOCKED-PENDING-ENVIRONMENT by the codex sandbox fault): `wo10-band-record.md`.

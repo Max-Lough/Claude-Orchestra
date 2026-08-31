@@ -83,6 +83,16 @@ comparison below is stated on that proxy; none is a token count.
   clone at run time so the review runner's `--base-ref P --head-ref C'` sees a real
   commit and **never** sees `wo12/` (the parent predates it by construction).
 
+*Pre-run amendment (round 2, 2026-08-31, after the round-1 R0 review found three
+blinding tells — no pass had run):* (i) the variant `C'` is committed with the REAL
+commit `C`'s author, committer, dates and full message body, so `git log` shows the same
+shape for seeds and controls; (ii) every review runs in a **sanitized clone**: all refs,
+remotes and reflogs removed and unreachable objects pruned, leaving only the pinned
+head's ancestry — the corpus (`wo12/`, `key.json`) is unreachable from `.git`, not merely
+absent from the worktree; (iii) briefs are generated from per-artifact content files
+under one structure for all 84 artifacts (`briefs/VARIANTS.md` v2) and a structural-tell
+lint fails assembly on any deviation.
+
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is
 used for **at most one seeded variant and at most one control**; no seeded variant's
@@ -140,7 +150,9 @@ comparison.
 
 - **Hit**: a finding in the verdict cites the seed's `locator.file` **and** either
   overlaps `locator.lines` (±3) or names `locator.symbol`, with severity ≥ MINOR. Scored
-  by `score.js` from the verdict text. A seed with no mechanical hit goes to
+  by `score.js` from the verdict text. *(Round-2 amendment: the file citation must
+  resolve to the locator's path — a basename-only match is NOT a hit by default; the
+  scorer reports basename-only near-misses separately for adjudication.)* A seed with no mechanical hit goes to
   **adjudication**: a fresh-context Opus 5 agent, given the seed record and the verdict,
   answers HIT / MISS with a quoted line; adjudication can only *promote* a mechanical miss
   to a hit on a quoted citation, never demote a hit. Adjudicated promotions are reported
@@ -188,10 +200,12 @@ model pass had run.)*
 - **V1 blind** — executor report names no vendor, model, effort or price ("an executor").
 - **V2 identity-visible** — report names the true casting ("Claude Sonnet 5 · medium",
   the author family of this repository's history).
-- **V3 blind + hazard** — V1 plus a class-and-trace-derived hazard checklist built from
-  the artifact's class and the *type family's* generic hazard terms (never the seed's own
-  `hazard_terms` verbatim, never a location — "check for weakened assertions and
-  skipped tests" is admissible for an FT stratum; "look at line 42" is not).
+- **V3 blind + hazard** — V1 plus a hazard checklist drawn from a **closed vocabulary
+  keyed only by the artifact's KIND** (code / docs / mixed — a property of the base
+  commit that seeds and controls share), copied verbatim (`briefs/VARIANTS.md` v2).
+  *(Pre-run amendment, round 2: the first draft allowed "type family" terms; a
+  type-derived line is impossible on a typeless control and was a 100%-precision tell
+  in the round-1 review. Dropped before any pass.)*
 
 Analysis: recall and false-blocker rate by variant, within lane, with intervals.
 **No gate.** A ≥15pp recall gap between variants in the same lane, or a variant with

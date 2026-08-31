@@ -7,7 +7,7 @@ Commit subject:      Record what CI found, and sync the check counts
 ORDER:
 Update the release changelog to record what the first hour of cross-platform
 continuous integration actually found. Name the four runner faults that
-surfaced and were fixed in this release: the shell-launch fault, the
+surfaced and were fixed in this release — the shell-launch fault, the
 path-comparison guarantee that failed to hold under symlinks and short file
 names, the refusal path that wrote before it objected, and the sweep step
 that under-reported its own scope. Note the one negative-control check that

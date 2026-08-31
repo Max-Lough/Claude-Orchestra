@@ -13,12 +13,12 @@ to a .cmd shim first, so route engine launches through the command
 interpreter with every argument quoted — not a bare shell option, which does
 not quote and would split the first path containing a space. Second, make
 the scratch-outside-the-repository guarantee hold where the repository path
-contains a symlink: resolve both sides of every path comparison, including
+contains a symlink: every path comparison must resolve both sides, including
 paths that do not exist yet, by resolving the deepest existing ancestor and
-re-attaching the rest. Third, validate a configured scratch root before
-anything is created inside it, keeping the post-creation check as the
-backstop for roots the runner picks itself. Also have the probe distinguish
-a launch failure from a failed echo.
+re-attaching the rest. Third, a configured scratch root must be validated
+before anything is created inside it, with the post-creation check kept as
+the backstop for roots the runner picks itself. Also have the probe
+distinguish a launch failure from a failed echo.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

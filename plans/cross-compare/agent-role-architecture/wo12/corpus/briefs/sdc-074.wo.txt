@@ -11,13 +11,13 @@ in one place. Support at minimum a default engine, an alternate cross-vendor
 engine with a fallback to the default when the alternate is unavailable, and
 a dual mode where both engines review substantively and a coordinating role
 arbitrates between them. Keep both engines installed under one contract
-regardless of which is selected, so swapping the key changes who judges and
-nothing about what gets checked — that stays exactly as it was. Grant the
-coordinating role a narrow read carve-out for the settings file itself,
-since read access there was never guard-blocked to begin with; this is
-documented permission, not a change to any existing guard. Update the
-review-routing logic to honor the setting and document the key and the swap
-flow in the project's top-level documentation.
+regardless of which is selected, so swapping the key changes only who
+judges; outside that, nothing changes. Grant the coordinating role a narrow
+read carve-out for the settings file itself, since read access there was
+never guard-blocked to begin with; this is documented permission, not a
+change to any existing guard. Update the review-routing logic to honor the
+setting and document the key and the swap flow in the project's top-level
+documentation.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

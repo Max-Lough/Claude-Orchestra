@@ -7,9 +7,10 @@ entry is the identity and the working handle; real-path lookup is removed
 from the identity path, and creation, sweep, and teardown all address git's
 own spelling, with ambiguous records refusing fail-closed and teardown
 clearing both parent spellings behind a prefix guard. The timed-out lock
-guard now force-kills the child and skips kill-dependent sub-checks. Suites:
-verifier 100, router 135, registry 31, review-lane 116 (twice), full
-CI-equivalent run green.
+guard now force-kills the child and skips kill-dependent sub-checks.
+Locally, verifier reached 100 passed; router stays clean, so does registry,
+and review-lane clears both of its runs, all agreeing with the
+continuous-integration numbers.
 
 Verify the diff on its own merits.
 

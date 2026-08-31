@@ -5,19 +5,19 @@ Base (its parent):   16871cc06ce7a9569991a23a63fa2f1dfecdf25e
 Commit subject:      Add CI: the review-lane suite on Linux, Windows, and macOS
 
 ORDER:
-Add continuous integration running the review-lane suite (`node
-tests/review-lane.test.js`) on Linux, Windows, and macOS across Node 20, 22
+Add continuous integration running the review-lane suite, node
+tests/review-lane.test.js, on Linux, Windows, and macOS across Node 20, 22
 and 24, for every push and pull request. Windows is the reason this exists:
 every field failure in this lane has happened there, the suite exited 0
 there even with failing cases, and no session on this repo has a Windows
-machine to check by hand. Fix in the same change the two Windows facts the
-matrix forces open: the runner cannot CreateProcess a `.js` file, so the
-tests hand it a `.cmd` shim, and `kill('SIGTERM')` there is
-TerminateProcess, so the Windows expectation is the SIGKILL one. Every leg
-of the matrix must run to completion and report its own result; one red leg
-may never cancel or hide the others, since seeing WHICH platforms disagree
-is the entire point. No build, bundle or publish step, and no linter job or
-new dependency — plain node and git only.
+machine. Fix in the same change the two Windows facts the matrix forces open
+— the runner cannot CreateProcess a .js file, so the tests hand it a .cmd
+shim, and kill('SIGTERM') there is TerminateProcess, so the honest
+expectation there is SIGKILL. Every leg of the matrix has to run to
+completion and report its own result; a red leg may never cancel or hide the
+others, since seeing which platforms disagree is the whole point. No build,
+bundle or publish step, and no linter job or new dependency — plain node and
+plain git.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -17,8 +17,8 @@ full co-author set, and unattributed or mixed-family authorship fails closed
 rather than dispatching open. A missing required companion task blocks the
 dispatch entirely, and nothing proceeds until every required companion
 exists. Mark any default the plan leaves silent as an explicit unstated
-choice rather than guessing. Wire the new suite into CI and leave the
-gate-class order — cross-vendor review before merge — exactly as it stands.
+choice rather than guessing. Wire the new suite into CI and keep the
+gate-class order — cross-vendor review before merge — unchanged.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

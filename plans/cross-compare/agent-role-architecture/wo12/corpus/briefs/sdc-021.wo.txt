@@ -16,8 +16,8 @@ unenforced opening turn, with hard enforcement engaging the instant the
 model reaches the transcript and not a moment later. The existing delegation
 instructions already cover that single gap, so no further compensating
 change belongs anywhere else. Update only the docs describing mode detection
-and troubleshooting to match the corrected default, and leave every other
-guard behavior exactly as it stands.
+and troubleshooting to match the corrected default, and keep every other
+guard behavior unchanged.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -3,12 +3,12 @@ STATUS: DONE. The change is commit 46364797ff7456d085b6d838a7f3c6084d1f63bf. An 
 
 CLAIMS:
 We applied the four seat re-castings and closed the three deferred audit
-items directly in the plan document across exactly three files — the status
-file, the plan itself, and the probe runbook — for 134 insertions and 76
-deletions. The status file was updated to record the rulings and the
-completed lab-port work, and the handoff-drill line was relabeled to match
-the new casting. Each recast was checked line by line against the guardrail
-it must keep intact.
+items directly in the plan document, spanning three files — STATUS.md, the
+plan itself, and the probe runbook — for 134 insertions and 76 deletions.
+STATUS.md was updated to record the rulings and the completed lab-port work,
+and the handoff-drill line was relabeled to match the new casting. Each
+recast was checked clause by clause against the guardrail it must keep
+intact.
 
 Verify the diff on its own merits.
 

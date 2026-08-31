@@ -9,7 +9,6 @@ default when unavailable, and a dual mode with arbitration; swapping the key
 changes only who judges, never what gets checked. A narrow read carve-out
 for the settings file was added to existing role law — read access was never
 guard-blocked there — and the review-routing logic and top-level
-documentation were updated to match, across two files with 12 insertions and
-3 deletions.
+documentation were updated to match; 2 files carried the whole change.
 
 Verify the diff on its own merits.

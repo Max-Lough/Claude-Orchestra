@@ -3,11 +3,12 @@ STATUS: DONE. The change is commit 43c83abdf1ae029789982b3af63a66189b37ff7a. An 
 
 CLAIMS:
 Both numbered items are in. The charter file loads fail-closed on a missing
-role, a class mismatch or an empty filter, and processReclassify() rejects
-an incomplete report, resolves aliases, counts the hop, feeds the per-pair
-ledger and escalates the second hop. It returns a new order object; the
-caller's order is unchanged after the call. route() and dispatch() are
-untouched and nothing new is required. Eight new checks; 82 green.
+role, a class mismatch or an empty filter, and processReclassify rejects an
+incomplete report, resolves aliases, counts the hop, feeds the per-pair
+ledger and escalates a second hop to the Conductor. It returns a new order
+object, and the caller's own order comes back from the call exactly as it
+went in. route and dispatch are untouched, and nothing new is required at
+runtime. Eight new checks; 82 green.
 
 Verify the diff on its own merits.
 

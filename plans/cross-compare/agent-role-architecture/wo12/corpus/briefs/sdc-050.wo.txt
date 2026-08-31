@@ -5,19 +5,17 @@ Base (its parent):   2c24df7342edc8c96a9ce455ccb5431eee7f98f9
 Commit subject:      Draw up R0-EX10: delta re-review order for the round-5e fixes
 
 ORDER:
-Draw up the delta re-review order and its executor report for the round-5e
-fixes. Pin the review to the two commits spanning the round-5d and round-5e
-checkpoints, enumerating each commit individually rather than citing the
-span as a bare range. Add the order and the executor report as new files
-under roster/: touch no existing roster file, and leave everything already
-on record byte-unchanged, since this round's job is to audit the delta, not
-to restate or revise prior rounds' verdicts. Scope the audit strictly to
-what changed between the two pinned commits, not to the cumulative history
-behind them, and keep the write-up limited to what the diff itself shows,
-without reaching back into settled disputes from earlier rounds. State
-explicitly, as its own line, that a clean verdict on this exact pin is what
-clears the pending work orders out of revise status, and only that verdict
-does.
+Write up the tenth in this long-running series of delta reviews, the order
+paired with the account of what its executor found, covering the round-5e
+fixes. The review is anchored to the two pinned commits marking where
+round-5d ends and round-5e begins, cited as that specific pair rather than
+folded into a shared range. Both files are wholly new additions under
+roster/; the tree elsewhere is not touched, and nothing already on file
+there is rewritten. Hold the scope to exactly that pinned pair, not the
+string of rounds behind it, since this pass answers only for what those two
+commits changed. State, as a standalone sentence, that only a clean verdict
+against that pair moves the two pending work orders out of revise; a partial
+or qualified result changes nothing about where they stand today.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

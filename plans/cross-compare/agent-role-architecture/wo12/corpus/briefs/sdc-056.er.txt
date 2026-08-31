@@ -2,11 +2,11 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c. An executor produced this change.
 
 CLAIMS:
-We produced the order and executor report as two new files under roster/:
-the executor report adds 55 lines and the order adds 62, for 117 lines total
-with zero deletions, so no existing roster file was touched. The pin covers
-the commit range between the round-2 and round-3 checkpoints. The order
-records that only a clean verdict on this exact pin clears the pending work
-orders out of revise status.
+The pass adds 117 lines to roster/ across two freshly written files,
+fifty-five in the executor's notes and sixty-two more inside the order,
+nothing already filed there was disturbed at all. The pair covered frames
+round two and round three. The record closes on the fact that a clear call
+against that framing pair is the single fact that lets the pending pair
+leave revise status.
 
 Verify the diff on its own merits.

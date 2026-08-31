@@ -8,8 +8,8 @@ applied: one discriminator was amended so displayed values count as data,
 the merge/redraw trigger was codified to count only scored cross-pass
 disagreements, the prior redraw's validation claim was scoped precisely, and
 the related-pull-request index was corrected. The verdict and dispositions
-were recorded verbatim, across four files with 105 insertions and 4
-deletions, and the probe now validates the latest redraw as amended.
+were recorded verbatim, spanning 4 files, and the probe now validates the
+latest redraw as amended.
 
 Verify the diff on its own merits.
 

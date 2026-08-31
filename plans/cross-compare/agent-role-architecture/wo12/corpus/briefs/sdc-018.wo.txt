@@ -8,16 +8,16 @@ ORDER:
 Restore the in-house fresh-context adversarial reviewer as the primary
 review engine for both modes, and demote the external command-line engine to
 an optional cross-vendor layer — gate-class second opinions, or primary for
-projects that opt in. Pin that the primary brief carries the identical
+projects that opt in. Pin that the primary brief carries exactly the
 contract the external brief encodes: presume-broken discipline, independent
 re-verification through the project's verification manifest, inert-tier
 claims verified from the diff with a tier violation rated CRITICAL and
 forcing full depth, and the same verdict format under a REVIEW ENGINE header
-for auditability. Constrain the unavailable path to route the review to the
-primary reviewer rather than degrading, and make the in-session fallback
-last-resort — reachable only when no reviewer agent can run at all. Ship the
-new launcher brief and sync the harness document, the README trade-off
-wording, and the installer roster.
+for auditability. Route the unavailable path to the primary reviewer rather
+than degrading, and drop the in-session fallback to a last-resort rung that
+must be reachable only when no reviewer agent can run at all. Ship the new
+launcher brief and sync the harness document, the README trade-off wording,
+and the installer roster.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

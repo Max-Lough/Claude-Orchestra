@@ -7,7 +7,7 @@ enforcing; sessions without one — including a fresh session's first turn —
 never see a denial. A genuine director session absorbs exactly one
 unenforced opening turn before hard enforcement engages the instant the
 model reaches the transcript, which the existing delegation instructions
-already cover. Docs on mode detection and troubleshooting were updated to
-match; the diff touches three files, 23 lines added, 18 removed.
+already cover. Docs on mode detection and troubleshooting were brought in
+line with it, confined to 3 files with no other line touched.
 
 Verify the diff on its own merits.

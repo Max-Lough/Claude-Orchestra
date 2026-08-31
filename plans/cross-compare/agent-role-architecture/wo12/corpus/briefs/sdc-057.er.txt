@@ -3,12 +3,11 @@ STATUS: DONE. The change is commit 444eaf3c84b5fa8d370b4df6794fe6c71a84fa73. Cla
 produced this change.
 
 CLAIMS:
-We produced the order and executor report for the cross-vendor gate
-re-review, pinning it to the commit range between the initial round and the
-round-2 fixes and routing it through the cross-vendor review lane. The two
-files add 136 lines with zero deletions: 65 for the order and 71 for the
-executor report, so no existing roster file was touched. The order states
-that this verdict alone decides whether the pending work orders clear revise
-status.
+The pass adds 136 lines to roster/ across two files that did not exist
+before, the order carrying sixty-five of them and the account seventy-one,
+with nothing else already on file there touched. The commit pair covered
+anchors the initial round through the round two fixes, reviewed through the
+cross-vendor lane. The account closes on the same point, this single verdict
+settles, outright, whether the two open work orders leave revise status.
 
 Verify the diff on its own merits.

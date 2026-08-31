@@ -16,9 +16,10 @@ ten rules for the base, twelve for heavy — adding the two rules unique to
 heavy that it omitted. Fix the write-up so the environment-variable
 deviation is described as caught on review rather than self-disclosed, since
 the report's own deviations line says none. State the cross-vendor engine
-fault tally as exactly 10 of 14 engine-reaching attempts, with an explicit
-counting rule and full per-attempt list, replacing the earlier wrong figure.
-Clear the remaining minor findings and nits still open from the prior round.
+fault tally as exactly ten of fourteen engine-reaching attempts, with an
+explicit counting rule and full per-attempt list, replacing the earlier
+wrong figure. Clear the remaining minor findings and nits still open from
+the prior round.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

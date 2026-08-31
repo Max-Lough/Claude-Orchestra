@@ -5,9 +5,8 @@ CLAIMS:
 The blind pass scored 31 of 40 (77.5 percent) against the pre-registered
 threshold of at least thirty-six of forty, with two ambiguities at the cap
 and nine disagreements across nine distinct pairs — ten counting the
-ambiguity — none repeated, so no merge was forced. The redraw was applied: a
-precedence rule was added, discriminators amended, new ones added only where
-needed, and two phase rules introduced. The change touched three files with
-225 insertions and 58 deletions.
+ambiguity — none repeated, so no merge was forced. The redraw was applied,
+adding a precedence rule, amending discriminators, adding new ones only
+where needed, and introducing two phase rules.
 
 Verify the diff on its own merits.

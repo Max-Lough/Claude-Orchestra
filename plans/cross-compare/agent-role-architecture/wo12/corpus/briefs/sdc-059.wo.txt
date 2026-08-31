@@ -11,13 +11,13 @@ every rung, a five-entry ledger, and the boundary treated as undecidable at
 intake — keeping the retired class name as an alias and nothing more; no
 other classes are merged, so the taxonomy holds at twenty-three classes
 exactly. Add a new decision procedure: seven fixed-order steps where the
-first match decides, and free entry into the later discriminator set must
+first match decides, and free entry into the later discriminator set can
 never reopen once closed. Amend three named discriminators and retire one,
-leaving every other discriminator as it stands. Reframe classification as a
-routing hypothesis tied to risk tier plus author family; restate the
-downstream gate as misroute recovery and rewrite the next work order to
-validate through the router. Unblock the previously gated work order and
-close the outstanding pair ledger with dispositions recorded.
+confining the change to those four; every other discriminator is untouched.
+Reframe classification as a routing hypothesis tied to risk tier plus author
+family; restate the downstream gate as misroute recovery and rewrite the
+next work order to validate through the router. Unblock the previously gated
+work order and close the outstanding pair ledger with dispositions recorded.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

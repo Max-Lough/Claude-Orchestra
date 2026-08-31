@@ -4,7 +4,7 @@ produced this change.
 
 CLAIMS:
 We resolved all four major findings and the follow-on minors from the prior
-round across exactly ten files (169 insertions, 46 deletions): the
+round across exactly ten files (169 insertions, 46 deletions) — the
 runner-semantics rewrite, the read-only reconciliation across three briefs,
 the incident-narrative rewrite, and two corrected exercise reports. The tool
 count was fixed to the actual four registered tools, confirmed by checking

@@ -4,10 +4,10 @@ STATUS: DONE. The change is commit 16484c959bf4315cdc1db02e71ab6569784cfb63. An 
 CLAIMS:
 Shipped six role files — scout, researcher, lc-analyst, investigator,
 archivist-documents, and archivist-images — plus updates to the roster
-README and the band record: 8 files changed, 527 insertions, 1 deletion. The
-scout file is renamed to avoid a collision with the existing top-level file;
-investigator carries the read-only tool pin from its source alias unchanged;
-researcher and lc-analyst ship primary-only, with the missing mirror rung
-recorded as a gap in the band record.
+README and its ledger entry, spanning 8 files, and every other file stayed
+out of it. The scout file is renamed to avoid a collision with the existing
+top-level file; investigator carries the read-only tool pin from its source
+alias unchanged; researcher and lc-analyst ship primary-only, with the
+missing mirror rung recorded as a gap in the roster ledger.
 
 Verify the diff on its own merits.

@@ -5,19 +5,17 @@ Base (its parent):   e7a5e31eb70ba2cabb9d46cb33b16ffe4ebfe4aa
 Commit subject:      Draw up R0-EX5: delta re-review order for the round-4 fixes
 
 ORDER:
-Draw up the delta re-review order and its executor report for the round-4
-fixes. Pin the review to the two commits spanning the round-3 and round-4
-checkpoints, and enumerate each one individually — never cite the span as a
-bare range again, since the prior delta round's precision finding already
-flagged that a collective range citation was not exact enough for a reviewer
-to trace which fix produced which line. Add the order and the executor
-report as new files under roster/: touch no existing roster record, and
-leave every prior round's file byte-unchanged. Scope the audit strictly to
-what changed across that pin, not to the cumulative history behind it. State
-explicitly, as its own line, that a clean verdict on this exact pin is what
-clears the pending work orders out of revise status, and that the
-enumeration requirement carried forward from the precision finding holds for
-every future delta round, not just this one.
+The fourth review already found that citing a commit span collectively left
+a reviewer unable to tell which line came from which fix, so this fifth
+review for the round four fixes anchors to the pair bounding round three and
+round four, cited as that exact pair rather than a single joined citation,
+never collapsed into one span, a rule that now carries forward to every
+review after this one. Write the pinning order and the executor's write-up
+as two files that do not yet exist in roster/, touching nothing outside
+those two files. Keep the audit itself to only what changed across that
+bounding pair, setting aside the longer history behind it entirely. Set
+down, without hedging, that an unhedged verdict here, and nothing short of
+it, is what lets the orders held in revise move forward.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

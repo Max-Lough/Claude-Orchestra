@@ -14,8 +14,8 @@ isolation. Add a precedence rule to the relevant preamble: recall signals
 are hints alone, and the requested work product plus the discriminator
 decide from intake text, not a signal word standing in for it; rename the
 affected column to match. Amend the discriminators implicated by the
-disagreements and add new ones where a genuine gap is found and nowhere
-else, plus phase-ordering rules for diagnosis-before-implementation and
+disagreements and confine any new discriminator to where a genuine gap is
+found, plus phase-ordering rules for diagnosis-before-implementation and
 composite orders. Record the reference pass, the disagreement ledger, the
 redraw, and a post-redraw resolution of every flagged item, explicit that
 this is a scoring reference and must never stand in as a validation.

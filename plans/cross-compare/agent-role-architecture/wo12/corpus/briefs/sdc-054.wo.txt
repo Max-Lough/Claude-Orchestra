@@ -5,17 +5,17 @@ Base (its parent):   ceeaabc6872eef5d5b35252f4179ed55159f83b5
 Commit subject:      Draw up R0-EX6: delta re-review order for the round-5 sweep fix
 
 ORDER:
-Draw up the delta re-review order and its executor report for the round-5
-sweep fix. Pin the review to the two commits spanning the round-4 and
-round-5 checkpoints, enumerating each one individually rather than citing
-the range as a whole. Scope the audit strictly to what changed in that
-structural sweep guard fix, leaving the earlier round's findings alone since
-those were already closed on their own pass. Add the order and the executor
-report as new files under roster/, matching the shape used for the other
-delta rounds: touch no existing roster record, and leave every prior round's
-file byte-unchanged. State explicitly, as its own line, that only a clean
-verdict on this exact pin clears the pending work orders out of revise
-status, with no other line in the order permitted to soften that condition.
+None of the earlier round's findings are back in play for the sixth review;
+confine this one strictly to the sweep-guard fix itself alone, bounded by
+the two commits marking where round four ends and round five begins. Write
+the review order together with what its executor reported; neither document
+exists yet, both matching the shape the other passes in this sequence
+already use, and never rewrite anything else already sitting in roster/,
+since the earlier round's own write-up already settled its own questions on
+its own separate pass. Say once, plainly, that only a clear verdict on that
+boundary pair lets the standing orders shed their revise status for good;
+nothing less counts toward that outcome, and no softened reading of the diff
+stands in for it, whatever the round number seems to suggest.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

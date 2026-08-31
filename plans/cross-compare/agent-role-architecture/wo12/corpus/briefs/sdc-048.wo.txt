@@ -17,7 +17,7 @@ inside the verdict file itself. Update the older dispositions document for
 the two tracks this review was blocking, and leave every other track's
 disposition text unchanged, and carry forward the two items already flagged
 as non-blocking follow-ons rather than dropping them or promoting them to
-blockers, start to finish.
+blockers.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

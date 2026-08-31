@@ -3,13 +3,13 @@ STATUS: DONE. The change is commit 1c651fb18903e8d968624247858564dc9233a134. Cla
 produced this change.
 
 CLAIMS:
-All four items are done. `createCheckout` now resolves the canonical path
-itself and refuses the checkout on failure, with the poisoned-realpath
-regression pinned. Both kill branches, SIGTERM and SIGKILL, call the new
-`waitWorktreesUnlocked` helper in place of the old fixed sleep and each
-asserts the registration lock cleared before signalling; both new
-lock-condition checks pass. The records are corrected and the verdict
-recorded verbatim. Verification: verifier 99/99, review-lane 116/116 across
-two runs, router 135/135, registry 31/31, full suite green.
+All four items are done. createCheckout resolves the canonical path itself
+and refuses the checkout on failure, with the poisoned-realpath regression
+pinned. Both kill branches, SIGTERM and SIGKILL, poll the new
+waitWorktreesUnlocked helper instead of sleeping a duration, and each
+asserts the checkout finished registering before its signal goes out; both
+new lock-condition checks pass. The records now name the PR-head run and the
+superseded run's true outcome. Suites green at verifier 99, review-lane 116
+twice over, router 135, registry 31.
 
 Verify the diff on its own merits.

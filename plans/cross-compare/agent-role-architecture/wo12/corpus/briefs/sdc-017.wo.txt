@@ -6,17 +6,19 @@ Commit subject:      Bundle skills with the harness: orchestra-* skills stamped 
 
 ORDER:
 Ship the harness's own skills with the master and have the installer place
-them. Add three orchestra-namespaced skills: a live harness state report, a
-plan-file author sized to the plan section's rules, and an on-demand
-adversarial review of arbitrary changes, plus an authoring template that
-stays underscore-prefixed and is never installed. Stamp each skill directory
-into the project's skills folder wholesale on every install so stale files
-cannot linger. On uninstall, remove exactly the names the master knows,
-leave any skill the user authored under another name untouched, and prune
-the skills directory once it is empty. State in the governing document that
-these skills are orchestration-class and safe for the Director to invoke in
-its own context, and document the lifecycle, the namespace, and how to
-bundle a new one in the README.
+them. Add three orchestra-namespaced skills, one reporting live harness
+state, one authoring plan files sized to the plan section's rules, and one
+running an on-demand adversarial review of arbitrary changes. Add an
+authoring template alongside them that stays underscore-prefixed and is
+never installed into a project. Stamp each skill directory into the
+project's skills folder wholesale on every install, so stale files from an
+earlier version cannot linger beside the current ones. On uninstall, remove
+exactly the names the master knows, so a skill the user authored under some
+other name survives untouched, and prune the skills directory once it has
+been emptied. State in the governing document that these bundled skills are
+orchestration-class and safe for the Director to invoke in its own context,
+and document their lifecycle, the shared namespace, and how to bundle a new
+one in the README.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

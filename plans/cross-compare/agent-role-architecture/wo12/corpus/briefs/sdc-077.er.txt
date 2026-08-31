@@ -9,7 +9,8 @@ opportunistic-registration path's stranding is proven self-healing: an
 alias-created, never-active registration is reclaimed by the standing sweep
 at the next checkout creation, pinned as a regression showing both the
 directory and the registration gone. The review verdict was recorded
-verbatim; the tranche remains open. Suites: verifier 101, router 135,
-registry 31, review-lane 116, full CI-equivalent run green.
+verbatim; the tranche remains open. Verifier closed the run at 101 passed,
+matching what continuous integration reports independently for router,
+registry, and review-lane alike.
 
 Verify the diff on its own merits.

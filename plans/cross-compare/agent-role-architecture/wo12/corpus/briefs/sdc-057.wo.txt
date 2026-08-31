@@ -5,18 +5,19 @@ Base (its parent):   d00a7aedd28ad2cc17260b2aaec921c65dcdec5c
 Commit subject:      Draw up R0-EX3: cross-vendor gate re-review order for the round-2 diff
 
 ORDER:
-Draw up the order and executor report for the cross-vendor gate re-review of
-the round-2 diff. Pin the review to the commit range spanning the initial
-round and the round-2 fixes, and route it through the cross-vendor review
-lane rather than the standard delta lane used for later rounds. Scope the
-audit strictly to what changed in that diff. State plainly, as its own line,
-that the verdict on this exact pin decides whether the pending work orders
-clear revise status — the outcome is binary, and no partial or conditional
-reading of the diff may substitute for that single decision, since this is
-the gate review the earlier rounds were building toward. Add only the order
-and the executor report as new files under roster/: touch no existing roster
-record, and leave every prior round's file byte-unchanged, since this pass
-creates the gate's own paper trail rather than editing anyone else's.
+This one runs through the cross-vendor lane rather than the ordinary review
+track the later rounds follow, pairing an order with the account of the
+cross-vendor pass for reviewing the round two diff, bounded by the commit
+pair anchoring the initial round through the round two fixes. What the audit
+covers stops at that pair, never reaching back further than it has to reach.
+Make the call unambiguous, the verdict on that anchoring pair settles,
+outright, whether the two open work orders leave revise status; there is no
+middle reading of the diff that can stand in for that single call, since
+this cross-vendor pass is the gate the earlier rounds were building toward
+all along. Put both documents into roster/ as material that did not exist
+before, touching only those two files and changing nothing else already on
+file there, since this pass writes its own record rather than editing anyone
+else's.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

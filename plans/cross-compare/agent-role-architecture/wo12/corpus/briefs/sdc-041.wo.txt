@@ -5,19 +5,18 @@ Base (its parent):   444eaf3c84b5fa8d370b4df6794fe6c71a84fa73
 Commit subject:      WO-8 round 3: fix all five R0-EX3 findings; record the R0-EX3 verdict
 
 ORDER:
-Fix all five findings from the pinned round-2 external review and record its
-verdict verbatim. Evaluate the P15 reserve gate against the REQUESTED rung
-so a §5.5 degradation recast can never silently satisfy a stop-the-line
-reserve predicate, and disclose every mirror-served turn with its
-restrictions. Replace the collapsed glob regex with a token dynamic program
-so separated star runs match correctly; run output redaction before tail
-truncation so a straddling credential cannot leak a suffix; install the
-trappable signal set on Windows, documenting that SIGTERM is untrappable
-there and that the startup prune is the recovery; and remove the literal NUL
-bytes from the router. Also exempt record documents from the roster lint by
-prefix, and isolate the review-lane helper-repair case from any real
-installation on the host machine. The tranche stays REVISE pending the next
-delta review.
+Fix all five findings from the pinned external review and record its verdict
+verbatim. Evaluate the P15 reserve gate against the REQUESTED rung so a §5.5
+degradation recast can never silently satisfy a stop-the-line reserve
+predicate, and disclose every mirror-served turn with its restrictions.
+Replace the collapsed glob regex with a token dynamic program so separated
+star runs match correctly; run output redaction before tail truncation so a
+straddling credential cannot leak a suffix; install the trappable signal set
+on Windows, documenting that SIGTERM is untrappable there and that the
+startup prune is the only recovery; and remove the literal NUL bytes from
+the router. Also exempt record documents from the roster lint by prefix, and
+isolate the review-lane helper-repair case from any real installation on the
+host machine. The tranche stays REVISE pending the next delta review.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

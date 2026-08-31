@@ -3,13 +3,13 @@ STATUS: DONE. The change is commit 55b22b39891aa221d0ae95c19e72b14feb570f96. Cla
 produced this change.
 
 CLAIMS:
-The exception covers only the project memory files, config-directory memory,
-and `directorMemoryPatterns` matches; every other path still falls to
-default law. The managed block rides through every permitted memory write
-byte-for-byte — the write is simulated and the result denied unless the
-block survives unchanged, so markers alone cannot buy an edit through. The
-denial is model-aware; dormant sessions never see it. Version format
-unchanged (X.Y.Z), read from the VERSION file only. Verified against the
-22-case hook matrix plus an install/re-install/uninstall round-trip.
+The exception covers the project memory files, config-directory memory and
+directorMemoryPatterns matches, and every other path still falls to default
+law. The managed block rides through each permitted memory write
+byte-for-byte: the write is simulated and the result denied unless the block
+arrives whole, so surviving markers alone cannot buy an edit through. The
+denial is model-aware, and dormant sessions never see it. Version format
+holds at X.Y.Z, read from the VERSION file. Verified against the 22-case
+hook matrix plus an install, re-install and uninstall round-trip.
 
 Verify the diff on its own merits.

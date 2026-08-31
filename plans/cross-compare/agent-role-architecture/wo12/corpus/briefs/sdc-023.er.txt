@@ -7,8 +7,8 @@ of a hardcoded local path, with a POSIX clone-and-install snippet added
 beside it. Internal labels were renamed to a neutral name while the
 uninstaller's loose-prefix fallback was left unchanged so it still matches
 markers from installs under the old name. A permissive license file and a
-matching README section were added; the diff spans 4 files, 41 insertions, 7
-deletions.
+matching README section were added, confined to 4 files with nothing else
+touched.
 
 Verify the diff on its own merits.
 

@@ -10,7 +10,7 @@ creation-time identity capture must never degrade to a lexical guess:
 checkout creation determines the canonical path itself and refuses the
 checkout, with the registration cleaned up, whenever that lookup fails; the
 lexical fallback serves paths that are already gone through sweeping, not
-the general case. Pin a regression for a poisoned-real-path scenario and
+the general case. Lock in a regression for a poisoned-real-path scenario and
 confirm it fails without the fix. Second, both review-lane kill branches
 poll git's actual registration lock rather than sleeping a fixed duration —
 a slow checkout can remain locked past any fixed delay, so a duration-based

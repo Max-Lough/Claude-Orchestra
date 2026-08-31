@@ -2,11 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit a14280eaabc8f0e61f01ddaeaf4ffa68123ede21. An executor produced this change.
 
 CLAIMS:
-The window is now 48h with the 24h fresh band untouched, and the disclosure
-keys were added additively. The published state object's routing-relevant
-fields are computed exactly as before — no bucket's routed pool state moves
-because a reading is stale — and `router/router.js` was not touched. `node
-tests/quartermaster.test.js` reports 191 passed; `node tests/router.test.js`
-reports 135 passed.
+The ceiling moves to forty-eight hours and the fresh window is untouched.
+The only additions to the published state object are the stale and ageMs
+keys; its routing-relevant fields are computed exactly as before, so no
+bucket's routed pool state moves because a reading is stale, and
+router/router.js was not opened. Round-three verdicts, band records and the
+outstanding exercise debt are committed. Verified with node
+tests/quartermaster.test.js, 191 passed, and node tests/router.test.js, 135
+passed.
 
 Verify the diff on its own merits.

@@ -2,13 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 3d545b94e89cdfc8d026e0457e11225820453745. An executor produced this change.
 
 CLAIMS:
-We produced the order and executor report as two new files under roster/,
-adding 103 lines total with zero deletions — no existing roster file was
-touched. The pin enumerates the two commits between the round-3 and round-4
-checkpoints individually, never as a bare range, per the precision finding
-carried forward from the prior delta round. The order records that only a
-clean verdict on this exact pin clears the pending work orders out of revise
-status.
+Both new files for this review sit inside roster/ too, holding 103 lines
+between them, thirty-nine in the executor's write-up and sixty-four in the
+order; nothing outside those two files was touched. That same bounding pair
+is cited as that exact pair, never collapsed into one span, carrying forward
+the naming rule the fourth review first surfaced. The account shows that an
+unhedged result here is what lets the orders held in revise move forward.
 
 Verify the diff on its own merits.
 

@@ -5,8 +5,8 @@ CLAIMS:
 The independent pass agreed with the primary scored pass on 16 of 20 items
 with zero ambiguity flags, missing the eighteen-of-twenty full-gate
 threshold, so the downstream work order stays blocked. The sealed subset
-drawn for the second boundary redraw scored 9 of 10, passing its own gate
-and validating that redraw. The three misses outside the subset drove a
+drawn for the second boundary redraw scored nine of ten, passing its own
+gate and validating that redraw. The three misses outside the subset drove a
 narrow third redraw: one discriminator's evidence object was sharpened, the
 diagnosis corollary's threshold was defined, and exactly one new
 discriminator was added, with the other three left unchanged.

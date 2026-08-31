@@ -5,12 +5,12 @@ produced this change.
 CLAIMS:
 The canonical identity is now captured once at creation, when every path
 component is guaranteed to exist, and the live-set comparison always uses
-that captured value rather than a sweep-time re-lookup; the alias-removal
-case is pinned as a regression. The intermittent review-lane failure was
-traced to a locked-worktree window during checkout; the terminate-signal
-branch now waits out the registration window as the kill-signal branch
-already did, confirmed across three baseline and two post-fix runs at 114 of
-114. Suites: verifier 98, router 135, registry 31, full CI-equivalent run
-green.
+that value rather than a sweep-time re-lookup; the alias-removal case is
+pinned as a regression. The intermittent review-lane failure traced to a
+locked-worktree window during checkout; the terminate-signal branch waits
+out the registration window as the kill-signal branch already did, confirmed
+at 114 of 114 across three baseline and two post-fix runs. Verifier finishes
+clean locally. Router does too, and registry right behind it, backed by the
+pull request's own automated run.
 
 Verify the diff on its own merits.

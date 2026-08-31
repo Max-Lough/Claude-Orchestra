@@ -5,19 +5,19 @@ Base (its parent):   ff638b7d3b5a024730d9cc72baeb99367693f37a
 Commit subject:      WO-11 round 5: records-only post-APPROVE cleanup; round-4 delta verdict committed
 
 ORDER:
-After the round-4 delta review reaches approval, commit its verdict into the
-permanent record and close out round 5 as a records-only pass. Update the
-phase status file, the quartermaster README, and four roster documents — the
-band record, an early-exercise report, and two round-review notes — exactly
-six files and nothing else. Extend the band record with the round-5
-disposition and append the newly reviewed round-3 findings write-up in full.
-Correct the existing round-2 review note where it has gone stale, leaving
-every line that is still accurate alone. Add the outstanding early-exercise
-report entry so the exercise ledger matches what actually ran. This pass
-touches no executable, router, or configuration file, keeps every source
-file as it stands from the approved round-4 state, and does not reopen a
-finding that round 4 already closed; the job is simply to record what the
-review already ruled.
+After the round-four delta review reaches approval, commit its verdict into
+the permanent record and close out round five as a records-only pass. Update
+the phase status file, the quartermaster README, and four roster documents —
+the band record, an early-exercise report, and two round-review notes —
+exactly six files, no more. Extend the band record with the round-five
+disposition and append the newly reviewed round-three findings write-up in
+full. Correct the existing round-two review note where it has gone stale,
+keeping every line that is still accurate as it is. Add the outstanding
+early-exercise report entry so the exercise ledger matches what actually
+ran. This pass touches no executable, router, or configuration file — no
+other change is made to any source file from the approved round-four state —
+and does not reopen a finding that round four already closed; the job is
+simply to record what the review already ruled.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

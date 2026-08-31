@@ -5,20 +5,20 @@ Base (its parent):   0b0148471f91dce49a8ea919349032fb41189626
 Commit subject:      WO-14: alias layer and roster kill switch, before any rename
 
 ORDER:
-Build the alias layer and the roster kill switch before any rename. In
-`router/aliases.json`, declare every retired name's (role, rung) pair
-alongside the legacy identity it keeps while the old roster is installed,
-each with its ledger deprecation line. Have `resolveSeat()` evaluate the
-roster flag per order, 'legacy' returning the installed legacy agent
-unchanged and 'new' going through the casting tables and the degradation
-machine, with the declarative default at 'legacy' as the kill-switch home
-position, so rollback is a flag flip and no reload. Load the map under the
-same fail-closed discipline the other tables get: an unknown role, a rung
-the named role does not have, a missing legacy identity, or a bad roster
-default must each refuse construction. Prove it: old-name orders dispatch
-correctly under both flag values, flipped mid-session on one router
-instance, each emitting its deprecation line; and a tampered map fails the
-load closed.
+Build the alias layer and the roster kill switch before any rename. In the
+aliases file, declare every retired name's role and rung pair, the legacy
+identity it keeps while the old roster is installed, and its ledger
+deprecation line. Have the seat resolver evaluate the roster flag per order,
+so legacy returns the installed legacy agent unchanged while new goes
+through the casting tables and the degradation machine, with the declarative
+default at legacy as the kill-switch home position, so rollback is a flag
+flip with no reload. Load the map under the same fail-closed discipline the
+other tables get, so an unknown role, a rung the named role does not have, a
+missing legacy identity, or a bad roster default must each refuse
+construction. Prove it, with old-name orders dispatching under both flag
+values, the flip demonstrated mid-session on one instance, every
+retired-name resolution emitting its deprecation line, and a tampered map
+failing the load closed.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

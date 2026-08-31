@@ -2,8 +2,8 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5. An executor produced this change.
 
 CLAIMS:
-74 checks went green, including a 9,375-call sweep across all 625
-bucket-state combinations confirming no mandatory-class dispatch ever
+74 checks went green, including an exhaustive sweep across every
+bucket-state combination confirming no mandatory-class dispatch ever
 produces a same-family closing verdict — every non-close case typed
 DOES_NOT_CLOSE. No-self-family behavior was checked for every author-family
 combination, and an independent bidirectional transcription check confirmed

@@ -2,14 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 24da6cec12426772ba0b743214e1e20129841323. An executor produced this change.
 
 CLAIMS:
-The runner, the relaying launcher and the skill document are in place, and
-the roundabout runs to either approval or the round cap, appending its
-verdicts and dispositions to the plan file; every failure path degrades to
-an explicit unavailable verdict rather than a fake approval. The installer
-gained the new agent name, the runner copy and its uninstall entry, and
-nothing else. Verified: node --check passes on the new runner and on the
-installer; a round-trip into a fresh temporary directory installed all four
-skills and the runner, and --uninstall removed them again.
+The runner, the launcher and the skill document are in place, and the
+roundabout logs its verdicts and dispositions to the plan file. Every
+failure path degrades to an unavailable verdict rather than a fake approval.
+The installer gained the new agent name, the runner copy and its uninstall
+entry; no other change was made. A syntax check passes on the new runner and
+the installer, and a round-trip into a fresh temporary directory installed
+all four skills and the runner.
 
 Verify the diff on its own merits.
 

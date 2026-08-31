@@ -12,12 +12,12 @@ the installer merge exactly three git command patterns — add, commit, push —
 into the allow list in the project's settings file, with the merge
 idempotent so re-running the installer does not duplicate an entry or
 clobber anything already present. Have the uninstaller remove those same
-three grants and nothing else the user may have added since, leaving every
-unrelated permission entry alone. Keep the existing guard-hook restriction
-that bars the Director itself from running shell commands exactly as it
-stands, so the new grants extend to the agents doing the work and to the
-Director not at all. Document the change in the README's install and
-permissions notes and nowhere else.
+three grants, confining its reach so no other permission entry the user
+added is touched. Keep the existing guard-hook restriction that bars the
+Director itself from running shell commands unchanged, so the new grants
+extend to the agents doing the work and not to the Director. Document the
+change in the README's install and permissions notes; outside that, nothing
+changes.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -13,8 +13,9 @@ and add its heavy-tier rules — read escalation case files first, surface
 cross-subsystem seams, bias toward the minimal coherent change, report dead
 ends at top tier. Document two-tier routing at PLAN, the single-use heavy
 escalation rung, and the REVISE escalation path, and add an
-abstention-over-plausibility rule to the investigating brief: no uncited
-bridging of evidence gaps. Sync the roster everywhere it is listed — the
+abstention-over-plausibility rule to the investigating brief, where
+load-bearing recall is verified or downgraded and an evidence gap is never
+bridged without a citation. Sync the roster everywhere it is listed — the
 installer's copy list, the README, and the status skill's company check,
 which must report the core company complete or name what is missing.
 

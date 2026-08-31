@@ -3,11 +3,12 @@ STATUS: DONE. The change is commit f0f578c7b76bb440490c0c2471fbb6e673a5b2a3. Cla
 produced this change.
 
 CLAIMS:
-All four findings are addressed: element-wise comparison in the touches
-lint, exact line-terminator classes in the glob matcher, a startup sweep
-that reclaims abandoned worktrees left on disk with active ones exempt, and
-a review-order wording fix. The verdict is recorded verbatim in the roster.
-Suites re-run green: router 135 passed, verifier 94 passed, registry 31
-passed.
+All four findings are addressed. The touches lint now compares elements, the
+glob matcher reproduces the retired pattern's line-terminator classes, the
+checkout module sweeps abandoned worktrees at startup with the ones in
+active use exempt, and the review-order wording now calls for every commit
+in a pinned range. The verdict is recorded verbatim in the roster. All three
+suites were re-run and are green, with router at 135 passed, verifier at 94
+passed, and registry at 31 passed.
 
 Verify the diff on its own merits.

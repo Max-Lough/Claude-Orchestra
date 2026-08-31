@@ -3,12 +3,11 @@ STATUS: DONE. The change is commit 5758a2d2b6146b613ea062946f7013e1b9dfa3c2. Cla
 produced this change.
 
 CLAIMS:
-We produced the order and executor report as two new files under roster/:
-the executor report adds 49 lines and the order adds 63, for 112 lines total
-with zero deletions, so no existing roster file was touched. The pin
-enumerates the two commits between the round-4 and round-5 checkpoints
-individually, never as a bare range. The order records that only a clean
-verdict on this exact pin clears the pending work orders out of revise
-status.
+The two new files for this pass sit inside roster/, 112 lines split between
+them, forty-nine for the executor's report and sixty-three for the order,
+neither one touching anything elsewhere in roster/. That consecutive commit
+pair marks the very boundary the order describes. The file confirms that
+only a clear verdict on that pair lets the standing orders shed their revise
+status for good, nothing less.
 
 Verify the diff on its own merits.

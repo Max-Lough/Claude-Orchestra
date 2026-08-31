@@ -3,12 +3,13 @@ STATUS: DONE. The change is commit e09bbc44cbd4b69af3b5d1e52c186205f6686376. Cla
 produced this change.
 
 CLAIMS:
-Path normalization now resolves real paths, with the lexical form kept as
+Path normalization resolves real paths now, with the lexical form kept as
 the fallback for paths already gone, so the live-set exemption holds however
-a live checkout's handle is spelled. The aliased-tmp-root reproducer
-(junction on Windows, symlink elsewhere, skipped where links are
-unavailable) fails without the fix and passes with it. The structural
-ownership guard came out byte-unchanged — own basename plus parent-basename
-prefix, still structural, still no substring matching. 97 passed, 0 failed.
+a live checkout's handle is spelled. The aliased-tmp-root reproducer, a
+junction on Windows and a symlink elsewhere, skips where links are
+unavailable, fails without the fix and passes with it. The structural
+ownership guard came through this change untouched — own basename plus the
+parent's own basename prefix, still structural, with no substring matching
+anywhere. Suite reports 97 passed, 0 failed.
 
 Verify the diff on its own merits.

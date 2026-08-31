@@ -16,9 +16,9 @@ misses items outside that subset, draw a narrowly scoped third redraw
 limited to those misses: sharpen one discriminator's evidence-object
 definition, define the diagnosis corollary's threshold for when a cause
 counts as stated, and add exactly one new discriminator for the affected
-class pair — leave the three other named discriminators as they stand,
-unchanged. Mark the corpus burned once scored, and require a fresh blinded
-corpus before the downstream work order proceeds.
+class pair — keep the three other named discriminators unchanged. Mark the
+corpus burned once scored, and require a fresh blinded corpus before the
+downstream work order proceeds.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

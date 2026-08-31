@@ -5,12 +5,12 @@ CLAIMS:
 The reserve gate now evaluates the requested rung so a degradation recast
 never silently satisfies a stop, with restrictions disclosed on every
 fallback-served turn; glob matching moved to a token-based matcher after the
-collapsed regular expression broke on separated wildcard runs; output
-redaction now runs before tail truncation; Windows installs the trappable
-signal set with startup pruning documented as the recovery path there; and
-stray NUL bytes were removed from the router source. The verdict was
-recorded verbatim. Suites: router 134, verifier 92, registry 31, full
-CI-equivalent run green.
+collapsed regex broke on separated wildcard runs; redaction now runs before
+tail truncation; Windows installs the trappable signal set, with startup
+pruning documented as the recovery path there; and the stray NUL bytes are
+gone from the router source. The roster now holds that verdict, unaltered.
+Verifier finished at 92 passed. Router and registry both stayed clean on
+this run too.
 
 Verify the diff on its own merits.
 

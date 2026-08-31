@@ -7,7 +7,9 @@ registered ahead of any model pass. The scorer reports all three passing:
 thirteen of thirteen constructed misroutes caught; four gate-relevant
 misroutes with none crossed, and tier-borne gates identical under both
 dispatches for every item; and a ninety-fifth-percentile hop count of one
-with no escalations. The run exits zero.
+with no escalations. Recovery runs through the router's reclassification
+path, and the telemetry counters are recorded without gating. The run exits
+zero.
 
 Verify the diff on its own merits.
 

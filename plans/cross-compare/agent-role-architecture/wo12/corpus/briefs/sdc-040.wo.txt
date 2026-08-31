@@ -6,17 +6,18 @@ Commit subject:      Honor notifications/cancelled in the orchestra-engine MCP s
 
 ORDER:
 Make the engine's protocol server honor a cancellation notice instead of
-discarding it. Today a stopped call keeps running: the runner blocks inside
-a synchronous spawn and cannot act on a signal, and the engine beneath it is
-an untracked grandchild, so a call the caller believes stopped goes on
-editing the working tree unattended. Keep a registry of in-flight runs keyed
-by request id, and on cancellation tear down the whole process tree, using
-the tree-killing utility on Windows and a process-group terminate then kill
-on other platforms. Answer the cancelled request with an explicit warning
-that the working tree may be half-finished and unaudited. Guard against
-loose id matching so a spent numeric id cannot alias onto a live string id
-and stop an unrelated run, and drain every in-flight run at teardown so
-nothing this server started outlives it.
+discarding it. Today a stopped call keeps running, because the runner blocks
+inside a synchronous spawn and cannot act on a signal, and the engine
+beneath it is a grandchild the server never tracked, so a call the operator
+believes stopped goes on editing the working tree unattended. Keep a
+registry of in-flight runs keyed by request id, and on cancellation tear
+down the whole process tree, using the tree-killing utility on Windows and a
+process-group terminate followed by a kill elsewhere. Answer the cancelled
+request with an explicit warning that the working tree may be half-finished
+and unaudited. Guard against loose id matching, so that only an exact id can
+reach a run and a spent numeric id cannot alias onto a live string id and
+stop an unrelated one, and drain every in-flight run at teardown, so nothing
+this server started outlives it.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

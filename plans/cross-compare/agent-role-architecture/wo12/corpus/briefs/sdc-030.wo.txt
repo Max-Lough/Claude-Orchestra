@@ -11,13 +11,13 @@ working directory, so relative paths resolve consistently regardless of
 where the parent process was invoked from. Each launcher's output goes into
 the shared scratch directory, not scattered wherever the process happened to
 run. The review warmup step pins to a known checkout, exercising exactly the
-state the review will actually run against rather than a stale or unrelated
-one. Apply the same three fixes across all three files — the base executor,
-the heavy executor, and the reviewer launcher script — so their startup
-behavior stays consistent with one another. Keep each script's existing
-command-line interface as it stands; the startup and warmup discipline are
-the only pieces that change, and every other behavior in these files stays
-exactly as it was.
+state the review will actually run against, not a stale or unrelated one.
+Apply the same three fixes across all three files — the base executor, the
+heavy executor, and the reviewer launcher script — so their startup behavior
+stays consistent with one another. Keep each script's existing command-line
+interface the same; the startup and warmup discipline are the only pieces
+that change, and every other behavior in these files carries over exactly as
+it did before.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

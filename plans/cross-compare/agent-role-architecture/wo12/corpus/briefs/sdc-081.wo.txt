@@ -14,9 +14,9 @@ mid-verification. The path-normalization function looks up real paths first,
 falling back to a lexical comparison only for paths that are already gone —
 not for a path still on disk. Pin a regression using an aliased
 temporary-root reproducer, such as a junction or symlink, that must fail on
-every platform without the fix, skipping cleanly where links cannot be
-created. Keep the fix scoped to the normalization function and the live-set
-comparison; leave the sweep's other classification logic alone.
+every platform before the fix lands, skipping cleanly where links cannot be
+created. Confine the fix to the normalization function and the live-set
+comparison; the sweep's other classification logic does not change.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

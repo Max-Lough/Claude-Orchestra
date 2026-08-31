@@ -7,7 +7,7 @@ Commit subject:      WO-10: declared cross-family/no-mirror exceptions for Q0 an
 ORDER:
 Declare the cross-family and no-mirror exceptions that two seats need before
 the round can close. For the test-authoring seat, state explicitly that
-mirror substitution is unlawful by construction: the seat is cast opposite
+mirror substitution is unlawful by construction — the seat is cast opposite
 the implementation author's family, so a same-family substitution under
 outage must never be permitted, since it would break the independence
 invariant. Confirm the router carries no special-cased outage handling for

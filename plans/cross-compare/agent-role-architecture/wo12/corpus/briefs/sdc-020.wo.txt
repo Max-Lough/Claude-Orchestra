@@ -10,15 +10,16 @@ mission — locate, map, enumerate, history — cheap, parallel and high-recall,
 and add a detective role for the why-and-how cases: root-cause analysis,
 cross-subsystem tracing, invariant discovery, recon where fact-gathering
 cannot be separated from reasoning and a confidently wrong report would
-misdirect the plan. The detective works under the same read-only law as the
-scout. Write the detective charter with hypothesis-first rules,
-path-and-line evidence chains and graded CONFIRMED, LIKELY and UNCERTAIN
-verdicts; narrow the scout's description away from all codebase searching
-and add a rule handing causal cores off as detective cases; add the
-company-table row, two-tier routing with pipelining, and an escalation rule
-making a scout UNKNOWN that survives one re-probe a detective case; update
-the guard's denial hint, the installer's stamped agent set, the
-documentation and the version.
+misdirect the plan. The detective carries the scout's read-only law
+unchanged; recon is the one unreviewed output in the harness, so the
+intelligence that steers decisions gets the capable tier. Write the
+detective charter with hypothesis-first rules, path-and-line evidence chains
+and graded CONFIRMED, LIKELY and UNCERTAIN verdicts; narrow the scout's
+description away from all codebase searching and add a rule handing causal
+cores off as detective cases; add the company-table row, two-tier routing
+with pipelining, and an escalation rule making a scout UNKNOWN that survives
+one re-probe a detective case; update the guard's denial hint, the
+installer's stamped agent set, the documentation and the version.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

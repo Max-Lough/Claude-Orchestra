@@ -2,11 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit cbd426483d775b4422a90551ea09150f3cdb033a. An executor produced this change.
 
 CLAIMS:
-Done. Three skills plus a never-installed authoring template are in the
-master, and the installer stamps them wholesale into the project's skills
-folder, removes only the master-known names on uninstall, and prunes the
-directory when it empties. Verified with node --check on the installer and
-the hooks, and with a full install then uninstall into a scratch project:
-both printed their expected summary lines.
+Done. Three orchestra-namespaced skills plus a never-installed authoring
+template now live in the master, and the installer stamps them wholesale
+into the project's skills folder on every run. Uninstall removes the
+master-known names, passes over anything the user authored under another
+name, and prunes the skills directory once it empties. Verified with node
+--check over the installer and the hooks, and by a full install followed by
+an uninstall into a scratch project, each printing its expected summary
+line.
 
 Verify the diff on its own merits.

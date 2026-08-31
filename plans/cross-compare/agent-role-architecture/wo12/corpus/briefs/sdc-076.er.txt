@@ -7,8 +7,8 @@ throughput probe (twenty gate-class reviews drawing about three percent of
 the weekly window); the incident draw stays exactly zero, disclosed rather
 than computed. The recomputed default reserve falls below the plan's floor,
 so the floor now governs the default rather than the dynamic term, and the
-rejected peak-derived arithmetic was left unchanged in code comments. `node
-tests/quartermaster.test.js` reports 154 passed; `node tests/router.test.js`
-reports 135 passed.
+rejected peak-derived arithmetic was left unchanged in code comments. The
+quartermaster test suite reports 154 passed; router finishes clean in that
+run too.
 
 Verify the diff on its own merits.

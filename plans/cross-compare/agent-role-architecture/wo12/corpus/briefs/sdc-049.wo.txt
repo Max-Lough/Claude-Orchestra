@@ -5,18 +5,19 @@ Base (its parent):   e04005bb8a0b751bb26fbdd4755ee437af2cb240
 Commit subject:      Draw up R0-EX11: delta re-review order for the round-5f fix
 
 ORDER:
-Write the delta re-review order for the fix applied in the latest round,
-pinning the exact two-commit range it covers — 2c24df7 through e04005b,
-enumerated, not described as a moving branch tip — so the reviewer works
-against a fixed diff that cannot drift out from under them. State plainly
-that the point of this round is to get an explicit ruling on the one
-residual strand still open, and that strand alone; the order does not reopen
-anything already settled in prior rounds. Make clear in the order text that
-a clean verdict here is exactly what clears the two blocked tracks out of
-their needs-revision state, not a partial or provisional clearance — so the
-reviewer understands the stakes of the ruling they are about to make, not
-just the mechanics of what to check. Keep the order and its accompanying
-report as new files only, and leave every prior round's file untouched.
+Draft the round's re-review instructions for the fix applied in the latest
+cycle, pinning the exact two-commit range it covers by full commit
+identifiers, enumerated in full, not described as a moving branch tip — so
+the reviewer works against a fixed diff that cannot drift out from under
+them. State plainly that the point of this round is to get an explicit
+ruling on the one residual strand still open, and that strand alone; the
+order must not reopen anything already settled in prior rounds. Make clear
+in the order text that a clean verdict here is exactly what clears the two
+blocked tracks out of their needs-revision state, not a partial or
+provisional clearance — so the reviewer understands the stakes of the ruling
+they are about to make, not just the mechanics of what to check. Keep the
+order and its companion writeup separate from every prior round's file,
+which stays untouched.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

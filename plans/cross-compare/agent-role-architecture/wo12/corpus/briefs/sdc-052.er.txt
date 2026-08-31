@@ -2,14 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit e5d3d9bb8209c6a3ecedf85bd1da206138e035bc. An executor produced this change.
 
 CLAIMS:
-We produced the order and executor report as two new files under roster/,
-adding 119 lines total with zero deletions — no existing roster file was
-touched. The pin enumerates the two commits between the round-5b and
-round-5c checkpoints individually. We registered the reference runner's
-locked-worktree single-force sweep limitation only as a follow-on for its
-own lane, never as a finding against this pin, and recorded that a clean
-verdict on this exact pin clears the pending work orders out of revise
-status.
+Both documents went in as wholly new material under roster/, one hundred
+nineteen lines between them; nothing outside that pair was touched anywhere
+else. The earlier fix commit and the one that follows it anchor this pass
+from end to end. The runner's locked-worktree, single-force sweep limitation
+was set down as its own follow-on note for that runner's lane, carrying no
+weight against this pass's verdict, which the file records as what the pair
+of orders sitting in revise needs to move past that status.
 
 Verify the diff on its own merits.
 

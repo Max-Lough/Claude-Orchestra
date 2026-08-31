@@ -2,14 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 540c60da758b26a3d1a7d9ad581751bad664d6f5. An executor produced this change.
 
 CLAIMS:
-Order fulfilled as written. `.github/workflows/test.yml` runs `node
-tests/review-lane.test.js` on ubuntu-latest, windows-latest and macos-latest
+Order fulfilled exactly as written. .github/workflows/test.yml runs node
+tests/review-lane.test.js on ubuntu-latest, windows-latest and macos-latest
 across Node 20/22/24, on push, pull_request and manual dispatch. Every
 matrix leg runs to completion and reports its own result, so one platform's
 failure cannot cancel or hide the others and a run always shows which
-platforms disagree. No build, bundle or publish step; no linter job and no
-new dependency — the job needs only plain node and plain git. The two
-Windows facts are handled in the suite: a `.cmd` shim for the stub, and the
-SIGKILL expectation asserted on Windows.
+platforms disagree. No build, bundle or publish step, no linter job and no
+new dependency — the job needs only plain node and plain git. The Windows
+shim and the SIGKILL expectation are both in the suite.
 
 Verify the diff on its own merits.

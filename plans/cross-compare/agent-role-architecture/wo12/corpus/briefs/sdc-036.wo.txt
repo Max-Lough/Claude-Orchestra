@@ -8,16 +8,16 @@ ORDER:
 Clean up the small residual items left over after the prior evidence-band
 gate returned its approve verdict, and add a ledger that tracks review
 rounds going forward. Touch only the four files the prior rounds already
-reference: the status file, roster/researcher.md, roster/wo9-band-record.md,
-and roster/wo9-n0-ex2-report.md, and no others — no new files, and no edits
-to any role definition outside researcher.md's single residual line. Keep
-the total change small: edits target the specific loose ends still open
-after approval, not a broader rewrite of the band record's existing
-findings. Add the review-round ledger as a section inside the existing
-record file, not a separate document, so the history of rounds stays in one
-place alongside the findings it tracks. Leave every already-approved
-finding's wording unchanged; this pass corrects residuals, it does not
-relitigate what the gate already cleared, start to finish.
+reference: STATUS.md, roster/researcher.md, roster/wo9-band-record.md, and
+roster/wo9-n0-ex2-report.md, and no others — no new files, and no edits to
+any role definition outside researcher.md's single residual line. Keep the
+total change small: edits target the specific loose ends still open after
+approval, not a broader rewrite of the WO-9 record's existing findings. Add
+the review-round ledger as a section inside the existing record file, not a
+separate document, so the history of rounds stays in one place alongside the
+findings it tracks. Leave every already-approved finding's wording
+unchanged; this pass corrects residuals, it does not relitigate what the
+gate already cleared, and it stops there.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -11,13 +11,13 @@ dependencies and keep it CommonJS, mirroring the existing verifier and
 router substrates. State must derive only from real recorded readings across
 both vendors — never fabricate a denominator — and leave ledger attribution
 out of scope entirely; it is impossible today and stays a registered
-follow-on. Keep allGreen() exported as a test affordance, and leave the
-router's wo7b score module alone. Leave modelAssist unused in this version;
-the substrate stays deterministic. Add no registry schema — the entry
-contract lives in this module's own README and nowhere else. Gitignore the
-two new runtime data files and keep them out of every commit. Prove interop
-end to end against the real router and wire the new suite into CI directly
-after the router suite.
+follow-on. Keep allGreen() exported as a test affordance, and keep the
+router's wo7b score module untouched. Leave modelAssist unused in this
+version; the substrate stays deterministic. Add no registry schema — the
+entry contract lives in this module's own README and nowhere else. Gitignore
+the two new runtime data files and keep them out of every commit. Prove
+interop end to end against the real router and wire the new suite into CI
+directly after the router suite.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

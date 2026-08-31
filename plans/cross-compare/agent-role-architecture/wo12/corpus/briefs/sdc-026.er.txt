@@ -3,12 +3,13 @@ STATUS: DONE. The change is commit f98316fb13836c5f64576b8e13170c9264896a5d. An 
 
 CLAIMS:
 We fixed all five major findings and six minor findings from the prior
-round, plus every outstanding nit, across exactly ten files (121 insertions,
-61 deletions). The cross-vendor engine fault tally was recomputed and
-confirmed as exactly 10 of 14 engine-reaching attempts, with an explicit
-counting rule and a full per-attempt list replacing the earlier wrong figure
-of roughly six of fifteen. The rule-count table now reads ten base rules and
-twelve heavy rules, checked against the source files line by line.
+round, plus every outstanding nit, across ten files with a substantial batch
+of insertions and far fewer deletions. The cross-vendor engine fault tally
+was recomputed and confirmed as exactly 10 of 14 engine-reaching attempts,
+with an explicit counting rule and a full per-attempt list replacing the
+earlier wrong figure of roughly six of fifteen. The rule-count table now
+reads ten base rules and twelve heavy rules, checked against the source
+files row by row.
 
 Verify the diff on its own merits.
 

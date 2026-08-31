@@ -3,588 +3,588 @@
     "id": "sdc-001",
     "base": "7bf8e794306376835716c422313e85d997eaf7c0",
     "head": "a14280eaabc8f0e61f01ddaeaf4ffa68123ede21",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-001"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-001"
   },
   {
     "id": "sdc-002",
     "base": "b8a1957838da66600f5320d13c83e54c43d59130",
     "head": "dfc217060a2023b64c73730391146fc2a1ca9272",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-002"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-002"
   },
   {
     "id": "sdc-003",
     "base": "3900142ff195c91ae38de27f45abc58707b63eae",
     "head": "3523e234256fd3aee90e16c5393be3867eb13e21",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-003"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-003"
   },
   {
     "id": "sdc-004",
     "base": "7c8d6dde015e0ca5c55f535812ab4ddf13d78936",
     "head": "b50470d0f9cf1ed6cd16b69d190f811066247d50",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-004"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-004"
   },
   {
     "id": "sdc-005",
     "base": "e5d3d9bb8209c6a3ecedf85bd1da206138e035bc",
     "head": "1c651fb18903e8d968624247858564dc9233a134",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-005"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-005"
   },
   {
     "id": "sdc-006",
     "base": "4e509b581a65caee8540ccde895c752823d8c9aa",
     "head": "54a5dc05836cd3022a198ad38c96c8b6fe161aac",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-006"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-006"
   },
   {
     "id": "sdc-007",
     "base": "9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86",
     "head": "7bf8e794306376835716c422313e85d997eaf7c0",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-007"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-007"
   },
   {
     "id": "sdc-008",
     "base": "acbf8f2cf6f98bb642a23df3734a0edd35c29e5f",
     "head": "9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-008"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-008"
   },
   {
     "id": "sdc-009",
     "base": "3c2fb763e1a8c51fc7b54d0e2ee0ba4e5dfe9a30",
     "head": "b8a1957838da66600f5320d13c83e54c43d59130",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-009"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-009"
   },
   {
     "id": "sdc-010",
     "base": "5d649d86ee6c68640a6435630e20766361cb69f6",
     "head": "9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-010"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-010"
   },
   {
     "id": "sdc-011",
     "base": "c733d7750afb13290ed603412272334a80c8b9cf",
     "head": "17a24d44150ee5f7baea2bb7787f03cac916d763",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-011"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-011"
   },
   {
     "id": "sdc-012",
     "base": "79ce13aaa7d80ca614dcd1f3db2193872e904bcb",
     "head": "c51a8f60b8b12253e7287d0ca6ac92deefb43739",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-012"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-012"
   },
   {
     "id": "sdc-013",
     "base": "5758a2d2b6146b613ea062946f7013e1b9dfa3c2",
     "head": "e09bbc44cbd4b69af3b5d1e52c186205f6686376",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-013"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-013"
   },
   {
     "id": "sdc-014",
     "base": "9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5",
     "head": "43c83abdf1ae029789982b3af63a66189b37ff7a",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-014"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-014"
   },
   {
     "id": "sdc-015",
     "base": "3d545b94e89cdfc8d026e0457e11225820453745",
     "head": "77254e801d95ea6a56b8aaea720f261e88ec5f80",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-015"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-015"
   },
   {
     "id": "sdc-016",
     "base": "6f27ea2249a91dc647b8f2ccbbd324a30511f938",
     "head": "46c5a4cb9c0970af3f7523be045c3fe1c8ce0d2f",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-016"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-016"
   },
   {
     "id": "sdc-017",
     "base": "09d7935626c35679efdee24324f3571bc82a8023",
     "head": "cbd426483d775b4422a90551ea09150f3cdb033a",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-017"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-017"
   },
   {
     "id": "sdc-018",
     "base": "5976da0af59b34d667793d75095e3015b6971720",
     "head": "7bda5af543385a1864ccc45803dfb108159e7818",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-018"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-018"
   },
   {
     "id": "sdc-019",
     "base": "8bef840fd971fc792fd85fd41fa623990f1b5420",
     "head": "e3e8ea9c66a33415e69b9601ccffde7e176a1853",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-019"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-019"
   },
   {
     "id": "sdc-020",
     "base": "ea5ef72cc7f829ec41d7e4c6a822e79d95276873",
     "head": "59b0e16d4b37b8cbe18a85d936acd5e17bc2f41c",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-020"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-020"
   },
   {
     "id": "sdc-021",
     "base": "e3b730da0f823c04c378df380d55518e0ad9a035",
     "head": "e7545f60a6e55718179afd07c70ed6d420de3069",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-021"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-021"
   },
   {
     "id": "sdc-022",
     "base": "ed6643587eca22bfa2cdc0638dc89699aae79938",
     "head": "8dce7590cb91aa27dced1f695b0631a7f23cf65b",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-022"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-022"
   },
   {
     "id": "sdc-023",
     "base": "00076a270f46759c81d3b4481b4b35e7365248e4",
     "head": "ed6643587eca22bfa2cdc0638dc89699aae79938",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-023"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-023"
   },
   {
     "id": "sdc-024",
     "base": "ff638b7d3b5a024730d9cc72baeb99367693f37a",
     "head": "2c93004e7bed040128ef1f5e8036621612255c2c",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-024"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-024"
   },
   {
     "id": "sdc-025",
     "base": "f98316fb13836c5f64576b8e13170c9264896a5d",
     "head": "4680027af8e12008d546e5ad3be63e7b005805df",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-025"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-025"
   },
   {
     "id": "sdc-026",
     "base": "e37a25da1d964afc30d66773e4ce26ae7fb98847",
     "head": "f98316fb13836c5f64576b8e13170c9264896a5d",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-026"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-026"
   },
   {
     "id": "sdc-027",
     "base": "d3080957c86695a85ac59207b2e6a07988ef82fd",
     "head": "a0e38c048be14a0757428808ccb03299cb55de1d",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-027"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-027"
   },
   {
     "id": "sdc-028",
     "base": "316759a5fcadd7d5fe05859e40a94f55ae7660d8",
     "head": "9336392a2147dc7298e89ee5e2388032895652f2",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-028"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-028"
   },
   {
     "id": "sdc-029",
     "base": "3b86e77803493e1895b15b8901eaa036aff0ff39",
     "head": "46364797ff7456d085b6d838a7f3c6084d1f63bf",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-029"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-029"
   },
   {
     "id": "sdc-030",
     "base": "d7738df9075141c5495913e78a33558a31cf0e0f",
     "head": "9ff2a530ec2c5fb99dde185ef4fbafdc60154ea1",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-030"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-030"
   },
   {
     "id": "sdc-031",
     "base": "a245f0970676989692f38b8b0710e74f9cd979f9",
     "head": "4ed7a03a48a8b2efb389b00aefcc89c18f5b96fe",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-031"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-031"
   },
   {
     "id": "sdc-032",
     "base": "928e00c46109cb457932a1a7d02755d8df1bea3a",
     "head": "73629f78d18b84e14c8e6acf082e32089ae7b3ac",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-032"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-032"
   },
   {
     "id": "sdc-033",
     "base": "8dce7590cb91aa27dced1f695b0631a7f23cf65b",
     "head": "e3b730da0f823c04c378df380d55518e0ad9a035",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-033"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-033"
   },
   {
     "id": "sdc-034",
     "base": "bbbd9839d3d9856886896f71a203a3c0eee5b412",
     "head": "00076a270f46759c81d3b4481b4b35e7365248e4",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-034"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-034"
   },
   {
     "id": "sdc-035",
     "base": "7b0d9d0e4ce9cd81c18e4ebeda41a0e5d4b6d662",
     "head": "d3080957c86695a85ac59207b2e6a07988ef82fd",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-035"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-035"
   },
   {
     "id": "sdc-036",
     "base": "ee5aec43e474f211aa237ddf4224e592e2f2dcd5",
     "head": "357c96dbd56f9ac75af765d7dcb728261826487a",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-036"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-036"
   },
   {
     "id": "sdc-037",
     "base": "16871cc06ce7a9569991a23a63fa2f1dfecdf25e",
     "head": "540c60da758b26a3d1a7d9ad581751bad664d6f5",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-037"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-037"
   },
   {
     "id": "sdc-038",
     "base": "597a4bae65d867e020eff47f0183e87d623dee72",
     "head": "10badb8ebee166e195dd79ee3eef18856eb5d2fc",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-038"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-038"
   },
   {
     "id": "sdc-039",
     "base": "8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c",
     "head": "f0f578c7b76bb440490c0c2471fbb6e673a5b2a3",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-039"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-039"
   },
   {
     "id": "sdc-040",
     "base": "1cb50b8cad23935aa9a4870c2ba522735f157924",
     "head": "5d9363f5429ab08dc4c81ffe316db9ffd3c134c9",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-040"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-040"
   },
   {
     "id": "sdc-041",
     "base": "444eaf3c84b5fa8d370b4df6794fe6c71a84fa73",
     "head": "cb083613d8f184d7a7d6b7f8da6fe0856e276e38",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-041"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-041"
   },
   {
     "id": "sdc-042",
     "base": "c2c8060068f922d2b658d4f65481f58ef0fbb6de",
     "head": "e24b7aef6e8ab8de8aa43ede574da998858d9da4",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-042"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-042"
   },
   {
     "id": "sdc-043",
     "base": "661feb0bc419fb0878e5b67977ed52b07557f0f7",
     "head": "e66bd414612938e417adb9f0187b2b222d8db541",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-043"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-043"
   },
   {
     "id": "sdc-044",
     "base": "eaf446d296cc2359645302ba79c9b23add034a1d",
     "head": "d5c41b9bf7e736a6b16482d11dda69148d7485d6",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-044"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-044"
   },
   {
     "id": "sdc-045",
     "base": "9336392a2147dc7298e89ee5e2388032895652f2",
     "head": "ee5aec43e474f211aa237ddf4224e592e2f2dcd5",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-045"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-045"
   },
   {
     "id": "sdc-046",
     "base": "16484c959bf4315cdc1db02e71ab6569784cfb63",
     "head": "316759a5fcadd7d5fe05859e40a94f55ae7660d8",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-046"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-046"
   },
   {
     "id": "sdc-047",
     "base": "1ab4a19ea73054b565e2fb890517ce0a286d720e",
     "head": "16484c959bf4315cdc1db02e71ab6569784cfb63",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-047"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-047"
   },
   {
     "id": "sdc-048",
     "base": "5f62be6c7b811fe7f1d6e94f9e346d3712df6607",
     "head": "1ab4a19ea73054b565e2fb890517ce0a286d720e",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-048"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-048"
   },
   {
     "id": "sdc-049",
     "base": "e04005bb8a0b751bb26fbdd4755ee437af2cb240",
     "head": "5f62be6c7b811fe7f1d6e94f9e346d3712df6607",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-049"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-049"
   },
   {
     "id": "sdc-050",
     "base": "2c24df7342edc8c96a9ce455ccb5431eee7f98f9",
     "head": "3900142ff195c91ae38de27f45abc58707b63eae",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-050"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-050"
   },
   {
     "id": "sdc-051",
     "base": "5fb5142599200a217bef6e31cadad06675fef69c",
     "head": "7c8d6dde015e0ca5c55f535812ab4ddf13d78936",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-051"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-051"
   },
   {
     "id": "sdc-052",
     "base": "3a9cc7347787a52f53fffe2211f3c0d939cef61f",
     "head": "e5d3d9bb8209c6a3ecedf85bd1da206138e035bc",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-052"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-052"
   },
   {
     "id": "sdc-053",
     "base": "09a824e1f153fa656f6903b22fc8de2c9592edce",
     "head": "4e509b581a65caee8540ccde895c752823d8c9aa",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-053"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-053"
   },
   {
     "id": "sdc-054",
     "base": "ceeaabc6872eef5d5b35252f4179ed55159f83b5",
     "head": "5758a2d2b6146b613ea062946f7013e1b9dfa3c2",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-054"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-054"
   },
   {
     "id": "sdc-055",
     "base": "e7a5e31eb70ba2cabb9d46cb33b16ffe4ebfe4aa",
     "head": "3d545b94e89cdfc8d026e0457e11225820453745",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-055"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-055"
   },
   {
     "id": "sdc-056",
     "base": "7e90c673184cf492e80abad4b5db9521d56e690c",
     "head": "8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-056"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-056"
   },
   {
     "id": "sdc-057",
     "base": "d00a7aedd28ad2cc17260b2aaec921c65dcdec5c",
     "head": "444eaf3c84b5fa8d370b4df6794fe6c71a84fa73",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-057"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-057"
   },
   {
     "id": "sdc-058",
     "base": "c4312747b5ea534153da63bc337bce04c8c78cc6",
     "head": "0b0148471f91dce49a8ea919349032fb41189626",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-058"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-058"
   },
   {
     "id": "sdc-059",
     "base": "a338bf5d6f4f2f096a79c2345d21a6ce565dc609",
     "head": "69127bdbb56e8ffaf6781b4ce27663fc710ca7f0",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-059"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-059"
   },
   {
     "id": "sdc-060",
     "base": "2965c047bab02af413287d90cfdcaae3023ea023",
     "head": "a338bf5d6f4f2f096a79c2345d21a6ce565dc609",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-060"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-060"
   },
   {
     "id": "sdc-061",
     "base": "92430aaec54f4f194c904642f0fb3c1da80b0469",
     "head": "55b22b39891aa221d0ae95c19e72b14feb570f96",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-061"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-061"
   },
   {
     "id": "sdc-062",
     "base": "cd27cdc4704a41a46e98be09399ec3c433966d7a",
     "head": "24da6cec12426772ba0b743214e1e20129841323",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-062"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-062"
   },
   {
     "id": "sdc-063",
     "base": "f5646829776a5dba4c021f4a887dd730bce04b6c",
     "head": "1c6144e7330e70fe07b6ba7d22062ef7f929fd33",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-063"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-063"
   },
   {
     "id": "sdc-064",
     "base": "fc303481ed98af58433dce80b2ee4e70741a93db",
     "head": "3721b6211b5503fa984af5c621a1f9adb1ef2242",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-064"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-064"
   },
   {
     "id": "sdc-065",
     "base": "0b0148471f91dce49a8ea919349032fb41189626",
     "head": "51663fc30a5dc432a79dcf0ffde4051d27cbcd21",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-065"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-065"
   },
   {
     "id": "sdc-066",
     "base": "f95818329e8d54bd00d7590c140f06a78bd5ae15",
     "head": "4ecfe5becd31a4100640f95142908e40fd47da31",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-066"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-066"
   },
   {
     "id": "sdc-067",
     "base": "0f5c0a08225f417305b395cabdd54fa5528e3b17",
     "head": "6b274a055f89af3c33fda63ff73abb6462374965",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-067"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-067"
   },
   {
     "id": "sdc-068",
     "base": "84da4ad73f402ea78ea4e9b1917eed778bf3527c",
     "head": "bd5c5169c5193c059668ee776cf7d433d3887330",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-068"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-068"
   },
   {
     "id": "sdc-069",
     "base": "998b97830ac54d121c6e1b4903eb86e2068a5c9b",
     "head": "d9af01673efd2e098b5647d4d609398822bc031b",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-069"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-069"
   },
   {
     "id": "sdc-070",
     "base": "632799567f3beab53c8309c7348bbaea938a8e23",
     "head": "998b97830ac54d121c6e1b4903eb86e2068a5c9b",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-070"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-070"
   },
   {
     "id": "sdc-071",
     "base": "67d5c98a82640d731ebb75391ec4867237457f8b",
     "head": "80bbdc0d78206585f5be16661af463e161a34d95",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-071"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-071"
   },
   {
     "id": "sdc-072",
     "base": "410537818dcc663e020fe84b8b5f800ac945d473",
     "head": "67d5c98a82640d731ebb75391ec4867237457f8b",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-072"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-072"
   },
   {
     "id": "sdc-073",
     "base": "901c8fcac7fe9905b1fe3714f1e857d713a74ab7",
     "head": "c15f090444e551d88afabf66d117ac73253b8f2c",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-073"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-073"
   },
   {
     "id": "sdc-074",
     "base": "dab5fe54f07ea9d54850dd796a7fb811a3fc58ed",
     "head": "6f0436051ea91bce53fd55e8f6383e383b8cee95",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-074"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-074"
   },
   {
     "id": "sdc-075",
     "base": "7bf8e794306376835716c422313e85d997eaf7c0",
     "head": "772a6881219f61db76a79b9e99846cc97512b70e",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-075"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-075"
   },
   {
     "id": "sdc-076",
     "base": "b8a1957838da66600f5320d13c83e54c43d59130",
     "head": "acbf8f2cf6f98bb642a23df3734a0edd35c29e5f",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-076"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-076"
   },
   {
     "id": "sdc-077",
     "base": "3900142ff195c91ae38de27f45abc58707b63eae",
     "head": "e04005bb8a0b751bb26fbdd4755ee437af2cb240",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-077"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-077"
   },
   {
     "id": "sdc-078",
     "base": "7c8d6dde015e0ca5c55f535812ab4ddf13d78936",
     "head": "2c24df7342edc8c96a9ce455ccb5431eee7f98f9",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-078"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-078"
   },
   {
     "id": "sdc-079",
     "base": "e5d3d9bb8209c6a3ecedf85bd1da206138e035bc",
     "head": "5fb5142599200a217bef6e31cadad06675fef69c",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-079"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-079"
   },
   {
     "id": "sdc-080",
     "base": "4e509b581a65caee8540ccde895c752823d8c9aa",
     "head": "3a9cc7347787a52f53fffe2211f3c0d939cef61f",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-080"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-080"
   },
   {
     "id": "sdc-081",
     "base": "5758a2d2b6146b613ea062946f7013e1b9dfa3c2",
     "head": "09a824e1f153fa656f6903b22fc8de2c9592edce",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-081"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-081"
   },
   {
     "id": "sdc-082",
     "base": "3d545b94e89cdfc8d026e0457e11225820453745",
     "head": "ceeaabc6872eef5d5b35252f4179ed55159f83b5",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-082"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-082"
   },
   {
     "id": "sdc-083",
     "base": "8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c",
     "head": "e7a5e31eb70ba2cabb9d46cb33b16ffe4ebfe4aa",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-083"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-083"
   },
   {
     "id": "sdc-084",
     "base": "444eaf3c84b5fa8d370b4df6794fe6c71a84fa73",
     "head": "7e90c673184cf492e80abad4b5db9521d56e690c",
-    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-aUxzJN",
-    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones\\sdc-084"
+    "cloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\orchestra-wo12-YMwe0t",
+    "runCloneDir": "C:\\Users\\maxtl\\AppData\\Local\\Temp\\claude\\C--Users-maxtl-Projects-Claude-Orchestra\\8a1084ac-23e5-4029-97e1-455d7a8970ee\\scratchpad\\wo12-runclones-r5b\\sdc-084"
   }
 ]

@@ -2,14 +2,14 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit e3e8ea9c66a33415e69b9601ccffde7e176a1853. An executor produced this change.
 
 CLAIMS:
-The rename landed across the harness: the roundabout hook file and its
-identifiers, the skill directory with its frontmatter, headings, runner path
-and verdict token, the installer's runner constant, copy step and uninstall
-list, the planner agent file, `ORCHESTRA.md`, and `README.md` end to end.
-The bundled-skill roster in `skills/orchestra-status/SKILL.md` now names
-`deep-plan`. Verification: a case-insensitive repository-wide grep for the
-old name returns 0 matches, and an installer run into a scratch project
-reports the four bundled skills with `/deep-plan` among them.
+The rename landed across the harness. The roundabout hook file and every
+identifier it carried moved over, along with the skill directory, its
+frontmatter, headings and verdict token; the installer copies and uninstalls
+the new filename; and the planner agent file, the protocol document and the
+README were converted. The bundled-skill roster in the status skill now
+names deep-plan. A case-insensitive repository-wide grep for the old name
+returns 0 matches at head, and the installer run lists deep-plan among the
+bundled skills.
 
 Verify the diff on its own merits.
 

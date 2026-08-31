@@ -13,12 +13,12 @@ Spatial Specialist supersedes the legacy modeler file, exactly as the
 router's alias entry names it. Data Engineer carries its declared no-mirror
 exception for irreversible actions byte-identical to the plan text. All five
 files ship under plain names, with no collision against the top-level agent
-files — a rename is required wherever a plain name would collide. Leave the
-router's own files alone for this work; record any casting or lint gaps as
-follow-ons instead of papering over them. Before calling the band done, the
-full roster lint should report only the already-known gaps and nothing new,
-both install-script lint modes come back clean, and every required test
-suite passes in full.
+files — a rename is required wherever a plain name would collide. The
+router's own files stay untouched for this work; record any casting or lint
+gaps as follow-ons instead of papering over them. Before calling the band
+done, the full roster lint should report only the already-known gaps and
+nothing new, both install-script lint modes come back clean, and every
+required test suite passes in full.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

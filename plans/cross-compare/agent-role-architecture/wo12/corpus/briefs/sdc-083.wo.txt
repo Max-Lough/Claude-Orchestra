@@ -5,19 +5,19 @@ Base (its parent):   8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c
 Commit subject:      WO-8 round 4: fix all four R0-EX4 findings; record the R0-EX4 verdict
 
 ORDER:
-Address four findings raised by the latest review pass, while confirming
-that all five prior-round closures still hold. Change the touches lint to
-compare individual elements instead of a comma-joined string that is prone
-to false collisions. Make the glob matcher replicate the line-terminator
-character classes of the regular expression it replaced exactly, with no
-deviation. Have checkout startup sweep any abandoned worktrees still on
-disk, since pruning alone clears registrations whose directory is already
-missing, nothing more; live in-process checkouts must remain exempt from
-that sweep in every case. Correct future review orders so they enumerate
-every commit in their pinned range rather than overclaiming a single commit
-— the range should not collapse to one entry when more than one commit is in
-scope. Record the review verdict verbatim in the roster, and keep the
-tranche marked as open pending the next review pass.
+Address four findings raised by this round's review, while confirming that
+all five prior-round closures still hold. Change the touches lint to compare
+individual elements in place of a comma-joined string that is prone to false
+collisions. Make the glob matcher replicate the line-terminator character
+classes of the regular expression it replaced exactly, with no deviation.
+Have checkout startup sweep any abandoned worktrees still on disk, since
+pruning alone clears registrations whose directory is already missing,
+nothing more; live in-process checkouts must remain exempt from that sweep
+in every case. Correct future review orders so they enumerate every commit
+in their pinned range rather than overclaiming a single commit — the range
+should not collapse to one entry when more than one commit is in scope.
+Enter that verdict into the roster word for word, and leave the tranche open
+until the next pass.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

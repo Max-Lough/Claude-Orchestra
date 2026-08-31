@@ -3,12 +3,12 @@ STATUS: DONE. The change is commit 10badb8ebee166e195dd79ee3eef18856eb5d2fc. Cla
 produced this change.
 
 CLAIMS:
-A live-tree review no longer runs the warmup: the preflight states the
-refusal and names the flag that restores it, and the warmup runs only inside
+A live-tree review no longer runs the warmup — the preflight states the
+refusal and names the flag that restores it, and the warmup now runs inside
 the throwaway pinned checkout. The changelog, both readme files and the
 field-validation notes were updated to match. Two new cases in the
-review-lane suite cover it — the refusal is reported, and the file the
-warmup would have created does not appear in the project afterwards. No
-other behaviour of the runner was touched.
+review-lane suite cover it, one confirming the refusal is reported and one
+confirming the file the warmup would have created does not appear in the
+project afterwards. No other behaviour of the runner was touched.
 
 Verify the diff on its own merits.

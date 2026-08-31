@@ -15,9 +15,10 @@ independently for a legitimate worktree nested under a prefix-matching
 ancestor directory. Replace the substring classification with a structural
 check: identification must match exactly the tmp-root, prefix, and checkout
 shape, not a mere substring; skip the main worktree outright in every case;
-and remove the literal prefix-named parent, nothing else, ever. Pin both
-reproducer shapes as regressions. Record the review verdict verbatim in the
-roster, and keep the tranche marked open pending the next review pass.
+and remove only the literal prefix-named parent — no broader deletion is
+ever performed. Pin both reproducer shapes as regressions. Record the review
+verdict verbatim in the roster, and keep the tranche marked open pending the
+next review pass.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

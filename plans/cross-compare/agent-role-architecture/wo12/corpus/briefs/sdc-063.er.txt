@@ -2,11 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 1c6144e7330e70fe07b6ba7d22062ef7f929fd33. An executor produced this change.
 
 CLAIMS:
-Done. The new agent carries law byte-identical to its sibling, confirmed by
-diff, with only the name, description, reasoning pin, and identity sentence
-differing. The governing document, README, installer roster, and status
-rosters all name both points. A fresh-context delta review returned APPROVE
-with one cosmetic nit on the mode-table row, which was taken; node --check
-install.js passes.
+Done. The new agent carries the same law as its sibling, confirmed by
+diffing the two files, with the name, description, reasoning pin, and
+opening identity sentence the sole differences. The governing document names
+both points throughout, and the installer roster, the README, and the status
+rosters were brought into step. A fresh-context delta review came back
+APPROVE with one cosmetic nit on the mode-table row, which was taken.
+Running node --check over the installer passes.
 
 Verify the diff on its own merits.

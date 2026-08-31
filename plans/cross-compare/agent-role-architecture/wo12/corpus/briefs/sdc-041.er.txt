@@ -4,10 +4,11 @@ STATUS: DONE. The change is commit cb083613d8f184d7a7d6b7f8da6fe0856e276e38. An 
 CLAIMS:
 All five findings were reproduced locally and fixed, and the verdict is
 recorded verbatim. The reserve gate now reads the requested rung, so a
-degradation recast cannot satisfy a P15 stop — the router check that names
-that property passes. Suites are green: router 134, verifier 92, registry
-31, plus exec-lane 79, frontmatter-lint 37, mcp-lane 68 and scan-lane 41,
-all with 0 failed. Full CI-equivalent green.
+degradation recast cannot silently satisfy a reserve stop — the router check
+that names that property passes. The router suite reports 134 passing
+checks, and the verifier, registry, exec-lane, frontmatter-lint, mcp-lane
+and scan-lane suites all run green with nothing failed. The full
+CI-equivalent sweep is green.
 
 Verify the diff on its own merits.
 

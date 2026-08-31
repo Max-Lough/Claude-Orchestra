@@ -4,8 +4,8 @@ produced this change.
 
 CLAIMS:
 Recorded the approve verdict with zero findings and updated the dispositions
-file so both blocked tracks are marked closed: 2 files changed, 55
-insertions, 11 deletions. Nine delta rounds brought the review down from
+file so both blocked tracks are marked closed, across two files, with the
+rest of the tree untouched. 9 delta rounds brought the review down from
 eleven major findings to zero, each round's verdict recorded verbatim in the
 record; two independent review paths converged on the same issues twice
 along the way. Two items are logged as non-blocking follow-ons: the

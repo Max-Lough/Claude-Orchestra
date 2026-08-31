@@ -7,8 +7,7 @@ corpus, missing the threshold. Three disagreements were logged in the ledger
 — one on an evidence-class pair, exactly one flagged as a genuine ambiguity
 at the ambiguity cap, and one on a diagnosis-class pair — with no flaw found
 in any corpus item itself. Per the pre-registered rule, a second boundary
-redraw was triggered before the taxonomy proceeds to downstream encoding;
-the change touched two files with 62 insertions and 32 deletions.
+redraw was triggered before the taxonomy proceeds to downstream encoding.
 
 Verify the diff on its own merits.
 

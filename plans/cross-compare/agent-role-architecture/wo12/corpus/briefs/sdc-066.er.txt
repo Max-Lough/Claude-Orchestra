@@ -2,15 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 4ecfe5becd31a4100640f95142908e40fd47da31. An executor produced this change.
 
 CLAIMS:
-Path strings no longer answer the question: `rev-parse --show-toplevel` runs
-from the project and from the candidate, and git's two answers are compared;
-string comparison survives only as a case-tolerant backstop. Both call sites
-were converted: the pre-creation validation of a configured scratch root and
-the post-creation check on the runner's own directory. Verified by grep, the
-string helper is referenced exactly once and only as the new check's
-fallback, and by hand on a short-name path, where both gates now refuse. The
-sweep counts deregistered or removed and names leftovers; the isolation
-control reports INCONCLUSIVE by name.
+Rev-parse show-toplevel runs from the project and the candidate, and git's
+answers are compared. Both call sites were converted, the pre-creation
+validation of a configured scratch root and the post-creation check on the
+runner's directory; a grep of the runner finds the string helper referenced
+exactly once, as its fallback, and a hand run on a short-name path had both
+gates refuse. The sweep counts a directory it deregistered or removed, and
+the isolation control names itself inconclusive where it cannot reproduce.
 
 Verify the diff on its own merits.
 

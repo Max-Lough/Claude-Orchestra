@@ -7,7 +7,8 @@ The protocol section, the law and review-phase extensions, the executor and
 specialist rules, and the tiered runner are all in place, with the tier
 stamped into the engine header and the optional verification manifest
 carried into the reviewer's brief. Syntax checks pass on the installer and
-both hooks, and the runner's usage output shows the new tier option. The
-repository carries no test suite at this point.
+both hooks, and the runner's usage output shows the new tier option, full or
+inert. The repository carries no test suite at this point, so the installer
+round-trip is the verification the touched surface allows.
 
 Verify the diff on its own merits.

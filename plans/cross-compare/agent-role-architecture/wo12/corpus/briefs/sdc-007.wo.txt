@@ -5,8 +5,8 @@ Base (its parent):   9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86
 Commit subject:      WO-11 round 2: confirmation validity re-anchored to live evidence; boundary validation; D1 re-ruled in full
 
 ORDER:
-Re-open the WO-11 quartermaster review for a second round and fix every
-finding the round-1 pass left open. analyze() must re-validate a recorded
+Re-open the quartermaster review for a second round and fix every finding
+the first round left open. analyze() must re-validate a recorded
 confirmation against live evidence at every call — evidence timestamp match,
 live predicate, no fresh throttle, not exhausted, no malformed-latest poison
 — instead of honoring a confirmation simply because it falls inside the
@@ -14,11 +14,12 @@ freshness window. confirm() refuses and appends nothing when the bucket is
 freshly throttled, exhausted, or its latest raw line is malformed, and never
 blind-grants through any of the three. Every public entry point validates
 forecast, maxFreshMs, and maxStaleMs as finite numbers and throws rather
-than silently coercing a string. Re-rule finding D1 in full against the
-reviewer's verbatim round-2 text — keep the round-1 text struck through, not
-deleted — and restore F-1's dropped substance as its own line. Correct the
-status summary's quick-start claim and the incident-2 attestation so the
-record shows the true, exercised outcome and nothing else.
+than silently coercing a string. Re-rule the disputed finding against the
+reviewer's verbatim text from this round — keep the first round's text
+struck through, not deleted — and restore the dropped finding's substance as
+its own line. Correct the status summary's quick-start claim and the
+incident attestation so the record shows the true outcome; no other change
+is made.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

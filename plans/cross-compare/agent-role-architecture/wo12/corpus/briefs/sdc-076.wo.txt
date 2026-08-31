@@ -14,9 +14,9 @@ produced by the existing throughput probe. The incident draw stays exactly
 zero — a disclosed under-estimate, not a computed figure. Recompute the
 default reserve from the measured draw and apply the plan's floor whenever
 the dynamic term sits below it; the floor governs the default in that case,
-not the dynamic term. Leave the rejected peak-derived arithmetic in code
-comments as it stands, computed but unused, as a cautionary record. Update
-the README to record both derivations, and update the test suite's pinned
+not the dynamic term. Keep the rejected peak-derived arithmetic in code
+comments unchanged, computed but unused, as a cautionary record. Update the
+README to record both derivations, and update the test suite's pinned
 values, including an explicit check that the floor governs when the dynamic
 term is below it.
 

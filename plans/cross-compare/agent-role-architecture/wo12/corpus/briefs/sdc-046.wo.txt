@@ -14,10 +14,10 @@ itself — for example a command runner that was down — that run must be
 discarded, never accepted at face value, and re-run under a stricter
 integrity check instead. Record every incident and follow-on that turns up
 during the exercises, including any transient tooling fault, rather than
-smoothing them over or leaving them out. Update the band record with the
-exercises table, the incidents, the follow-ons, and the order text each seat
-was actually given, worded as issued, and update the status file to reflect
-the stage reached, start to finish.
+smoothing them over or leaving them out. Update the exercise log with the
+results table, the incidents, the follow-ons, and the order text each seat
+was actually given, worded as issued, and update the plan's status page to
+reflect the stage reached.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

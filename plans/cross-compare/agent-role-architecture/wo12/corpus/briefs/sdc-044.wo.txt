@@ -16,8 +16,8 @@ with pipelined recon and CHECKPOINT as a scale escalation, and tighten the
 review phase so finished work is never deferred to batch with future fixes.
 Give the executor and specialist templates the heartbeat and CHECKPOINT
 rules and a rule never to under-run the declared verification tier. Add a
-full or inert tier to the review runner: inert is a claim the reviewer must
-verify from the diff, unknown values resolve to full, and the launcher
+full or inert tier to the review runner: inert is a claim the reviewer
+verifies from the diff, unknown values resolve to full, and the launcher
 passes inert only when the order declares it.
 
 Audit the diff between base and head against the order above: correctness,

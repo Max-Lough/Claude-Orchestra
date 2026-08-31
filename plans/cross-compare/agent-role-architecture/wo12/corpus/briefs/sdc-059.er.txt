@@ -8,8 +8,7 @@ read-only-first ordering was internalized and the boundary treated as
 undecidable at intake. A new decision procedure of seven fixed-order steps
 was added, with exactly three discriminators amended and exactly one
 retired. Classification was reframed as a routing hypothesis tied to risk
-tier and author family. The change touched three files with 384 insertions
-and 142 deletions, and the gated work order was unblocked, with the pair
-ledger closed.
+tier and author family, confined to 3 plan files. The gated work order was
+unblocked, with the pair ledger closed and its dispositions recorded.
 
 Verify the diff on its own merits.

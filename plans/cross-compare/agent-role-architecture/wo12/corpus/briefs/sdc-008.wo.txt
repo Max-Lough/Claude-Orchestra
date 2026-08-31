@@ -5,18 +5,19 @@ Base (its parent):   acbf8f2cf6f98bb642a23df3734a0edd35c29e5f
 Commit subject:      WO-11 exercises: Conductor audited (1 violation, dispositions ruled); P0 live-exercised; Architect env-blocked
 
 ORDER:
-Run the WO-11 Band A exercises and record every outcome in full. Audit the
-Conductor's session against the role's guardrails and rule a disposition for
-every violation found — the audit stands as a full written record and must
-never shrink into a summary. Live-exercise the P0 substrate end to end and
-produce its own written report from the run. Attempt the Architect role too;
-if the environment blocks it, preserve the blocked attempt as its own
-transcript rather than discarding it, and keep a second transcript on a
-repeated attempt rather than overwriting the first. Update the band record
-and status summary to the real per-seat outcomes and nothing else — leave no
-placeholder or aspirational line standing. Extend the substrate's test suite
-only as far as the exercise runs require, and leave the substrate's own
-production behavior alone.
+Run the exercise pass for the review's roster and record every outcome in
+full. Audit the Conductor's session against the role's guardrails and rule a
+disposition for the violation found — the audit stands as a full written
+record and must never shrink into a summary. Live-exercise the P0 substrate
+end to end and produce its own written report from the run. Attempt the
+Architect role too; if the environment blocks it, preserve the blocked
+attempt as its own transcript rather than discarding it, and keep a second
+transcript on a repeated attempt rather than overwriting the first. Update
+the band record and status summary to the real per-seat outcomes, confining
+the update to what was actually exercised with no placeholder or
+aspirational line standing. Extend the test suite only as far as the
+exercise runs require, and the substrate's own production behavior is not
+touched.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

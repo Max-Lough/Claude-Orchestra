@@ -14,10 +14,9 @@ scout file already in the repository; it never ships under the plain name.
 Carry the Investigator's tool restriction to reads over from the alias it is
 built from, unchanged. For Researcher and LC Analyst, ship the primary
 launcher file for now and leave the mirror rung unshipped — but record that
-gap explicitly in the band record rather than skip it silently. Update the
-roster README and the band record to capture every naming and rung decision
-made here, and leave exercising and reviewing these seats for a later stage,
-start to finish.
+gap explicitly in the roster ledger rather than skip it silently. Update the
+roster README and its ledger entry to capture every naming and rung decision
+made here, and leave exercising and reviewing these seats for a later stage.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -2,12 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 5d9363f5429ab08dc4c81ffe316db9ffd3c134c9. An executor produced this change.
 
 CLAIMS:
-Done. Cancellation notices are now honored: an in-flight registry ties each
-request id to its run, a cancelled run's whole process tree is taken down on
-both platforms, and the reply states plainly that the working tree may be
-half-finished and unaudited. Id matching is guarded against aliasing, and
-teardown drains what is still running. Verified with node
-tests/mcp-lane.test.js: OK, 68 passed.
+Done. Cancellation notices are now honored. An in-flight registry ties each
+request id to the run it started, and a cancelled run has its whole process
+tree taken down on both platforms. The reply to the cancelled request states
+plainly that the working tree may be half-finished and unaudited. Id
+matching is guarded so a spent id cannot reach a live run, and teardown
+drains whatever is still in flight. Verified by running node
+tests/mcp-lane.test.js, which reports OK with 68 passed.
 
 Verify the diff on its own merits.
 

@@ -643,8 +643,14 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   rebalanced from both sides (three seed outliers capped; every zero-numeral control
   given one genuine figure): final 2.10 vs 1.25. CI on `f992947`: 9/9 green. **Content
   sealed at `88b5cec`; `assemble-key.js --check-only` passes every lint.** Round-5
-  assembly/verification, the second blind test on a disjoint draw, and the round-5
-  delta review follow.
+  corpus re-sealed and independently verified at `044b85e` (1,445 checks; CI 9/9
+  green). **Blind test #2** (`wo12/corpus/BLIND-TEST-round5.md`): **24/24** — but
+  through commit-sha linkage across packets (a control's head quoted as another
+  packet's base; reused-base pairs showing one subject under two heads), not review
+  content, which the evaluator itself put at ~6 confident calls. A single-packet
+  reviewer cannot chain packets; the blind-test instrument can. **Round 6 opened**
+  (protocol amendment xi): shas leave the brief text, a hex-token lint, pair-aware
+  blind draws; a third blind test and the rounds-4–5 delta reviews follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

@@ -144,6 +144,16 @@ saw it.
   be authored away and is disclosed in `CONSTRUCTION.md` with the exclusive
   n-grams as evidence: a whole-corpus classifier can see it; a per-packet reviewer
   in a sanitized clone cannot.
+- **Round 6 (pre-run): the second blind test scored 24/24 — and taught the right
+  lesson.** The signal was not review content but the commit shas the brief
+  templates quoted: across many packets a control's head reappears as another
+  packet's base, and the ten reused-base pairs show one subject under two heads,
+  one per cohort. A single-packet reviewer in a sanitized clone sees only its own
+  HEAD and cannot chain packets; the blind-test instrument, a many-packet reader,
+  could. Shas now leave the brief text entirely (the runner is handed the refs out
+  of band), a lint refuses any hex-sha token in a brief, and blind draws are
+  pair-aware and seeded. Round 3's chance-level result stands as the content
+  measure; a third blind test on the regenerated briefs confirms it.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

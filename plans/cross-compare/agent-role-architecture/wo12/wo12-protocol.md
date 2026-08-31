@@ -150,7 +150,16 @@ subject matter ("the band record", "delta re-review order") can separate the
 populations. That is a property of the pool, not of any packet: it tells a per-packet
 reviewer nothing about whether *its* packet is seeded, and it cannot be authored away
 without misdescribing the commits. CONSTRUCTION.md lists the exclusive n-grams as
-evidence rather than hiding them.
+evidence rather than hiding them. (xi) *Round-6 amendment, after blind test #2 scored
+24/24 through commit-sha linkage across packets* (a control's head quoted as another
+packet's base; the ten reused-base pairs showing one base and subject under two heads,
+one per cohort): brief text carries **no shas** — the runner receives `--base-ref` /
+`--head-ref` out of band and the checkout's HEAD is the change — enforced by a lint that
+refuses any 7–40-hex token in a brief; the blind-test draw (`blind-draw.js`) never
+includes both members of a reused-base pair and is recorded with its seed; the pairs
+stay disclosed. A per-packet reviewer, which sees one sanitized clone and one packet,
+was never exposed to this channel; the blind-test instrument, a many-packet reader,
+was.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

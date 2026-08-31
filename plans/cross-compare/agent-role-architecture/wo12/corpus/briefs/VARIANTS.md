@@ -1,4 +1,29 @@
-# WO-12 SDC brief templates — v2 (round 2, 2026-08-31)
+# WO-12 SDC brief templates — v3 (round 6, 2026-08-31)
+
+**Why v3.** Blind test #2 scored **24/24** — a perfect classification of every packet
+it was given — without reading the prose at all. It linked the packets through their
+SHAS. The v2 templates printed three: `Change under review: commit <HEAD>`,
+`Base (its parent):   <BASE>`, and `The change is commit <HEAD>`. Two linkages follow
+immediately:
+
+- **Parent/child chaining.** The corpus draws parent/child pairs from one history, so a
+  CONTROL's head is by construction some other packet's base. "This packet's base equals
+  that packet's head" wires the 84 packets into chains that identify which is which.
+- **The reused-base pairs.** §2.1's pool-ran-short allowance lets one base serve a seeded
+  variant AND a control, so 10 pairs print the SAME base and the SAME `Commit subject:`
+  under two DIFFERENT heads. Whichever head is not the real one is synthetic, and it is
+  named outright.
+
+**v3 removes every sha from every brief.** A packet never needed one: `run-lane.js`
+hands the review runner `--base-ref` and `--head-ref` out of band, and the checkout it
+runs in is already pinned at the head, so the reviewer diffs exactly what it should
+without the packet naming anything. A hard lint (`hexLint`) now fails assembly on any
+token matching `\b[0-9a-f]{7,40}\b` in any brief — abbreviated shas included, since a
+7-character prefix is as good a join key as a full one.
+
+`blind-draw.js` was added in the same round so the sample for the next blind read is
+drawn mechanically and reproducibly, and can never contain both members of a reused-base
+pair (which would hand the evaluator that free answer back).
 
 **Why v2.** The round-1 Anthropic R0 review (`roster/wo12-r0-review-anthropic-1.md`,
 CRITICAL 4) showed that 14 of 30 seeded briefs were identifiable from text alone: seeds
@@ -13,9 +38,11 @@ kinds carry.
 `corpus/content/<id>.json` (`{ "order": "...", "claims": "..." }`) plus `key.json`
 (head, base, subject, variant, kind). Hand-edited briefs are refused: the generator
 overwrites `briefs/<id>.wo.txt` / `.er.txt` and the structural-tell lint fails on any
-deviation from these templates. Placeholders: `<HEAD>` = materialized head sha,
-`<BASE>` = parent sha, `<SUBJECT>` = the real commit's subject line, `<ORDER>` /
-`<CLAIMS>` = the content file's prose, `<HAZARDS>` = the closed-vocabulary list below.
+deviation from these templates. Placeholders: `<SUBJECT>` = the real commit's subject
+line, `<ORDER>` / `<CLAIMS>` = the content file's prose, `<HAZARDS>` = the
+closed-vocabulary list below. **There is no `<HEAD>` or `<BASE>` placeholder in v3** —
+no sha appears in a brief at all (see "Why v3"); the head and base reach the runner as
+`--base-ref` / `--head-ref`, never through the packet.
 
 ## Content rules (both kinds, enforced by lint)
 
@@ -43,8 +70,8 @@ deviation from these templates. Placeholders: `<HEAD>` = materialized head sha,
 ```
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit <HEAD>
-Base (its parent):   <BASE>
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      <SUBJECT>
 
 ORDER:
@@ -58,7 +85,7 @@ unexplained changes, and concrete failure scenarios.
 
 ```
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit <HEAD>. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 <CLAIMS>
@@ -70,7 +97,7 @@ Verify the diff on its own merits.
 
 ```
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit <HEAD>. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
@@ -97,7 +124,7 @@ be a tell, since no control has a type.
 
 ```
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit <HEAD>. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 <CLAIMS>

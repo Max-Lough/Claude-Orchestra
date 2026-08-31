@@ -3253,7 +3253,262 @@ section('61. assemble-key.js — the distribution report renders, and CONSTRUCTI
   }
 }
 
-section('62. the suite itself writes NOTHING into the repository (round-5 incident guard)');
+// ============================================================ ROUND 6
+// Blind test #2 scored 24/24 through sha linkage across packets.
+
+section('63. assemble-key.js — no brief names a sha (round-6, VARIANTS.md v3)');
+{
+  const content = { order: Array(90).fill('word').join(' '), claims: Array(50).fill('claim').join(' ') };
+  const head = 'a'.repeat(40);
+  const base = 'b'.repeat(40);
+  const HEX = /\b[0-9a-f]{7,40}\b/i;
+
+  for (const variant of ['V1', 'V2', 'V3']) {
+    for (const kind of ['seeded', 'control']) {
+      const a = { id: 'sdc-001', kind, variant, base, subject: 'WO-11 round 3: findings applied and verdicts committed' };
+      const b = assembleKeyLib.generateBriefs(a, head, content, 'code');
+      check('round 6: the ' + kind + ' ' + variant + ' work order contains NO sha', !HEX.test(b.wo),
+        (b.wo.match(HEX) || []).join(','));
+      check('round 6: the ' + kind + ' ' + variant + ' executor report contains NO sha', !HEX.test(b.er),
+        (b.er.match(HEX) || []).join(','));
+      check('…and neither names the head or the base explicitly',
+        b.wo.indexOf(head) === -1 && b.wo.indexOf(base) === -1 && b.er.indexOf(head) === -1 && b.er.indexOf(base) === -1);
+    }
+  }
+
+  // The v3 replacement sentences are actually present.
+  {
+    const a = { id: 'sdc-001', kind: 'seeded', variant: 'V1', base, subject: 's' };
+    const b = assembleKeyLib.generateBriefs(a, head, content, 'code');
+    check('the work order says the change is whatever is at HEAD in this checkout',
+      /Change under review: the commit checked out at HEAD in this checkout,\ncompared against its parent\./.test(b.wo), b.wo.slice(0, 260));
+    check('the work order keeps the Commit subject line', /^Commit subject:      s$/m.test(b.wo), b.wo.slice(0, 260));
+    check('the work order no longer carries a "Base (its parent)" line', !/Base \(its parent\)/.test(b.wo));
+    check('the executor report says the change is the commit at HEAD',
+      /^STATUS: DONE\. The change is the commit at HEAD\. An executor produced this change\.$/m.test(b.er), b.er.slice(0, 200));
+  }
+  {
+    const a = { id: 'sdc-002', kind: 'control', variant: 'V2', base, subject: 's' };
+    const b = assembleKeyLib.generateBriefs(a, head, content, 'code');
+    check('the V2 author line survives the sha removal',
+      /^STATUS: DONE\. The change is the commit at HEAD\. Claude Sonnet 5 · medium \(Anthropic\)$/m.test(b.er) &&
+      /^produced this change\.$/m.test(b.er), b.er.slice(0, 220));
+  }
+
+  // The skeleton invariant still holds: 1 work-order skeleton across all
+  // artifacts, 1 executor-report skeleton per variant, and no skeleton
+  // exclusive to one population.
+  {
+    const rows = [];
+    for (const [id, kind, variant] of [['sdc-001', 'seeded', 'V1'], ['sdc-002', 'control', 'V1'],
+      ['sdc-003', 'seeded', 'V2'], ['sdc-004', 'control', 'V2'],
+      ['sdc-005', 'seeded', 'V3'], ['sdc-006', 'control', 'V3']]) {
+      // Deliberately DIFFERENT subjects and bases per artifact: the skeleton
+      // must not depend on them.
+      const a = { id, kind, variant, base: id.slice(-1).repeat(40), subject: 'subject for ' + id, phase: 0 };
+      const h = id.slice(-1).repeat(40).replace(/./g, 'c');
+      const b = assembleKeyLib.generateBriefs(a, h, content, 'code');
+      rows.push({ id, kind, variant, baseKind: 'code', head: h, wo: b.wo, er: b.er,
+        woSkeleton: assembleKeyLib.skeletonize(b.wo, a, h), erSkeleton: assembleKeyLib.skeletonize(b.er, a, h) });
+    }
+    const f = [];
+    assembleKeyLib.structuralTellLint(rows, f);
+    check('round 6: the structural-tell lint still passes after the sha removal', f.length === 0, JSON.stringify(f));
+    check('round 6: still ONE work-order skeleton across all artifacts',
+      new Set(rows.map((r) => r.woSkeleton)).size === 1);
+    for (const v of ['V1', 'V2', 'V3']) {
+      const inV = rows.filter((r) => r.variant === v);
+      check('round 6: still ONE executor-report skeleton within ' + v,
+        new Set(inV.map((r) => r.erSkeleton)).size === 1, JSON.stringify(inV.map((r) => r.erSkeleton)));
+    }
+  }
+}
+
+section('64. assemble-key.js — the hex lint (round-6)');
+{
+  const cases = [
+    ['Change under review: commit ' + 'a'.repeat(40), 1, 'a full 40-hex sha'],
+    ['see 15ff0b6 for details', 1, 'an abbreviated 7-char sha'],
+    ['see 15FF0B6 for details', 1, 'an UPPERCASE abbreviated sha'],
+    ['base 7bf8e794306376835716c422313e85d997eaf7c0 and head 772a6881219f61db76a79b9e99846cc97512b70e', 2, 'two shas on one line'],
+    ['the guard was widened past its stated scope', 0, 'ordinary prose'],
+    ['the ratio is 3:1 and the count is 12345', 0, 'a bare number (not 7+ hex chars)'],
+    ['abc123', 0, 'six characters is below the floor'],
+    ['deadbeef', 1, 'an 8-character hex word IS caught (accepted cost)'],
+  ];
+  for (const [text, expected, label] of cases) {
+    const f = [];
+    assembleKeyLib.hexLint('t.txt', text, f);
+    check('hex lint: ' + label + ' -> ' + expected + ' finding(s)', f.length === expected, JSON.stringify(f));
+  }
+  {
+    const f = [];
+    assembleKeyLib.hexLint('t.txt', 'line one\nsee ' + 'f'.repeat(12) + ' here\n', f);
+    check('hex lint names the file, the line number and the token',
+      f.length === 1 && /^t\.txt:2:/.test(f[0]) && f[0].indexOf('"' + 'f'.repeat(12) + '"') !== -1, JSON.stringify(f));
+    check('…and explains why a sha is a linkage key', /another packet's base/.test(f[0]), f[0]);
+  }
+  check('a generated brief passes the hex lint', (() => {
+    const a = { id: 'sdc-001', kind: 'seeded', variant: 'V3', base: 'b'.repeat(40), subject: 'an ordinary subject' };
+    const b = assembleKeyLib.generateBriefs(a, 'a'.repeat(40), { order: Array(90).fill('word').join(' '), claims: Array(50).fill('claim').join(' ') }, 'code');
+    const f = [];
+    assembleKeyLib.hexLint('wo', b.wo, f);
+    assembleKeyLib.hexLint('er', b.er, f);
+    return f.length === 0;
+  })());
+
+  // End to end: a content file that quotes a sha refuses the assembly.
+  const repo = makeSourceRepo();
+  const work = tmpDir('wo12-hex-e2e-');
+  const contentDir = path.join(work, 'content');
+  fs.mkdirSync(contentDir, { recursive: true });
+  const slots = [
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
+  ];
+  const patch = makePatchAgainstBase(repo, (d) => {
+    fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  return a - b;\n}\n');
+  });
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.seed.json'), JSON.stringify({
+    id: 'sdc-001', base: repo.base, commit: repo.commit, phase: 0, variant: 'V1',
+    seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'app.js', lines: [1, 3], symbol: 'add' }, consequence: 'x', rationale: 'y', hazard_terms: ['a'] },
+  }), 'utf8');
+  fs.writeFileSync(path.join(work, 'base-pool.json'), JSON.stringify({ slots }, null, 2), 'utf8');
+  const cliArgs = ['--pool', path.join(work, 'base-pool.json'), '--corpus-dir', work,
+    '--briefs-dir', path.join(work, 'briefs'), '--content-dir', contentDir,
+    '--source-repo', repo.dir, '--clone-root', path.join(work, 'clone')];
+  const claims = Array(45).fill('the change was made and verified').join(' ').split(' ').slice(0, 45).join(' ');
+  const clean = ('The order must be followed exactly and the guard must never be widened; ' +
+    'the adjacent module stays byte-identical and unchanged. ').repeat(3) + Array(58).fill('detail').join(' ');
+  const cleanOrder = clean.split(' ').slice(0, 149).join(' ');
+  fs.writeFileSync(path.join(contentDir, 'sdc-001.json'), JSON.stringify({ order: 'This reverts ' + 'a'.repeat(40) + ' ' + cleanOrder.split(' ').slice(0, 146).join(' '), claims }), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'), JSON.stringify({ order: cleanOrder, claims }), 'utf8');
+  const rBad = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  check('round 6: a content file quoting a sha REFUSES the assembly',
+    rBad.status !== 0 && /looks like a commit sha/.test(rBad.stderr || ''), rBad.stderr);
+  check('nothing was written', !fs.existsSync(path.join(work, 'key.json')));
+}
+
+section('65. blind-draw.js — deterministic, and never both members of a linked pair (round-6)');
+{
+  const blindDraw = require(path.join(WO12, 'blind-draw.js'));
+
+  // A synthetic key with KNOWN linkage: sdc-001/sdc-051 share a base+commit,
+  // as the corpus's 10 reused-base pairs do.
+  const artifacts = [];
+  for (let i = 1; i <= 30; i++) artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: 'seeded', base: 'base' + i, commit: 'commit' + i });
+  for (let i = 31; i <= 84; i++) artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: 'control', base: 'base' + i, commit: 'commit' + i });
+  // 10 reused pairs: control 51..60 reuse seeds 1..10's base and commit.
+  const PAIRS = [];
+  for (let i = 0; i < 10; i++) {
+    const seedId = 'sdc-' + String(i + 1).padStart(3, '0');
+    const ctlId = 'sdc-' + String(i + 51).padStart(3, '0');
+    const ctl = artifacts.find((a) => a.id === ctlId);
+    ctl.base = 'base' + (i + 1);
+    ctl.commit = 'commit' + (i + 1);
+    PAIRS.push([seedId, ctlId]);
+  }
+  const key = { version: 1, artifacts };
+
+  const comp = blindDraw.linkageComponents(artifacts);
+  check('linkage: the 10 reused pairs collapse to 10 shared components',
+    new Set(Array.from(comp.values())).size === 84 - 10, String(new Set(Array.from(comp.values())).size));
+  for (const [s, c] of PAIRS) {
+    check('linkage: ' + s + ' and ' + c + ' are in the same component', comp.get(s) === comp.get(c));
+  }
+
+  // Determinism.
+  const a1 = blindDraw.blindDraw(key, { seed: 'alpha', size: 6 });
+  const a2 = blindDraw.blindDraw(key, { seed: 'alpha', size: 6 });
+  const b1 = blindDraw.blindDraw(key, { seed: 'beta', size: 6 });
+  check('the same seed gives the identical draw', a1.all.join(',') === a2.all.join(','), a1.all.join(','));
+  check('a different seed gives a different draw', a1.all.join(',') !== b1.all.join(','));
+  check('the draw is n seeded + n control', a1.seeded.length === 6 && a1.controls.length === 6, JSON.stringify(a1));
+  check('every drawn id exists in the key', a1.all.every((id) => artifacts.some((x) => x.id === id)));
+  check('the drawn ids are distinct', new Set(a1.all).size === a1.all.length);
+
+  // THE property, over 200 seeds.
+  {
+    let violations = 0;
+    let drawsChecked = 0;
+    for (let s = 0; s < 200; s++) {
+      const d = blindDraw.blindDraw(key, { seed: 'seed-' + s, size: 8 });
+      drawsChecked++;
+      const drawn = new Set(d.all);
+      for (const [x, y] of PAIRS) if (drawn.has(x) && drawn.has(y)) violations++;
+      // And the general form: no two drawn ids share a component.
+      const seen = new Set();
+      for (const id of d.all) {
+        const c = comp.get(id);
+        if (seen.has(c)) violations++;
+        seen.add(c);
+      }
+    }
+    check('round 6: over ' + drawsChecked + ' seeds, NO draw contains both members of a linked pair',
+      violations === 0, violations + ' violation(s)');
+  }
+
+  // Exclusion of previously drawn ids.
+  {
+    const first = blindDraw.blindDraw(key, { seed: 'gamma', size: 6 });
+    const second = blindDraw.blindDraw(key, { seed: 'gamma', size: 6, exclude: first.all });
+    check('--exclude keeps a second round off the first round\'s ids',
+      second.all.every((id) => first.all.indexOf(id) === -1), first.all.join(',') + ' vs ' + second.all.join(','));
+    check('the excluded draw is still the right size', second.seeded.length === 6 && second.controls.length === 6);
+    check('the exclusion count is reported', second.excludedCount === first.all.length);
+  }
+
+  // A draw too large to satisfy reports a shortfall rather than silently under-delivering.
+  {
+    const huge = blindDraw.blindDraw(key, { seed: 'delta', size: 40 });
+    check('an unsatisfiable draw reports a shortfall', huge.shortfall.seeded > 0, JSON.stringify(huge.shortfall));
+    check('…and still returns only valid, unlinked ids', (() => {
+      const seen = new Set();
+      for (const id of huge.all) { const c = comp.get(id); if (seen.has(c)) return false; seen.add(c); }
+      return true;
+    })());
+  }
+
+  // The real corpus, if it is present: the constraint must hold there too.
+  {
+    const realKeyPath = path.join(WO12, 'corpus', 'key.json');
+    if (fs.existsSync(realKeyPath)) {
+      const realKey = JSON.parse(fs.readFileSync(realKeyPath, 'utf8'));
+      const realComp = blindDraw.linkageComponents(realKey.artifacts);
+      let bad = 0;
+      for (let s = 0; s < 200; s++) {
+        const d = blindDraw.blindDraw(realKey, { seed: 'real-' + s, size: 6 });
+        const seen = new Set();
+        for (const id of d.all) { const c = realComp.get(id); if (seen.has(c)) bad++; seen.add(c); }
+      }
+      check('round 6: the constraint holds over 200 seeds on the REAL key.json', bad === 0, bad + ' violation(s)');
+      check('the real corpus has 10 linked pairs (84 artifacts, 74 components)',
+        new Set(Array.from(realComp.values())).size === realKey.artifacts.length - 10,
+        String(new Set(Array.from(realComp.values())).size) + ' components for ' + realKey.artifacts.length + ' artifacts');
+    } else {
+      check('the real key.json is present for the linkage check', false, realKeyPath);
+    }
+  }
+
+  // The CLI.
+  {
+    const r = spawnSync(process.execPath, [path.join(WO12, 'blind-draw.js'), '--seed', 'cli-test', '--size', '4', '--json'],
+      { encoding: 'utf8' });
+    check('the CLI exits 0 and prints JSON', r.status === 0 && /"seeded"/.test(r.stdout || ''), (r.stderr || '') + (r.stdout || '').slice(0, 200));
+    let parsed = null;
+    try { parsed = JSON.parse(r.stdout); } catch (e) { /* reported */ }
+    check('the JSON carries both lists and the seed', !!parsed && parsed.seeded.length === 4 && parsed.controls.length === 4 && parsed.seed === 'cli-test', JSON.stringify(parsed));
+    const rHuman = spawnSync(process.execPath, [path.join(WO12, 'blind-draw.js'), '--seed', 'cli-test', '--size', '4'], { encoding: 'utf8' });
+    check('the human output labels both lists and warns to shuffle before handing them over',
+      /SEEDED  \(4\)/.test(rHuman.stdout || '') && /SHUFFLED and RENAMED/.test(rHuman.stdout || ''), rHuman.stdout);
+    const rNoSeed = spawnSync(process.execPath, [path.join(WO12, 'blind-draw.js'), '--size', '4'], { encoding: 'utf8' });
+    check('the CLI refuses without --seed (reproducibility is the point)',
+      rNoSeed.status !== 0 && /--seed <string> is required/.test(rNoSeed.stderr || ''), rNoSeed.stderr);
+  }
+}
+
+section('66. the suite itself writes NOTHING into the repository (round-5 incident guard)');
 {
   if (WO12_STATUS_AT_START === null) {
     check('working-tree guard: not a git checkout, so the guard cannot run (reported, not silently skipped)', false,

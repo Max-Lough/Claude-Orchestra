@@ -600,8 +600,14 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   Δ3.2 / Δ1.8 words and hardness ratio 1.00. Registered limit: the 12f identity gate
   rests on the runner echoing the requested model (`echoed-request`) until
   `orchestra-review.js` surfaces a served model — follow-on before 12f is scored.
-  Assembly/verification and the fresh-evaluator blind test on the regenerated
-  briefs, then the round-3 delta review, follow.
+  Round 3 committed (`8152b34` corpus, `5c65946` tooling) after independent
+  verification. **Blind test, round 3** (`wo12/corpus/BLIND-TEST-round3.md`): a fresh
+  evaluator over 24 briefs scored **10/24 (41.7%)** — at/below chance, against 83% in
+  round 2; the ≤65% target is met. Residual hook found and opened as round 4: the five
+  OO seeds carried literal `IN SCOPE:` / `Constraint:` labels no control had (their
+  three highest-confidence hits) — being rewritten as prose, with a label-tell lint
+  added and a second blind test on a different draw. Round-3 delta reviews (both
+  lanes) and CI on `5c65946` in progress.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

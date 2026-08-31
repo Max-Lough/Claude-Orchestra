@@ -122,7 +122,13 @@ model identity") currently rests on an echo — `score.js` labels every such mat
 `echoed-request` and the gate-5 row states the limit. Closing it requires
 `packs/codex/hooks/orchestra-review.js` to surface a vendor-reported served model
 (from the engine's own output or session record); until then gate 5 is evidence of
-configuration, not of service, and the 12f report must say so.
+configuration, not of service, and the 12f report must say so. (ix) *Round-3 blind
+test result and round-4 amendment:* a fresh evaluator scored 10/24 (41.7%) on the
+regenerated briefs (round 2: 83%); its only high-confidence hits keyed on capitalized
+labels (`Constraint:`, `IN SCOPE:`) present in five seeded orders and no control — a
+**label-tell lint** now requires every capitalized label-plus-colon token to appear in
+both populations or neither, the five orders are rewritten as prose, and a second blind
+test on a different 24-id draw is recorded before any pass.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

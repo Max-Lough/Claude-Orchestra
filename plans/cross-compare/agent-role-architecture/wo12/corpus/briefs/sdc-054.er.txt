@@ -1,13 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 5758a2d2b6146b613ea062946f7013e1b9dfa3c2. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
 The two new files for this pass sit inside roster/, 112 lines split between
 them, forty-nine for the executor's report and sixty-three for the order,
 neither one touching anything elsewhere in roster/. That consecutive commit
-pair marks the very boundary the order describes. The file confirms that
-only a clear verdict on that pair lets the standing orders shed their revise
-status for good, nothing less.
+pair marks the very boundary the order describes. The file shows that only a
+clear verdict on that pair lets the standing orders shed their revise status
+for good, nothing less.
 
 Verify the diff on its own merits.

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e04005bb8a0b751bb26fbdd4755ee437af2cb240
-Base (its parent):   3900142ff195c91ae38de27f45abc58707b63eae
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5f: pre-add records as a hard prerequisite; residual strand self-healing pinned
 
 ORDER:
@@ -13,11 +13,11 @@ validating after. Retry a post-add read failure rather than treating it as
 fatal. Prove that the residual opportunistic-registration path self-heals:
 an alias-created registration that never reaches active state gets reclaimed
 by the standing sweep on the next checkout creation, with no other path
-allowed to intervene ahead of that sweep. Add a regression case confirming
-that once the sweep runs, neither the directory nor the registration
-survives to be found on disk. Record the review verdict verbatim in the
-roster, and keep the tranche status accurately reflecting that further
-review remains outstanding.
+allowed to intervene ahead of that sweep. Add a regression case showing that
+once the sweep runs, neither the directory nor the registration survives to
+be found on disk. Record the review verdict verbatim in the roster, and keep
+the tranche status accurately reflecting that further review remains
+outstanding.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

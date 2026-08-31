@@ -1,14 +1,14 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit d9af01673efd2e098b5647d4d609398822bc031b
-Base (its parent):   998b97830ac54d121c6e1b4903eb86e2068a5c9b
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Record the Sol cross-vendor REVISE on PR #27 and apply its dispositions
 
 ORDER:
-Record the outcome of an independent cross-vendor review of the open pull
-request and apply its findings to the plan. Run the review fresh, scoped to
-the diff between the base and the prior scoring commit alone, and expect it
-to confirm every prior score, gate, and commit-order claim while returning a
+Record the outcome of the cross-vendor review of the open pull request.
+Apply its findings to the plan in full. Run the review fresh, scoped to the
+diff between the base and the prior scoring commit alone, and expect it to
+confirm every prior score, gate, and commit-order claim while returning a
 small number of significant findings; apply all of them, not a subset. Amend
 one discriminator so that displayed values are treated as data rather than
 presentation, codify the merge/redraw trigger to count scored cross-pass

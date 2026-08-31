@@ -1,14 +1,14 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 2c24df7342edc8c96a9ce455ccb5431eee7f98f9
-Base (its parent):   7c8d6dde015e0ca5c55f535812ab4ddf13d78936
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5e: checkout identity from git's own records; guard-timeout kills gated
 
 ORDER:
 Restructure checkout identity derivation to rely on git's own worktree
 records instead of filesystem path lookup. Snapshot the porcelain worktree
 list across the add operation so the single new entry becomes the identity
-and the working handle; real-path lookup must never touch the identity path.
+and the working handle; real-path lookup must never reach the identity path.
 Fix the finding where removing the alias a checkout was created through
 strands the canonical registration, because the fail-closed cleanup path
 does not run in that case. Make creation, sweep, and teardown all address

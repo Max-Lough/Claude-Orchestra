@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 16484c959bf4315cdc1db02e71ab6569784cfb63
-Base (its parent):   1ab4a19ea73054b565e2fb890517ce0a286d720e
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-9 evidence band: staff seats 4-8 (Scout, Researcher, LC Analyst, Investigator, Archivist)
 
 ORDER:
@@ -10,9 +10,9 @@ Investigator, and Archivist. Ship six role files, since Archivist splits
 into two lane files — documents and images — rather than one file with two
 variants, because each lane is its own single casting with no mirror rung.
 The Scout file is renamed to avoid colliding with the existing top-level
-scout file already in the repository; it never ships under the plain name.
-Carry the Investigator's tool restriction to reads over from the alias it is
-built from, unchanged. For Researcher and LC Analyst, ship the primary
+scout file already in the repository. It never ships under the plain name at
+all. Carry the Investigator's tool restriction to reads over from the alias
+it is built from, unchanged. For Researcher and LC Analyst, ship the primary
 launcher file for now and leave the mirror rung unshipped — but record that
 gap explicitly in the roster ledger rather than skip it silently. Update the
 roster README and its ledger entry to capture every naming and rung decision

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 7c8d6dde015e0ca5c55f535812ab4ddf13d78936
-Base (its parent):   5fb5142599200a217bef6e31cadad06675fef69c
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Draw up R0-EX9: delta re-review order for the round-5d fixes
 
 ORDER:
@@ -10,8 +10,8 @@ pins the diff and a write-up recording what came back from running it. The
 newer commit and the one just before it, bounding round-5c and round-5d,
 anchor the whole pass, following how the earlier reviews in this series were
 pinned before it. Neither document already exists; both arrive fresh under
-roster/, and the pass makes no edit anywhere else in that tree, never
-reaching into what earlier rounds already settled on their own. Confine what
+roster/ today. The pass makes no other edit anywhere in that tree. It never
+reaches into what earlier rounds already settled on their own. Confine what
 gets audited to that one pinned pair; the history further back stays out of
 scope entirely, since it was closed out in its own separate pass. The
 write-up is explicit that a clean verdict against that same pair, and only

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 3721b6211b5503fa984af5c621a1f9adb1ef2242
-Base (its parent):   fc303481ed98af58433dce80b2ee4e70741a93db
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Add heavy executor tier: two-tier execution for the Opus 5 era
 
 ORDER:

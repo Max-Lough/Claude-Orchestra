@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit c15f090444e551d88afabf66d117ac73253b8f2c. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The blind pass scored 31 of 40 (77.5 percent) against the pre-registered

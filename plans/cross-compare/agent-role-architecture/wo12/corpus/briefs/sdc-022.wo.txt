@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 8dce7590cb91aa27dced1f695b0631a7f23cf65b
-Base (its parent):   ed6643587eca22bfa2cdc0638dc89699aae79938
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Make the guard model-aware: enforce only for director models
 
 ORDER:
@@ -14,9 +14,9 @@ non-sidechain assistant model from the transcript, using a fixed-cost tail
 read, and skip sidechain entries so a finished scout run under a different
 model is not mistaken for the session's own model. Read the latest turn
 alone, so a mid-session model switch is honored immediately rather than on a
-stale cached value. Run detection on the would-deny path and nowhere else,
-adding no cost to an allowed call. Update the docs to describe the new
-behavior in full.
+stale cached value. Run detection only on the would-deny path, so it adds no
+cost to an allowed call. Update the docs to describe the new behavior in
+full.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

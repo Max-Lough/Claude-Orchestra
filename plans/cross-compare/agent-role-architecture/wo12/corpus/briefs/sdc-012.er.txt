@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit c51a8f60b8b12253e7287d0ca6ac92deefb43739. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The installer now merges exactly three git command permissions into the
@@ -7,8 +7,8 @@ allow list, verified idempotent across repeated runs with no duplicate
 entries. The uninstaller removes exactly those three grants, confirmed to
 touch no other entry. The Director remains barred from shell commands by the
 existing guard hook. The diff was inspected directly and confirmed confined
-to 2 files, the installer script and the README, adding the merge and
-removal logic without touching anything else.
+to 2 files, the installer script and the README, adding only the merge and
+removal logic.
 
 Verify the diff on its own merits.
 

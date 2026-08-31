@@ -1,24 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 46364797ff7456d085b6d838a7f3c6084d1f63bf
-Base (its parent):   3b86e77803493e1895b15b8901eaa036aff0ff39
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Apply the 2026-08-28 second-session lineup rulings to the plan record
 
 ORDER:
 Record the second planning session's rulings into the plan document. Close
-the three deferred audit items — the first is superseded by a seat re-cast
-recorded elsewhere; the second is adopted as a conscious trade-off, dropping
-one model from rotation to move exhaustion handling to the human sooner; the
-third is adopted as a concentration-risk watch, with a proposed rotation
-trigger. Apply exactly four seat re-castings throughout the plan — recast
-the interactive coordinating seat as the session's own model with a matched
-mirror, since its core function is direct user dialogue and the prior
-casting's user-facing prose was observed degrading; the deep-work seat loses
-its user-dialogue duty entirely and moves to goal-directed work alone; set
-the architecture seat's default and its ambiguous-goal and exhaustion
-fallbacks; and make one casting the preferred choice for bounded, fully
-specified orders — outside these four re-castings, nothing changes about the
-never-under-specified guardrail.
+the three deferred audit items raised during that session. The first item is
+superseded by a seat re-cast recorded elsewhere. The second is adopted as a
+conscious trade-off. Dropping one model from rotation moves exhaustion
+handling to the human sooner. The third item is adopted as a
+concentration-risk watch, with a proposed rotation trigger. Apply exactly
+four seat re-castings throughout the plan document. Recast the interactive
+coordinating seat as the session's own model, with a matched mirror. Its
+core function is direct user dialogue, and the prior casting's prose was
+observed degrading. The deep-work seat loses its user-dialogue duty entirely
+and moves to goal-directed work alone. Set the architecture seat's default,
+along with its ambiguous-goal and exhaustion fallbacks. Make one casting the
+preferred choice for bounded, fully specified orders. Outside these four
+re-castings, nothing changes about the never-under-specified guardrail.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

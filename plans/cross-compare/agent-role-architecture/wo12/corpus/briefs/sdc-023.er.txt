@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit ed6643587eca22bfa2cdc0638dc89699aae79938. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The install example now points at a placeholder environment variable instead
@@ -7,8 +7,8 @@ of a hardcoded local path, with a POSIX clone-and-install snippet added
 beside it. Internal labels were renamed to a neutral name while the
 uninstaller's loose-prefix fallback was left unchanged so it still matches
 markers from installs under the old name. A permissive license file and a
-matching README section were added, confined to 4 files with nothing else
-touched.
+matching README section were added, confined to 4 files with no other change
+made.
 
 Verify the diff on its own merits.
 

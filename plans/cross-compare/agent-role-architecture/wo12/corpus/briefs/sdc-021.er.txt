@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e7545f60a6e55718179afd07c70ed6d420de3069. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The guard now requires positive evidence of a director model before

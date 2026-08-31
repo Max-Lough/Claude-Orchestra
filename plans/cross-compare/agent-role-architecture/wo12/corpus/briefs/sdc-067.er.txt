@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 6b274a055f89af3c33fda63ff73abb6462374965. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The corpus and the mechanical scorer are in place and the gates were
@@ -8,7 +8,7 @@ thirteen of thirteen constructed misroutes caught; four gate-relevant
 misroutes with none crossed, and tier-borne gates identical under both
 dispatches for every item; and a ninety-fifth-percentile hop count of one
 with no escalations. Recovery runs through the router's reclassification
-path, and the telemetry counters are recorded without gating. The run exits
+path, the telemetry counters are recorded without gating, and the run exits
 zero.
 
 Verify the diff on its own merits.

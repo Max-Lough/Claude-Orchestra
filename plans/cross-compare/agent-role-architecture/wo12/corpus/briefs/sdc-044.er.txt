@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit d5c41b9bf7e736a6b16482d11dda69148d7485d6. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
@@ -8,7 +8,7 @@ specialist rules, and the tiered runner are all in place, with the tier
 stamped into the engine header and the optional verification manifest
 carried into the reviewer's brief. Syntax checks pass on the installer and
 both hooks, and the runner's usage output shows the new tier option, full or
-inert. The repository carries no test suite at this point, so the installer
-round-trip is the verification the touched surface allows.
+inert. The repository carries no test suite at this point, so the syntax
+checks and the usage probe are the verification this surface allows.
 
 Verify the diff on its own merits.

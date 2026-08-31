@@ -1,24 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 998b97830ac54d121c6e1b4903eb86e2068a5c9b
-Base (its parent):   632799567f3beab53c8309c7348bbaea938a8e23
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Score WO-7a-ter blind: 16/20 FAIL, redraw-#2 subset 9/10 PASS; apply redraw #3
 
 ORDER:
-Score a blind validation pass against the pre-registered follow-on corpus
-and record the result. Save and fingerprint the independent pass before the
-sealed corpus file is unsealed, then compare it against the primary scored
-pass to report agreement, disagreement, and ambiguity counts against the
-full-gate threshold of eighteen out of twenty. Separately score the sealed
-subset drawn to validate the second boundary redraw against its own gate,
-keeping that subset apart from the full-corpus tally. Where the full pass
-misses items outside that subset, draw a narrowly scoped third redraw
-limited to those misses: sharpen one discriminator's evidence-object
-definition, define the diagnosis corollary's threshold for when a cause
-counts as stated, and add exactly one new discriminator for the affected
-class pair — keep the three other named discriminators unchanged. Mark the
-corpus burned once scored, and require a fresh blinded corpus before the
-downstream work order proceeds.
+Score a blind validation pass against the pre-registered follow-on corpus.
+Record the result once the pass is complete. Save and fingerprint the
+independent pass before the sealed corpus file is unsealed, then compare it
+against the primary scored pass to report agreement, disagreement, and
+ambiguity counts against the full-gate threshold of eighteen out of twenty.
+Separately score the sealed subset drawn to validate the second boundary
+redraw against its own gate, keeping that subset apart from the full-corpus
+tally. Where the full pass misses items outside that subset, draw a narrowly
+scoped third redraw limited to those misses: sharpen one discriminator's
+evidence-object definition, define the diagnosis corollary's threshold for
+when a cause counts as stated, and add exactly one new discriminator for the
+affected class pair — keep the three other named discriminators unchanged.
+Mark the corpus burned once scored, and require a fresh blinded corpus
+before the downstream work order proceeds.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

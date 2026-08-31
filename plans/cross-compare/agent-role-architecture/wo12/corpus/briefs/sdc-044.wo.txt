@@ -1,24 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit d5c41b9bf7e736a6b16482d11dda69148d7485d6
-Base (its parent):   eaf446d296cc2359645302ba79c9b23add034a1d
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Add §8 sizing/cadence/verification protocol; tiered review; CHECKPOINT status
 
 ORDER:
 Add a sizing, cadence and verification protocol built from session telemetry
 on well-sized, oversized and mega-bundle orders. Optimize effectiveness and
-wall-clock; cost stays structural. In the protocol document, add a new
-section eight: a sizing gate at planning with split triggers, fan-out chains
-and refuse-to-emit self-validation for authored tools; cadence for long
-orders with heartbeats, checkpoint commits as externalized memory and warm
-resume; and the verification tax — reduce rounds, not depth. Extend the laws
-with pipelined recon and CHECKPOINT as a scale escalation, and tighten the
-review phase so finished work is never deferred to batch with future fixes.
-Give the executor and specialist templates the heartbeat and CHECKPOINT
-rules and a rule never to under-run the declared verification tier. Add a
-full or inert tier to the review runner: inert is a claim the reviewer
-verifies from the diff, unknown values resolve to full, and the launcher
-passes inert only when the order declares it.
+wall-clock time, while cost stays structural. In the protocol document, add
+a new section eight: a sizing gate at planning with split triggers, fan-out
+chains and refuse-to-emit self-validation for authored tools; cadence for
+long orders with heartbeats, checkpoint commits as externalized memory and
+warm resume; and the verification tax — reduce rounds, not depth. Extend the
+laws with pipelined recon and CHECKPOINT as a scale escalation, and tighten
+the review phase so finished work is never deferred to batch with future
+fixes. Give the executor and specialist templates the heartbeat and
+CHECKPOINT rules and a rule never to under-run the declared verification
+tier. Add a full or inert tier to the review runner: inert is a claim the
+reviewer verifies from the diff, unknown values resolve to full, and the
+launcher passes inert only when the order declares it.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -1,12 +1,12 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 4e509b581a65caee8540ccde895c752823d8c9aa
-Base (its parent):   09a824e1f153fa656f6903b22fc8de2c9592edce
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Record the R0-EX6 verdict; draw up R0-EX7 for the round-5b fix
 
 ORDER:
-Handle two things in one pass; close out the sixth verdict and open the
-seventh order at the same time. The verdict must confirm the earlier
+Handle two things in one single pass this round. Close out the sixth verdict
+and open the seventh order together. The verdict must confirm the earlier
 CRITICAL is shut for good; that finding is never reopened on this pass,
 while separately noting a MAJOR against the sweep guard's live-set check,
 which turns out to compare text rather than real paths. That MAJOR was

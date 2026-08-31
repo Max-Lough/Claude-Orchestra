@@ -1,19 +1,19 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 3a9cc7347787a52f53fffe2211f3c0d939cef61f
-Base (its parent):   4e509b581a65caee8540ccde895c752823d8c9aa
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5c: creation-time canonical identity for live checkouts; review-lane flake diagnosed and guarded
 
 ORDER:
 Fix a sharper edge on the stable-alias fix: when the alias a live checkout
 was created through is later removed, sweep-time path re-lookup falls back
 to the lexical alias spelling while git's own listed path stays canonical,
-causing the sweep to delete the live canonical checkout. Capture the
+causing the sweep to remove the live canonical checkout. Capture the
 canonical identity exactly once, at creation time, when every path component
 is guaranteed to exist; the live-set comparison always uses that captured
 identity instead of a sweep-time re-lookup. Pin a regression for the
 alias-removal case and confirm it fails without the fix. Separately,
-diagnose and fix an intermittent review-lane test failure: git holds a newly
+diagnose and fix an intermittent review-lane test failure. Git holds a newly
 created worktree locked for the whole checkout while it is already visible
 in the list, so a kill during that window leaves it locked forever, and a
 single removal command cannot clear a locked worktree; the terminate-signal

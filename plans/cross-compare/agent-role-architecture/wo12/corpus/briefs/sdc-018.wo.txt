@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 7bda5af543385a1864ccc45803dfb108159e7818
-Base (its parent):   5976da0af59b34d667793d75095e3015b6971720
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Opus is the default reviewer again; Codex becomes the optional cross-vendor engine
 
 ORDER:

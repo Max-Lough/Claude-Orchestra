@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit ed6643587eca22bfa2cdc0638dc89699aae79938
-Base (its parent):   00076a270f46759c81d3b4481b4b35e7365248e4
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Genericize README paths, add MIT LICENSE
 
 ORDER:
@@ -9,15 +9,15 @@ Genericize the README's install instructions so they no longer assume the
 maintainer's own local paths. Replace the hardcoded local path in the
 install example with a placeholder environment variable, and add a POSIX
 clone-and-install snippet alongside it so a non-maintainer user has a
-copy-pasteable path. Rename the internal project-name labels used in a
-couple of places to a neutral harness name — keep the uninstaller's existing
-loose-prefix fallback matching the old markers exactly as before, so an
-install performed under the old name stays fully uninstallable. Add a
-permissive open-source license file at the repository root and a
-corresponding license section in the README; state the license terms
-explicitly rather than leaving them implied. Touch only the README, the
-install script's label strings, and the new license file, and leave every
-other functional behavior as it was.
+copy-pasteable path. Rename the internal project-name labels to a neutral
+harness name. Keep the uninstaller's existing loose-prefix fallback matching
+the old markers exactly as before, so an install performed under the old
+name stays fully uninstallable. Add a permissive open-source license file at
+the repository root and a corresponding license section in the README; state
+the license terms explicitly rather than leaving them implied. Touch only
+the README, the install script's label strings, and the new license file,
+and leave every other functional behavior exactly as it was, with no code
+path anywhere modified.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 5fb5142599200a217bef6e31cadad06675fef69c
-Base (its parent):   e5d3d9bb8209c6a3ecedf85bd1da206138e035bc
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5d: fail-closed identity capture; lock-condition kill guards; CI records corrected
 
 ORDER:
@@ -11,9 +11,9 @@ checkout creation determines the canonical path itself and refuses the
 checkout, with the registration cleaned up, whenever that lookup fails; the
 lexical fallback serves paths that are already gone through sweeping, not
 the general case. Lock in a regression for a poisoned-real-path scenario and
-confirm it fails without the fix. Second, both review-lane kill branches
-poll git's actual registration lock rather than sleeping a fixed duration —
-a slow checkout can remain locked past any fixed delay, so a duration-based
+verify it fails without the fix. Second, both review-lane kill branches poll
+git's actual registration lock rather than sleeping a fixed duration — a
+slow checkout can remain locked past any fixed delay, so a duration-based
 sleep does not hold up here. Also correct the continuous-integration
 records: name the actual pull-request-head run rather than a generic label,
 and record the superseded run's true outcome in full, including the flake

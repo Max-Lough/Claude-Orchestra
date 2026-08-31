@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 998b97830ac54d121c6e1b4903eb86e2068a5c9b. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The independent pass agreed with the primary scored pass on 16 of 20 items

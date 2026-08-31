@@ -1,23 +1,23 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 00076a270f46759c81d3b4481b4b35e7365248e4
-Base (its parent):   bbbd9839d3d9856886896f71a203a3c0eee5b412
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Add .gitattributes: LF for sh/js/md, mark install.sh executable
 
 ORDER:
 Add a .gitattributes file that pins line endings to LF for shell,
-JavaScript, and Markdown files, and mark install.sh executable in the
-repository. The goal is to stop a checkout on any platform from silently
-converting install.sh to CRLF, which breaks its POSIX shebang line and makes
-the installer fail to run on Unix machines. Scope is exactly two changes:
-the new .gitattributes rules and the executable bit on install.sh — keep
-install.sh's contents unchanged; its file mode changes, and no other change
-is made, so the diff shows zero insertions or deletions inside the script
-itself. Cover only the file extensions that matter for this installer path
-(.sh, .js, .md); widening the rule set to every text file in the tree risks
-rewriting files whose line endings are meaningful elsewhere, so stop there.
-Keep the fix narrow enough that a reviewer can confirm its effect from the
-.gitattributes diff alone.
+JavaScript, and Markdown files. Also mark install.sh executable in the
+repository as part of this change. The goal is to stop a checkout on any
+platform from silently converting install.sh to CRLF, which breaks its POSIX
+shebang line and makes the installer fail to run on Unix machines. Scope is
+exactly two changes: the new .gitattributes rules and the executable bit on
+install.sh — keep install.sh's contents unchanged; its file mode changes,
+and no other change is made, so the diff shows zero insertions or deletions
+inside the script itself. Cover only the file extensions that matter for
+this installer path (.sh, .js, .md); widening the rule set to every text
+file in the tree risks rewriting files whose line endings are meaningful
+elsewhere, so stop there. Keep the fix narrow enough that a reviewer can
+verify its effect from the .gitattributes diff alone.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

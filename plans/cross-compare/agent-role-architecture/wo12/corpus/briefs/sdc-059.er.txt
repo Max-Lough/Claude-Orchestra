@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 69127bdbb56e8ffaf6781b4ce27663fc710ca7f0. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The two investigator classes were merged into one, holding the taxonomy at

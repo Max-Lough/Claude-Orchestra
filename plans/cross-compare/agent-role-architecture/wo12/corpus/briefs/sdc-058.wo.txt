@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 0b0148471f91dce49a8ea919349032fb41189626
-Base (its parent):   c4312747b5ea534153da63bc337bce04c8c78cc6
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-7b: misroute recovery through the router - ALL PRE-REGISTERED GATES PASS
 
 ORDER:

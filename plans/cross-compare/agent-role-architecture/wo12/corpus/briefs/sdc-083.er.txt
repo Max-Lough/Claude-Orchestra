@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e7a5e31eb70ba2cabb9d46cb33b16ffe4ebfe4aa. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
@@ -9,7 +9,7 @@ line-terminator classes exactly; checkout startup sweeps abandoned worktrees
 still on disk, since pruning alone only clears missing-directory
 registrations, while exempting live in-process checkouts; and future review
 orders enumerate every commit in their pinned range. That verdict now sits
-inside the roster, unaltered. Verifier closed at 94 passed. Registry and
+inside the roster, unaltered. Verifier closed at 94 passed, and registry and
 router both hold clean on the same local run.
 
 Verify the diff on its own merits.

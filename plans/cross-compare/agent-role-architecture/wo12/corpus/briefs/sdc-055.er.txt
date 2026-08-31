@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 3d545b94e89cdfc8d026e0457e11225820453745. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 Both new files for this review sit inside roster/ too, holding 103 lines

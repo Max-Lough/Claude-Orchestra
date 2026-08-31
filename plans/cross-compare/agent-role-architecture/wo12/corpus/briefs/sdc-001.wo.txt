@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit a14280eaabc8f0e61f01ddaeaf4ffa68123ede21
-Base (its parent):   7bf8e794306376835716c422313e85d997eaf7c0
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-11 round 3: Sol·max holistic findings applied (exercise debt ledgered, R3 48h, records); verdicts committed
 
 ORDER:
@@ -13,12 +13,12 @@ stands as ruled. Second, carry the staleness disclosure onto the published
 bucket-state object, adding stale and ageMs keys, so a snapshot consumer or
 the dispatcher sees what the human report already shows. Third, ledger the
 outstanding exercise debt and commit the round-three verdicts and band
-records. Make the disclosure purely additive. Staleness is disclosed, not
-discounted — publish the recorded fraction exactly as read, leave
+records. Make the disclosure purely additive, since staleness is disclosed
+and not discounted — publish the recorded fraction exactly as read, leave
 reserveBreached, throttleObserved and exhausted computed the way they are
 today, and let no bucket's routed pool state change merely because its
-reading is stale. Do not modify router/router.js; the router keeps ownership
-of the ladder and the reserve formula.
+reading is stale. Do not modify router/router.js, which keeps ownership of
+the ladder and the reserve formula.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

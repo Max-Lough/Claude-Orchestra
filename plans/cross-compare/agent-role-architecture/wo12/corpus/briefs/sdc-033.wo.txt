@@ -1,22 +1,22 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e3b730da0f823c04c378df380d55518e0ad9a035
-Base (its parent):   8dce7590cb91aa27dced1f695b0631a7f23cf65b
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      executor: add stop-grinding rule (bounded implement-verify cycles, PARTIAL over degraded DONE)
 
 ORDER:
 Add a stop-grinding rule to the executor role and to the specialist template
 that inherits its structure, so an agent stops looping indefinitely trying
 to force a task to a finished state. Touch only agents/executor.md and
-agents/specialists/_TEMPLATE.md, confining the change to one new line in
-each; outside that, nothing changes, and the diff should read as plain
-insertions, not a rewrite of the surrounding text. State the rule as a
-bounded number of implement-verify cycles: once that bound is reached
-without a clean pass, the agent must stop and report a partial result rather
-than push out a degraded status dressed up as done. PARTIAL never gets
-silently upgraded to DONE just because the cycle budget ran out. Keep the
-wording short enough to sit inline with the existing role text, and make
-sure both files carry the same rule, worded the same way.
+agents/specialists/_TEMPLATE.md, confining the change to one line each.
+Outside that, nothing changes, and the diff should read as plain added
+lines, not a rewrite of the surrounding text. State the rule as a bounded
+number of implement-verify cycles: once that bound is reached without a
+clean pass, the agent must stop and report a partial result rather than push
+out a degraded status dressed up as done. PARTIAL never gets silently
+upgraded to DONE just because the cycle budget ran out. Keep the wording
+short enough to sit inline with the existing role text, and make sure both
+files carry the same rule, worded the same way.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

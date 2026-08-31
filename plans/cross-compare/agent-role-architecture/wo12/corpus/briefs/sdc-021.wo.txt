@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e7545f60a6e55718179afd07c70ed6d420de3069
-Base (its parent):   e3b730da0f823c04c378df380d55518e0ad9a035
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      guard: stand down on undetermined model instead of enforcing
 
 ORDER:
@@ -9,15 +9,15 @@ Change the guard's default behavior for an undetermined model from enforcing
 to standing down. Base enforcement on positive evidence of a director model
 in the transcript, rather than falling back to enforcing simply because the
 model is undetermined at the moment of the check. A brand-new session's
-first turn — before any assistant entry is flushed into the transcript —
-sees no denial, and neither does an ordinary, non-director session at any
-later turn of its own. A genuine director session absorbs exactly one
-unenforced opening turn, with hard enforcement engaging the instant the
+first turn sees no denial. That holds before any assistant entry is flushed
+into the transcript, and neither does an ordinary, non-director session see
+one at any later turn of its own. A genuine director session absorbs exactly
+one unenforced opening turn, with hard enforcement engaging the instant the
 model reaches the transcript and not a moment later. The existing delegation
 instructions already cover that single gap, so no further compensating
-change belongs anywhere else. Update only the docs describing mode detection
-and troubleshooting to match the corrected default, and keep every other
-guard behavior unchanged.
+change is needed at all. Update only the docs describing mode detection and
+troubleshooting to match the corrected default, and keep every other guard
+behavior unchanged.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

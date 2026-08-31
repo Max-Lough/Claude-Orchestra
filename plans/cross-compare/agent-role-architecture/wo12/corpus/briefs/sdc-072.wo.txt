@@ -1,22 +1,23 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 67d5c98a82640d731ebb75391ec4867237457f8b
-Base (its parent):   410537818dcc663e020fe84b8b5f800ac945d473
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Score WO-7a-bis blind: 17/20 (85%) FAIL; record the disagreement ledger
 
 ORDER:
-Score a blind validation pass against the pre-registered follow-on corpus
-and record every disagreement in a ledger. Complete and save the independent
-pass before the sealed corpus file is opened; scoring after unsealing would
-invalidate the pass and must never be accepted as the recorded result.
-Compare the pass item by item against the reference scoring and report the
-match rate against the pre-registered threshold. For each disagreement, name
-the two candidate classes and state whether it reflects a genuine ambiguity
-in the boundary rule or a flaw found in the corpus item itself — flag the
-one at the ambiguity cap as genuine, and record it as exactly one ambiguity,
-nothing more. If the match rate falls short of the threshold, trigger the
-pre-registered next step — a further boundary redraw — before the taxonomy
-is treated as validated for encoding downstream.
+Score a blind validation pass against the pre-registered open-item corpus.
+Record every disagreement that surfaces in a ledger. Complete and save the
+independent pass before the sealed corpus file is opened; scoring after
+unsealing would invalidate the pass and must never be accepted as the
+recorded result. Compare the pass item by item against the reference scoring
+and report the match rate against the pre-registered threshold. For each
+disagreement, name the two candidate classes and state whether it reflects a
+genuine ambiguity in the boundary rule or a flaw found in the corpus item
+itself — flag the one at the ambiguity cap as genuine, and record it as
+exactly one ambiguity, nothing more. If the match rate falls short of the
+threshold, trigger the pre-registered next step — a further boundary
+revision — before the taxonomy is treated as validated for encoding
+downstream.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

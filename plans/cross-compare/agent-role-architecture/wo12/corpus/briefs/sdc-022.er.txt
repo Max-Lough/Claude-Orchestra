@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 8dce7590cb91aa27dced1f695b0631a7f23cf65b. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
@@ -8,6 +8,6 @@ extra; measured at roughly zero added time over the existing spawn cost on
 an 8.8MB transcript, using a fixed-cost tail read. The guard now enforces
 only for director models and stands down entirely for any other model, with
 an undetermined model still resolving to enforce. The diff touches three
-files. Docs were revised to reflect it.
+files, and the docs were revised to reflect the new behavior.
 
 Verify the diff on its own merits.

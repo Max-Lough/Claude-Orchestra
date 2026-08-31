@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit a338bf5d6f4f2f096a79c2345d21a6ce565dc609. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
@@ -8,6 +8,7 @@ the probe's corpus file — with the sealed corpus items left untouched, save
 for new entries appended, never rewritten. Each item's call was logged
 against the pre-registered threshold, disagreements were itemized, and the
 plan's downstream sections were updated to match. The final status states
-plainly whether the taxonomy is validated or a further redraw is required.
+plainly whether the taxonomy is validated or a further class-border revision
+is required.
 
 Verify the diff on its own merits.

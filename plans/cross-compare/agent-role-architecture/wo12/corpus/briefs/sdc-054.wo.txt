@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 5758a2d2b6146b613ea062946f7013e1b9dfa3c2
-Base (its parent):   ceeaabc6872eef5d5b35252f4179ed55159f83b5
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Draw up R0-EX6: delta re-review order for the round-5 sweep fix
 
 ORDER:
@@ -10,12 +10,12 @@ confine this one strictly to the sweep-guard fix itself alone, bounded by
 the two commits marking where round four ends and round five begins. Write
 the review order together with what its executor reported; neither document
 exists yet, both matching the shape the other passes in this sequence
-already use, and never rewrite anything else already sitting in roster/,
-since the earlier round's own write-up already settled its own questions on
-its own separate pass. Say once, plainly, that only a clear verdict on that
+already use, and never rewrite anything already sitting in roster/, since
+the earlier round's own write-up already settled its own questions on its
+own separate pass. Say once, plainly, that only a clear verdict on that
 boundary pair lets the standing orders shed their revise status for good;
 nothing less counts toward that outcome, and no softened reading of the diff
-stands in for it, whatever the round number seems to suggest.
+stands in for it, whatever the round number seems to suggest at all.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 10badb8ebee166e195dd79ee3eef18856eb5d2fc. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
@@ -9,6 +9,6 @@ the throwaway pinned checkout. The changelog, both readme files and the
 field-validation notes were updated to match. Two new cases in the
 review-lane suite cover it, one confirming the refusal is reported and one
 confirming the file the warmup would have created does not appear in the
-project afterwards. No other behaviour of the runner was touched.
+project afterwards. No other behaviour of the review runner was changed.
 
 Verify the diff on its own merits.

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit f0f578c7b76bb440490c0c2471fbb6e673a5b2a3
-Base (its parent):   8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 4: fix all four R0-EX4 findings; record the R0-EX4 verdict
 
 ORDER:

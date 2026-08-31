@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit b50470d0f9cf1ed6cd16b69d190f811066247d50
-Base (its parent):   7c8d6dde015e0ca5c55f535812ab4ddf13d78936
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5e: checkout identity from git's own records; guard-timeout kills gated
 
 ORDER:

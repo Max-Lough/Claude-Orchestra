@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit ceeaabc6872eef5d5b35252f4179ed55159f83b5
-Base (its parent):   3d545b94e89cdfc8d026e0457e11225820453745
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5: structural sweep guard — the CRITICAL both CI and R0-EX5 caught
 
 ORDER:
@@ -16,9 +16,9 @@ ancestor directory. Replace the substring classification with a structural
 check: identification must match exactly the tmp-root, prefix, and checkout
 shape, not a mere substring; skip the main worktree outright in every case;
 and remove only the literal prefix-named parent — no broader deletion is
-ever performed. Pin both reproducer shapes as regressions. Record the review
-verdict verbatim in the roster, and keep the tranche marked open pending the
-next review pass.
+ever performed. Pin both reproducer shapes as regressions, and record the
+review verdict verbatim in the roster, keeping the tranche marked open
+pending the next review pass.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

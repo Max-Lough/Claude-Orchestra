@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e09bbc44cbd4b69af3b5d1e52c186205f6686376. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
@@ -10,6 +10,6 @@ junction on Windows and a symlink elsewhere, skips where links are
 unavailable, fails without the fix and passes with it. The structural
 ownership guard came through this change untouched — own basename plus the
 parent's own basename prefix, still structural, with no substring matching
-anywhere. Suite reports 97 passed, 0 failed.
+anywhere. The full suite reports 97 passed and 0 failed.
 
 Verify the diff on its own merits.

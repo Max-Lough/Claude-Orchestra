@@ -1,21 +1,21 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 77254e801d95ea6a56b8aaea720f261e88ec5f80
-Base (its parent):   3d545b94e89cdfc8d026e0457e11225820453745
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5: structural sweep guard — the CRITICAL both CI and R0-EX5 caught
 
 ORDER:
-Fix the abandoned-worktree sweep in the disposable-checkout module. It
-recognizes its own leftovers by testing whether a registered worktree's path
-contains the module's temporary-directory prefix, then removes that worktree
-and recursively deletes its parent. Two reproductions have landed — CI
-deleted the OS temp root, because the fixture repository's name carried the
-prefix, and a delta re-review destroyed a legitimate worktree under a
-prefix-substring ancestor. Replace the substring test with a structural one,
-so that a leftover is exactly <tmp>/<prefix>XXXX/checkout and only that
-immediate parent is ever removed, skip the main worktree as a second belt,
-and keep the live-checkout exemption. Pin both reproducer shapes as
-regressions, record the re-review verdict verbatim, and fold its
+Fix the abandoned-worktree sweep that the disposable-checkout module runs at
+startup. It recognizes its own leftovers by testing whether a registered
+worktree's path contains the module's temporary-directory prefix, then
+removes that worktree and recursively deletes its parent. Two reproductions
+have landed — CI deleted the OS temp root, because the fixture repository's
+name carried the prefix, and a delta re-review destroyed a legitimate
+worktree under a prefix-substring ancestor. Replace the substring test with
+a structural one, so that a leftover is exactly <tmp>/<prefix>XXXX/checkout
+and only that immediate parent is ever removed, skip the main worktree as a
+second belt, and keep the live-checkout exemption. Pin both reproducer
+shapes as regressions, record the re-review verdict verbatim, and fold its
 dispositions into the round's ledger. Confine the work to the sweep's
 identification and removal rule, those regressions and those two roster
 documents, leaving every module-level constant, every default and all

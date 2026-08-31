@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 4ecfe5becd31a4100640f95142908e40fd47da31
-Base (its parent):   f95818329e8d54bd00d7590c140f06a78bd5ae15
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Ask git, not the path strings, whether scratch is inside the repo
 
 ORDER:

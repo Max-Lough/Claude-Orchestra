@@ -1,12 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 357c96dbd56f9ac75af765d7dcb728261826487a. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 Closed the residual items across the four listed files and added a
 review-round ledger section to the WO-9 record. The diff stayed deliberately
-small, touching only STATUS.md, researcher.md, wo9-band-record.md, and
+small, affecting only STATUS.md, researcher.md, wo9-band-record.md, and
 wo9-n0-ex2-report.md, matching the four files named in the order exactly.
-Verified by re-reading each touched file end to end to confirm the residual
-items referenced in the prior round are actually closed, not just noted.
+Verified by re-reading each touched file end to end to establish that the
+residual items referenced in the prior round are actually closed, not just
+noted.
 
 Verify the diff on its own merits.

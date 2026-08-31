@@ -1,15 +1,15 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit c15f090444e551d88afabf66d117ac73253b8f2c
-Base (its parent):   901c8fcac7fe9905b1fe3714f1e857d713a74ab7
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Score WO-7a (31/40 FAIL) and redraw the Part-4 class boundaries
 
 ORDER:
 Score the initial forty-item corpus blind against the sealed reference pass,
 record the result against the pre-registered threshold of at least
 thirty-six of forty, and if the threshold is missed, redraw the class
-boundaries and apply the redraw to the plan. Diagnose the root cause of any
-concentrated disagreement pattern rather than patching individual items in
+borders and apply the redraw to the plan. Diagnose the root cause of any
+concentrated disagreement pattern. Do not simply patch individual items in
 isolation. Add a precedence rule to the relevant preamble: recall signals
 are hints alone, and the requested work product plus the discriminator
 decide from intake text, not a signal word standing in for it; rename the

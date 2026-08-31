@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit cbd426483d775b4422a90551ea09150f3cdb033a
-Base (its parent):   09d7935626c35679efdee24324f3571bc82a8023
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Bundle skills with the harness: orchestra-* skills stamped by the installer
 
 ORDER:

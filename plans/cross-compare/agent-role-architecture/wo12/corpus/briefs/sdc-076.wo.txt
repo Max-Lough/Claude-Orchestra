@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit acbf8f2cf6f98bb642a23df3734a0edd35c29e5f
-Base (its parent):   b8a1957838da66600f5320d13c83e54c43d59130
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-11: P0 R4 default forecast corrected to WO-2 measured draw; floor governs
 
 ORDER:
@@ -15,10 +15,10 @@ zero — a disclosed under-estimate, not a computed figure. Recompute the
 default reserve from the measured draw and apply the plan's floor whenever
 the dynamic term sits below it; the floor governs the default in that case,
 not the dynamic term. Keep the rejected peak-derived arithmetic in code
-comments unchanged, computed but unused, as a cautionary record. Update the
-README to record both derivations, and update the test suite's pinned
-values, including an explicit check that the floor governs when the dynamic
-term is below it.
+comments unchanged. It stays computed but unused, kept as a cautionary
+record. Update the README to record both derivations, and update the test
+suite's pinned values, including an explicit check that the floor governs
+when the dynamic term is below it.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

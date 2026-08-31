@@ -1,15 +1,15 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 73629f78d18b84e14c8e6acf082e32089ae7b3ac. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We recorded the four cross-platform runner faults that the first hour of
-continuous integration surfaced and this release fixed, noted the one
-negative control that reports inconclusive under one platform's shell, and
-added a field-validation line for the shim case that integration testing can
-prove but not stage on a real PATH. The change was documentation only,
-touching three files with fifty-four insertions and ten deletions. Check
-counts were synced from 94 to exactly 96, so it matches the suite's current
-total.
+We recorded the four cross-platform runner faults found in early testing.
+Continuous integration surfaced them during its first hour, and this release
+fixed each one. We also noted the one negative control that reports
+inconclusive under one platform's shell. A field-validation line was added
+for the shim case integration testing can prove. That case cannot be staged
+on a real user's PATH directly. The change was documentation only, affecting
+three files, adding fifty-four lines and removing ten. Check counts were
+synced from 94 to exactly 96, matching the suite's current total.
 
 Verify the diff on its own merits.
 

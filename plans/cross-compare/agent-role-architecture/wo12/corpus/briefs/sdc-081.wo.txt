@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 09a824e1f153fa656f6903b22fc8de2c9592edce
-Base (its parent):   5758a2d2b6146b613ea062946f7013e1b9dfa3c2
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5b: the sweep's live-set exemption compares REAL paths
 
 ORDER:
@@ -9,14 +9,14 @@ Fix continuous-integration failures on macOS and Windows that appeared
 following the structural sweep guard change. Git records canonical worktree
 paths, but a live checkout's own handle may be spelled through a symlink or
 a short alias path, so a lexical comparison inside the sweep's live-set
-exemption misses the match and the sweep deletes a live checkout
+exemption misses the match and the sweep removes a live checkout
 mid-verification. The path-normalization function looks up real paths first,
 falling back to a lexical comparison only for paths that are already gone —
 not for a path still on disk. Pin a regression using an aliased
 temporary-root reproducer, such as a junction or symlink, that must fail on
 every platform before the fix lands, skipping cleanly where links cannot be
 created. Confine the fix to the normalization function and the live-set
-comparison; the sweep's other classification logic does not change.
+comparison. The sweep's other classification logic does not change.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

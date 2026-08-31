@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e3e8ea9c66a33415e69b9601ccffde7e176a1853
-Base (its parent):   8bef840fd971fc792fd85fd41fa623990f1b5420
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Carry pre-existing deep-plan rename work from working tree
 
 ORDER:
@@ -15,10 +15,10 @@ mention. Rename the skill directory and update its frontmatter name and
 description, its headings, the runner path, its verdict token, and the log
 heading. Point the installer at the new runner filename in the runner
 constant, the install-time copy, and the uninstall list. Update the planner
-agent file, the protocol document, and the README end to end. Update the
-bundled-skill roster in the status skill so a status run names deep-plan and
-never the old name. Behavior must stay unchanged; this is a rename plus its
-documentation sync, kept as its own commit.
+agent file, the orchestration document, and the README end to end. Update
+the bundled-skill roster in the status skill so a status run names deep-plan
+and never the old name. Behavior must stay unchanged; this is a rename plus
+its documentation sync, kept as its own commit.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

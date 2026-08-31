@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit b50470d0f9cf1ed6cd16b69d190f811066247d50. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 Identity now derives from git's own records, fs.realpath is off that path
@@ -9,7 +9,7 @@ precondition and the fail-closed teardown are both pinned by the suite, and
 the new regressions cover a poisoned-realpath checkout that still works plus
 a teardown that strands neither registration nor directory. The full
 CI-equivalent run is green, with verifier 100, router 135, registry 31, and
-review-lane 116 twice over (node tests/review-lane.test.js). The verdict is
-recorded verbatim.
+review-lane 116 twice over. The review verdict is transcribed verbatim into
+the dispositions record.
 
 Verify the diff on its own merits.

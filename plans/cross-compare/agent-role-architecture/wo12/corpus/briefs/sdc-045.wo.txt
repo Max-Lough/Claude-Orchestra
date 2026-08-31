@@ -1,24 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit ee5aec43e474f211aa237ddf4224e592e2f2dcd5
-Base (its parent):   9336392a2147dc7298e89ee5e2388032895652f2
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-9 round 3: fix all delta-review findings (self-consistent sandbox facts, anchored discard grounds, exact counts)
 
 ORDER:
 Fix every finding raised in the delta review of the evidence-band record:
 three MAJOR items and three MINOR items exactly, plus the small nits noted
 alongside them — no new findings get introduced along the way. Correct
-researcher.md's description of the working tree, dropping the inaccurate
-'sandboxed checkout' language, and fix its sandbox-pinning line so it
-matches archivist and LC-analyst's wording precisely. Fix the status
-ledger's mis-stated pass/fail line for the two exercised seats and expand
-its follow-on list to match the review record's fuller one precisely.
-Rewrite the discard grounds for the first incident onto the two facts that
-actually support discarding it and leave the two unsupported grounds
-withdrawn, not standing alongside the anchored ones. Correct the
-source-count language in two files to the precise figures, fix the one
-misattributed omission, and note the search log's own numbering mismatch.
-Every corrected line traces back only to a fact the review already raised.
+researcher.md's working-tree description, dropping the inaccurate 'sandboxed
+checkout' phrase. Then fix its sandbox-pinning line so it matches archivist
+and LC-analyst's wording precisely. Fix the status ledger's mis-stated
+pass/fail line for the two exercised seats and expand its deferred-item list
+to match the review record's fuller one precisely. Rewrite the discard
+grounds for the first incident onto the two facts that actually support
+discarding it and leave the two unsupported grounds withdrawn, not standing
+alongside the anchored ones. Correct the source-count language in two files
+to the precise figures, fix the one misattributed omission, and note the
+search log's own numbering mismatch. Every corrected line traces back only
+to a fact the review already raised.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

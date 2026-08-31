@@ -1,24 +1,25 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 1c651fb18903e8d968624247858564dc9233a134
-Base (its parent):   e5d3d9bb8209c6a3ecedf85bd1da206138e035bc
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5d: fail-closed identity capture; lock-condition kill guards; CI records corrected
 
 ORDER:
-Close out the two majors and the records item from the R0-EX8 verdict.
-Creation-time identity capture must fail closed, so have createCheckout
-resolve the checkout's canonical path itself and refuse the checkout,
-cleaning up the registration it just made, whenever that resolution fails;
-the lexical fallback then serves only already-gone swept paths, and the
-poisoned-realpath case gets pinned by a regression test. Replace the fixed
-sleeps in both review-lane kill branches, the SIGTERM branch and the SIGKILL
-branch, with a poll of git's own worktree registration lock, so each signal
-lands after the checkout has finished registering. A slow checkout stays
-locked past any fixed delay, and a kill arriving mid-registration leaves a
-locked worktree a single force cannot reclaim. Correct the records so the
-nine-of-nine green claim names the PR-head run and states the superseded
-run's true outcome, including the flake that fired. Record the verdict
-verbatim and hold the tranche at REVISE.
+Close out the two majors and the records item from the standing review
+verdict. Creation-time identity capture must fail closed, so have
+createCheckout resolve the checkout's canonical path itself and refuse the
+checkout, cleaning up the registration it just made, whenever that
+resolution fails; the lexical fallback then serves only already-gone swept
+paths, and the poisoned-realpath case gets pinned by a regression test.
+Replace the fixed sleeps in both review-lane kill branches, the SIGTERM
+branch and the SIGKILL branch, with a poll of git's own worktree
+registration lock, so each signal lands after the checkout has finished
+registering. A slow checkout stays locked past any fixed delay, and a kill
+arriving mid-registration leaves a locked worktree a single force cannot
+reclaim. Correct the records so the nine-of-nine green claim names the
+PR-head run and states the superseded run's true outcome, including the
+flake that fired. Record the verdict verbatim and hold the tranche at
+REVISE.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

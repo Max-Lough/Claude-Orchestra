@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit b8a1957838da66600f5320d13c83e54c43d59130. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 We shipped a compact deterministic module and a matching test suite of 152

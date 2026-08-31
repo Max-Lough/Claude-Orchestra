@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e24b7aef6e8ab8de8aa43ede574da998858d9da4
-Base (its parent):   c2c8060068f922d2b658d4f65481f58ef0fbb6de
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Stamp .claude/hooks/package.json so hooks survive a "type": "module" target (v1.9.1)
 
 ORDER:
@@ -16,7 +16,7 @@ comparison is CRLF-tolerant so a byte-equivalent stamp from an autocrlf
 checkout must trigger no notice and must not be rewritten. Widen the stamped
 gitattributes file to pin JSON to eol=lf, and turn the uninstall-time
 gitattributes removal into a shape match rather than a byte-exact compare.
-Add regression coverage pinning each of those behaviors.
+Add regression coverage in the lint suite pinning each of those behaviors.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

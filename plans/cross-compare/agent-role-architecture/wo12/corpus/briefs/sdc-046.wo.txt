@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 316759a5fcadd7d5fe05859e40a94f55ae7660d8
-Base (its parent):   16484c959bf4315cdc1db02e71ab6569784cfb63
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-9 exercises: all five evidence seats exercised; N1 fabrication incident recorded
 
 ORDER:

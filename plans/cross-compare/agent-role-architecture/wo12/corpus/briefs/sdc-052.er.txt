@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e5d3d9bb8209c6a3ecedf85bd1da206138e035bc. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 Both documents went in as wholly new material under roster/, one hundred

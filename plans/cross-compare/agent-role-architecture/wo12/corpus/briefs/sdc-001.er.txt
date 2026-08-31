@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit a14280eaabc8f0e61f01ddaeaf4ffa68123ede21. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The ceiling moves to forty-eight hours and the fresh window is untouched.

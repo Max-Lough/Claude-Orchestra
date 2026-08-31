@@ -1,11 +1,11 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 7c8d6dde015e0ca5c55f535812ab4ddf13d78936. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
 Both new documents for this pass went into roster/, one hundred three lines
 total, thirty-seven in the write-up and sixty-six in the order, with no
-deletions anywhere else in the tree. That newer commit and the one just
+lines removed anywhere in the tree. That newer commit and the one just
 before it anchor the whole review from start to finish. The write-up records
 that a clean verdict against that exact pair, and only that, is what lets
 the two open work orders shed their revise status.

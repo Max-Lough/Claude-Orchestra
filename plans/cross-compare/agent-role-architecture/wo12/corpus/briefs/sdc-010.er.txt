@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 74 checks went green, including an exhaustive sweep across every

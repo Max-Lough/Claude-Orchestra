@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit d3080957c86695a85ac59207b2e6a07988ef82fd. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 Shipped all five files and updated the staffing record and README to match,

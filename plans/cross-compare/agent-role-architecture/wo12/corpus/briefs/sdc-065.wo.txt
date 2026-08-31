@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 51663fc30a5dc432a79dcf0ffde4051d27cbcd21
-Base (its parent):   0b0148471f91dce49a8ea919349032fb41189626
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-14: alias layer and roster kill switch, before any rename
 
 ORDER:

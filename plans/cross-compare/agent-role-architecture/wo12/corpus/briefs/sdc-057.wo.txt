@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 444eaf3c84b5fa8d370b4df6794fe6c71a84fa73
-Base (its parent):   d00a7aedd28ad2cc17260b2aaec921c65dcdec5c
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Draw up R0-EX3: cross-vendor gate re-review order for the round-2 diff
 
 ORDER:
@@ -15,9 +15,7 @@ outright, whether the two open work orders leave revise status; there is no
 middle reading of the diff that can stand in for that single call, since
 this cross-vendor pass is the gate the earlier rounds were building toward
 all along. Put both documents into roster/ as material that did not exist
-before, touching only those two files and changing nothing else already on
-file there, since this pass writes its own record rather than editing anyone
-else's.
+before. The pass alters only those two files; the rest stays put.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 1c6144e7330e70fe07b6ba7d22062ef7f929fd33
-Base (its parent):   f5646829776a5dba4c021f4a887dd730bce04b6c
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Add executor-heavy-xhigh: the xhigh effort point of the heavy tier
 
 ORDER:

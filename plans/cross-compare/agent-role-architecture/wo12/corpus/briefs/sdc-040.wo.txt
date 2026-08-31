@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 5d9363f5429ab08dc4c81ffe316db9ffd3c134c9
-Base (its parent):   1cb50b8cad23935aa9a4870c2ba522735f157924
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Honor notifications/cancelled in the orchestra-engine MCP server
 
 ORDER:

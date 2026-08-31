@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 09a824e1f153fa656f6903b22fc8de2c9592edce. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The live-set exemption's path comparison now looks up real paths, falling
@@ -7,7 +7,7 @@ back lexically only for paths already gone, which fixes the macOS and
 Windows continuous-integration failures caused by a canonical-versus-aliased
 path mismatch. A regression was pinned using an aliased temporary-root
 reproducer, built from a junction or symlink, that fails on every platform
-absent the fix; the change spans 2 files in total — the verifier test suite
+absent the fix; the change spans 2 files in all — the verifier test suite
 and the checkout module — with nothing else affected.
 
 Verify the diff on its own merits.

@@ -1,24 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 9336392a2147dc7298e89ee5e2388032895652f2
-Base (its parent):   316759a5fcadd7d5fe05859e40a94f55ae7660d8
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-9 round 2: fix all R0 review findings (runner semantics, incident narrative, report contracts)
 
 ORDER:
-Fix every finding from the prior review round. Replace the copied-over
-runner semantics in the research seat's brief with the execution tool's real
-behavior — live working tree, no sandbox pinning, no automatic retries, one
-call per order, with unavailability escalated to the coordinating role. Make
-the reconciliation between the write-capable runner and the read-only plan
-explicit and mechanical across the research, analysis, and archiving briefs
-— every order carries the read-only constraint in its own text and also
-passes the forbid parameter, described as a brief-level prohibition
-instruction rather than a sandboxed block. Rewrite the earlier incident
-narrative to the evidence-supported account, withdrawing the unsupported
-claim entirely rather than softening it, and correct two exercise reports
-whose dispatch-time details were dropped or wrong. Clear the minor findings
-too — stale status rows, a wrong tool count, an unjustified omission, an
-unexplained repeated log line, and a misattributed casting rule.
+Fix every finding from the prior review round without exception. Replace the
+copied-over runner semantics in the research seat's brief with the tool's
+real behavior. That behavior means a live working tree, no sandbox pinning,
+and no automatic retries. Each order gets just one call, with unavailability
+escalated to the coordinating role. Reconcile the write-capable runner with
+the read-only plan across three briefs. Every order carries that same
+restriction in its own order text. It also must pass the forbid parameter,
+described as a brief-level prohibition instruction rather than a sandboxed
+block. Rewrite the earlier incident narrative into its evidence-supported
+account instead. Withdraw the unsupported claim entirely rather than merely
+softening it. Correct two exercise reports whose dispatch-time details were
+dropped or wrong. Clear the minor findings too, including stale status rows
+and a wrong tool count. Also fix an unjustified omission, an unexplained
+repeated log line, and a misattributed casting rule.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

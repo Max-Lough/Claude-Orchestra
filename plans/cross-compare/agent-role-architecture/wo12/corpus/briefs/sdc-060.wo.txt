@@ -1,23 +1,23 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit a338bf5d6f4f2f096a79c2345d21a6ce565dc609
-Base (its parent):   2965c047bab02af413287d90cfdcaae3023ea023
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Score WO-7a-quater validation gates
 
 ORDER:
-Score the validation gates for the follow-on probe against the
-pre-registered thresholds and record the outcome in the plan's tracking and
-corpus files alone; the sealed source items in the corpus stay untouched,
-since any change to them would invalidate the blind pass that already ran
-against them. Update STATUS.md to reflect the current gate result, extend
-the plan document with the ruling's downstream consequences, and record the
-itemized scoring — per-item calls, any disagreements, and the gate's
-pass/fail threshold — in the probe's corpus file by appending; a prior entry
-stays as recorded, with no rewrite once it is logged. Keep the record
-traceable, so any item resolved differently than a prior probe must show the
-exact discriminator or rule that changed the call, and the final status
-states plainly, in exactly one line, whether the taxonomy is now validated
-or a further redraw is required.
+Score the validation gates for the deferred item against the pre-registered
+thresholds. Record the outcome only in the plan's tracking and corpus files.
+The sealed source items in the corpus stay untouched, since any change to
+them would invalidate the blind pass that already ran against them. Update
+STATUS.md to reflect the current gate result, extend the plan document with
+the ruling's downstream consequences, and record the itemized scoring —
+per-item calls, any disagreements, and the gate's pass/fail threshold — in
+the probe's corpus file by appending; a prior entry stays as recorded, with
+no rewrite once it is logged. Keep the record traceable, so any item
+resolved differently than a prior probe must show the exact discriminator or
+rule that changed the call, and the final status states plainly, in exactly
+one line, whether the taxonomy is now validated or a further class-border
+revision is required.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

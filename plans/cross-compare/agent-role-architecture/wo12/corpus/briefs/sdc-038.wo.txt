@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 10badb8ebee166e195dd79ee3eef18856eb5d2fc
-Base (its parent):   597a4bae65d867e020eff47f0183e87d623dee72
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Restrict the review warmup to pinned checkouts; sync docs
 
 ORDER:

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 46c5a4cb9c0970af3f7523be045c3fe1c8ce0d2f
-Base (its parent):   6f27ea2249a91dc647b8f2ccbbd324a30511f938
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Bucket review findings by provenance (BREACH/GAP); close the running-process rule gap (v2.1.0)
 
 ORDER:

@@ -1,12 +1,12 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 7e90c673184cf492e80abad4b5db9521d56e690c
-Base (its parent):   444eaf3c84b5fa8d370b4df6794fe6c71a84fa73
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 3: fix all five R0-EX3 findings; record the R0-EX3 verdict
 
 ORDER:
 Address five findings turned up in this round's review of the round-two
-code, while confirming that every round-one and round-two closure still
+code, while verifying that every round-one and round-two closure still
 holds. The reserve gate must evaluate the requested rung instead of a recast
 rung, so a degradation recast never silently satisfies a stop condition;
 disclose restrictions on every turn served through a fallback path. Replace

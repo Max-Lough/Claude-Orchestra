@@ -1,11 +1,11 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 5f62be6c7b811fe7f1d6e94f9e346d3712df6607. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 Wrote the round's re-review instructions and its companion writeup as two
-freshly created files, touching no prior file. The order pins the exact
-2-commit range under review by its full commit identifiers rather than a
-branch tip, so the diff being reviewed cannot drift. It states the one
+freshly created files, without modifying any prior file. The order pins the
+exact 2-commit range under review by its full commit identifiers rather than
+a branch tip, so the diff being reviewed cannot drift. It states the one
 residual strand awaiting a ruling and what a clean verdict would settle. No
 prior file was touched — both are brand new.
 

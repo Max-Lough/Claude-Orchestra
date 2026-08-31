@@ -1,24 +1,25 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5
-Base (its parent):   5d649d86ee6c68640a6435630e20766361cb69f6
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-6: router, casting tables, review matrix, degradation machine, Q0 triggers
 
 ORDER:
 Build the dispatch layer over the existing registry as a router module at
-the repo root. Transcribe the plan's casting tables — rungs, roles, the hard
-never-rules, the computed review matrix, the degradation ladder, the
-automatic-trigger rules — into a data file the router reads rather than
-hardcodes; check every rung against an independent transcription of the
-source table in both directions. The route function fails closed on any
-ownership-invariant violation, resolving a role only through a loaded,
-intact registry. Reviewer selection computes no-self-family status from the
-full co-author set, and unattributed or mixed-family authorship fails closed
-rather than dispatching open. A missing required companion task blocks the
-dispatch entirely, and nothing proceeds until every required companion
-exists. Mark any default the plan leaves silent as an explicit unstated
-choice rather than guessing. Wire the new suite into CI and keep the
-gate-class order — cross-vendor review before merge — unchanged.
+the repo root. Transcribe the plan's casting tables into a single data file.
+It lists rungs, roles, the hard never-rules, the computed review matrix, the
+degradation ladder, and the automatic-trigger rules, and the router reads it
+rather than hardcoding them; check every rung against an independent
+transcription of the source table in both directions. The route function
+fails closed on any ownership-invariant violation, resolving a role only
+through a loaded, intact registry. Reviewer selection computes
+no-self-family status from the full co-author set, and unattributed or
+mixed-family authorship fails closed rather than dispatching open. A missing
+required companion task blocks the dispatch entirely, and nothing proceeds
+until every required companion exists. Mark any default the plan leaves
+silent as an explicit unstated choice rather than guessing. Wire the new
+suite into CI and keep the gate-class order — cross-vendor review before
+merge — unchanged.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

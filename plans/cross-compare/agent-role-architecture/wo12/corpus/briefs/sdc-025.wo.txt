@@ -1,22 +1,22 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 4680027af8e12008d546e5ad3be63e7b005805df
-Base (its parent):   f98316fb13836c5f64576b8e13170c9264896a5d
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-10 round 3: post-APPROVE residual cleanup; review-round ledger
 
 ORDER:
-Once round two reaches approval, finish the round with a residual cleanup
-pass — close out anything left over in the review lint script and bring
-STATUS.md and the roster ledger in line with the approved state. Update the
-lint script's checks so they reflect the ruleset the round actually settled
-on, never an intermediate draft still lingering in the file. Rewrite the
-roster ledger's round entry so every round's disposition and the final tally
-are stated exactly — no round left off, no tally approximated, and no
-earlier round's disposition quietly revised along the way. Keep STATUS.md's
-phase summary consistent with the ledger's own numbers, matching them count
-for count. Touch no file outside these three, and add no new lint check
-beyond tidying the ones already in place; this is only a closing pass, not a
-new review round.
+Round two must reach approval before this cleanup pass begins. Close out
+anything left over in the review lint script. Bring STATUS.md and the roster
+ledger in line with the approved state. Update the lint script's checks so
+they reflect the ruleset the round actually settled on. Never leave an
+intermediate draft still lingering in the file. Rewrite the roster ledger's
+round entry so every round's disposition is stated exactly. State the final
+tally precisely as well, with no round left off. No tally may be
+approximated, and no earlier disposition gets quietly revised. Keep
+STATUS.md's phase summary consistent with the ledger's own numbers. Match
+them count for count across every shared figure. Change nothing outside
+these three files, and add no new lint check. This is simply a closing pass,
+not a new review round.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

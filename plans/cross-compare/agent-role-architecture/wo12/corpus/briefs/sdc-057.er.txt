@@ -1,13 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 444eaf3c84b5fa8d370b4df6794fe6c71a84fa73. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
 The pass adds 136 lines to roster/ across two files that did not exist
-before, the order carrying sixty-five of them and the account seventy-one,
-with nothing else already on file there touched. The commit pair covered
-anchors the initial round through the round two fixes, reviewed through the
-cross-vendor lane. The account closes on the same point, this single verdict
-settles, outright, whether the two open work orders leave revise status.
+before, the order carrying sixty-five of them and the account seventy-one;
+the rest of roster/ stays untouched. The commit pair covered anchors the
+initial round through the round two fixes, reviewed through the cross-vendor
+lane. The account closes on the same point, this single verdict settles,
+outright, whether the two open work orders leave revise status.
 
 Verify the diff on its own merits.

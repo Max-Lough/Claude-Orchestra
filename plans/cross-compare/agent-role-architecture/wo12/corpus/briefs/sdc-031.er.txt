@@ -1,14 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 4ed7a03a48a8b2efb389b00aefcc89c18f5b96fe. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
-We traced the silent agent-load failure to a bare colon-space sequence
-inside an unquoted description field, which the harness's frontmatter repair
-pass cannot fix under a Windows-line-ending checkout. A one-word rewording
-in each of the exactly 3 affected files removes the bare colon and restores
-parseability, for three insertions and three deletions total, with every
-other line in those files left unchanged. We confirmed the frontmatter now
-parses for all three agent definitions.
+We traced the silent agent-load failure to a bare colon-space sequence. That
+sequence sits inside an unquoted description field in each file. The
+harness's frontmatter repair pass cannot fix it under a Windows-line-ending
+checkout. A one-word rewording in each of the exactly 3 affected files
+removes the bare colon. That same change restores parseability, with three
+lines added and three removed, leaving every other line unchanged. We
+verified that the frontmatter now parses for all three agent definitions.
 
 Verify the diff on its own merits.

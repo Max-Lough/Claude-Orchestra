@@ -1,14 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 3523e234256fd3aee90e16c5393be3867eb13e21. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-Done. The pre-add records read now refuses before any registration exists. A
+The pre-add records read now refuses before any registration exists, and a
 post-add read failure is retried before the ambiguous-records path is taken.
 The residual strand is proven self-healing by a new regression test that
 asserts an alias-created, never-active registration and its directory are
 both reclaimed by the following checkout. The round's verdict is recorded
-verbatim. The full battery is green, with verifier at 101, router at 135,
-registry at 31, and the review lane at 116.
+verbatim in the roster alongside the fix. The battery is green, with
+verifier at 101, router at 135, registry at 31, and the review lane at 116.
 
 Verify the diff on its own merits.
 

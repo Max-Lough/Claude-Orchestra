@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e5d3d9bb8209c6a3ecedf85bd1da206138e035bc
-Base (its parent):   3a9cc7347787a52f53fffe2211f3c0d939cef61f
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Draw up R0-EX8: delta re-review order for the round-5c fixes
 
 ORDER:
@@ -10,13 +10,13 @@ earlier fix commit and the one that follows it, the pair bounding round-5b
 and round-5c. Set the reference runner's own limitation down as a separate
 follow-on note tied to that runner's lane; its sweep only manages a single
 locked-worktree force pass, a fact that predates this fix and must stay
-uncounted as a finding against it. Both documents are wholly new under
-roster/; no other file in that directory gets touched by this pass. Keep the
-audit itself narrow, just that bounding pair, nothing beyond it and nothing
-borrowed from earlier rounds. The order records, without qualification, that
-an unqualified verdict here is what the pair of orders sitting in revise
-needs to move past that status, and that the follow-on note carries no
-weight against that judgment.
+uncounted as a finding against it. Both documents are wholly new, placed
+fresh under roster/ itself. No other file in that directory is touched by
+this pass. Keep the audit itself narrow, just that bounding pair, nothing
+beyond it and nothing borrowed from earlier rounds. The order records,
+without qualification, that an unqualified verdict here is what the pair of
+orders sitting in revise needs to move past that status, and that the
+follow-on note carries no weight against that judgment.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -1,14 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 51663fc30a5dc432a79dcf0ffde4051d27cbcd21. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
-The aliases map declares all 16 retired names with role, rung, identity and
-deprecation line. The resolver reads the flag per order, defaulting to
-legacy, so rollback is a flag flip. Old-name orders dispatch under both
-flags, flipped mid-session. It loads fail-closed on an unknown role, a rung
-the named role does not have, a missing identity or bad default; section 12
-hands a tampered map whose alias names a rung its role lacks and asserts the
-refusal. Suite green, 93 passed.
+The aliases map declares 16 retired names with role, rung, identity and
+deprecation line, and the resolver reads the flag per order, so rollback is
+a flag flip. Old-name orders dispatch under both flag values, flipped
+mid-session on one instance. The map loads fail-closed on an unknown role or
+a rung the named role does not have; section 12 hands a tampered map whose
+alias names a rung its role lacks, and construction refuses, with the suite
+green at 93 passed.
 
 Verify the diff on its own merits.

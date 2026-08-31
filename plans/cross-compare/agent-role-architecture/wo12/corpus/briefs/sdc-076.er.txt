@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit acbf8f2cf6f98bb642a23df3734a0edd35c29e5f. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The default draw was replaced with the measured weekly figure from the

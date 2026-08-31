@@ -1,13 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 7bf8e794306376835716c422313e85d997eaf7c0. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We added new adversarial checks across four sections, expanding the suite by
-33 cases, and verified them failing against the pre-fix implementation —
-including the critical exploit dispatching instead of gating and a live
-range error out of predictThrottle — then verified all green after the fix.
-The disputed finding was re-ruled against the reviewer's verbatim text, the
-incident record reconciled against its sibling report, and every count and
-attribution nit across the review record and role docs was resolved.
+We added new adversarial checks across four sections. This expanded the
+suite by 33 cases, and we verified them failing against the pre-fix
+implementation — including the critical exploit dispatching instead of
+gating and a live range error out of predictThrottle — then verified all
+green after the fix. The disputed finding was re-ruled against the
+reviewer's verbatim text, the incident record reconciled against its sibling
+report, and every count and attribution nit across the review record and
+role docs was resolved.
 
 Verify the diff on its own merits.

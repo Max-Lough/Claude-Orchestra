@@ -1,25 +1,25 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 59b0e16d4b37b8cbe18a85d936acd5e17bc2f41c
-Base (its parent):   ea5ef72cc7f829ec41d7e4c6a822e79d95276873
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Add detective role: Opus-tier read-only recon for causal investigation
 
 ORDER:
-Make recon two-tier. Keep the existing scout for every where-and-what
-mission — locate, map, enumerate, history — cheap, parallel and high-recall,
-and add a detective role for the why-and-how cases: root-cause analysis,
-cross-subsystem tracing, invariant discovery, recon where fact-gathering
-cannot be separated from reasoning and a confidently wrong report would
-misdirect the plan. The detective carries the scout's read-only law
-unchanged; recon is the one unreviewed output in the harness, so the
-intelligence that steers decisions gets the capable tier. Write the
-detective charter with hypothesis-first rules, path-and-line evidence chains
-and graded CONFIRMED, LIKELY and UNCERTAIN verdicts; narrow the scout's
-description away from all codebase searching and add a rule handing causal
-cores off as detective cases; add the company-table row, two-tier routing
-with pipelining, and an escalation rule making a scout UNKNOWN that survives
-one re-probe a detective case; update the guard's denial hint, the
-installer's stamped agent set, the documentation and the version.
+Split recon into two tiers by the kind of question asked. Keep the existing
+scout for every where-and-what mission — locate, map, enumerate, history —
+cheap, parallel and high-recall, and add a detective role for the
+why-and-how cases: root-cause analysis, cross-subsystem tracing, invariant
+discovery, cases where fact-gathering cannot be separated from reasoning and
+a confidently wrong report would misdirect the plan. The detective carries
+the scout's read-only law unchanged; recon is the one unreviewed output in
+the harness, so the intelligence steering decisions gets the capable tier.
+Write the detective charter with hypothesis-first rules, path-and-line
+evidence chains and graded CONFIRMED, LIKELY, UNCERTAIN verdicts; narrow the
+scout's description away from all codebase searching and add a rule handing
+causal cores off as detective cases; add the company-table row, two-tier
+routing with pipelining, and an escalation rule making a scout UNKNOWN that
+survives one re-probe a detective case; update the guard's denial hint, the
+stamped agent set, the docs and version.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

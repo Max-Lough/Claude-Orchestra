@@ -1,14 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit f0f578c7b76bb440490c0c2471fbb6e673a5b2a3. Claude Sonnet 5 · medium (Anthropic)
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
 produced this change.
 
 CLAIMS:
-All four findings are addressed. The touches lint now compares elements, the
-glob matcher reproduces the retired pattern's line-terminator classes, the
-checkout module sweeps abandoned worktrees at startup with the ones in
-active use exempt, and the review-order wording now calls for every commit
-in a pinned range. The verdict is recorded verbatim in the roster. All three
-suites were re-run and are green, with router at 135 passed, verifier at 94
-passed, and registry at 31 passed.
+All four findings are addressed, with the touches lint comparing elements,
+the glob matcher reproducing the retired pattern's line-terminator classes,
+the checkout module sweeping abandoned worktrees at startup with the ones in
+active use exempt, and the review-order wording calling for every commit in
+a pinned range. The review verdict is recorded verbatim in the roster
+alongside the four fixes. All three suites were re-run green, with router at
+135 passed, verifier at 94 passed, and registry at 31 passed.
 
 Verify the diff on its own merits.

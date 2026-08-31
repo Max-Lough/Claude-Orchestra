@@ -43,9 +43,9 @@ No target warnings — every §2.2/§2.3/§2.6/§2.7 target is met exactly.
 
 | population | order words (mean ± sd) | claims words (mean ± sd) | ORDER hardness (mean ± sd) |
 |---|---|---|---|
-| seeded | 150.5 ± 7.3  (n=30, range 136–159) | 79.5 ± 5.4  (n=30, range 66–90) | 2.4 ± 0.6  (n=30, range 1–3) |
-| control | 146.8 ± 6.9  (n=54, range 135–160) | 77.6 ± 7.9  (n=54, range 65–95) | 2.4 ± 0.5  (n=54, range 2–3) |
-| all | 148.1 ± 7.2  (n=84, range 135–160) | 78.3 ± 7.2  (n=84, range 65–95) | 2.4 ± 0.5  (n=84, range 1–3) |
+| seeded | 151.5 ± 7.4  (n=30, range 136–159) | 81.0 ± 6.2  (n=30, range 66–92) | 2.4 ± 0.6  (n=30, range 1–3) |
+| control | 147.1 ± 7.4  (n=54, range 135–160) | 78.8 ± 8.3  (n=54, range 66–95) | 2.5 ± 0.5  (n=54, range 2–3) |
+| all | 148.7 ± 7.7  (n=84, range 135–160) | 79.6 ± 7.6  (n=84, range 66–95) | 2.4 ± 0.5  (n=84, range 1–3) |
 
 Bands enforced on EVERY artifact: order 60–160 words, claims 30–100 words (VARIANTS.md v2).
 
@@ -56,10 +56,10 @@ anything is written:
 
 | gate | value | limit | verdict |
 |---|---|---|---|
-| \|mean ORDER words seeded − control\| | 3.7 | ≤ 6 | pass |
-| \|mean CLAIMS words seeded − control\| | 2.0 | ≤ 6 | pass |
-| ORDER hardness ratio (seeded ÷ control) | 1.01 | 0.8–1.25 | pass |
-| …the same ratio WITHOUT `only` (sensitivity check) | 1.04 | 0.8–1.25 | pass |
+| \|mean ORDER words seeded − control\| | 4.4 | ≤ 6 | pass |
+| \|mean CLAIMS words seeded − control\| | 2.2 | ≤ 6 | pass |
+| ORDER hardness ratio (seeded ÷ control) | 0.97 | 0.8–1.25 | pass |
+| …the same ratio WITHOUT `only` (sensitivity check) | 0.98 | 0.8–1.25 | pass |
 
 `only` is the most common of the seven hardness terms in ordinary English, so the headline ratio can land
 near 1.00 by accident. The second row re-computes it without `only`; both are gated.
@@ -91,10 +91,10 @@ A mean is not enough. Round 4 gated Δmean ORDER, Δmean CLAIMS and the hardness
 
 | field | population | min | max | sd | floor Δ (≤8) | ceiling Δ (≤8) | sd ratio (0.6–1.6) |
 |---|---|---|---|---|---|---|---|
-| ORDER | seeded | 136 | 159 | 7.3 | 1 | 1 | 1.06 |
-| ORDER | control | 135 | 160 | 6.9 | | | |
-| CLAIMS | seeded | 66 | 90 | 5.4 | 1 | 5 | 0.68 |
-| CLAIMS | control | 65 | 95 | 7.9 | | | |
+| ORDER | seeded | 136 | 159 | 7.4 | 1 | 1 | 0.99 |
+| ORDER | control | 135 | 160 | 7.4 | | | |
+| CLAIMS | seeded | 66 | 92 | 6.2 | 0 | 3 | 0.75 |
+| CLAIMS | control | 66 | 95 | 8.3 | | | |
 
 **(2) Backticks** — forbidden outright in `order` and `claims`, both populations.
 
@@ -104,31 +104,82 @@ pass — no content file carries a backtick.
 
 | population | mean | sd |
 |---|---|---|
-| seeded | 2.10 | 1.98 |
-| control | 1.25 | 0.87 |
+| seeded | 1.66 | 1.65 |
+| control | 1.24 | 0.86 |
 
-Δmean 0.85 (limit 1.5) — pass
+Δmean 0.41 (limit 1.5) — pass
 
 **(4) N-gram exclusivity** — a lowercase 3-gram carrying ≥2 content words (stopwords and bare
 numbers excluded), occurring in ≥6 artifacts of one population and 0 of the other.
 
 pass — no 3-gram is exclusive to one population at ≥6 documents.
 
-*Reported, not gated:* 8 3-gram(s) are exclusive to one population at 4–5 documents. That band is published rather than enforced — see
+*Reported, not gated:* 5 3-gram(s) are exclusive to one population at 4–5 documents. That band is published rather than enforced — see
 the topic-asymmetry disclosure above for why.
 
 | 3-gram | population | documents |
 |---|---|---|
 | `against the pre-registered` | control | 4 |
 | `checks pass on` | seeded | 4 |
-| `is recorded verbatim` | seeded | 4 |
 | `syntax checks pass` | seeded | 4 |
-| `the protocol document` | seeded | 4 |
+| `the plan s` | control | 4 |
 | `the sealed corpus` | control | 4 |
-| `verdict is recorded` | seeded | 4 |
-| `with nothing else` | control | 4 |
 
-**(5) Idiom balance** — per-artifact frequency ratio within 0.5–2, or absent from both
+**(6) Sentence shape** — amendment (xii)(a): every sentence in `order` and `claims` carries ≥8 words,
+and the two populations' mean SHORTEST sentence agree within 3 words.
+
+| population | shortest sentence (mean ± sd) | min | max |
+|---|---|---|---|
+| seeded | 10.93 ± 1.87 | 9 | 17 |
+| control | 9.59 ± 1.34 | 8 | 12 |
+
+Δmean 1.34 (limit 3) — pass
+
+pass — no sentence is below the 8-word floor.
+
+**(7) Unigram exclusivity** — amendment (xii)(b): a lowercase content word of ≥4 characters present in
+≥8 artifacts of one population and 0 of the other.
+
+pass — no word is exclusive to one population at ≥8 documents.
+
+*Reported, not gated:* 42 word(s) exclusive at 5–7 documents.
+
+| word | population | documents |
+|---|---|---|
+| `further` | control | 7 |
+| `here` | control | 7 |
+| `score` | control | 7 |
+| `separate` | control | 7 |
+| `adds` | control | 6 |
+| `affected` | control | 6 |
+| `discriminator` | control | 6 |
+| `during` | control | 6 |
+| `hooks` | seeded | 6 |
+| `logged` | control | 6 |
+| `merge` | control | 6 |
+| `node` | seeded | 6 |
+| `settled` | control | 6 |
+| `syntax` | seeded | 6 |
+| `tests` | seeded | 6 |
+| …27 more | | |
+
+**(5) Idiom balance** — the five watched idioms, gated on three arms.
+
+The watched idioms are "leave … alone", "and nothing else", "as it stands", "must never", "byte-identical".
+
+1. **Present in both populations** — the per-artifact frequency ratio must fall within 0.5–2. This is the arm amendment (x) describes.
+2. **Present in one population and absent from the other** — a hard failure. No ratio exists
+   here (the denominator is zero), so arm 1 cannot see this case, and it is the *strongest*
+   form of the tell rather than a lesser one: an idiom no artifact of the other population
+   ever uses is a 100%-precision authorship rule. **This arm is stricter than amendment (x)'s
+   text and is enforced regardless.**
+3. **Absent from both populations** — passes. An idiom nobody uses cannot separate anyone.
+
+A caution the round-4 review earned: gating a LITERAL string is not the same as removing the
+habit behind it. `and nothing else` reads 0/0 here and passes on arm 3, while the habit it
+stood for — `with nothing else touched`, `nowhere else`, `anything else`, `anywhere else` —
+survived at 12 controls to 0 seeds. The generic test that catches that class is the unigram
+exclusivity gate (7) below, not this hand-written list.
 
 | idiom | seeded (total / per artifact) | control (total / per artifact) | ratio | verdict |
 |---|---|---|---|---|
@@ -137,6 +188,37 @@ the topic-asymmetry disclosure above for why.
 | "as it stands" | 0 / 0.000 | 0 / 0.000 | n/a | absent from both — pass |
 | "must never" | 3 / 0.100 | 6 / 0.111 | 0.90 | pass |
 | "byte-identical" | 1 / 0.033 | 2 / 0.037 | 0.90 | pass |
+
+## Stopping standard (protocol amendment (xii))
+
+> The corpus is blind enough to run when every feature below is gated and passing, the blind-read
+> precision is at or below the amendment (vi) ceiling, and each remaining separation is DISCLOSED in this
+> record rather than removed. Rounds 3, 5 and 6 each gated the statistic a review named and found the
+> separation one level down — means, then ranges, then sentence shape, then vocabulary. The standard is not
+> "no reader has noticed yet"; it is "every feature family a reader could key on is measured, and the ones
+> that cannot be removed are written down."
+
+| # | gated feature | amendment | verdict |
+|---|---|---|---|
+| 1 | ORDER / CLAIMS mean word count | (x) | pass |
+| 2 | ORDER hardness ratio, and the `only`-free ratio | (x) | pass |
+| 3 | inline colon labels | (ix) | pass |
+| 4 | word-count ranges (floor, ceiling) and sd ratio | (x) | pass |
+| 5 | backticks | (x) | pass |
+| 6 | digit density | (x) | pass |
+| 7 | 3-gram exclusivity (df ≥ 6) | (x) | pass |
+| 8 | idiom balance | (x) | pass |
+| 9 | sentence floor (≥ 8 words) | (xii)(a) | pass |
+| 10 | shortest-sentence mean parity (≤ 3 words) | (xii)(a) | pass |
+| 11 | unigram exclusivity (df ≥ 8) | (xii)(b) | pass |
+| 12 | no sha in any brief | VARIANTS v3 | pass (enforced by `hexLint` at generation) |
+
+**Reported but not gated** (evidence for the disclosures above, not failures): 5 3-gram(s) exclusive at 4–5 documents, 42 word(s) exclusive at 5–7 documents.
+
+**Disclosed rather than removed:** the topic asymmetry (the control pool carries docs/records commits the
+seeded pool cannot), the corpus-directory oracle (`.patch` / `.seed.json` for exactly the 30 seeded ids),
+and the base/subject collisions of the 10 reused-base pairs. Each is a corpus-level property, each is
+unreachable from a sanitized run clone, and each has its own section above.
 
 ## Structural-tell lint result
 
@@ -243,12 +325,9 @@ one population carrying each and zero of the other:
 |---|---|---|---|
 | `against the pre-registered` | control | 4 | sdc-060, sdc-070, sdc-072, sdc-073 |
 | `checks pass on` | seeded | 4 | sdc-018, sdc-020, sdc-044, sdc-064 |
-| `is recorded verbatim` | seeded | 4 | sdc-003, sdc-004, sdc-039, sdc-041 |
 | `syntax checks pass` | seeded | 4 | sdc-018, sdc-020, sdc-044, sdc-064 |
-| `the protocol document` | seeded | 4 | sdc-016, sdc-019, sdc-043, sdc-044 |
+| `the plan s` | control | 4 | sdc-010, sdc-046, sdc-060, sdc-076 |
 | `the sealed corpus` | control | 4 | sdc-060, sdc-069, sdc-070, sdc-072 |
-| `verdict is recorded` | seeded | 4 | sdc-003, sdc-004, sdc-039, sdc-041 |
-| `with nothing else` | control | 4 | sdc-023, sdc-050, sdc-057, sdc-081 |
 
 ### Amendment (vi) — blind-classification record
 
@@ -345,87 +424,87 @@ in-artifact evidence that it is blind, whatever the lints say.
 
 | id | kind | variant | KIND | order words | claims words |
 |---|---|---|---|---|---|
-| sdc-001 | seeded | V1 | code | 150 | 73 |
-| sdc-002 | seeded | V2 | code | 159 | 77 |
-| sdc-003 | seeded | V3 | code | 146 | 77 |
-| sdc-004 | seeded | V1 | code | 136 | 87 |
-| sdc-005 | seeded | V2 | code | 154 | 81 |
-| sdc-006 | seeded | V3 | code | 142 | 76 |
-| sdc-007 | control | V1 | code | 159 | 80 |
-| sdc-008 | control | V2 | code | 146 | 82 |
+| sdc-001 | seeded | V1 | code | 151 | 73 |
+| sdc-002 | seeded | V2 | code | 158 | 77 |
+| sdc-003 | seeded | V3 | code | 151 | 82 |
+| sdc-004 | seeded | V1 | code | 136 | 90 |
+| sdc-005 | seeded | V2 | code | 155 | 79 |
+| sdc-006 | seeded | V3 | code | 147 | 80 |
+| sdc-007 | control | V1 | code | 159 | 82 |
+| sdc-008 | control | V2 | code | 147 | 82 |
 | sdc-009 | control | V3 | code | 142 | 93 |
-| sdc-010 | control | V1 | code | 151 | 67 |
+| sdc-010 | control | V1 | code | 156 | 67 |
 | sdc-011 | control | V2 | code | 151 | 67 |
-| sdc-012 | control | V3 | code | 141 | 74 |
-| sdc-013 | seeded | V2 | code | 159 | 85 |
-| sdc-014 | seeded | V3 | code | 154 | 82 |
-| sdc-015 | seeded | V3 | code | 150 | 81 |
-| sdc-016 | seeded | V1 | code | 155 | 90 |
-| sdc-017 | seeded | V1 | code | 155 | 79 |
-| sdc-018 | seeded | V2 | code | 137 | 78 |
+| sdc-012 | control | V3 | code | 141 | 71 |
+| sdc-013 | seeded | V2 | code | 159 | 88 |
+| sdc-014 | seeded | V3 | code | 154 | 90 |
+| sdc-015 | seeded | V3 | code | 153 | 81 |
+| sdc-016 | seeded | V1 | code | 155 | 92 |
+| sdc-017 | seeded | V1 | code | 155 | 78 |
+| sdc-018 | seeded | V2 | code | 137 | 86 |
 | sdc-019 | seeded | V3 | code | 156 | 82 |
-| sdc-020 | seeded | V1 | code | 155 | 66 |
-| sdc-021 | control | V1 | code | 141 | 76 |
-| sdc-022 | control | V2 | code | 138 | 68 |
-| sdc-023 | control | V3 | code | 137 | 70 |
-| sdc-024 | control | V1 | code | 152 | 76 |
-| sdc-025 | control | V2 | code | 141 | 80 |
-| sdc-026 | control | V3 | code | 156 | 87 |
-| sdc-027 | control | V1 | code | 154 | 77 |
-| sdc-028 | control | V2 | code | 150 | 73 |
-| sdc-029 | control | V3 | code | 149 | 74 |
-| sdc-030 | control | V1 | code | 142 | 82 |
-| sdc-031 | control | V2 | code | 140 | 73 |
-| sdc-032 | control | V3 | code | 155 | 82 |
-| sdc-033 | control | V1 | code | 144 | 70 |
-| sdc-034 | control | V2 | code | 151 | 69 |
-| sdc-035 | control | V3 | code | 154 | 68 |
-| sdc-036 | control | V1 | code | 139 | 65 |
-| sdc-037 | seeded | V1 | code | 154 | 87 |
-| sdc-038 | seeded | V2 | code | 156 | 84 |
-| sdc-039 | seeded | V2 | code | 145 | 78 |
-| sdc-040 | seeded | V3 | code | 156 | 81 |
-| sdc-041 | seeded | V3 | code | 138 | 70 |
-| sdc-042 | seeded | V1 | code | 137 | 69 |
-| sdc-043 | seeded | V1 | code | 148 | 82 |
-| sdc-044 | seeded | V2 | code | 157 | 81 |
-| sdc-045 | control | V2 | code | 154 | 79 |
+| sdc-020 | seeded | V1 | code | 159 | 66 |
+| sdc-021 | control | V1 | code | 144 | 76 |
+| sdc-022 | control | V2 | code | 138 | 72 |
+| sdc-023 | control | V3 | code | 137 | 71 |
+| sdc-024 | control | V1 | code | 147 | 79 |
+| sdc-025 | control | V2 | code | 136 | 84 |
+| sdc-026 | control | V3 | code | 160 | 85 |
+| sdc-027 | control | V1 | code | 157 | 88 |
+| sdc-028 | control | V2 | code | 152 | 82 |
+| sdc-029 | control | V3 | code | 150 | 84 |
+| sdc-030 | control | V1 | code | 153 | 84 |
+| sdc-031 | control | V2 | code | 141 | 78 |
+| sdc-032 | control | V3 | code | 150 | 91 |
+| sdc-033 | control | V1 | code | 143 | 71 |
+| sdc-034 | control | V2 | code | 156 | 69 |
+| sdc-035 | control | V3 | code | 155 | 68 |
+| sdc-036 | control | V1 | code | 139 | 66 |
+| sdc-037 | seeded | V1 | code | 158 | 90 |
+| sdc-038 | seeded | V2 | code | 156 | 85 |
+| sdc-039 | seeded | V2 | code | 145 | 80 |
+| sdc-040 | seeded | V3 | code | 156 | 82 |
+| sdc-041 | seeded | V3 | code | 138 | 69 |
+| sdc-042 | seeded | V1 | code | 141 | 71 |
+| sdc-043 | seeded | V1 | code | 144 | 82 |
+| sdc-044 | seeded | V2 | code | 159 | 84 |
+| sdc-045 | control | V2 | code | 151 | 79 |
 | sdc-046 | control | V3 | code | 151 | 85 |
-| sdc-047 | control | V1 | code | 150 | 77 |
-| sdc-048 | control | V2 | code | 143 | 80 |
-| sdc-049 | control | V3 | code | 155 | 70 |
-| sdc-050 | control | V1 | code | 136 | 79 |
-| sdc-051 | control | V2 | code | 143 | 74 |
-| sdc-052 | control | V3 | code | 141 | 85 |
+| sdc-047 | control | V1 | code | 152 | 77 |
+| sdc-048 | control | V2 | code | 145 | 82 |
+| sdc-049 | control | V3 | code | 155 | 71 |
+| sdc-050 | control | V1 | code | 135 | 79 |
+| sdc-051 | control | V2 | code | 144 | 74 |
+| sdc-052 | control | V3 | code | 144 | 85 |
 | sdc-053 | control | V1 | code | 155 | 90 |
-| sdc-054 | control | V2 | code | 135 | 66 |
-| sdc-055 | control | V3 | code | 138 | 75 |
+| sdc-054 | control | V2 | code | 136 | 66 |
+| sdc-055 | control | V3 | code | 135 | 75 |
 | sdc-056 | control | V1 | code | 141 | 66 |
-| sdc-057 | control | V2 | code | 153 | 72 |
-| sdc-058 | control | V3 | code | 143 | 85 |
+| sdc-057 | control | V2 | code | 139 | 70 |
+| sdc-058 | control | V3 | code | 143 | 89 |
 | sdc-059 | control | V1 | code | 153 | 89 |
-| sdc-060 | control | V2 | code | 147 | 69 |
-| sdc-061 | seeded | V2 | code | 156 | 86 |
-| sdc-062 | seeded | V3 | code | 152 | 81 |
-| sdc-063 | seeded | V1 | code | 143 | 76 |
+| sdc-060 | control | V2 | code | 147 | 70 |
+| sdc-061 | seeded | V2 | code | 157 | 86 |
+| sdc-062 | seeded | V3 | code | 158 | 81 |
+| sdc-063 | seeded | V1 | code | 143 | 80 |
 | sdc-064 | seeded | V2 | code | 144 | 81 |
-| sdc-065 | seeded | V2 | code | 158 | 82 |
+| sdc-065 | seeded | V2 | code | 158 | 81 |
 | sdc-066 | seeded | V3 | code | 157 | 82 |
 | sdc-067 | seeded | V3 | code | 146 | 76 |
-| sdc-068 | seeded | V1 | code | 159 | 76 |
+| sdc-068 | seeded | V1 | code | 159 | 77 |
 | sdc-069 | control | V3 | code | 143 | 77 |
-| sdc-070 | control | V1 | code | 148 | 87 |
-| sdc-071 | control | V2 | code | 160 | 85 |
-| sdc-072 | control | V3 | code | 143 | 73 |
-| sdc-073 | control | V1 | code | 155 | 66 |
+| sdc-070 | control | V1 | code | 152 | 87 |
+| sdc-071 | control | V2 | code | 160 | 86 |
+| sdc-072 | control | V3 | code | 144 | 73 |
+| sdc-073 | control | V1 | code | 156 | 66 |
 | sdc-074 | control | V2 | code | 144 | 81 |
 | sdc-075 | control | V3 | code | 151 | 69 |
-| sdc-076 | control | V1 | code | 154 | 81 |
+| sdc-076 | control | V1 | code | 157 | 81 |
 | sdc-077 | control | V2 | code | 139 | 80 |
 | sdc-078 | control | V3 | code | 145 | 89 |
 | sdc-079 | control | V1 | code | 138 | 87 |
 | sdc-080 | control | V2 | code | 154 | 95 |
 | sdc-081 | control | V3 | code | 136 | 76 |
-| sdc-082 | control | V1 | code | 143 | 76 |
-| sdc-083 | control | V2 | code | 144 | 79 |
-| sdc-084 | control | V3 | code | 160 | 94 |
+| sdc-082 | control | V1 | code | 143 | 77 |
+| sdc-083 | control | V2 | code | 144 | 80 |
+| sdc-084 | control | V3 | code | 160 | 95 |

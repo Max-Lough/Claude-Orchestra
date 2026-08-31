@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 59b0e16d4b37b8cbe18a85d936acd5e17bc2f41c. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The new role is added under the same read-only law, the scout hands causal

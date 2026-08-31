@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 43c83abdf1ae029789982b3af63a66189b37ff7a
-Base (its parent):   9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      Add seat charters and RECLASSIFY hop machinery to the router (WO-7b substrate)
 
 ORDER:

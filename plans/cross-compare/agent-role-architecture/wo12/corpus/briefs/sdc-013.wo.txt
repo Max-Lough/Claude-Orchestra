@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e09bbc44cbd4b69af3b5d1e52c186205f6686376
-Base (its parent):   5758a2d2b6146b613ea062946f7013e1b9dfa3c2
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-8 round 5b: the sweep's live-set exemption compares REAL paths
 
 ORDER:

@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit b8a1957838da66600f5320d13c83e54c43d59130
-Base (its parent):   3c2fb763e1a8c51fc7b54d0e2ee0ba4e5dfe9a30
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-11: P0 Quartermaster substrate — readings-based pool state, fail-closed, router-interop proven
 
 ORDER:

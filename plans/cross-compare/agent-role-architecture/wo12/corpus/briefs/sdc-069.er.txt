@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit d9af01673efd2e098b5647d4d609398822bc031b. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The independent review confirmed every prior score, gate, and commit-order

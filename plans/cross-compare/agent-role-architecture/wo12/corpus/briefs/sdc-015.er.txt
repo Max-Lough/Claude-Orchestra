@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 77254e801d95ea6a56b8aaea720f261e88ec5f80. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 Leftover identification is now structural — a candidate qualifies when its

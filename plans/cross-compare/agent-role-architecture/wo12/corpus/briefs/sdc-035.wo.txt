@@ -1,7 +1,7 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit d3080957c86695a85ac59207b2e6a07988ef82fd
-Base (its parent):   7b0d9d0e4ce9cd81c18e4ebeda41a0e5d4b6d662
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-10 construction band, part 2: Runner, Data Engineer, Interface Artisan, Spatial Specialist, Doc Writer
 
 ORDER:
@@ -15,7 +15,7 @@ exception for irreversible actions byte-identical to the plan text. All five
 files ship under plain names, with no collision against the top-level agent
 files — a rename is required wherever a plain name would collide. The
 router's own files stay untouched for this work; record any casting or lint
-gaps as follow-ons instead of papering over them. Before calling the band
+gaps as open items instead of papering over them. Before calling the band
 done, the full roster lint should report only the already-known gaps and
 nothing new, both install-script lint modes come back clean, and every
 required test suite passes in full.

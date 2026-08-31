@@ -1,5 +1,5 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 7e90c673184cf492e80abad4b5db9521d56e690c. An executor produced this change.
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
 The reserve gate now evaluates the requested rung so a degradation recast
@@ -8,8 +8,8 @@ fallback-served turn; glob matching moved to a token-based matcher after the
 collapsed regex broke on separated wildcard runs; redaction now runs before
 tail truncation; Windows installs the trappable signal set, with startup
 pruning documented as the recovery path there; and the stray NUL bytes are
-gone from the router source. The roster now holds that verdict, unaltered.
-Verifier finished at 92 passed. Router and registry both stayed clean on
+gone from the router source. The roster now holds that verdict, unaltered,
+verifier finished at 92 passed, and router and registry both stayed clean on
 this run too.
 
 Verify the diff on its own merits.

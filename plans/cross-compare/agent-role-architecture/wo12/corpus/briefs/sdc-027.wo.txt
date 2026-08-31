@@ -1,24 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit a0e38c048be14a0757428808ccb03299cb55de1d
-Base (its parent):   d3080957c86695a85ac59207b2e6a07988ef82fd
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
 Commit subject:      WO-10: declared cross-family/no-mirror exceptions for Q0 and E5; lint scans specialists/
 
 ORDER:
 Declare the cross-family and no-mirror exceptions that two seats need before
-the round can close. For the test-authoring seat, state explicitly that
-mirror substitution is unlawful by construction — the seat is cast opposite
-the implementation author's family, so a same-family substitution under
-outage must never be permitted, since it would break the independence
-invariant. Confirm the router carries no special-cased outage handling for
-that seat, so it falls through to the generic no-mirror path and lands at a
-wait status. For the interface seat, state that the plan names no authoring
-mirror for the primary role — closing stays a separate read-only order, and
-the critic remains a ceiling rather than a substitution target. Extend the
-lint script's exception check to accept a declared cross-family exception
-and any no-mirror-for rung key, with each entry carrying a non-empty reason
-string. Make the name-collision check scan the specialists directory too,
-which it previously missed entirely.
+the round can close. The test-authoring seat's mirror substitution is
+unlawful by construction. That seat is cast opposite the implementation
+author's family in every case. A same-family substitution under outage must
+never be permitted there. Allowing it would break the independence invariant
+the seat depends on. Verify that the router carries no special-cased outage
+handling for that seat. It falls through to the generic no-mirror path and
+lands at a wait status. The interface seat's plan names no authoring mirror
+for its primary role. Closing stays a separate order restricted to reads,
+and the critic remains a ceiling. It is never a substitution target for the
+primary role. Extend the lint script's exception check to accept a declared
+cross-family exception. It also accepts any no-mirror-for rung key, each
+requiring a non-empty reason string. Make the name-collision check scan the
+specialists directory too, which was missed before.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

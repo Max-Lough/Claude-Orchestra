@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit b723b041390a9442d456a40b24b00f1f506696c0
+Base (its parent):   597a4bae65d867e020eff47f0183e87d623dee72
+Commit subject:      Restrict the review warmup to pinned checkouts; sync docs
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,12 @@
+{
+  "id": "e-07",
+  "category": "missing or wrong dependency wiring",
+  "title": "a vendored package cannot be required at all",
+  "check_display": "node test.js",
+  "check_steps": [["node", "test.js"]],
+  "scope": ["node_modules/@fx/format/package.json"],
+  "audit_ignore": [],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

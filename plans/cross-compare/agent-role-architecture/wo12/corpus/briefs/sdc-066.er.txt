@@ -1,0 +1,39 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is commit f448a841e99f690eff9fb40af4e23a3dd980ff7c. An executor produced this
+change; the executor's claims about it are recorded below. Verify the
+diff on its own merits.
+
+CLAIMS:
+- "Is this scratch directory inside the repository?" is no longer answered
+  from path strings. `rev-parse --show-toplevel` now runs from the project
+  and from the candidate — from the deepest ancestor of the candidate that
+  exists, when the candidate itself has not been created yet — and git's two
+  answers are compared, which are in the same form by construction. A
+  different work tree is reported as genuinely outside, which is a legitimate
+  place to keep scratch. String comparison survives only as the backstop for a
+  candidate git cannot see, and that backstop now normalises separators and
+  case where the filesystem is insensitive.
+- All 2 call sites that ask that question were converted: the pre-creation
+  validation of a configured scratch root and the post-creation check on the
+  runner's own scratch directory. Verified by grepping the runner after the
+  change — the string-comparison helper is referenced exactly once, from
+  inside the new git-backed check as its fallback, and from nowhere else — and
+  confirmed by hand on a short-name path (`C:\Users\RUNNER~1\...` against a
+  repository realpathed to `C:\Users\runneradmin\...`): both gates now refuse,
+  where before the change the pre-creation gate let that path through and the
+  directory was created inside the tree under review.
+- The orphan sweep counts a directory when it deregistered the worktree OR
+  removed the directory, and names any directory it could not delete as the
+  harmless leftover it is. Exercised by killing a runner mid-review on
+  Windows, where the engine child holds the directory open: the sweep reported
+  one reclaimed worktree and named the leftover, where it previously reported
+  "reclaimed 0".
+- The git-isolation negative control reports itself INCONCLUSIVE by name where
+  it does not reproduce, and still reproduces on Linux and macOS, so the
+  positive assertions there are not passing vacuously.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check test changes still test what they claim
+- check error paths and Windows path handling
+- check each claimed verification against what the diff actually contains

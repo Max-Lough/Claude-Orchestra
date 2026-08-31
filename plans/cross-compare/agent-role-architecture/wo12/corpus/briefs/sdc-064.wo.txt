@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 2c8ae11bf488938878b396112160196f09fd7942
+Base (its parent):   fc303481ed98af58433dce80b2ee4e70741a93db
+Commit subject:      Add heavy executor tier: two-tier execution for the Opus 5 era
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

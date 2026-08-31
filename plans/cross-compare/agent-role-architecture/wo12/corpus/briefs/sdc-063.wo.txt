@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 2f97477cf6ef30ece6b0f1be305384d8fc72f76d
+Base (its parent):   f5646829776a5dba4c021f4a887dd730bce04b6c
+Commit subject:      Add executor-heavy-xhigh: the xhigh effort point of the heavy tier
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

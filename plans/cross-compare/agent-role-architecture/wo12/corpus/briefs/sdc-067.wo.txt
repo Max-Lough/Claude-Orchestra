@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit e2cb79b25d1e66581b4d2028346965ce8b1aeedb
+Base (its parent):   0f5c0a08225f417305b395cabdd54fa5528e3b17
+Commit subject:      Draw the WO-7b synthetic corpus and pre-register the misroute-recovery gates
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

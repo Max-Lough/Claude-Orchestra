@@ -73,9 +73,11 @@ this file and nothing else for corpus structure; the `<id>.patch` files and
   ever appears as the `head` in that tool's output.
 
 - **`subject`** — the real commit `C`'s subject line, kept in the key for human
-  readability and audit (`build-corpus.js` re-derives the seeded variant's own
-  commit message from `base`'s subject directly from git, not from this field —
-  see that script's header comment for why).
+  readability and audit; `build-corpus.js` uses THIS field directly as the
+  seeded variant's own commit message (the REAL commit C's subject, never
+  derived from `base`/parent `P`'s own subject — see that script's header
+  comment for why: `P` describes a different, unrelated change, and using it
+  would hand the reviewer the wrong stated intent entirely).
 
 - **`seed`** — `null` for a control. For a seeded artifact, the sealed defect
   record (protocol §2.2–§2.3):

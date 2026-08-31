@@ -1,0 +1,29 @@
+{
+  "id": "sdc-063",
+  "kind": "seeded",
+  "phase": 3,
+  "variant": "V1",
+  "base": "f5646829776a5dba4c021f4a887dd730bce04b6c",
+  "commit": "f7aaf80d806c09b31529066e18d46e90414248b0",
+  "subject": "Add executor-heavy-xhigh: the xhigh effort point of the heavy tier",
+  "seed": {
+    "type": "LC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "ORCHESTRA.md",
+      "lines": [93, 93],
+      "symbol": "§8.1.7 \"Effort follows the tier, not the order\""
+    },
+    "consequence": "skills/orchestra-review/SKILL.md step 6 — untouched by the diff — tells the Director that two REVISE cycles on the same change means stop and re-plan rather than send a third, so the new §8.1.7 clause making the xhigh point an extra escalation rung directs exactly the third dispatch that skill (and the §3.5/§4 caps it cites) forbids, and a twice-bounced order gets ground for another round instead of re-planned.",
+    "rationale": "The change's focal files all read consistently: the new agent is the top tier, its sibling's description points at it, and a ladder from high to xhigh looks like the natural way to make a second effort point reachable. The rule it breaks lives in a bundled skill the diff never opens, so the defect is only visible to a reviewer who leaves the touched files and checks who else already encodes the escalation cap.",
+    "hazard_terms": [
+      "off-diff consumer",
+      "cross-file contract drift",
+      "unsynced dependent rule",
+      "policy duplicated outside the touched files",
+      "out-of-scope caller"
+    ]
+  },
+  "suite_at_variant": "node --check install.js -> OK (no output, syntax clean); node --check hooks/orchestra-deepplan.js, hooks/orchestra-guard.js, hooks/orchestra-review.js -> all OK; node install.js <tmp> -> \"agents: scout.md, detective.md, executor.md, executor-heavy.md, executor-heavy-xhigh.md, reviewer.md, reviewer-codex.md, planner-gpt.md -> .claude/agents/\" ... \"Done. Notes:\"; node install.js <tmp> --uninstall -> \"Done. The project is back to a standard Claude Code setup.\"",
+  "design_note": "The injection rewrites one clause of the same §8.1.7 sentence the real commit rewrote, replacing its \"never as an extra escalation rung\" foreclosure with a high->xhigh rung, so nothing inside the diff contradicts it — the new agent's own rule 9 (\"top execution tier\") and the sibling's updated description both stay true. The escalation cap it violates is stated in ORCHESTRA.md §3.5/§4 outside the hunks and, decisively, in the untouched skills/orchestra-review/SKILL.md, which is the file a Director actually runs when arbitrating REVISE cycles. No JavaScript, installer roster, or agent frontmatter is touched, so every mechanical check at the variant stays green and only a cross-file read catches it."
+}

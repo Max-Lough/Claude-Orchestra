@@ -1,0 +1,178 @@
+diff --git a/roster/r0-ex5-verdict.md b/roster/r0-ex5-verdict.md
+new file mode 100644
+index 0000000..4d139ea
+--- /dev/null
++++ b/roster/r0-ex5-verdict.md
+@@ -0,0 +1,32 @@
++# R0-EX5 verdict — cross-vendor delta re-review of 7e90c67..e7a5e31
++
++Recorded verbatim from the review runner, 2026-08-30. Disposition: all four
++R0-EX4 closures CONFIRMED; one CRITICAL (the sweep prefix guard — also
++caught independently by CI on macOS/Windows minutes earlier), fixed in
++round 5 (see wo8-review-dispositions.md).
++
++REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-sol, sandbox: workspace-write, tier: full, timeout: 1800000ms (env), attempts: up to 2, checkout: pinned worktree @ e7a5e31eb70b)
++CODEX BINARY: C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: resolved through a link: C:\Users\maxtl\AppData\Local\Programs\OpenAI\Codex\bin\codex.EXE -> C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: codex install layout: unknown (C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin) — not one of the two layouts this runner knows, so helper-sibling repair can only use a directory you name in helpersDir
++PREFLIGHT: helper siblings present: codex-command-runner.exe, codex-resources, codex-windows-sandbox-setup.exe
++PREFLIGHT: auth/exec probe: ok in 6292ms
++PREFLIGHT: pinned review: checked out e7a5e31eb70b into a throwaway worktree (C:\Users\maxtl\AppData\Local\Temp\orchestra-review-d6VpXy\attempt-1\wt); the session's uncommitted files are not visible to the engine
++
++VERDICT: REVISE
++
++FINDINGS
++- [CRITICAL] [BREACH] verifier/checkout.js:269 — The prefix guard uses substring containment on the full path, then recursively deletes the worktree’s parent, so deletion is not confined to module-created temporary directories — given a legitimate dirty worktree at `...\user-orchestra-verifier-project\legitimate-worktree` with an unrelated sibling file, `createCheckout()` forcibly removes the registration, worktree, untracked contents, and sibling file instead of preserving them; independently reproduced.
++
++CLAIMS CHECKED
++- "all four R0-EX4 findings are fixed" → CONFIRMED (independent comma-collision, line-terminator, extant-leftover/ACTIVE, and commit-range probes passed; the finding above is a new round-4 defect)
++- "a comma-bearing touches enum refuses construction" → CONFIRMED (tampered `auth,authz` schema produced `touches enum diverges`)
++- "globstar excludes LF, CR, U+2028, and U+2029 while star still matches LF" → CONFIRMED (all six direct semantic probes passed)
++- "an extant abandoned worktree is removed and deregistered while ACTIVE checkouts survive" → CONFIRMED (disposable-repository probe verified all four conditions)
++- "sweepAbandoned removes worktrees under the module's own tmp prefix" → REFUTED (a legitimate worktree merely containing that substring in an ancestor was destructively swept)
++- "the pinned range contains exactly 8ded8ad and e7a5e31" → CONFIRMED (`git log --oneline 7e90c67..e7a5e31`)
++- "e7a5e31 changes 6 files, +167/-11" → CONFIRMED (`git show --stat e7a5e31`)
++- "all declared and supplemental verification is green" → CONFIRMED (registry 31, verifier 94, router 135, frontmatter 37, review-lane 114, scan 41, exec 79, MCP 68, WO-7b gates, roster lint, and `install.js --lint`; environment-sensitive suites passed after removing outer-harness overrides)
++
++NITS
++- none
+diff --git a/roster/wo8-review-dispositions.md b/roster/wo8-review-dispositions.md
+index 68adeda..e95aad3 100644
+--- a/roster/wo8-review-dispositions.md
++++ b/roster/wo8-review-dispositions.md
+@@ -236,9 +236,35 @@ findings. All fixed in round 4:
+   R0-EX3 order records, +136 lines of markdown). Acknowledged; from R0-EX5
+   on, orders enumerate every commit in the pinned range.
+ 
++## R0-EX5 (delta re-review of round 4) and the round-5 disposition
++
++R0-EX5 (Sol · high, pinned `7e90c67..e7a5e31`; verdict verbatim at
++`roster/r0-ex5-verdict.md`): **REVISE** — all four R0-EX4 closures
++CONFIRMED; one **CRITICAL** in the round-4 code, and it is the real thing:
++`sweepAbandoned`'s prefix guard used substring containment on the full path
++and then `rm -rf`'d the worktree's PARENT. Two independent detections within
++minutes of each other:
++
++- **CI (macOS/Windows)**: the test fixture repo's own tmp path
++  (`orchestra-verifier-fixture-…`) matched the substring; its MAIN worktree
++  was classified a leftover and `path.dirname()` of a repo sitting directly
++  in tmp is the **OS temp root**, which the sweep then deleted. Ubuntu and
++  the local run survived on deletion-order luck only.
++- **R0-EX5**: a legitimate dirty worktree under an ancestor merely
++  containing the substring was destructively swept, sibling file included.
++
++**Fixed in round 5**: identification is structural, never a substring — a
++leftover is exactly `<tmp>/<prefix>XXXX/checkout` (basename `checkout`,
++parent whose OWN basename carries the prefix, only that parent removed), and
++the main worktree (first porcelain entry) is skipped outright. Both
++reproducers pinned as regressions (the CI fixture shape and R0-EX5's
++legit-worktree-with-sibling shape). Residual, accepted: a user directory
++deliberately named `orchestra-verifier-*/checkout` and registered as a
++worktree would still be swept — the mkdtemp prefix is the namespace claim.
++
+ ## Note
+ 
+ The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
+-the round-4 diff (R0-EX5) comes back clean. Open items are process, not
+-code: (1) R0-EX5, and (2) the registered follow-on — the verification-time
++the round-5 diff (R0-EX6) comes back clean. Open items are process, not
++code: (1) R0-EX6, and (2) the registered follow-on — the verification-time
+ diff-derived `touches` cross-check.
+diff --git a/tests/verifier.test.js b/tests/verifier.test.js
+index 3c0ce6b..6a0cc00 100644
+--- a/tests/verifier.test.js
++++ b/tests/verifier.test.js
+@@ -581,6 +581,34 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
+     fs.existsSync(co2.dir),
+     'abandoned exists=' + fs.existsSync(abandonedDir));
+   co2.teardown();
++
++  // The CI incident, pinned: this fixture repo's OWN tmp path carries the
++  // sweep prefix as a substring ('orchestra-verifier-fixture-…'). The
++  // substring guard classified the repo's MAIN worktree as a leftover and
++  // rm -rf'd its dirname — the OS TEMP ROOT. The structural guard must
++  // leave a prefix-substring-named repository completely alone.
++  check('R0-EX4/CI: a repository whose own path contains the sweep prefix is never treated as a leftover',
++    fs.existsSync(path.join(fixture.dir, 'lib.js')) &&
++    git(fixture.dir, ['rev-parse', 'HEAD']).length > 0,
++    'fixture repo damaged by the sweep');
++
++  // R0-EX5 CRITICAL, pinned: a LEGITIMATE worktree whose ancestor path
++  // merely contains the prefix substring (and its untracked contents, and
++  // an unrelated sibling file) must survive the sweep untouched.
++  const legitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'user-orchestra-verifier-project-'));
++  cleanups.push(() => fs.rmSync(legitRoot, { recursive: true, force: true }));
++  const legitWt = path.join(legitRoot, 'legitimate-worktree');
++  const sibling = path.join(legitRoot, 'unrelated-sibling.txt');
++  git(fixture.dir, ['worktree', 'add', '--detach', legitWt, fixture.base]);
++  fs.writeFileSync(path.join(legitWt, 'untracked-work.txt'), 'in progress');
++  fs.writeFileSync(sibling, 'not yours');
++  const co3 = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep runs
++  check('R0-EX5: a legitimate worktree under a prefix-substring ancestor survives the sweep (untracked contents and sibling intact)',
++    !co3.error && fs.existsSync(path.join(legitWt, 'untracked-work.txt')) && fs.existsSync(sibling) &&
++    git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(path.basename(legitRoot).toLowerCase()),
++    'legit worktree damaged');
++  co3.teardown();
++  git(fixture.dir, ['worktree', 'remove', '--force', legitWt]);
+ }
+ 
+ section('13. The mutation check is wired into the integrated round and the CLI');
+diff --git a/verifier/checkout.js b/verifier/checkout.js
+index 6eb0b8c..977f6e1 100644
+--- a/verifier/checkout.js
++++ b/verifier/checkout.js
+@@ -244,31 +244,45 @@ function installExitHandler() {
+ }
+ 
+ // The mkdtemp prefix every checkout parent carries — the sweep recognizes
+-// its own leftovers by it and touches nothing else.
+-const PARENT_PREFIX = 'orchestra-verifier-';
++// its own leftovers by it and touches nothing else. Kept short: this name is
++// a component of every path inside the checkout, and deep fixture trees under
++// a long parent name run into Windows' 260-character path limit.
++const PARENT_PREFIX = 'orchestra-';
+ 
+ function normPath(p) {
+   const r = path.resolve(String(p)).replace(/\\/g, '/');
+   return process.platform === 'win32' ? r.toLowerCase() : r;
+ }
+ 
+-// Remove registered worktrees under this module's own tmp prefix that no
+-// LIVE checkout in this process owns (runVerification legitimately holds
++// Remove registered worktrees this module itself abandoned — no LIVE
++// checkout in this process owns them (runVerification legitimately holds
+ // two at once — head + base — and mutationCheck a third; those are in
+ // ACTIVE and skipped). A concurrent verifier PROCESS on the same repo could
+ // in principle be swept — the same trade the reference lane makes; runs on
+ // one repo are serialized by the dispatcher.
++//
++// Identification is STRUCTURAL, never a substring: our leftovers are exactly
++// <tmp>/<PARENT_PREFIX>XXXXXX/checkout — basename 'checkout' inside a parent
++// whose OWN BASENAME carries the prefix, and only that parent is ever
++// removed. The substring version of this guard shipped once and matched a
++// repository whose own path contained the prefix (the CI test fixture,
++// 'orchestra-verifier-fixture-…'): its MAIN worktree became a "leftover" and
++// path.dirname() of a repo sitting directly in tmp is the OS TEMP ROOT,
++// which this function then rm -rf'd. The main worktree (the first porcelain
++// entry) is skipped outright as a second belt.
+ function sweepAbandoned(repoDir) {
+   const list = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
+   if (!list.error && list.status === 0) {
+     const live = new Set([...ACTIVE].map((e) => normPath(e.dir)));
+-    for (const line of (list.stdout || '').split('\n')) {
+-      if (!line.startsWith('worktree ')) continue;
++    const entries = (list.stdout || '').split('\n').filter((l) => l.startsWith('worktree '));
++    for (const line of entries.slice(1)) { // [0] is always the main worktree
+       const wt = line.slice('worktree '.length).trim();
+-      const norm = normPath(wt);
+-      if (!norm.includes(PARENT_PREFIX) || live.has(norm)) continue;
++      const parent = path.dirname(wt);
++      if (path.basename(wt) !== 'checkout') continue;
++      if (!path.basename(parent).startsWith(PARENT_PREFIX)) continue;
++      if (live.has(normPath(wt))) continue;
+       runGit(['-C', repoDir, 'worktree', 'remove', '--force', wt]);
+-      try { fs.rmSync(path.dirname(wt), { recursive: true, force: true }); } catch (_) { /* best effort */ }
++      try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+     }
+   }
+   runGit(['-C', repoDir, 'worktree', 'prune']);

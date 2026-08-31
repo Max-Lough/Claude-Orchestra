@@ -1,0 +1,205 @@
+diff --git a/roster/r0-ex8-verdict.md b/roster/r0-ex8-verdict.md
+new file mode 100644
+index 0000000..2a05a31
+--- /dev/null
++++ b/roster/r0-ex8-verdict.md
+@@ -0,0 +1,34 @@
++# R0-EX8 verdict — cross-vendor delta re-review of 09a824e..3a9cc73
++
++Recorded verbatim from the review runner, 2026-08-30. Disposition: ordinary
++alias-removal confirmed fixed; two MAJORs (fail-open lexical identity on
++creation-time realpath failure; duration-based lock guard) and one records
++MINOR — all fixed in round 5d (see wo8-review-dispositions.md).
++
++REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-sol, sandbox: workspace-write, tier: full, timeout: 1800000ms (env), attempts: up to 2, checkout: pinned worktree @ 3a9cc7347787)
++CODEX BINARY: C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: resolved through a link: C:\Users\maxtl\AppData\Local\Programs\OpenAI\Codex\bin\codex.EXE -> C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: codex install layout: unknown (C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin) — not one of the two layouts this runner knows, so helper-sibling repair can only use a directory you name in helpersDir
++PREFLIGHT: helper siblings present: codex-command-runner.exe, codex-resources, codex-windows-sandbox-setup.exe
++PREFLIGHT: auth/exec probe: ok in 5091ms
++PREFLIGHT: pinned review: checked out 3a9cc7347787 into a throwaway worktree (C:\Users\maxtl\AppData\Local\Temp\orchestra-review-ZxKv8V\attempt-1\wt); the session's uncommitted files are not visible to the engine
++
++VERDICT: REVISE
++
++FINDINGS
++- [MAJOR] [BREACH] verifier/checkout.js:362 — canonical identity capture silently degrades to the lexical alias when `realpath` fails — given the alias disappears during creation-time resolution, `createCheckout` succeeds with a lexical `realDir`; the next sweep deletes the live canonical checkout. A deterministic ENOENT race probe observed `before=true, after=false` instead of preserving it.
++- [MAJOR] [BREACH] tests/review-lane.test.js:365 — the fixed 250 ms sleep does not verify that Git’s registration lock has cleared — given a slow checkout remains locked longer than 250 ms after list visibility, the test kills it mid-registration and single-force reclamation fails. A 15,000-file probe remained locked after the delay and `worktree remove --force` exited 128.
++- [MINOR] [BREACH] roster/wo8-review-dispositions.md:300 — the committed “PR #28 CI went fully green (9/9 jobs) on 09a824e” assertion is false — GitHub [run 33333004245](https://github.com/Max-Lough/Claude-Orchestra/actions/runs/33333004245) recorded four successes, one Windows review-lane failure, and four cancellations instead of nine successes.
++
++CLAIMS CHECKED
++- "the pinned range contains exactly two commits; 3a9cc73 changes 5 files, +106/−4" → CONFIRMED (`git log`, `git show --stat`, and `git show --numstat`)
++- "the R0-EX7 MAJOR is fixed" → REFUTED (ordinary post-return alias removal survived, but removing the alias during the fallback-capable creation-time resolution stored lexical identity and the next sweep deleted the canonical checkout)
++- "both [alias regressions] pass, and the CI-shape, prefix-ancestor, and genuine-leftover behaviors are re-asserted" → CONFIRMED (independent post-return alias probe passed; `tests/verifier.test.js` passed all 98 checks)
++- "git [holds] a new worktree LOCKED for the whole checkout while the entry is already list-visible" → CONFIRMED (timing probe observed the registered worktree marked `locked` while `worktree add` remained active)
++- "the SIGTERM branch ... waits out the registration window" → REFUTED (the guard waits a duration, not the lock condition; the timing probe remained locked after 250 ms)
++- "tests: registry 31 · verifier 98 · router 135 · frontmatter 37 · review-lane 114 · scan 41 · exec 79 · mcp 68" → CONFIRMED (independently rerun; review/exec suites reached the stated counts after clearing inherited outer-runner environment overrides)
++- "wo7b score: ALL PRE-REGISTERED GATES PASS; roster/lint.js OK; install.js --lint (both) OK" → CONFIRMED (all commands exited 0)
++- "PR #28 CI: 9/9 jobs green" → REFUTED (the workflow on `09a824e` failed/cancelled, while the workflow on `3a9cc73` had all nine jobs cancelled)
++
++NITS
++- none
+diff --git a/roster/wo8-review-dispositions.md b/roster/wo8-review-dispositions.md
+index 29cd4e0..df1838e 100644
+--- a/roster/wo8-review-dispositions.md
++++ b/roster/wo8-review-dispositions.md
+@@ -297,12 +297,42 @@ live canonical checkout. It also (fairly) refuted the executor report's
+ CREATION (`entry.realDir`, resolved while every path component is guaranteed
+ to exist) and the sweep's live set compares that — never a sweep-time
+ re-resolution. Sol's alias-removal probe pinned as a regression alongside
+-the stable-alias one. PR #28 CI went fully green (9/9 jobs) on `09a824e`;
+-this fix hardens the edge CI cannot reach.
++the stable-alias one. PR #28 CI went 9/9 green on run 33333118636 (the PR
++head after `4e509b5`; the workflow on `09a824e` itself was superseded — 4
++passes, 4 cancelled, and one Windows review-lane failure that was the very
++flake later root-caused in round 5c — corrected per the R0-EX8 MINOR); this
++fix hardens the edge CI cannot reach.
++
++## R0-EX8 (delta re-review of round 5c) and the round-5d dispositions
++
++R0-EX8 (Sol · high, pinned `09a824e..3a9cc73`; verdict verbatim at
++`roster/r0-ex8-verdict.md`): **REVISE** — the ordinary alias-removal case
++confirmed fixed, with two MAJORs on the newest fixes and one records MINOR.
++All fixed in round 5d:
++
++- **[MAJOR] identity capture degraded to a lexical guess on realpath
++  failure** — if the alias vanished DURING creation-time resolution,
++  `normPath`'s lexical fallback stored the alias spelling as identity and a
++  later sweep deleted the live canonical checkout. Fixed fail-CLOSED:
++  `createCheckout` resolves the canonical path itself and REFUSES the
++  checkout (cleaning its own registration) when resolution fails — the
++  lexical fallback now serves only already-gone swept paths, never a live
++  identity. Poisoned-realpath regression pinned (no checkout, no stray
++  registration).
++- **[MAJOR] the flake guard waited a duration, not the condition** — a slow
++  checkout stays locked past any fixed sleep (Sol's 15,000-file probe held
++  the lock well past 250 ms). Fixed: both kill branches now poll
++  `worktree list --porcelain` for the lock to actually clear
++  (`waitWorktreesUnlocked`, bounded), asserted as its own check.
++- **[MINOR] records precision** — "9/9 green on `09a824e`" conflated the PR
++  head's run with the superseded run on `09a824e` itself (4 pass / 4
++  cancelled / 1 Windows review-lane flake — the same race, firing in CI).
++  Corrected in the round-5c section above.
+ 
+ ## Note
+ 
+ The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
+-the round-5c diff (R0-EX8) comes back clean. Open items are process, not
+-code: (1) R0-EX8, and (2) the registered follow-on — the verification-time
+-diff-derived `touches` cross-check.
++the round-5d diff (R0-EX9) comes back clean. Open items are process, not
++code: (1) R0-EX9, and (2) the registered follow-ons — the verification-time
++diff-derived `touches` cross-check, and the reference runner's
++single-`--force` sweep vs locked worktrees.
+diff --git a/tests/review-lane.test.js b/tests/review-lane.test.js
+index 92a2b25..1bfe9a8 100644
+--- a/tests/review-lane.test.js
++++ b/tests/review-lane.test.js
+@@ -181,6 +181,23 @@ function sleep(ms) {
+   return new Promise((res) => setTimeout(res, ms));
+ }
+ 
++// Wait for git's registration LOCK to clear on every non-main worktree —
++// polling the actual condition, never a fixed duration (R0-EX8: a slow
++// checkout can stay locked long past any sleep; killing while locked
++// freezes a worktree single-`--force` can never reclaim). `git worktree
++// add` holds the lock for the whole checkout while the entry is already
++// list-visible, so list-visibility alone is not "finished registering".
++async function waitWorktreesUnlocked(repo, timeoutMs) {
++  const deadline = Date.now() + (timeoutMs || 30000);
++  for (;;) {
++    const blocks = git(['worktree', 'list', '--porcelain'], repo).split(/\n\n+/);
++    const lockedLinked = blocks.slice(1).some((b) => /^locked/m.test(b));
++    if (!lockedLinked) return true;
++    if (Date.now() > deadline) return false;
++    await sleep(100);
++  }
++}
++
+ // The runner spawns the engine binary DIRECTLY — no shell, deliberately, since
+ // a shell would change quoting and argument handling. Windows cannot
+ // CreateProcess a `.js` file, so there the "codex binary" handed to the runner
+@@ -358,11 +375,12 @@ async function case4() {
+   // remove with a single `--force`, which git flatly refuses on a locked
+   // worktree ("cannot remove a locked working tree ... use 'remove -f -f' to
+   // override") — no amount of waiting or re-running the sweep changes that.
+-  // So this delay is not pacing a flaky assertion; it is the difference
++  // So this wait is not pacing a flaky assertion; it is the difference
+   // between "killed mid-review" (recoverable, what this case tests) and
+-  // "killed mid-registration" (unrecoverable by design, a different case the
+-  // SIGKILL block below already knows to avoid the same way).
+-  await sleep(250);
++  // "killed mid-registration" (unrecoverable by design, a different case).
++  // R0-EX8: wait on the LOCK CONDITION itself, never a fixed duration — a
++  // slow checkout stays locked long past any sleep.
++  check('checkout finished registering (lock cleared) before the SIGTERM', await waitWorktreesUnlocked(fx.repo, 30000));
+   child.kill('SIGTERM');
+   await new Promise((res) => child.on('exit', res));
+   await sleep(300);
+diff --git a/tests/verifier.test.js b/tests/verifier.test.js
+index ed283d4..cfe35c6 100644
+--- a/tests/verifier.test.js
++++ b/tests/verifier.test.js
+@@ -654,6 +654,23 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
+     git(fixture.dir, ['worktree', 'remove', '--force', canonical]);
+     fs.rmSync(path.dirname(canonical), { recursive: true, force: true });
+     liveViaAlias2.teardown();
++
++    // R0-EX8: identity capture is fail-CLOSED. If the canonical path cannot
++    // be resolved at creation (the alias vanished mid-creation), a lexical
++    // guess stored as identity would be trusted by a later sweep — so there
++    // must be NO checkout at all, and no stray registration left behind.
++    const before = git(fixture.dir, ['worktree', 'list', '--porcelain']);
++    const realFn = fs.realpathSync;
++    const poisoned = () => { throw new Error('ENOENT: poisoned by the R0-EX8 regression'); };
++    poisoned.native = poisoned;
++    fs.realpathSync = poisoned;
++    let failClosed;
++    try { failClosed = checkoutLib.createCheckout(fixture.dir, fixture.base); }
++    finally { fs.realpathSync = realFn; }
++    check('R0-EX8: an unresolvable canonical identity refuses the checkout (fail closed, no lexical guess, registration cleaned)',
++      !!failClosed.error && /canonical identity/.test(failClosed.error) &&
++      git(fixture.dir, ['worktree', 'list', '--porcelain']) === before,
++      failClosed.error || 'checkout was handed out');
+   } else {
+     check('CI: real-path live-set regression [skipped: cannot create links here]', true);
+     check('R0-EX7: alias-removal regression [skipped: cannot create links here]', true);
+diff --git a/verifier/checkout.js b/verifier/checkout.js
+index 04fb824..a101e6e 100644
+--- a/verifier/checkout.js
++++ b/verifier/checkout.js
+@@ -348,6 +348,22 @@ function createCheckout(repoDir, commitish, opts) {
+     return { error: 'worktree add failed: ' + ((added.stderr || '').trim() || 'git error') };
+   }
+ 
++  // Canonical identity, captured NOW while every path component should be
++  // resolvable — and captured FAIL-CLOSED (R0-EX8): if the canonical path
++  // cannot be established, there is no checkout, because a lexical guess
++  // stored here would be trusted by a later sweep, which would then delete
++  // the live canonical directory (normPath's lexical fallback exists for
++  // already-gone SWEPT paths, never for a live identity).
++  let canonical;
++  try {
++    canonical = fs.realpathSync.native ? fs.realpathSync.native(dir) : fs.realpathSync(dir);
++  } catch (e) {
++    runGit(['-C', repoDir, 'worktree', 'remove', '--force', dir]);
++    runGit(['-C', repoDir, 'worktree', 'prune']);
++    try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
++    return { error: 'cannot establish the checkout\'s canonical identity (' + (e.message || e) + ') — refusing rather than guessing (fail closed)' };
++  }
++
+   const fingerprintBefore = treeFingerprint(dir);
+   let torndown = false;
+ 
+@@ -355,11 +371,7 @@ function createCheckout(repoDir, commitish, opts) {
+     dir,
+     commit,
+     parent,
+-    // Canonical identity, captured NOW while every path component is
+-    // guaranteed resolvable. The sweep's live-set exemption compares this —
+-    // an alias (symlink/junction tmpRoot, 8.3 short path) removed later
+-    // must not strip a live checkout of its identity (R0-EX7).
+-    realDir: normPath(dir),
++    realDir: normPath(canonical),
+     fingerprintBefore,
+     // The before/after comparison, classified. Callers pass project-declared
+     // churn patterns; the defaults cover the common generated artifacts.

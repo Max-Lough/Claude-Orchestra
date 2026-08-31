@@ -1,0 +1,8 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is commit 15ff0b69997c02fd791b79c790168fbaa06eb172.
+An executor produced this change. The staleness window is now 48h, the
+disclosure keys were added additively, and the published state object's
+routing-relevant fields are unchanged — no bucket's routed pool state moves
+because a reading is stale. router/router.js was not touched. Beyond that,
+no fresh executor claims exist beyond the commit message. Verify the diff on
+its own merits.

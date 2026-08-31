@@ -1,0 +1,12 @@
+{
+  "id": "e-03",
+  "category": "red test from an environment cause",
+  "title": "a stale generated artifact in the checkout makes the suite red",
+  "check_display": "node test.js",
+  "check_steps": [["node", "test.js"]],
+  "scope": ["src/fields.gen.js"],
+  "audit_ignore": [],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

@@ -1,0 +1,12 @@
+{
+  "id": "e-10",
+  "category": "path / encoding fault on Windows",
+  "title": "a byte-order mark hides the first section of a config file",
+  "check_display": "node test.js",
+  "check_steps": [["node", "test.js"]],
+  "scope": ["src/ini.js"],
+  "audit_ignore": [],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

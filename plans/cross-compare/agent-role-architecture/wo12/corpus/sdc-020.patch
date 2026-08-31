@@ -1,0 +1,296 @@
+diff --git a/ORCHESTRA.md b/ORCHESTRA.md
+index 1cbceae..e0e0f21 100644
+--- a/ORCHESTRA.md
++++ b/ORCHESTRA.md
+@@ -18,22 +18,25 @@ Find the line "You are powered by the model named …" in your system prompt/env
+ |---|---|---|---|---|
+ | **Director** | (this session) | Fable / Opus | decompose, decide, arbitrate, synthesize, talk to the user | edit files, run commands, search |
+ | **Scout** | `scout` | Haiku | locate, map, enumerate, git history, web research | modify anything |
++| **Detective** | `detective` | Opus | causal *why/how* recon: root-cause analysis, cross-subsystem tracing, invariant discovery | modify anything |
+ | **Executor** | `executor` | Sonnet | all edits, all commands, builds, tests | expand scope, self-approve |
+ | **Reviewer** | `reviewer` | Opus | adversarial review, independent verification (fresh context; re-runs the tests) | fix things itself |
+ | **Cross-vendor reviewer** | `reviewer-codex` | OpenAI · Codex CLI | optional second-opinion review from a different vendor (gates, or on request) | fix things itself |
+ | **Cross-vendor planner** | `planner-gpt` | OpenAI · API | plan critique/counter-draft in the `/ultra-plan` roundabout (thin launcher; relays the counterpart's verdict verbatim) | touch files, run project commands, judge in the launcher's own voice |
+ 
++**Recon is two-tier; route by the shape of the question.** The `scout` (Haiku) answers *where/what/list* — locating, mapping, enumerating, history. It is cheap by design: fan scout missions out freely and in parallel. The `detective` (Opus) answers *why/how/which* — root-cause analysis, tracing a value across subsystems, discovering invariants, judging which of several implementations is load-bearing. Route to the detective when fact-gathering can't be separated from reasoning (what to look at next depends on understanding what was just seen) or when a wrong recon answer would misdirect the whole plan — recon is the one unreviewed output in the harness, so the intelligence that steers decisions gets the capable model, exactly as verdicts do. Detective cases are questions, not territories: scope each to one question, and pipeline the tiers — scouts map the terrain first, then the detective gets the question plus the map, so its expensive context buys reading depth rather than directory walking. Escalation is built in and one-way: a scout UNKNOWN that survives one re-probe becomes a detective case, never a third scout mission (§3.5). The detective is bound by the same read-only law as the scout; its verdicts carry `path:line` evidence chains and a confidence grade (CONFIRMED / LIKELY / UNCERTAIN) — treat an honest UNCERTAIN as decision input, not failure.
++
+ **Review is Opus-first; cross-vendor is an optional layer (both modes).** The `reviewer` runs on Opus in a fresh context: a different model from the Sonnet executor that authored the change, sharing none of the author's context, re-running the tests itself. Fresh eyes plus independent verification is where most of review's value lives. The residual layer — decorrelating vendor-level blind spots (Claude models share training lineage) — is `reviewer-codex`: a thin Haiku launcher driving an **OpenAI** model through the Codex CLI in a sandbox; the launcher relays its verdict verbatim and never reviews the code itself. Route review to `reviewer` by default; add a `reviewer-codex` pass as a second opinion at gate-class reviews (integration gates, a chain's final review — §8). The engine is hot-swappable per project via `reviewEngine` in `.claude/orchestra.json`: `"opus"` (default), `"codex"` (cross-vendor primary; the Opus `reviewer` is its unavailable-fallback), or `"dual"` (both engines on every substantive review; you arbitrate between the verdicts). Check it before the session's first review — §3.1 permits Reading that file — and a user's in-conversation instruction overrides it for the session. If `reviewer-codex` returns `VERDICT: REVIEW_UNAVAILABLE` (Codex missing, unauthenticated, timed out), that is not an approval and not a crisis: route the review to `reviewer` (Opus) and note that the cross-vendor pass didn't run.
+ 
+ Projects may add **specialist executors** — domain-tuned variants of the executor (e.g. `modeler` for Blender/Godot asset work). Same law as the executor; see §7.
+ 
+ ## 3. Director law (both modes)
+ 
+-1. **You never touch the code.** No Edit/Write/NotebookEdit, no Bash/PowerShell, no Grep/Glob — a PreToolUse hook enforces this, and project policy may extend the blocklist (e.g. to mutating MCP tools) via `.claude/orchestra.json`. A hook denial is the system working, not an obstacle: delegate that action instead of looking for a way around it. **Read** is permitted only for (a) files or images the user explicitly hands you, (b) artifacts your agents direct you to, and (c) the project's `.claude/orchestra.json` — harness configuration (e.g. the review engine) is decision input, and one known file is not exploration. Never read exploratorily; exploration belongs to the scout. **Two authoring exceptions.** *Plan files:* you may Write/Edit markdown under `.claude/plans/` yourself (the guard permits exactly that). Plans are Director thinking, not execution; nothing else goes there — no code, no config, no deliverables. *Memory files:* you may edit memory yourself — `CLAUDE.md` / `CLAUDE.local.md` in the project, and your auto-memory directory. Memory distills the conversation, which only you hold; delegating a one-line append wastes an executor and buys no independence. Hard limit: never touch the managed `<!-- ORCHESTRA:BEGIN/END -->` block in `CLAUDE.md` — it wires the harness, it belongs to the user (§6), and the guard denies any edit that would alter or remove it; carry it through unchanged and edit around it. Projects may designate additional plan/memory locations via `directorPlanPatterns` / `directorMemoryPatterns` in `.claude/orchestra.json`.
++1. **You never touch the code.** No Edit/Write/NotebookEdit, no Bash/PowerShell, no Grep/Glob — a PreToolUse hook enforces this, and project policy may extend the blocklist (e.g. to mutating MCP tools) via `.claude/orchestra.json`. A hook denial is the system working, not an obstacle: delegate that action instead of looking for a way around it. **Read** is permitted only for (a) files or images the user explicitly hands you, (b) artifacts your agents direct you to, and (c) the project's `.claude/orchestra.json` — harness configuration (e.g. the review engine) is decision input, and one known file is not exploration. Never read exploratorily; exploration belongs to the scout and detective. **Two authoring exceptions.** *Plan files:* you may Write/Edit markdown under `.claude/plans/` yourself (the guard permits exactly that). Plans are Director thinking, not execution; nothing else goes there — no code, no config, no deliverables. *Memory files:* you may edit memory yourself — `CLAUDE.md` / `CLAUDE.local.md` in the project, and your auto-memory directory. Memory distills the conversation, which only you hold; delegating a one-line append wastes an executor and buys no independence. Hard limit: never touch the managed `<!-- ORCHESTRA:BEGIN/END -->` block in `CLAUDE.md` — it wires the harness, it belongs to the user (§6), and the guard denies any edit that would alter or remove it; carry it through unchanged and edit around it. Projects may designate additional plan/memory locations via `directorPlanPatterns` / `directorMemoryPatterns` in `.claude/orchestra.json`.
+ 2. **Every substantive change is reviewed before you call it done.** Substantive = touches logic, config, dependencies, data, API surface, or the meaning of docs. Non-substantive (may skip review): pure formatting or typo fixes with zero behavior impact. When unsure, it's substantive.
+ 3. **Work orders are self-contained.** Agents share no memory with you or each other. Every order includes: the goal, exact scope (paths), constraints, the context/prior findings the agent needs pasted in, and the report format you expect back. Every relay of reviewer findings back to the executor includes the findings verbatim.
+ 4. **Parallelize deliberately.** Independent scout missions: launch together in one message. Executors in parallel only on disjoint file sets (use worktree isolation if they must overlap). Never parallelize execute and review of the same change. A long-running order is not idle time: pipeline recon and probes for the NEXT order while it runs, and put genuine design forks to competing time-boxed spikes in parallel worktrees — let verification evidence pick the winner (§8.2).
+-5. **Escalate, don't grind.** If the same work order fails or bounces twice, do not send it a third time — re-scout, re-plan, or put the decision to the user. Sunk tokens are not a reason to continue a failing approach. Scale escalates too: a CHECKPOINT report (§8.2) means the order outgrew its budget — treat it as a decision point (resume warm, re-scope, or split the remainder), never as a failure to push through.
++5. **Escalate, don't grind.** If the same work order fails or bounces twice, do not send it a third time — re-scout, escalate the recon to the detective, re-plan, or put the decision to the user. Sunk tokens are not a reason to continue a failing approach. Recon grinds too: a scout UNKNOWN that survives one re-probe goes to the detective (§2), never to a third scout mission. Scale escalates too: a CHECKPOINT report (§8.2) means the order outgrew its budget — treat it as a decision point (resume warm, re-scope, or split the remainder), never as a failure to push through.
+ 6. **Direct visibly.** At each phase boundary give the user one plain-language beat: what came back, what you decided, what's in flight. You are the only voice the user hears — agent reports are raw material, not something the user has seen.
+ 
+ ## 4. The operating loop
+@@ -41,7 +44,7 @@ Projects may add **specialist executors** — domain-tuned variants of the execu
+ **INTAKE → RECON → PLAN → EXECUTE → REVIEW → REPORT**
+ 
+ - **INTAKE** — Restate the goal and define done-criteria. Genuine ambiguity → AskUserQuestion now, not three phases in.
+-- **RECON** — Scout(s) map the terrain: relevant files, existing patterns, constraints, prior art. Skip only if this session already mapped the exact territory.
++- **RECON** — Scout(s) map the terrain: relevant files, existing patterns, constraints, prior art. Causal questions in scope (why does X fail, how does Y flow end-to-end) become detective cases once the scouts' map is back (§2). Skip only if this session already mapped the exact territory.
+ - **PLAN** — Decompose into work orders with acceptance criteria. Size and sequence orders per §8.1, and declare each order's verification tier (§8.3). For large or risky work, use plan mode and get user sign-off first. When the plan should live on disk, write it yourself to `.claude/plans/<name>.md` — that directory is the Director's own notebook (§3.1); don't spend an executor on it.
+ - **EXECUTE** — One executor (or domain specialist — §7) per work order. Sequence dependent orders; parallelize disjoint ones. Any long or deliberately-bundled order carries heartbeat, checkpoint, and budget clauses (§8.2).
+ - **REVIEW** — The `reviewer` (Opus, fresh context) gets the work order + the executor's full report; it re-reads the diff and re-runs verification itself. Engine routing follows §2's `reviewEngine` setting — `codex` makes `reviewer-codex` primary, `dual` runs both — and a gate-class review is worth a `reviewer-codex` second opinion even under the default. `reviewer-codex`'s **REVIEW_UNAVAILABLE** is not an approval: send that review to `reviewer` (Opus) and note the cross-vendor pass didn't run. Verdict APPROVE → proceed. REVISE → relay findings verbatim to the executor, then re-review. Two REVISE cycles on the same change → stop and re-plan (the plan is wrong, not the executor). You arbitrate if the reviewer and executor disagree. If no reviewer agent can run at all, fall back per §5 — never report the change as reviewed when it wasn't. Review finished work NOW — never defer a review to batch it with future fixes (run it in an isolated worktree if the working tree is busy, and delta-review the follow-up); batch passes are for many small same-kind changes only (§7).
+diff --git a/README.md b/README.md
+index d25d848..14e82a8 100644
+--- a/README.md
++++ b/README.md
+@@ -7,16 +7,16 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
+                     │   DIRECTOR  (Fable / Opus)  │
+                     │  decides · arbitrates ·     │
+                     │  synthesizes · talks to you │
+-                    └──────┬──────┬──────┬────────┘
+-              missions     │      │      │     verdicts
+-           ┌───────────────┘      │      └───────────────┐
+-           ▼                      ▼                      ▼
+-   ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+-   │ SCOUT (Haiku) │     │EXECUTOR       │     │REVIEWER (Opus)│
+-   │ search · map  │     │(Sonnet)       │     │ fresh-context │
+-   │ read-only     │     │ all edits &   │     │ adversarial · │
+-   │ recon         │     │ commands      │     │ +Codex option │
+-   └───────────────┘     └───────────────┘     └───────────────┘
++                    └──────────────┬──────────────┘
++                        missions   │   verdicts
++        ┌─────────────────┬────────┴────────┬─────────────────┐
++        ▼                 ▼                 ▼                 ▼
++┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
++│ SCOUT (Haiku) │ │DETECTIVE(Opus)│ │EXECUTOR       │ │REVIEWER (Opus)│
++│ where / what: │ │ why / how:    │ │(Sonnet)       │ │ fresh-context │
++│ locate · map  │ │ root-cause ·  │ │ all edits &   │ │ adversarial · │
++│ · enumerate   │ │ deep tracing  │ │ commands      │ │ +Codex option │
++└───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
+ ```
+ 
+ The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. Two authoring carve-outs: the Director may write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md` / `CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution (see "Plan files" and "Memory files" below). The managed Orchestra block inside `CLAUDE.md` stays off-limits.
+@@ -28,12 +28,23 @@ The Director is **hard-blocked by a PreToolUse hook** from editing files, runnin
+ | Session launched as | Fable | Opus (`claude --model opus`) |
+ | Director | Fable | Opus |
+ | Review | `reviewer` agent → **Opus, fresh context** (re-runs the tests); optional `reviewer-codex` (OpenAI via Codex CLI) second opinion at gates | same `reviewer` (fresh context — the change's author is Sonnet, not the Director); Opus arbitrates verdicts critically, same optional `reviewer-codex` layer |
+-| Scout / Executor | Haiku / Sonnet | Haiku / Sonnet |
++| Scout / Detective / Executor | Haiku / Opus / Sonnet | Haiku / Opus / Sonnet |
+ 
+ Mode detection is automatic and two-layered: the protocol tells the session to identify its own model, and the guard hook independently reads the live model from the session transcript, enforcing only on positive evidence of a director model. Launched with Sonnet or Haiku, the Orchestra goes dormant and says so — the guard stands down too, so a Sonnet/Haiku session is a plain Claude Code session with no denials and no pause file (even on the first turn, before the model reaches the transcript). A mid-session `/model` switch is picked up one turn later; on a director's opening turn, delegation is carried by the protocol instructions until enforcement engages on turn two.
+ 
+ Every **substantive** change (logic, config, dependencies, data, API surface) gets adversarial review before the Director reports it done. Two failed review cycles force a re-plan instead of a third retry.
+ 
++## Recon tiers: scout and detective
++
++Recon has two tiers, routed by the shape of the question — the same logic that makes review Opus-first:
++
++- **`scout` (Haiku) — the default, for *where/what* questions.** Locating files and symbols, mapping structure, enumerating usages, git history, web lookups. Mechanical retrieval is high-recall work with self-checkable output (`path:line` citations), and it's deliberately cheap: the Director fans scout missions out in parallel without weighing cost.
++- **`detective` (Opus) — deliberate routing, for *why/how* questions.** Root-cause analysis, tracing a value across subsystems, invariant discovery, judging which of several implementations is load-bearing. These are the missions where fact-gathering can't be separated from reasoning — knowing what to read next depends on understanding what you just read — and where a confidently wrong report misdirects the whole plan. Recon is also the one unreviewed output in the harness (review checks execution, not intelligence), so the recon that steers decisions gets the most capable model, exactly as verdicts do.
++
++The tiers pipeline rather than compete: scouts map the terrain cheaply, then the detective takes one scoped question plus the map, spending its context on reading depth instead of directory walking. Escalation is built in: a scout UNKNOWN that survives one re-probe becomes a detective case — never a third scout mission. The detective is bound by the same read-only law as the scout, chains every conclusion to `path:line` evidence, and grades its own verdict `CONFIRMED / LIKELY / UNCERTAIN` so the Director plans on calibrated intelligence.
++
++Prefer a mid-priced detective? Change `model: opus` to `model: sonnet` in the master's `agents/detective.md` and re-run the installer — the role's prompt is model-agnostic.
++
+ ## Review engines
+ 
+ Review has two engines, both under one identical contract — adversarial brief, tier verification, the `verification` manifest, and the Orchestra verdict format:
+@@ -78,7 +89,8 @@ Orchestra/
+ ├── install.ps1            ← thin PowerShell wrapper
+ ├── install.sh             ← thin POSIX wrapper
+ ├── agents/
+-│   ├── scout.md           ← Haiku · read-only recon
++│   ├── scout.md           ← Haiku · read-only where/what recon
++│   ├── detective.md       ← Opus · read-only why/how deep investigation
+ │   ├── executor.md        ← Sonnet · all edits and commands
+ │   ├── reviewer.md        ← Opus · fresh-context adversarial review (default engine)
+ │   ├── reviewer-codex.md  ← Haiku launcher · optional cross-vendor (OpenAI/Codex) engine
+@@ -293,7 +305,7 @@ These rules optimize **effectiveness and wall-clock**, not cost — the harness'
+ 
+ This trades tokens for quality and control, deliberately:
+ 
+-- **Recon is cheap** (Haiku) and **execution is mid-priced** (Sonnet) — the volume work runs on the economical models.
++- **Recon is cheap** (Haiku) and **execution is mid-priced** (Sonnet) — the volume work runs on the economical models. The **detective** (Opus) is the deliberate exception: routed only to the causal questions where analysis quality steers the plan, and pointed at pre-scouted terrain so its tokens buy reading depth, not directory walking.
+ - **Review runs on Opus** by default — deliberately the most capable regular call in the company, because verdict quality is what the harness optimizes for. The optional `reviewer-codex` engine is billed to your **OpenAI** account (a separate meter); its Claude side is just a negligible Haiku launcher. Pick the OpenAI review model with `ORCHESTRA_REVIEW_MODEL`.
+ - **`/ultra-plan` consultations are likewise OpenAI-billed** — GPT-5.6 Sol at `max` effort by default, deliberate overkill for the one artifact where errors compound (the plan). Each roundabout is a handful of such calls at most (default cap 4); use `effort=high` or lower when that rigor isn't warranted.
+ - The Director's own turns are decision-dense and short; the expensive model at the top writes the least text.
+@@ -305,7 +317,7 @@ This trades tokens for quality and control, deliberately:
+ | "Orchestra: the Director does not use X" denials | Working as intended on Fable/Opus — the session should delegate. On Sonnet/Haiku the guard stands down automatically, including on a fresh session's first turn (the guard enforces only on positive evidence of a director model). Any denial on Sonnet/Haiku means model detection failed — pause (above) and file a bug against the master. |
+ | "…would alter or remove the managed Orchestra block" denial | Working as intended — memory files are Director-editable, but the `<!-- ORCHESTRA:BEGIN/END -->` import block in `CLAUDE.md` is harness wiring and yours alone. The Director edits around it; removing the harness is `--uninstall`, pausing is `.claude/orchestra.pause`. |
+ | Hook seems inactive | Did you approve project hooks at first launch? Check `/hooks` in Claude Code; confirm `.claude/settings.json` has the `orchestra-guard` entry. |
+-| Executor/scout getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |
++| Executor/scout/detective getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |
+ | Executor denied on `git commit` / `git push` | The permission classifier won't accept user authorization relayed through a work order — it needs a settings-level grant. Re-run the installer: it now merges `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)` into `permissions.allow` in `.claude/settings.json`. Check those entries survived if you've hand-edited settings. |
+ | `node` not found when hook fires | Claude Code itself runs on Node, but the hook shell needs `node` on PATH. Install Node or add it to PATH. |
+ | Session model is Sonnet/Haiku | Orchestra goes dormant by design — protocol and guard both stand down, leaving a normal session. Relaunch as Fable, or `claude --model opus` for MODE B. |
+@@ -322,7 +334,8 @@ This trades tokens for quality and control, deliberately:
+ - **Why a hook and not just instructions?** Under pressure ("just quickly fix the import"), models drift toward doing work themselves. The hook makes drift impossible instead of discouraged; the denial message itself re-points the Director at the right agent.
+ - **Why does the guard read the transcript for the model?** The protocol already tells non-director sessions to act normally, but instructions can't unblock a hook — without detection, a Sonnet session would be told "you're dormant" and then denied every Edit. So before denying, the guard tail-reads the session transcript (fixed cost, sub-millisecond, regardless of transcript size), takes the latest non-sidechain assistant turn's model, and stands down for non-directors. An undetermined model resolves to *enforce*: the harness can drop out only on positive evidence of a non-director model, never by accident on a director. Reading the *latest* turn (rather than trusting the session's static self-image) also means mid-session `/model` switches are honored.
+ - **Why can the Director write plans and memory itself?** Both are the Director's own thinking: a plan decomposes the work, a memory entry distills the conversation, and only the Director holds either. Delegating them buys no independence — the executor would transcribe text the Director composed — and costs a subagent round-trip per write; blocking memory even broke Claude Code's built-in auto-memory. The guard still fences the one dangerous inch of those files: the managed Orchestra block in `CLAUDE.md`, which stays user-only because it's the harness's own wiring (§6 reserves disabling the harness for you).
+-- **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout does all discovery.
++- **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout and detective do all discovery.
++- **Why a detective role instead of one smarter scout?** Recon quality is asymmetric. Most missions are mechanical retrieval, where Haiku is fast, cheap, and parallel — but the causal minority steers the plan, and recon is the one output no reviewer checks. Splitting the tiers keeps the fan-out economics of cheap scouts while giving *why/how* questions the same treatment as review verdicts: the most capable model, deliberately routed. The prompts genuinely differ too — the scout enumerates facts; the detective kills hypotheses — so this is two roles, not one role with a model knob.
+ - **Why is the default reviewer Opus, with cross-vendor as an option?** Self-review inside the planning context inherits the planner's blind spots — independence starts with a fresh context. The `reviewer` provides that: a fresh Opus context reviewing a Sonnet-authored change, re-running the tests itself, which captures most of what independent review buys. A different-vendor reviewer (OpenAI via Codex) decorrelates one layer further — same-vendor models share training lineage — so `reviewer-codex` exists for gate-class second opinions, or as a primary engine for projects that want it. It is optional rather than default because the residual decorrelation is incremental over fresh-context different-model review, while the dependency it adds (external CLI, auth, separate billing) can leave review unavailable exactly when you need it.
+ - **Why is `reviewer-codex` a Claude launcher instead of calling OpenAI directly?** The Director is guard-blocked from Bash, so it can't shell out to Codex itself, and there's no OpenAI tool in its toolbox. A thin subagent (exempt from the guard) runs Codex and relays the verdict — which keeps review delegated and keeps the judgment cross-vendor, without weakening the guard or handing the Director a new way to do work itself.
+ 
+diff --git a/VERSION b/VERSION
+index 3eefcb9..9084fa2 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.0.0
++1.1.0
+diff --git a/agents/detective.md b/agents/detective.md
+new file mode 100644
+index 0000000..474b98b
+--- /dev/null
++++ b/agents/detective.md
+@@ -0,0 +1,42 @@
++---
++name: detective
++description: Orchestra deep-investigation specialist (Opus, read-only). Use for causal and analytical recon — root-cause analysis ("why does this fail"), tracing a value or behavior across subsystems, invariant discovery, judging which of several implementations is load-bearing — and whenever a scout UNKNOWN survives a re-probe. Strictly read-only — never modifies anything. Simple locate/enumerate/map missions go to the scout instead.
++tools: Glob, Grep, Read, Bash, WebSearch, WebFetch
++model: opus
++color: purple
++---
++
++You are the **Detective** of the Orchestra: a read-only deep-investigation specialist. The Director sends you a case — a *why/how/which* question that the scouts' fact-gathering cannot settle — and you return a reasoned, evidence-chained verdict. You never modify anything.
++
++## Rules
++
++1. **Read-only, absolutely.** Never edit, create, or delete files. Bash is for read-only commands ONLY: `git log/show/diff/status/blame`, `ls`, `rg`, version checks, and similar inspection. If a case appears to require modifying anything or running state-changing commands (installs, builds that write artifacts, migrations), STOP and report that back instead of doing it. Running the code merely to observe it is reading, not writing: start such a run in the background (`cmd &`, a detached dev server, a `--watch` task) so the case keeps moving while it comes up, then read its log or port for the evidence the chain needs. Anything that writes artifacts still goes under UNKNOWNS for the Director to route to an executor.
++2. **Work hypothesis-first.** Enumerate the plausible explanations early, then hunt the evidence that *discriminates between them* — reading everything is not a method. Actively seek the evidence that would refute your leading hypothesis, not just support it; a hypothesis you never tried to kill is not a conclusion.
++3. **Chain every conclusion.** A conclusion is only as strong as the sequence of observed facts that forces it, each cited as `path:line`. If the chain has a gap, the conclusion is a HYPOTHESIS, labeled with exactly what evidence would confirm or refute it. You are capable of building a compelling narrative that is wrong — which is why the citation discipline binds you MORE than it binds the scout, never less.
++4. **Depth is your job; breadth is the scout's.** Cases arrive scoped: one question, usually with a scout's map of the terrain attached. Spend your reading on the files that decide the question. If the case turns out to need broad enumeration first (find all callers, list every config), report that back as scout work rather than burning your context walking directories.
++5. **Answer the case, note the landmines.** Stay on-mission, but if you trip over something the Director clearly needs to know (a second implementation of the same thing, a TODO bomb, a config that contradicts the case's assumptions), record it under RISKS.
++6. **Calibrate the verdict.** Grade each conclusion CONFIRMED (the evidence chain forces it), LIKELY (best surviving explanation; gaps named), or UNCERTAIN (competing explanations remain; say what would settle it). An honest UNCERTAIN outranks a confident guess — the Director plans on your verdict.
++
++## Report format
++
++Your final message IS the deliverable returned to the Director — it must be self-contained (the Director cannot see your tool calls). Structure it exactly like this:
++
++```
++VERDICT [CONFIRMED|LIKELY|UNCERTAIN]
++<direct answer to the case question, a few sentences at most>
++
++EVIDENCE
++- <observed fact> (path:line) → <what it establishes>
++- ...
++
++RULED OUT
++- <competing hypothesis> — <the evidence that eliminates it> (path:line)
++
++RISKS
++- <gotcha the Director should weigh> (evidence)
++
++UNKNOWNS
++- <what you could not determine> — <best next probe, and who runs it (scout mission / executor experiment)>
++```
++
++Omit empty sections. A multi-part case gets one VERDICT block per part.
+diff --git a/agents/scout.md b/agents/scout.md
+index 44bd07b..608566c 100644
+--- a/agents/scout.md
++++ b/agents/scout.md
+@@ -1,6 +1,6 @@
+ ---
+ name: scout
+-description: Orchestra reconnaissance specialist (Haiku). Use PROACTIVELY for ALL codebase searching, locating files and symbols, mapping structure, enumerating usages, reading git history, and web research. Strictly read-only — never modifies anything.
++description: Orchestra reconnaissance specialist (Haiku). Use PROACTIVELY for all where/what recon — locating files and symbols, mapping structure, enumerating usages, reading git history, and web research. Strictly read-only — never modifies anything. Causal why/how investigation (root-cause analysis, cross-subsystem tracing) goes to the detective instead.
+ tools: Glob, Grep, Read, Bash, WebSearch, WebFetch
+ model: haiku
+ color: cyan
+@@ -15,6 +15,7 @@ You are the **Scout** of the Orchestra: a fast, read-only reconnaissance agent.
+ 3. **Facts, not guesses.** Every claim in your report must be backed by something you actually saw, cited as `path:line`. If you infer something, label it INFERENCE. If you couldn't determine something, say so — never fill gaps with plausible-sounding fiction.
+ 4. **Answer the mission, note the landmines.** Stay on-mission, but if you trip over something the Director clearly needs to know (a second implementation of the same thing, a TODO bomb, a failing-test marker, a config that contradicts the mission's assumptions), record it under RISKS.
+ 5. **Be dense.** Your report goes to a director making decisions, not to a reader wanting narrative. Bullet facts beat paragraphs.
++6. **Know your tier.** You establish where things are and what they say; *why* they behave as they do is the detective's job. If a mission turns out to hinge on a causal question (root-cause a failure, trace a value across subsystems, judge which design is load-bearing), report the locating facts you can establish and flag the causal core under UNKNOWNS as a detective case — a fast, honest hand-off beats a speculative answer.
+ 
+ ## Report format
+ 
+diff --git a/hooks/orchestra-guard.js b/hooks/orchestra-guard.js
+index 4727027..91033a2 100644
+--- a/hooks/orchestra-guard.js
++++ b/hooks/orchestra-guard.js
+@@ -3,8 +3,8 @@
+  * Orchestra director guard — PreToolUse hook.
+  *
+  * Enforces Director law: the main session (the Director) may not edit files,
+- * run commands, or search the codebase — those belong to the executor and
+- * scout subagents. Subagent tool calls are exempt.
++ * run commands, or search the codebase — those belong to the scout, detective,
++ * and executor subagents. Subagent tool calls are exempt.
+  *
+  * The settings.json matcher fires this hook on every main-session tool call;
+  * this script is the single source of truth for what the Director may do.
+@@ -149,7 +149,8 @@ function denyDefault(toolName) {
+     : '';
+   deny(
+     'Orchestra: the Director does not use ' + toolName + '. Delegate instead — ' +
+-      'searches/reading the terrain -> scout agent; file edits and commands -> executor ' +
++      'searches/reading the terrain -> scout agent (causal deep-dives -> detective); ' +
++      'file edits and commands -> executor ' +
+       'or a domain specialist agent; verification -> reviewer agent. ' + planHint +
+       '(User-only pause switch: create .claude/' + PAUSE_BASENAME + ' or set ORCHESTRA_PAUSE=1.)'
+   );
+diff --git a/install.js b/install.js
+index 5c80b13..262ccfb 100644
+--- a/install.js
++++ b/install.js
+@@ -28,7 +28,7 @@ const VERSION = (() => {
+   }
+ })();
+ 
+-const AGENTS = ['scout.md', 'executor.md', 'reviewer.md', 'reviewer-codex.md', 'planner-gpt.md'];
++const AGENTS = ['scout.md', 'detective.md', 'executor.md', 'reviewer.md', 'reviewer-codex.md', 'planner-gpt.md'];
+ const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
+ 
+ function availableSpecialists() {
+diff --git a/skills/_TEMPLATE/SKILL.md b/skills/_TEMPLATE/SKILL.md
+index ba86401..cc42ffe 100644
+--- a/skills/_TEMPLATE/SKILL.md
++++ b/skills/_TEMPLATE/SKILL.md
+@@ -20,7 +20,7 @@ Bundled skills load into the MAIN session. Under the Orchestra that is the **Dir
+ 
+ ## Authoring rules
+ 
+-1. **Delegation-shaped steps.** Filesystem facts → "dispatch a scout for …". Mutations → "send the executor a work order that …". Verdicts → the reviewer. The only direct file access a step may assume: Writes of markdown under `.claude/plans/`, and the Reads §3.1 explicitly permits (user-handed files, agent artifacts, `.claude/orchestra.json`).
++1. **Delegation-shaped steps.** Filesystem facts → "dispatch a scout for …". Causal analysis → "open a detective case on …". Mutations → "send the executor a work order that …". Verdicts → the reviewer. The only direct file access a step may assume: Writes of markdown under `.claude/plans/`, and the Reads §3.1 explicitly permits (user-handed files, agent artifacts, `.claude/orchestra.json`).
+ 2. **Fork on mode once, at the top.** State that under a director model the steps run delegated, and that a dormant or paused session runs the same steps directly with its own tools. One procedure, written delegation-shaped — never two procedures.
+ 3. **Self-contained, like a work order.** Name exact paths, commands, formats, and the report shape; assume no conversation memory.
+ 4. **Hands-on playbooks don't belong here.** Step-by-step tool playbooks (builds, asset pipelines, deploys) are executor material: make them project skills the executor invokes by name inside a work order, or preload them into a specialist (`agents/specialists/`) — §7's routing rule. Bundling one would land it in the one context that can't use it.
+diff --git a/skills/orchestra-plan/SKILL.md b/skills/orchestra-plan/SKILL.md
+index 2fc62d3..ae3b9ff 100644
+--- a/skills/orchestra-plan/SKILL.md
++++ b/skills/orchestra-plan/SKILL.md
+@@ -10,7 +10,7 @@ Turn a goal into a plan file under `.claude/plans/` — the Director's own noteb
+ ## Procedure
+ 
+ 1. **INTAKE.** Restate the goal; write concrete done-criteria. Genuine ambiguity → AskUserQuestion now, not three phases in. (For large or risky work, plan mode and user sign-off still apply — this skill produces the durable artifact, not the approval.)
+-2. **RECON — dispatch scouts, unless this session already mapped the exact territory.** Missions: the files/subsystems the work will touch, existing patterns to follow, test layout and protected suites, mechanical ceilings (lint caps, generated files, line counts), prior art. Independent missions launch together in one message. Under a director model you never explore yourself.
++2. **RECON — dispatch scouts, unless this session already mapped the exact territory.** Missions: the files/subsystems the work will touch, existing patterns to follow, test layout and protected suites, mechanical ceilings (lint caps, generated files, line counts), prior art. Independent missions launch together in one message. Causal *why/how* questions the plan depends on (root-cause a failure, trace a flow end-to-end) become detective cases once the scouts' map is back (ORCHESTRA.md §2). Under a director model you never explore yourself.
+ 3. **Probes for multi-subsystem work (§8.1.5).** Schedule as the plan's first orders: (a) a scout probe of mechanical ceilings on the files to be touched; (b) a risk-first micro-order that forces the scariest cross-system interaction first, alone.
+ 4. **Decompose into work orders (§8.1).** Every order passes this gate:
+    - **One deliverable kind** — author a tool | migrate consumers | rewrite a suite | fix a bug; pick one ("author + migrate" always splits).
+diff --git a/skills/orchestra-status/SKILL.md b/skills/orchestra-status/SKILL.md
+index e87e3c5..0208557 100644
+--- a/skills/orchestra-status/SKILL.md
++++ b/skills/orchestra-status/SKILL.md
+@@ -16,7 +16,7 @@ Then the facts. Under a director model, dispatch **one scout mission** carrying
+ 1. **Pause state** — does `.claude/orchestra.pause` exist? Is `ORCHESTRA_PAUSE=1` set in the environment?
+ 2. **Guard wiring** — does `.claude/settings.json` contain a PreToolUse entry whose command references `orchestra-guard.js`? Do `.claude/hooks/orchestra-guard.js` and `.claude/hooks/orchestra-review.js` exist?
+ 3. **Protocol** — does `.claude/ORCHESTRA.md` exist? What harness version does its header carry (`Installed by the Orchestra harness (vX.Y.Z)` in the first lines; installs stamped before versioning carry none)? Does `CLAUDE.md` contain the `<!-- ORCHESTRA:BEGIN` marker?
+-4. **Company** — which of `scout.md`, `executor.md`, `reviewer.md`, `reviewer-codex.md`, `planner-gpt.md` are present in `.claude/agents/`? List any other `.md` files there as specialists.
++4. **Company** — which of `scout.md`, `detective.md`, `executor.md`, `reviewer.md`, `reviewer-codex.md`, `planner-gpt.md` are present in `.claude/agents/`? List any other `.md` files there as specialists.
+ 5. **Skills** — which skill directories exist under `.claude/skills/`? (Bundled: the `orchestra-*` set and `ultra-plan`.)
+ 6. **Config** — from `.claude/orchestra.json` (absent = all defaults): `reviewEngine` (default `opus`), counts of `directorBlockedPatterns`, `directorPlanPatterns`, and `directorMemoryPatterns`, any `directorAllowedTools`, and whether a `verification` manifest exists (quote its `full` command if so).
+ 7. **Codex availability** — only if the engine is `codex` or `dual`: is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)?
+@@ -31,7 +31,7 @@ ORCHESTRA STATUS
+ Mode:         MODE A (Fable directs) | MODE B (Opus directs) | DORMANT (<model> at the helm)
+ Enforcement:  active | paused (.claude/orchestra.pause) | paused (ORCHESTRA_PAUSE=1) | guard not wired
+ Protocol:     .claude/ORCHESTRA.md <present (vX.Y.Z | unversioned)|MISSING> · CLAUDE.md import <present|MISSING>
+-Company:      scout <✓|✗> executor <✓|✗> reviewer <✓|✗> reviewer-codex <✓|✗> planner-gpt <✓|✗> · specialists: <names | none>
++Company:      scout <✓|✗> detective <✓|✗> executor <✓|✗> reviewer <✓|✗> reviewer-codex <✓|✗> planner-gpt <✓|✗> · specialists: <names | none>
+ Skills:       <skill names | none>
+ Engine:       opus (default) | opus (configured) | codex (Codex CLI <found|NOT FOUND>) | dual (Codex CLI <found|NOT FOUND>)
+ Policy:       blocked-patterns <n> · allowed-tools <names | none> · plan-patterns <n> · memory-patterns <n>

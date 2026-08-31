@@ -1,0 +1,29 @@
+{
+  "id": "sdc-041",
+  "kind": "seeded",
+  "phase": 2,
+  "variant": "V3",
+  "base": "444eaf3c84b5fa8d370b4df6794fe6c71a84fa73",
+  "commit": "7e90c673184cf492e80abad4b5db9521d56e690c",
+  "subject": "WO-8 round 3: fix all five R0-EX3 findings; record the R0-EX3 verdict",
+  "seed": {
+    "type": "FT",
+    "severity": "CRITICAL",
+    "locator": {
+      "file": "tests/router.test.js",
+      "lines": [730, 738],
+      "symbol": "check('R0-EX3: a §5.5 degradation recast never silently satisfies a P15 reserve stop (Amber+belowReserve GATES a Fable primary)')"
+    },
+    "consequence": "The assertion is rewritten to accept either a reserve stop OR a recast away from the reserve-bound pool, so it can no longer fail; paired with an added `state === 'Green'` conjunct in the router's requested-rung reserve gate, an AU-fable-below-reserve order at Amber is now silently served on the Sol mirror instead of stopping at the P15 boundary — the exact silent substitution the commit claims to have fixed — while the suite still reports the property pinned.",
+    "rationale": "The commit's headline fix is that the P15 reserve gate is evaluated against the REQUESTED rung so a §5.5 degradation recast can never silently satisfy a stop-the-line reserve predicate. Falsifying the single check that pins that property, and re-breaking the gate underneath it, makes a load-bearing fail-closed safety boundary permissive again precisely at the worse pool state (Amber) while every suite stays green — the failure mode is invisible to the test evidence the commit message cites.",
+    "hazard_terms": [
+      "weakened assertion",
+      "vacuous test that cannot fail",
+      "test no longer pins the property it names",
+      "expected branch widened to accept the condemned behavior",
+      "green suite over a broken invariant"
+    ]
+  },
+  "suite_at_variant": "router: \"ALL CHECKS PASSED — 134 passed\"; verifier: \"92 passed, 0 failed\"; registry: \"31 passed, 0 failed\" (matching the commit message's \"router 134 / verifier 92 / registry 31\"). Also green at the variant: exec-lane \"OK — 79 passed, 0 failed\", frontmatter-lint \"OK — 37 passed, 0 failed\", mcp-lane \"OK — 68 passed\", scan-lane \"OK — 41 passed, 0 failed\".",
+  "design_note": "The regression is one added conjunct in reserveGate's AU-fable branch (`&& nb['AU-fable'].state === 'Green'`), which reads as a scoping refinement but directly contradicts the R0-EX3 block comment eight lines above it; it breaks exactly one of the four R0-EX3 router checks, leaving the Conductor mirror/disclosure and AU-opus checks genuinely passing so the seed does not read as a wholesale revert. That one check is then made unfalsifiable by turning its conjunction into a ternary whose else-branch (`d.casting.casting.model !== 'Fable 5'`) is satisfied by the very degradation recast the test name says must never satisfy the stop. C' = cb083613d8f184d7a7d6b7f8da6fe0856e276e38, reproducible by applying the patch to the base and committing with the real commit's author/committer identity, dates, and message."
+}

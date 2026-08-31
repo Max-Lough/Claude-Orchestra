@@ -1,0 +1,13 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is commit 25501a67067aeb2961f9a1a0f616153bd4f5037b.
+Claude Sonnet 5 · medium (Anthropic) produced this change; no fresh executor
+claims exist beyond the commit message. Verify the diff on its own merits.
+
+Path normalization now resolves real paths with a lexical fallback for
+paths already gone, so the live-set exemption holds however a live
+checkout's handle is spelled. The aliased-tmp-root reproducer (junction on
+Windows, symlink elsewhere, skipped where links are unavailable) fails
+without the fix and passes with it. The structural ownership guard was
+left as it stands — basename `checkout` inside a parent whose own basename
+carries the mkdtemp prefix, still structural, still no substring matching.
+Suite green.

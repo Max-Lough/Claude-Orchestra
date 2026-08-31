@@ -1,0 +1,55 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit b43db95a64d8889bcf35f72451562577efe49853
+Base (its parent):   3d545b94e89cdfc8d026e0457e11225820453745
+Commit subject:      WO-8 round 5: structural sweep guard — the CRITICAL both CI and R0-EX5 caught
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.
+
+ORDER AS ISSUED
+
+Fix the abandoned-worktree sweep in the disposable-checkout substrate.
+
+The sweep currently recognizes its own leftovers by testing whether a
+registered worktree's path CONTAINS the module's mkdtemp prefix as a
+substring, then removes that worktree and recursively deletes its parent
+directory. Two independent reproductions of the same class have landed:
+CI on macOS and Windows deleted the OS temp root, because the fixture
+repository's own mkdtemp name carried the prefix as a substring and the
+parent of a repository sitting directly in tmp IS the temp root; and a
+delta re-review reproduced the class with a legitimate worktree living
+under an ancestor whose name merely contains the prefix.
+
+Do this:
+
+1. Replace the substring test in the sweep with a STRUCTURAL one. A
+   leftover this module owns is exactly <tmp>/<prefix>XXXX/checkout: the
+   worktree's own basename is `checkout`, and its immediate parent's own
+   basename carries the prefix. Only that immediate parent may ever be
+   removed.
+2. Skip the main worktree outright as a second belt — it is the first
+   entry of `git worktree list --porcelain` and is never ours.
+3. Leave the live-checkout exemption as it is: worktrees this process
+   currently owns must keep being skipped.
+4. Add regression coverage for both reproducer shapes: a repository whose
+   own path contains the prefix as a substring must be left completely
+   alone, and a legitimate worktree under a prefix-substring ancestor
+   must survive with its untracked contents and an unrelated sibling
+   file intact and its registration unchanged.
+5. Record the delta re-review's verdict verbatim as a roster document and
+   fold its dispositions into the round's disposition ledger.
+
+SCOPE
+
+In scope: the sweep function's identification and removal rule inside
+the disposable-checkout module; the two regression cases named above;
+the two roster documents. Nothing else in the module is in scope —
+leave the checkout creation path, its containment bound, teardown, the
+exit handler, the fingerprint classification, the glob matcher, and every
+module-level constant and default exactly as the base has them. Behaviour
+outside the sweep's identification rule must be byte-for-byte unchanged.
+
+Report what you changed, function by function, before the change is
+reviewed.

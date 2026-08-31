@@ -1,0 +1,11 @@
+{
+  "name": "lookup-table",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Generates a static lookup table module from src/entries.json.",
+  "scripts": {
+    "build": "node build.js",
+    "verify": "node verify.js"
+  },
+  "license": "MIT"
+}

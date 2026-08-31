@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit da967bbfd6e32916ae39afa60295ab8cd544374d
+Base (its parent):   84da4ad73f402ea78ea4e9b1917eed778bf3527c
+Commit subject:      Fix three cross-platform defects CI found in its first run
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

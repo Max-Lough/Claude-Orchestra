@@ -1,0 +1,12 @@
+{
+  "id": "e-08",
+  "category": "missing or wrong dependency wiring",
+  "title": "two copies of one package break an instanceof gate",
+  "check_display": "node test.js",
+  "check_steps": [["node", "test.js"]],
+  "scope": ["node_modules/@fx/issuer/node_modules/"],
+  "audit_ignore": [],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

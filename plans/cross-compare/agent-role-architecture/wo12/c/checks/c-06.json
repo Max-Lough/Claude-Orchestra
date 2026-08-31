@@ -1,0 +1,29 @@
+{
+  "order": "c-06",
+  "title": "Pricing table",
+  "requiredStructure": [
+    { "name": "table has id=pricing-table", "pattern": "<table\\b[^>]*\\bid=\"pricing-table\"" },
+    { "name": "caption fixed copy present", "pattern": "<caption>\\s*Plan Pricing Comparison\\s*</caption>" },
+    { "name": "4 column headers with scope=\"col\"", "pattern": "<th scope=\"col\">", "count": 4 },
+    { "name": "3 row headers with scope=\"row\"", "pattern": "<th scope=\"row\">", "count": 3 },
+    { "name": "plan-starter row, fixed price", "pattern": "<tr\\b[^>]*\\bid=\"plan-starter\"[^>]*>\\s*<th scope=\"row\">Starter</th>\\s*<td>\\$9</td>" },
+    { "name": "plan-growth row, featured class, fixed price", "pattern": "<tr\\b[^>]*\\bid=\"plan-growth\"[^>]*\\bclass=\"featured\"[^>]*>\\s*<th scope=\"row\">Growth</th>\\s*<td>\\$29</td>" },
+    { "name": "plan-scale row, fixed price", "pattern": "<tr\\b[^>]*\\bid=\"plan-scale\"[^>]*>\\s*<th scope=\"row\">Scale</th>\\s*<td>\\$79</td>" }
+  ],
+  "contrastPairs": [
+    {
+      "name": "base table text on table background",
+      "min": 4.5,
+      "blockPattern": "#pricing-table\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    },
+    {
+      "name": "featured row text on featured row background",
+      "min": 4.5,
+      "blockPattern": "#pricing-table\\s+\\.featured\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    }
+  ]
+}

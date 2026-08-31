@@ -1,0 +1,39 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit b18151cb50c0510c83058c9a0f0b74a4420e004d
+Base (its parent):   9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5
+Commit subject:      Add seat charters and RECLASSIFY hop machinery to the router (WO-7b substrate)
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.
+
+ORDER AS ISSUED
+
+Add the seat charters and the RECLASSIFY hop machinery to the router.
+
+1. Add router/charters.json transcribing Part 2's owns / must-not-receive
+   intake filters for all 23 seats — the live charter filter every seat runs
+   under the classification-error stance. Load it in the router with the same
+   fail-closed discipline the casting tables already get: a missing role, a
+   class that disagrees with the casting table, or an empty must-not-receive
+   filter refuses construction.
+
+2. Implement processReclassify() as the error stance's recovery loop, as
+   encoded by WO-4: a RECLASSIFY report carries recommended_class plus the
+   observed evidence and is rejected without either; an alias in
+   recommended_class resolves before anything else; the order is re-dispatched
+   to the recommended class with the hop counted; every hop feeds the per-pair
+   ledger; and a second hop on the same order escalates to the Conductor as a
+   classification error instead of dispatching again.
+
+Constraints on this change:
+
+- processReclassify() must treat the order it is handed as read-only. Return a
+  NEW order object carrying the recommended class and the incremented hop
+  count; the caller's order object must be unchanged after the call, so a
+  caller still holds the classification the order arrived with.
+- Do not change the behaviour of the existing route() and dispatch() paths.
+  The new machinery may call dispatch(); it must not alter it.
+- No new runtime dependency: the charters are data, loaded with the modules the
+  router already requires.

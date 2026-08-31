@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 06b5595e8d5d9979c1f50c42f3f5dadde5b405ae
+Base (its parent):   661feb0bc419fb0878e5b67977ed52b07557f0f7
+Commit subject:      Make tier + manifest engine-agnostic review policy, not Codex features
+
+The review runner is inherently the Codex driver, but the inert tier and
+the verification manifest are review POLICY and must bind every review
+path, including the §5 fallback (in-session review by the Director when
+Codex is unavailable) and any future engine.
+
+- ORCHESTRA.md §8.3: reword the tier as policy — whoever reviews verifies
+  the inertness claim from the diff; the runner enforces it for Codex, a
+  fallback review applies the identical rule by hand. Declare the manifest
+  the canonical command set for every verifier.
+- ORCHESTRA.md §5: make the fallback review explicitly inherit full review
+  policy — verify tier claims from the diff, judge pasted verification
+  against the manifest, record the tier/depth actually run.
+- README + runner header: document the policy/transport split.
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

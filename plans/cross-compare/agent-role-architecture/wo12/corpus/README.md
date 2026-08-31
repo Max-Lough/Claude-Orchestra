@@ -137,12 +137,14 @@ non-shortlisted docs S/M 24, reused seed base 10.
   protocol's requirement; it does not violate "no duplicate (base, kind) pair" because
   the pair's `kind` differs between the two slots (one `seeded`, one `control`) even
   though the `base` (parent sha) is identical. The 10 reused-seed-base commits (short
-  sha, both slot ids): `772a688` (sdc-001 seeded / sdc-075 control), `acbf8f2` (sdc-002 /
-  sdc-076), `e04005b` (sdc-003 / sdc-077), `2c24df7` (sdc-004 / sdc-078), `5fb5142`
-  (sdc-005 / sdc-079), `3a9cc73` (sdc-006 / sdc-080), `09a824e` (sdc-013 / sdc-081),
-  `ceeaabc` (sdc-014 / sdc-082), `e7a5e31` (sdc-015 / sdc-083), `7e90c67` (sdc-016 /
-  sdc-084) — all land at the tail of phase 3's control block (sdc-075..sdc-084) since
-  the reuse tier is last in priority order.
+  sha, both slot ids — verified mechanically against `base-pool.json`'s own `commit`
+  fields, correcting three pairing lines that named the wrong seeded id): `772a688`
+  (sdc-001 seeded / sdc-075 control), `acbf8f2` (sdc-002 / sdc-076), `e04005b`
+  (sdc-003 / sdc-077), `2c24df7` (sdc-004 / sdc-078), `5fb5142` (sdc-005 / sdc-079),
+  `3a9cc73` (sdc-006 / sdc-080), `09a824e` (sdc-013 / sdc-081), `ceeaabc` (sdc-015 /
+  sdc-082), `e7a5e31` (sdc-039 / sdc-083), `7e90c67` (sdc-041 / sdc-084) — all land at
+  the tail of phase 3's control block (sdc-075..sdc-084) since the reuse tier is last
+  in priority order.
 
 ## Files in this directory
 

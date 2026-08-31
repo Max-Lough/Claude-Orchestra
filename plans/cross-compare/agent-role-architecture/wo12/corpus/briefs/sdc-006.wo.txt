@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 84e6bfe0f8836814afa3f60c971e4b39eb8ee88c
+Base (its parent):   4e509b581a65caee8540ccde895c752823d8c9aa
+Commit subject:      WO-8 round 5c: creation-time canonical identity for live checkouts; review-lane flake diagnosed and guarded
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,391 @@
+diff --git a/router/charters.json b/router/charters.json
+new file mode 100644
+index 0000000..310d03a
+--- /dev/null
++++ b/router/charters.json
+@@ -0,0 +1,249 @@
++{
++  "$comment": "Seat charters — the owns / must-not-receive intake filters, transcribed from final-plan.md Part 2 (one entry per seat). Per the classification-error stance (Part 4, final ruling 2026-08-29): every seat's charter is a LIVE INTAKE FILTER — a seat receiving work outside its charter returns RECLASSIFY (recommended class + the observed evidence) within a triage budget (~15 tool calls), a normal, ledgered event that neither counts as a REVISE nor consumes the order's escalation allowance. Consumed by the WO-7b misroute-recovery probe and by WO-8–11 band staffing. Edit the plan first, then mirror here.",
++  "version": "2026-08-30",
++  "source": "plans/cross-compare/agent-role-architecture/final-plan.md — Part 2 role catalog",
++  "reclassifyProtocol": "Work outside the charter → return RECLASSIFY with {recommended_class, evidence} within the triage budget (~15 tool calls). One hop is routine; a second hop on the same order escalates to the Conductor as a classification defect.",
++  "charters": {
++    "Conductor": {
++      "class": "O0",
++      "purpose": "Convert intake into classified work orders, castings, risk tiers, review paths and budgets; arbitrate verdicts; gate irreversible actions; talk to the user; decide everything and build nothing.",
++      "owns": "O0 only — direction and arbitration.",
++      "mustNotReceive": [
++        "code, commands, or search work",
++        "plan authoring above the size threshold (→ A0)",
++        "content arbitration in a blind comparative session (→ A1)"
++      ]
++    },
++    "Architect": {
++      "class": "A0",
++      "purpose": "Turn a goal into a plan — decomposition, sequencing, acceptance criteria, risk ordering — and produce system architecture and novel-algorithm designs without implementing.",
++      "owns": "A0 — planning, decomposition, system architecture; a document that IS the decision.",
++      "mustNotReceive": [
++        "execution of its own plan",
++        "security planning under the Fable casting (hard route-filter to the Sol lane)",
++        "plans for two-file fixes (pure overhead — route the fix directly)"
++      ]
++    },
++    "Synthesizer": {
++      "class": "A1",
++      "purpose": "Merge two independently produced artifacts into one, blind to authorship, adjudicating disputes against evidence.",
++      "owns": "A1 — comparative adjudication and blind merge.",
++      "mustNotReceive": [
++        "authoring original positions",
++        "executing",
++        "learning or guessing authorship"
++      ]
++    },
++    "Scout": {
++      "class": "N0",
++      "purpose": "Answer where / what / which files / list-all over a declared, mechanically exhaustible search surface, fast and cheaply, and never speculate about why.",
++      "owns": "N0 — bounded fetch, find, lookup over a declared surface.",
++      "mustNotReceive": [
++        "causal questions — why / how / which is load-bearing (→ I0)",
++        "more than ~32K supplied tokens or unbounded repos (→ N2/I0)",
++        "judgment that steers a plan"
++      ]
++    },
++    "Researcher": {
++      "class": "N1",
++      "purpose": "Go outside the repository — web, standards, vendor docs, changelogs, papers — and return a synthesized, cited answer the tree cannot settle.",
++      "owns": "N1 — deep external research; also keeps the roster's model facts current.",
++      "mustNotReceive": [
++        "in-repo causal questions (→ I0)",
++        "bulk extraction from a corpus already in hand (→ M0)",
++        "final architecture (→ A0)",
++        "legal acceptance (→ human)"
++      ]
++    },
++    "LC Analyst": {
++      "class": "N2",
++      "purpose": "Extract and reconcile facts from large or dispersed SUPPLIED context — the reclassification target for scout truncation; \"read these 300K tokens and reconcile them\".",
++      "owns": "N2 — long-context synthesis over supplied material; surfacing conflicts, never resolving them silently.",
++      "mustNotReceive": [
++        "implementation",
++        "architecture",
++        "security approval",
++        "live reproduction — and causal questions where the deliverable is a mechanism explaining observed behavior (→ I0, disc. U)"
++      ]
++    },
++    "Investigator": {
++      "class": "I0",
++      "purpose": "Answer why / how / which is load-bearing — and chase intricate, intermittent, or state-dependent defects and performance regressions — by whatever the evidence requires, reading first (read-only-first law). The merged class: the evidence may live in persisted artifacts or need a live run; that is a solution fact the seat answers by working.",
++      "owns": "I0 — read-only causal inquiry; intricate/intermittent bugs; flaky tests; races; performance investigation and intake; works-locally-fails-in-CI once the environment matrix points at program behavior.",
++      "mustNotReceive": [
++        "locating — where / which files / list all (→ N0 at a fraction of the draw)",
++        "routine fixes with known cause (→ E2)",
++        "general terminal administration (→ E0)",
++        "presentation, layout, styling, or interaction defects of an interface — the render loop is E5's diagnosis (→ E5, §4.0 step 3a)",
++        "review"
++      ]
++    },
++    "Archivist": {
++      "class": "M0",
++      "purpose": "Ingest a fixed corpus — PDFs, screenshots, recordings, design files, logs, CSVs, charts — and return faithful, schema-validated structured extraction with no judgment attached.",
++      "owns": "M0 — multimodal and document intake; any single bounded read/classification/extraction.",
++      "mustNotReceive": [
++        "conclusions or recommendations (must not sustain a goal across turns)",
++        "long-horizon work",
++        "general coding",
++        "a critical-path dependence on the video/audio degradation path (it may be UNAVAILABLE)"
++      ]
++    },
++    "Operator": {
++      "class": "E0",
++      "purpose": "Work the environment when the environment is the problem — CI archaeology, toolchain and dependency surgery, containers, packaging, release plumbing.",
++      "owns": "E0 — terminal, shell, CI, build, environment work where the request states the environment or toolchain layer is the variable or the broken thing.",
++      "mustNotReceive": [
++        "application logic (→ E2/E3)",
++        "irreversible actions without authorization",
++        "routine command-running (→ E1 Runner)",
++        "security judgment (→ E7)",
++        "an undiagnosed bug with no stated environment axis — E0 never absorbs one; a suspected-but-unstated axis is no axis (→ I0). Unknown → triage under ~15 tool calls, deliver the environment matrix, then own or hand over"
++      ]
++    },
++    "Runner": {
++      "class": "E1",
++      "purpose": "Do the bounded mechanical thing, N times, in parallel, cheaply — run suites, sweep matrices, apply templates and uniform codemods under a validator, classify against checklists, poll progress.",
++      "owns": "E1 — mechanical batch execution: strictly uniform, enumerable, validator-checkable transforms with exact named paths.",
++      "mustNotReceive": [
++        "open-ended work",
++        "judgment of any kind (may report a checklist item unmet, never that a change is good)",
++        "haystacks",
++        "feature ownership",
++        "non-uniform transforms (→ E8/E2)"
++      ]
++    },
++    "Builder": {
++      "class": "E2",
++      "purpose": "Implement a well-scoped change behind a written spec — feature, fix, integration, or a confirmed bounded performance improvement — in one run and one review round.",
++      "owns": "E2 — routine implementation; performance fixes only when they arrive with the Investigator's profile, invariant and numeric target (that profile IS the bounded spec).",
++      "mustNotReceive": [
++        "split-resistant cross-subsystem work — coupled contracts that must change together (→ E3)",
++        "unspecified work — a goal with no spec, or a design that must be authored first (→ A0 first)",
++        "data migrations — any persisted data changing shape or content, even when the code is trivial (→ E4)",
++        "environment problems (→ E0)",
++        "certifying its own tests",
++        "work whose acceptance is inspecting spatial or rendered output (→ E6) or an interface's presentation/layout/styling/interaction (→ E5)"
++      ]
++    },
++    "Principal": {
++      "class": "E3",
++      "purpose": "Carry the orders that genuinely resist splitting — algorithmically hard cores, coupled cross-subsystem changes, repository-scale builds — where narrow orders would lose the whole-system view.",
++      "owns": "E3 — complex long-horizon and split-resistant implementation.",
++      "mustNotReceive": [
++        "routine orders — bounded, separable, template-to-mirror work (→ E2; if most orders route here, the sizing law is failing)",
++        "pure environment work (→ E0)",
++        "data migrations (→ E4 even when hard)"
++      ]
++    },
++    "Data Engineer": {
++      "class": "E4",
++      "purpose": "Change data and the shapes that hold it — schema migrations, backfills, ETL, query and index work — where the defining property is that mistakes may be unrecoverable.",
++      "owns": "E4 — including when the code change is trivial, because the class is defined by consequence, not difficulty.",
++      "mustNotReceive": [
++        "live production mutation without T3 authorization",
++        "application logic with no persisted-data consequence (→ E2)",
++        "sole release authority"
++      ]
++    },
++    "Interface Artisan": {
++      "class": "E5",
++      "purpose": "Build and fix what a user looks at — web/app UI, layout, interaction, accessibility, visual regression — with a render-inspect-adjust loop.",
++      "owns": "E5 — presentation, layout, structure, styling, and interaction behavior, accepted by inspecting or exercising the interface itself; presentation-defect diagnosis (the render loop is the diagnosis).",
++      "mustNotReceive": [
++        "3D/procedural geometry (→ E6)",
++        "backend logic (→ E2/E3)",
++        "changes to which VALUES a surface shows with layout, styling, and interaction untouched — displayed values are data, not presentation (→ E2, disc. W)",
++        "raw reference extraction (→ M0)",
++        "final sign-off on its own rendering"
++      ]
++    },
++    "Spatial Specialist": {
++      "class": "E6",
++      "purpose": "Write code whose output is geometry, space or simulation — procedural meshes, parametric CAD, scenes and levels, shaders, engine integrations — and build the inspection tooling that says whether the output is right.",
++      "owns": "E6 — spatial, 3D, procedural, engine-integrated work accepted by inspecting spatial or rendered output.",
++      "mustNotReceive": [
++        "2D document-flow UI (→ E5)",
++        "productionizing a working generator — seeds, LODs, serialization, editor controls (→ E2 at a fraction of the draw)",
++        "final artistic approval (→ human)"
++      ]
++    },
++    "Red Team": {
++      "class": "E7",
++      "purpose": "Attack the change and the system on purpose — threat modeling, vulnerability hunting, dependency/supply-chain review, secrets and permission analysis — defensively only.",
++      "owns": "E7 — exploitability: how would an attacker use it. Triggered by changes touching auth, crypto, parsing, deserialization, file paths, subprocess, dependencies; plus scheduled passes.",
++      "mustNotReceive": [
++        "patching its own findings (Operator or Builder patches)",
++        "offensive work (refused at the Conductor)",
++        "routine code review — is-it-correct without an exploitability question (→ R0)"
++      ]
++    },
++    "Refactorer": {
++      "class": "E8",
++      "purpose": "Carry broad, semantically-shallow, non-uniform wide change — API migrations, repo-wide renames, codemod authoring plus consumer migration, dependency sweeps — where the risk is a missed site, not a wrong line.",
++      "owns": "E8 — refactoring at scale: pattern plus judgment at N sites, census named before the change.",
++      "mustNotReceive": [
++        "semantically deep restructuring (→ E3)",
++        "schema/data migration — any persisted data changing shape or content (→ E4, disc. J trump)",
++        "open API design (→ A0 first)",
++        "strictly-uniform, enumerable, validator-checkable transforms — an exact token substitution is not this class (→ E1 under a validator, disc. I)"
++      ]
++    },
++    "Test Designer": {
++      "class": "Q0",
++      "purpose": "Construct an oracle independent of the implementation author — tests, fixtures, invariants, property tests, mutation targets — plus general suite repair and harness plumbing.",
++      "owns": "Q0 — independent test design and authoring. No agent certifies a suite it wrote.",
++      "mustNotReceive": [
++        "production logic",
++        "deciding what the acceptance criteria should be (→ A0/O0)"
++      ]
++    },
++    "Doc Writer": {
++      "class": "D0",
++      "purpose": "Produce prose humans rely on — developer docs, API references, changelogs, ADRs, migration guides, runbooks — tied to verified behavior; every behavioral claim cites path:line or a passing test.",
++      "owns": "D0 — documentation of content that is settled at intake: named events, decisions, and outcomes to record, however summary-shaped the container.",
++      "mustNotReceive": [
++        "code (→ E2)",
++        "design decisions dressed as docs — an ADR that decides is planning (→ A0)",
++        "content that must be recovered by reading and reconciling a body of material to learn what the document must say (→ N2, disc. V)",
++        "legal acceptance (→ human)",
++        "unverified current facts (→ N1 first)"
++      ]
++    },
++    "Reviewer": {
++      "class": "R0",
++      "purpose": "Presume the change is broken and try to break it — independently read the diff, independently re-run verification, return severity-tagged findings with concrete failure scenarios.",
++      "owns": "R0 — adversarial correctness review of an existing change: is it right. Exploitability — how would an attacker use it — is E7's question (disc. M; both, on the trigger list → both, in that order).",
++      "mustNotReceive": [
++        "implementation or repair (a reviewer that fixes stops reviewing)",
++        "same-family consequential artifacts",
++        "a change it advised on",
++        "recursive review of verdicts",
++        "a pure exploitability question with no correctness half (→ E7)"
++      ]
++    },
++    "Sweeper": {
++      "class": "S0",
++      "purpose": "After a fan-out or wide change, find what the parts missed — orphaned call sites, stale docs, dead config, un-migrated consumers, generated-artifact drift.",
++      "owns": "S0 — post-fan-out completeness; mandatory at the end of every chained or sharded order.",
++      "mustNotReceive": [
++        "fixing what it finds",
++        "correctness review (→ R0; completeness then correctness, in that order, never the same instance)"
++      ]
++    },
++    "Verifier": {
++      "class": "V0",
++      "substrate": true,
++      "purpose": "Establish facts about a change mechanically and return evidence, never a verdict.",
++      "owns": "V0 — mechanical verification.",
++      "mustNotReceive": []
++    },
++    "Quartermaster": {
++      "class": "P0",
++      "substrate": true,
++      "purpose": "Know how much of each vendor's allowance remains, predict exhaustion, publish the degradation state the router reads.",
++      "owns": "P0 — allowance accounting and pool state.",
++      "mustNotReceive": []
++    }
++  }
++}
+diff --git a/router/router.js b/router/router.js
+index dc41157..e55d86c 100644
+--- a/router/router.js
++++ b/router/router.js
+@@ -177,6 +177,28 @@ function createRouter(opts) {
+   const conductor = roles['Conductor'];
+   if (conductor && !(conductor.never || []).includes('Opus 5')) fail('Conductor must carry the never-Opus rule');
+ 
++  // ---- seat charters (the live intake filters, Part 2 + error stance) ----
++  let charters;
++  try {
++    charters = JSON.parse(fs.readFileSync(options.chartersFile || path.join(path.dirname(castingsFile), 'charters.json'), 'utf8'));
++  } catch (e) {
++    fail('charters.json unreadable or unparseable: ' + e.message);
++  }
++  if (charters) {
++    for (const name of roleNames) {
++      const ch = (charters.charters || {})[name];
++      if (!ch) { fail('role ' + name + ' has no charter entry'); continue; }
++      if (ch.class !== roles[name].class) fail('charter for ' + name + ' claims class ' + ch.class + ', casting table says ' + roles[name].class);
++      if (!ch.owns || !ch.purpose) fail('charter for ' + name + ' missing owns/purpose');
++      if (!ch.substrate && (!Array.isArray(ch.mustNotReceive) || ch.mustNotReceive.length === 0)) {
++        fail('charter for ' + name + ' has an empty must-not-receive filter');
++      }
++    }
++    for (const name of Object.keys(charters.charters || {})) {
++      if (!roles[name]) fail('charter names unknown role ' + name);
++    }
++  }
++
+   if (problems.length > 0) {
+     throw new Error('router refused: casting tables invalid (' + problems.length + ' violation(s)):\n  - ' + problems.join('\n  - '));
+   }
+@@ -584,6 +606,38 @@ function createRouter(opts) {
+     return { ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion };
+   }
+ 
++  // ---- RECLASSIFY hop machinery (Part 4 error stance, WO-4 encoding) ----
++  // A seat receiving work outside its charter returns RECLASSIFY with
++  // {recommended_class, evidence}. Processing it re-dispatches the order to
++  // the recommended class with the hop counted: one hop is routine; a second
++  // hop on the same order escalates to the Conductor as a classification
++  // defect. Every hop feeds the per-pair ledger (the same ledger residual
++  // ambiguities feed — three entries on one pair force a redraw or merge).
++  function processReclassify(order, report, buckets, dispatchOpts) {
++    if (!report || report.status !== 'RECLASSIFY') {
++      throw new Error('processReclassify needs a report with status RECLASSIFY');
++    }
++    const rc = report.reclassify || {};
++    if (!rc.recommended_class) throw new Error('RECLASSIFY report missing reclassify.recommended_class');
++    if (!rc.evidence || String(rc.evidence).trim() === '') {
++      throw new Error('RECLASSIFY report missing reclassify.evidence — the observed evidence is required, not optional');
++    }
++    const from = resolveClass(order.class);
++    const to = resolveClass(rc.recommended_class);
++    if (from === to) throw new Error('RECLASSIFY recommends the class the order already carries (' + from + ') — not a reclassification');
++    const hop = (order.reclassify_hops || 0) + 1;
++    const ledgerEntry = { pair: [from, to].sort(), task_id: order.task_id, hop, evidence: rc.evidence };
++    if (hop >= 2) {
++      return {
++        escalated: true, to: 'Conductor',
++        reason: 'classification defect: second reclassification hop on one order (' + order.task_id + '), ' + from + ' → ' + to,
++        hop, ledger: ledgerEntry, dispatch: null,
++      };
++    }
++    const newOrder = Object.assign(order, { class: to, reclassify_hops: hop });
++    return { escalated: false, hop, ledger: ledgerEntry, order: newOrder, dispatch: dispatch(newOrder, buckets, dispatchOpts) };
++  }
++
+   function allGreen() {
+     const out = {};
+     for (const b of castings.buckets) out[b] = 'Green';
+@@ -591,8 +645,8 @@ function createRouter(opts) {
+   }
+ 
+   return {
+-    registry, castings, problems: [],
+-    route, resolveClass, cast, reviewer, reviewPolicy, dispatch,
++    registry, castings, charters, problems: [],
++    route, resolveClass, cast, reviewer, reviewPolicy, dispatch, processReclassify,
+     poolState: (r) => poolState(r, ladderCfg),
+     preDispatchGate, q0Required, createQ0Order,
+     requiredReserve: (f) => requiredReserve(f, castings.reserve),
+diff --git a/tests/router.test.js b/tests/router.test.js
+index f81f127..6dd8639 100644
+--- a/tests/router.test.js
++++ b/tests/router.test.js
+@@ -476,4 +476,48 @@ check('an R0 order with author families computes the matrix lane',
+   (() => { const d = router.dispatch(order('R0', 'T2'), G, { reviewOf: { authorFamilies: ['openai'] } }); return d.ok && d.review.casting.model === 'Opus 5'; })());
+ check('inert verification tier takes no model review', (() => { const d = router.dispatch(order('E2', 'T1'), G, { flags: { inert: true } }); return d.ok && d.review.policy === 'none'; })());
+ 
++// ------------------------------------- 11. RECLASSIFY hop machinery, charters
++section('11. RECLASSIFY hop machinery and seat charters');
++
++check('every role carries a charter with a non-empty must-not-receive filter (substrates exempt)',
++  (() => {
++    const ch = router.charters.charters;
++    return Object.keys(router.castings.roles).every((r) => ch[r] && (ch[r].substrate || ch[r].mustNotReceive.length > 0));
++  })());
++check('a missing charter fails the load closed',
++  (() => {
++    const ch = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charters.json'), 'utf8'));
++    delete ch.charters.Builder;
++    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-chart-'));
++    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
++    const file = path.join(dir, 'charters.json');
++    fs.writeFileSync(file, JSON.stringify(ch), 'utf8');
++    let threw = null;
++    try { createRouter({ chartersFile: file }); } catch (err) { threw = err; }
++    return !!threw && /no charter entry/.test(threw.message);
++  })());
++{
++  const misrouted = order('N2', 'T1', { task_id: 'rc-1' });
++  const report = { status: 'RECLASSIFY', reclassify: { recommended_class: 'I0', evidence: 'deliverable is a causal mechanism, not a synthesis (charter: never live reproduction/causality)' } };
++  const qc = buckets({ 'AU-opus': { state: 'Green', quartermasterConfirmation: true } });
++  const r = router.processReclassify(misrouted, report, qc);
++  check('hop 1 is routine: re-dispatched to the recommended class with the hop counted',
++    r.escalated === false && r.hop === 1 && r.dispatch.ok && r.dispatch.role === 'Investigator' && r.order.reclassify_hops === 1);
++  check('the hop feeds the per-pair ledger with the observed evidence',
++    r.ledger.pair.join('/') === 'I0/N2' && /causal mechanism/.test(r.ledger.evidence));
++  const second = router.processReclassify(r.order, { status: 'RECLASSIFY', reclassify: { recommended_class: 'N2', evidence: 'bounced back' } }, qc);
++  check('a second hop on the same order escalates to the Conductor as a classification defect',
++    second.escalated === true && second.to === 'Conductor' && second.dispatch === null);
++}
++check('a RECLASSIFY without evidence is rejected — the observed evidence is contractual',
++  (() => { try { router.processReclassify(order('E2', 'T1'), { status: 'RECLASSIFY', reclassify: { recommended_class: 'E3' } }, G); return false; } catch (e) { return /evidence/.test(e.message); } })());
++check('recommending the class the order already carries is rejected (I1 alias resolves first)',
++  (() => { try { router.processReclassify(order('I1', 'T1'), { status: 'RECLASSIFY', reclassify: { recommended_class: 'I0', evidence: 'x' } }, G); return false; } catch (e) { return /already carries/.test(e.message); } })());
++check('an alias in recommended_class resolves before re-dispatch',
++  (() => {
++    const qc = buckets({ 'AU-opus': { state: 'Green', quartermasterConfirmation: true } });
++    const r = router.processReclassify(order('N0', 'T1', { task_id: 'rc-2' }), { status: 'RECLASSIFY', reclassify: { recommended_class: 'I1', evidence: 'causal question' } }, qc);
++    return r.dispatch.class === 'I0' && r.dispatch.role === 'Investigator';
++  })());
++
+ console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

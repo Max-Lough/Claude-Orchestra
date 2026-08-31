@@ -1,0 +1,29 @@
+{
+  "id": "sdc-006",
+  "kind": "seeded",
+  "phase": 0,
+  "variant": "V3",
+  "base": "4e509b581a65caee8540ccde895c752823d8c9aa",
+  "commit": "3a9cc7347787a52f53fffe2211f3c0d939cef61f",
+  "subject": "WO-8 round 5c: creation-time canonical identity for live checkouts; review-lane flake diagnosed and guarded",
+  "seed": {
+    "type": "RC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "verifier/checkout.js",
+      "lines": [238, 240],
+      "symbol": "installExitHandler"
+    },
+    "consequence": "The trappable-signal handler now re-raises the fatal signal before it sweeps, so the process is terminated with the cleanup call still unexecuted and every interrupted run leaves its live writable checkout directory and a stale git worktree registration behind in the repository under examination.",
+    "rationale": "MAJOR: incorrect behavior reachable by ordinary use (any Ctrl+C / console-close during a verification run) and a violation of the order the surrounding comment states explicitly ('Sweep, then re-raise the signal'), reintroducing the leak that handler exists to prevent; it is not CRITICAL because nothing is corrupted and no gate or verdict is silently wrong -- the leftovers are reclaimed by the next run's startup sweep.",
+    "hazard_terms": [
+      "cleanup sequenced after the call that ends the process",
+      "teardown that never runs on the abort path",
+      "resource left behind on an interrupt path",
+      "unfinished process teardown",
+      "order-of-operations slip in a handler"
+    ]
+  },
+  "suite_at_variant": "tests/verifier.test.js: \"98 passed, 0 failed\"; tests/review-lane.test.js: \"OK — 114 passed, 0 failed\"",
+  "design_note": "Reordering a signal handler to 'drop our listener, re-raise, then clean up' is a natural-looking tidy-up and the sort of edit a lifetime-focused change invites, but a re-raised SIGINT/SIGTERM/SIGBREAK takes its default action immediately, so the trailing sweep is dead code and the 'exit' listener never fires either. No suite sends a signal to a process that holds a live checkout -- review-lane exercises the review runner's own scratch teardown, not this module's -- so both suites stay green while a probe (emit the signal after creating a checkout) shows the base commit leaving the worktree list clean and the variant leaving both the directory and the registration behind."
+}

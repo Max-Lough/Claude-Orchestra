@@ -1,0 +1,12 @@
+{
+  "id": "e-04",
+  "category": "red test from an environment cause",
+  "title": "an unset environment variable selects the wrong code path",
+  "check_display": "node test.js",
+  "check_steps": [["node", "test.js"]],
+  "scope": ["src/config.js"],
+  "audit_ignore": [],
+  "env_unset": ["APP_MODE"],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

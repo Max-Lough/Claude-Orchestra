@@ -1,0 +1,11 @@
+{
+  "name": "escape-kit",
+  "version": "1.9.2",
+  "private": true,
+  "description": "HTML escaping helpers with a legacy compatibility profile.",
+  "scripts": {
+    "test": "node test.js",
+    "dev": "node scripts/dev.js"
+  },
+  "license": "MIT"
+}

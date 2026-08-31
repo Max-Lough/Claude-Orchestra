@@ -1,0 +1,176 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 6833b08..91a77ce 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -84,7 +84,9 @@ The delta is now compared per path and split: generated build/engine artifacts
+ `integrityIgnoreDefaults: false`) become a counted `INTEGRITY NOTE`; anything
+ else is the `⚠ INTEGRITY WARNING`, listing the offending paths instead of
+ dumping two whole fingerprints. `worktreeWarmupCmd` fixes the class outright by
+-taking the baseline *after* an engine's first-open import.
++taking the baseline *after* an engine's first-open import — in the pinned
++throwaway checkout only, because a warmup writes and a live-tree review must
++not write into the tree it is reviewing.
+ 
+ ### A configured scratch root is honoured or refused, never swapped
+ 
+@@ -102,11 +104,11 @@ verdict was printed from a callback deep inside an async chain, so a throw, a
+ rejection, or a step that never fired let node drain its event loop and exit 0.
+ The suite is now one linear `await` chain, a failure sets `process.exitCode`
+ immediately, an `exit` handler enforces it, and a run that recorded no cases at
+-all fails on that basis. 92 checks, including new coverage for every item above:
++all fails on that basis. 94 checks, including new coverage for every item above:
+ attribution wording for signal-class vs runner-enforced kills, the retry chain
+ (fail-then-succeed, and both-fail), the probe, layout detection and helper
+-repair from a sibling version, integrity classification and warmup ordering, and
+-the mandatory scratch root.
++repair from a sibling version, integrity classification, warmup ordering and its
++refusal to run in a live tree, and the mandatory scratch root.
+ 
+ ### Scope
+ 
+diff --git a/README.md b/README.md
+index 397e614..40d53f2 100644
+--- a/README.md
++++ b/README.md
+@@ -98,7 +98,7 @@ node install.js /path/to/project --packs codex
+ | `ORCHESTRA_REVIEW_GIT_ISOLATION` | `gitConfigIsolation` | `1` / `true` | Run every git the review touches against a scratch global config, so a sandbox that can't read yours doesn't warn on every command. |
+ | `ORCHESTRA_REVIEW_RETRIES` | `reviewRetries` | `1` | Extra attempts after a failure that could go differently (max 3), each in a fresh checkout. The chain reports as one outcome. |
+ | `ORCHESTRA_REVIEW_PROBE` | `authProbe` | `1` / `true` | Stage-a `codex exec` echo before the real attempt, so a dead or unauthenticated install fails in seconds. `probeTimeoutMs` caps it (90 s). |
+-| `ORCHESTRA_REVIEW_WARMUP_CMD` | `worktreeWarmupCmd` | — | Command run inside the fresh checkout *before* the integrity baseline — for engines that import assets on first open. `worktreeWarmupTimeoutMs` caps it. |
++| `ORCHESTRA_REVIEW_WARMUP_CMD` | `worktreeWarmupCmd` | — | Command run inside the fresh checkout *before* the integrity baseline — for engines that import assets on first open. Pinned reviews only (it writes). `worktreeWarmupTimeoutMs` caps it. |
+ | — | `integrityIgnore` | built-in list | Paths counted as expected build/engine churn rather than reviewer mutation. `integrityIgnoreDefaults: false` drops the built-ins. |
+ | — | `helperSiblings` / `requireHelperSiblings` | Windows: `codex-command-runner.exe`, `codex-resources` | Files the Codex install must carry next to its executable; verified and repaired each run. |
+ | — | `doNotRun` | — | Commands the reviewer is forbidden to run. Also `--forbid` / `--no-tests`. |
+@@ -127,7 +127,7 @@ The worktree root is deliberately outside the repo (OS temp dir by default; `wor
+ 
+ **Field-hardening.** Six further failure modes the runner handles mechanically: it **resolves `CODEX_BIN` to its real path** (a symlink or Windows junction breaks Codex's own sibling-file resolution); it **restores missing files** into the Codex install from `helpersDir` before each run (a Codex self-update can silently strip them); it **enforces command prohibitions as hard constraints** that explicitly outrank the brief's "re-run the tests" rule, requiring the affected claims to return as `UNVERIFIED (prohibited: …)` so a narrowed review reports itself as narrowed; it **refuses to review a moving tree**, sampling the working tree twice and returning `REVIEW_UNAVAILABLE: working tree is not idle` if another executor, build, or watch task is still writing; it **isolates git's global config** for every git the review touches, its own and the engine's, because a sandboxed process often cannot read the user's real one and git then complains on *every* invocation (`unable to access '<home>/.config/git/ignore'`) — noise an agentic reviewer treats as a lead; and it **fails honestly on a bad ref** rather than silently falling back to the live tree. Two more since: it **names the Codex install layout** it found and **verifies the helper files that must sit next to the resolved binary**, repairing them from any locatable known-good copy and naming exactly what is missing when it cannot (Codex relocated its install once already, which silently invalidated a repair recipe written for the old layout); and a **`worktreeRoot` you set is honoured or refused, never swapped** — an unwritable configured root fails the review with the `mkdir` error attached, because falling back to the temp dir would undo the very setting that exists to prevent cross-run collisions.
+ 
+-**Tested, not asserted.** `node tests/review-lane.test.js` in the master exercises the lane end to end against a stub Codex that reports what the engine actually saw — 92 checks. Each fix is checked twice — once showing the failure mode reproduces, once showing it's gone — including worktree teardown after a successful run, after `SIGTERM`, and after `SIGKILL` (where the next run's sweep is what reclaims the orphan). The suite's own exit code is pinned three ways (a failure sets it immediately, an `exit` handler enforces it, and a suite that recorded no cases fails on that basis), because it previously exited 0 on Windows even with failing cases: the verdict was printed from deep inside an async chain that a throw or a hang simply skipped, and a green run that proves nothing is worse than no suite at all.
++**Tested, not asserted.** `node tests/review-lane.test.js` in the master exercises the lane end to end against a stub Codex that reports what the engine actually saw — 94 checks. Each fix is checked twice — once showing the failure mode reproduces, once showing it's gone — including worktree teardown after a successful run, after `SIGTERM`, and after `SIGKILL` (where the next run's sweep is what reclaims the orphan). The suite's own exit code is pinned three ways (a failure sets it immediately, an `exit` handler enforces it, and a suite that recorded no cases fails on that basis), because it previously exited 0 on Windows even with failing cases: the verdict was printed from deep inside an async chain that a throw or a hang simply skipped, and a green run that proves nothing is worse than no suite at all.
+ 
+ **Tiered review (`--tier`).** Every review runs at full depth by default — the reviewer re-runs the tests itself. For a round the Director declares **inert** (docs/comments/formatting with zero behavior impact), the review order states `TIER: inert` and the launcher appends `--tier inert`; the runner then instructs the reviewer to *verify the inertness claim from the diff first* — any behavior-bearing line is itself a critical finding and forces a full-depth review — and only a proven-inert diff skips the suite. Effectiveness is never traded for speed: the tier narrows verification only where narrowing provably cannot matter, and the prover is whoever reviews — the Opus `reviewer`, the Codex engine, or the protocol's last-resort fallback — never the author. The tier appears in the `REVIEW ENGINE` header of both engines so every verdict is auditable for the depth it ran at. The tier and the `verification` manifest are engine-agnostic review *policy* (`ORCHESTRA.md` §8.3); the Opus `reviewer` enforces them through its own rules, this runner implements them for the Codex engine, and the §5 fallback applies them by hand.
+ 
+diff --git a/packs/codex/FIELD-VALIDATION.md b/packs/codex/FIELD-VALIDATION.md
+index f7971e6..b4e9867 100644
+--- a/packs/codex/FIELD-VALIDATION.md
++++ b/packs/codex/FIELD-VALIDATION.md
+@@ -2,7 +2,7 @@
+ 
+ For the next **gate-class review** run by a project that installed this pack
+ (`node install.js <project> --packs codex`). The master's own suite
+-(`node tests/review-lane.test.js`, 92 checks) proves the mechanics against a
++(`node tests/review-lane.test.js`, 94 checks) proves the mechanics against a
+ stub engine; this checklist proves the round-2 fixes against the real Codex CLI,
+ on Windows, where every field failure happened.
+ 
+@@ -17,7 +17,10 @@ this round addresses only appear on real work.
+       (`node install.js <project> --packs codex` re-stamps it.)
+ - [ ] Optional but recommended for engine projects (Godot, Unity, Unreal): set
+       `"codex": { "worktreeWarmupCmd": "<engine headless import command>" }` in
+-      `.claude/orchestra.json`.
++      `.claude/orchestra.json`. It runs only in a **pinned** review (a warmup
++      writes, and a live-tree review must not write into the tree it is
++      reviewing), so this pairs with passing `--head-ref` — which a gate-class
++      review of a committed change should be doing anyway.
+ 
+ ## During the gate — read the header
+ 
+diff --git a/packs/codex/README.md b/packs/codex/README.md
+index 5d32233..9b869e9 100644
+--- a/packs/codex/README.md
++++ b/packs/codex/README.md
+@@ -70,7 +70,7 @@ Environment variables override the file; explicit runner flags override both.
+ | `gitConfigIsolation` | `true` by default; set `false` to let the review use your real global git config. |
+ | `reviewRetries` | Extra attempts after a failure that might go differently (default `1`, max `3`). Each retry gets a fresh checkout; the chain reports as one outcome. |
+ | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
+-| `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. |
++| `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
+ | `integrityIgnore` / `integrityIgnoreDefaults` | Paths that are expected build/engine churn, added to (or replacing) the built-in list of generated-artifact paths. |
+ | `helperSiblings` / `requireHelperSiblings` | Files the Codex install must carry next to its executable (default on Windows: `codex-command-runner.exe`, `codex-resources`). Verified every run; repaired where a known-good copy is locatable; `requireHelperSiblings: true` makes a missing one a hard stop. |
+ 
+diff --git a/packs/codex/hooks/orchestra-review.js b/packs/codex/hooks/orchestra-review.js
+index 61fc94a..d821dd0 100644
+--- a/packs/codex/hooks/orchestra-review.js
++++ b/packs/codex/hooks/orchestra-review.js
+@@ -1740,8 +1740,14 @@ function main() {
+     CONFIG.warmupTimeoutMs = intOr(codexCfg.worktreeWarmupTimeoutMs, CONFIG.warmupTimeoutMs);
+   }
+   if (codexCfg.integrityIgnoreDefaults === false) CONFIG.integrityIgnoreDefaults = false;
+-  CONFIG.integrityIgnore = (CONFIG.integrityIgnoreDefaults ? DEFAULT_INTEGRITY_IGNORE : [])
+-    .concat(stringList(codexCfg.integrityIgnore).map((s) => s.trim()));
++  // The default allowlist is there for the import burst a FIRST OPEN produces —
++  // which is the warmup's business, and the warmup is a pinned-checkout thing.
++  // A live tree has already been opened, so it keeps only the churn the project
++  // declared for itself rather than a blanket engine/build exemption.
++  const pinnedReview = !!(args.headRef || '').trim();
++  CONFIG.integrityIgnore =
++    (CONFIG.integrityIgnoreDefaults && pinnedReview ? DEFAULT_INTEGRITY_IGNORE : [])
++      .concat(stringList(codexCfg.integrityIgnore).map((s) => s.trim()));
+   if (Array.isArray(codexCfg.helperSiblings)) {
+     CONFIG.helperSiblings = stringList(codexCfg.helperSiblings).map((s) => s.trim());
+   }
+@@ -2006,8 +2012,22 @@ function main() {
+     // Warmup BEFORE the baseline. An engine that imports assets on first open
+     // rewrites hundreds of generated files; taking the baseline first turns all
+     // of them into evidence that the reviewer mutated the tree.
+-    const warm = runWarmup(att.reviewDir);
+-    if (warm) PREFLIGHT.push((n > 1 ? 'attempt ' + n + ': ' : '') + warm.note);
++    //
++    // PINNED MODE ONLY, and not as a limitation: the warmup exists because a
++    // FRESH CHECKOUT lacks the generated artifacts a long-lived tree already
++    // has. Running it in LIVE mode would mean the review process writing into
++    // the user's actual working tree — an engine import is not a read — which
++    // is precisely what a review must never do.
++    if (CONFIG.warmupCmd && !CONFIG.headRef) {
++      PREFLIGHT.push(
++        'warmup command NOT run: this is a live-tree review, and the warmup only runs in a ' +
++          'throwaway pinned checkout (it writes, and a review must not write into the tree ' +
++          'it is reviewing). Pass --head-ref to get it.'
++      );
++    } else {
++      const warm = runWarmup(att.reviewDir);
++      if (warm) PREFLIGHT.push((n > 1 ? 'attempt ' + n + ': ' : '') + warm.note);
++    }
+ 
+     // Is anything else still writing the tree? A review of a tree in motion
+     // reports on a state that no longer exists. Pinned mode cannot have this
+@@ -2188,8 +2208,9 @@ function main() {
+     } else if (expected.length) {
+       body +=
+         '\n\nINTEGRITY NOTE: ' + expected.length + ' path(s) changed while the reviewer ran, ' +
+-        'all of them matching the expected build/engine-churn allowlist (e.g. ' +
+-        expected.slice(0, 3).map((c) => c.path).join(', ') +
++        'all of them matching the expected build/engine-churn allowlist (' +
++        expected.slice(0, 6).map((c) => c.path).join(', ') +
++        (expected.length > 6 ? ', …' : '') +
+         ') — generated artifacts, not source. Not flagged as a reviewer mutation. Tune with ' +
+         '"codex": { "integrityIgnore": [...] } / "integrityIgnoreDefaults": false.';
+     }
+diff --git a/tests/review-lane.test.js b/tests/review-lane.test.js
+index fdd7d11..c214830 100644
+--- a/tests/review-lane.test.js
++++ b/tests/review-lane.test.js
+@@ -883,6 +883,23 @@ function case16() {
+     // integrity finding about it.
+     wout.slice(-900)
+   );
++  // ...and a warmup is never allowed to run in the user's real working tree:
++  // it writes, and a review must not write into the tree it is reviewing.
++  const fx4b = makeDirtyRepo();
++  const liveWarm = runReview(fx4b, [
++    '--warmup-cmd', 'node -e "require(\'fs\').writeFileSync(\'must-not-exist.txt\',\'x\')"',
++  ]);
++  check(
++    'a warmup is refused in LIVE mode, and says why',
++    /warmup command NOT run: this is a live-tree review/.test(liveWarm.stdout || ''),
++    (liveWarm.stdout || '').slice(0, 900)
++  );
++  check(
++    'the live working tree really was not written to',
++    !fs.existsSync(path.join(fx4b.repo, 'must-not-exist.txt')),
++    'the warmup wrote into the project under review'
++  );
++
+   // ...and the same file created by the ENGINE instead is still caught, so the
+   // warmup narrows the baseline without blinding the check.
+   const fx5 = makeDirtyRepo();

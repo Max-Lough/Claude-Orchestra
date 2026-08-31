@@ -1,0 +1,14 @@
+{
+  "name": "gatekeeper",
+  "version": "3.0.1",
+  "private": true,
+  "description": "Accepts only tokens minted by the first-party issuer.",
+  "dependencies": {
+    "@fx/issuer": "1.1.0",
+    "@fx/token": "2.0.0"
+  },
+  "scripts": {
+    "test": "node test.js"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit b3cbbc4fad45ab4abbcf7e79440b7e3ff9136b14
+Base (its parent):   09d7935626c35679efdee24324f3571bc82a8023
+Commit subject:      Bundle skills with the harness: orchestra-* skills stamped by the installer
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

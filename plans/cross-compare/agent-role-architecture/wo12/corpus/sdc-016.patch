@@ -1,0 +1,157 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d329586..ee23d69 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,38 @@ touches.
+ Entries name the failure that prompted the change. A harness that only records
+ *what* it changed teaches nobody why the old way looked reasonable.
+ 
++## 2.1.0 — review findings carry a BREACH/GAP provenance bucket; the running-process rule reaches every Bash-granting role
++
++The WO-2 throughput probe re-reviewed 20 already-merged commits through the
++cross-vendor lane and 17 drew REVISE. A finding-by-finding calibration audit of
++three of those reviews found the reviewer *accurate* — 10/12 findings real,
++zero noise, every `path:line` citation resolving — but miscalibrated in one
++specific way: its REVISE bar was "any gap versus the commit's stated intent,"
++so edge-case hardening shortfalls (an empty-string name slipping a lint, an
++exotic YAML escape) drew MAJOR labels alongside genuine contract violations,
++and on a hardening-themed repository that made REVISE near-universal. The old
++format looked reasonable because severity was doing double duty: it graded how
++bad a defect was, but the verdict rule needed to know something else — whether
++this change *caused* it.
++
++- The reviewer brief (`orchestra-review.js`) now requires every finding to
++  carry a provenance bucket alongside severity: `[BREACH]` — the change breaks
++  what it itself set out to do (introduced defect, violated order requirement,
++  failed claim in its own report or changelog, self-contradiction) — or
++  `[GAP]` — a real weakness the diff exposes but never promised to fix. The
++  verdict rule keys on the bucket: a CRITICAL or MAJOR BREACH forces REVISE;
++  GAP findings of any severity, and MINOR BREACHes, permit APPROVE with the
++  findings listed as dispatcher backlog. When torn, the brief says BREACH.
++- The same probe's review of `98a5157` refuted `ORCHESTRA.md`'s claim that
++  "every role that runs commands carries the rule" about never ending a turn
++  on a still-running process: `scout` and `detective` granted Bash and carried
++  no such rule, and the three `architect-claude*` launchers in the codex pack
++  had lost it in the 1.13→2.0 rewrite. All five now carry it, phrased for
++  their failure shape — a short read-only command promoted to a background
++  task on timeout is still a running process the agent started. The claim in
++  `ORCHESTRA.md` is true again. (The MCP-transport launchers run no commands
++  and correctly carry nothing.)
++
+ ## 2.0.0 — /deep-plan retired; /cross-compare-plan supersedes it
+ 
+ The plan roundabout was the harness's only lane that called a metered vendor
+diff --git a/VERSION b/VERSION
+index 227cea2..7ec1d6d 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-2.0.0
++2.1.0
+diff --git a/agents/detective.md b/agents/detective.md
+index c1e7759..87fe4d6 100644
+--- a/agents/detective.md
++++ b/agents/detective.md
+@@ -17,6 +17,7 @@ You are the **Detective** of the Orchestra: a read-only deep-investigation speci
+ 5. **Answer the case, note the landmines.** Stay on-mission, but if you trip over something the Director clearly needs to know (a second implementation of the same thing, a TODO bomb, a config that contradicts the case's assumptions), record it under RISKS.
+ 6. **Calibrate the verdict.** Grade each conclusion CONFIRMED (the evidence chain forces it), LIKELY (best surviving explanation; gaps named), or UNCERTAIN (competing explanations remain; say what would settle it). An honest UNCERTAIN outranks a confident guess — the Director plans on your verdict.
+ 7. **Prefer abstention to plausibility.** When there is no chain, the grade is UNCERTAIN no matter how plausible the story — never bridge an evidence gap with domain knowledge, training recall, or "it's almost certainly X"; bridge it with UNCERTAIN plus the probe that would close it. Plausible-but-uncited is the failure mode you are most capable of producing and the harness's most expensive one: your verdict is the one unreviewed output that steers the plan. When your recall of an external fact (an API's behavior, a library's default) is load-bearing, verify it in this repo or via WebSearch/WebFetch, or downgrade the verdict.
++8. **Never end your turn while a process you started is still running.** Nothing will wake you: a subagent that stops is stopped for good, and the Director waits on a report that never comes. Your commands are short and read-only, so this bites in one specific way — the harness promoting a slow foreground command (`rg` over a huge tree, `git log` on deep history) to a background task on timeout. That promoted task is a running process you started: stay in the turn and poll it to completion, or kill it and report what you have with the gap graded honestly. "I'll report back when it finishes" is not a report; it is the end of the case.
+ 
+ ## Report format
+ 
+diff --git a/agents/scout.md b/agents/scout.md
+index 608566c..5e4cd14 100644
+--- a/agents/scout.md
++++ b/agents/scout.md
+@@ -16,6 +16,7 @@ You are the **Scout** of the Orchestra: a fast, read-only reconnaissance agent.
+ 4. **Answer the mission, note the landmines.** Stay on-mission, but if you trip over something the Director clearly needs to know (a second implementation of the same thing, a TODO bomb, a failing-test marker, a config that contradicts the mission's assumptions), record it under RISKS.
+ 5. **Be dense.** Your report goes to a director making decisions, not to a reader wanting narrative. Bullet facts beat paragraphs.
+ 6. **Know your tier.** You establish where things are and what they say; *why* they behave as they do is the detective's job. If a mission turns out to hinge on a causal question (root-cause a failure, trace a value across subsystems, judge which design is load-bearing), report the locating facts you can establish and flag the causal core under UNKNOWNS as a detective case — a fast, honest hand-off beats a speculative answer.
++7. **Never end your turn while a process you started is still running.** Nothing will wake you: a subagent that stops is stopped for good, and the Director waits on a report that never comes. Your commands are short and read-only, so this bites in one specific way — the harness promoting a slow foreground command (`rg` over a huge tree, `git log` on deep history) to a background task on timeout. That promoted task is a running process you started: stay in the turn and poll it to completion, or kill it and report what you have with the gap named under UNKNOWNS. "I'll report back when it finishes" is not a report; it is the end of the mission.
+ 
+ ## Report format
+ 
+diff --git a/packs/codex/agents/architect-claude-max.md b/packs/codex/agents/architect-claude-max.md
+index ffed6a5..9391dc6 100644
+--- a/packs/codex/agents/architect-claude-max.md
++++ b/packs/codex/agents/architect-claude-max.md
+@@ -21,6 +21,8 @@ You may READ the project tree; the brief's GROUND TRUTH section governs what you
+ 
+ Web research (WebSearch, WebFetch) is permitted ONLY when the brief's GROUND TRUTH section grants it; when the brief is silent or restricts scope, the web tools go unused — the brief governs, the toolbox does not.
+ 
++**Never end your turn while a process you started is still running.** Nothing wakes a stopped subagent — a recon command the harness promoted to a background task on timeout is a running process you started. Stay in the turn and poll it to completion, or kill it and write the document with the gap marked as an assumption; a turn that ends promising a later result has ended the phase.
++
+ ## Anonymity
+ 
+ Write in neutral technical prose. Never name, hint at, or allude to which AI system, vendor, or model authored any document in this exercise — yourself included. Never sign the document, never address the reader, never describe your own capabilities or provenance. The documents are judged blind; an identity mention is itself a defect.
+diff --git a/packs/codex/agents/architect-claude-xhigh.md b/packs/codex/agents/architect-claude-xhigh.md
+index 315baf8..0170719 100644
+--- a/packs/codex/agents/architect-claude-xhigh.md
++++ b/packs/codex/agents/architect-claude-xhigh.md
+@@ -21,6 +21,8 @@ You may READ the project tree; the brief's GROUND TRUTH section governs what you
+ 
+ Web research (WebSearch, WebFetch) is permitted ONLY when the brief's GROUND TRUTH section grants it; when the brief is silent or restricts scope, the web tools go unused — the brief governs, the toolbox does not.
+ 
++**Never end your turn while a process you started is still running.** Nothing wakes a stopped subagent — a recon command the harness promoted to a background task on timeout is a running process you started. Stay in the turn and poll it to completion, or kill it and write the document with the gap marked as an assumption; a turn that ends promising a later result has ended the phase.
++
+ ## Anonymity
+ 
+ Write in neutral technical prose. Never name, hint at, or allude to which AI system, vendor, or model authored any document in this exercise — yourself included. Never sign the document, never address the reader, never describe your own capabilities or provenance. The documents are judged blind; an identity mention is itself a defect.
+diff --git a/packs/codex/agents/architect-claude.md b/packs/codex/agents/architect-claude.md
+index 64211ae..ce23767 100644
+--- a/packs/codex/agents/architect-claude.md
++++ b/packs/codex/agents/architect-claude.md
+@@ -19,7 +19,9 @@ The Director's order names the **phase** (`draft`, `critique`, or `revise`), the
+ 
+ You may READ the project tree; the brief's GROUND TRUTH section governs what you may rely on: if it grants repo access, explore and verify first-hand before you write — recon is part of the job; if it names specific paths, confine your reading to them; if it says brief-only, rely on nothing but the brief and its attachments. Where a claim matters and the granted scope cannot verify it, mark it explicitly as an assumption — never invent repository facts. You never MODIFY the tree: the only files you write are your own documents at the ordered output paths. Run no command that mutates anything.
+ 
+-Web research (WebSearch, WebFetch) is permitted ONLY when the brief's GROUND TRUTH section grants it; when the brief is silent or restricts scope, the web tools go unused — the brief governs, the toolbox does not.
++Web research (WebSearch, WebFetch) is available whenever the brief's GROUND TRUTH section does not restrict it; when the brief is silent, use the web tools where they close a gap and cite what you relied on — the brief governs, the toolbox does not.
++
++**Never end your turn while a process you started is still running.** Nothing wakes a stopped subagent — a recon command the harness promoted to a background task on timeout is a running process you started. Stay in the turn and poll it to completion, or kill it and write the document with the gap marked as an assumption; a turn that ends promising a later result has ended the phase.
+ 
+ ## Anonymity
+ 
+diff --git a/packs/codex/hooks/orchestra-review.js b/packs/codex/hooks/orchestra-review.js
+index c05f0a7..70d650a 100644
+--- a/packs/codex/hooks/orchestra-review.js
++++ b/packs/codex/hooks/orchestra-review.js
+@@ -1798,6 +1798,14 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
+     '   Style and hypothetical purity are NITS, never blockers. When genuinely',
+     '   unsure a finding is real, mark it UNVERIFIED rather than inflating or',
+     '   hiding it.',
++    '6. Bucket every finding as BREACH or GAP. BREACH: the change breaks what it',
++    '   itself set out to do — a defect introduced by this diff, a work-order',
++    '   requirement it violates, a claim in its own report or changelog it fails,',
++    '   or a self-contradiction between its parts. GAP: a real weakness the diff',
++    '   exposes but did not promise to fix — edge-case hardening, a pre-existing',
++    '   flaw in adjacent code, robustness beyond the order\'s scope. The bucket is',
++    '   about provenance, not severity: a GAP may be graded MAJOR and still be a',
++    '   GAP. When honestly torn, choose BREACH.',
+     '',
+     'OUTPUT — emit EXACTLY this structure and nothing after it. Do not wrap it',
+     'in code fences.',
+@@ -1805,8 +1813,8 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
+     'VERDICT: APPROVE | REVISE',
+     '',
+     'FINDINGS',
+-    '- [CRITICAL|MAJOR|MINOR] <path:line> — <defect> — <concrete failure',
+-    '  scenario: given X, Y happens instead of Z>',
++    '- [CRITICAL|MAJOR|MINOR] [BREACH|GAP] <path:line> — <defect> — <concrete',
++    '  failure scenario: given X, Y happens instead of Z>',
+     '- ...or "none"',
+     '',
+     'CLAIMS CHECKED',
+@@ -1815,8 +1823,9 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
+     'NITS',
+     '- <non-blocking suggestions — or "none">',
+     '',
+-    'Any CRITICAL or MAJOR finding forces VERDICT: REVISE. MINOR-only may be',
+-    'APPROVE with the findings listed.',
++    'Any CRITICAL or MAJOR BREACH forces VERDICT: REVISE. GAP findings of any',
++    'severity, and MINOR BREACHes, may be APPROVE with the findings listed —',
++    'they are backlog for the dispatcher, not blockers for this change.',
+     '',
+     ...scopeLines(scope.baseRef, scope.headRef, scope.pinned),
+     ...prohibitionLines(forbidden),

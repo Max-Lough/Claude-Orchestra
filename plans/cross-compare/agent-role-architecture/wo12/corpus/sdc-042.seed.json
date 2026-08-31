@@ -1,0 +1,29 @@
+{
+  "id": "sdc-042",
+  "kind": "seeded",
+  "phase": 2,
+  "variant": "V1",
+  "base": "c2c8060068f922d2b658d4f65481f58ef0fbb6de",
+  "commit": "d7738df9075141c5495913e78a33558a31cf0e0f",
+  "subject": "Stamp .claude/hooks/package.json so hooks survive a \"type\": \"module\" target (v1.9.1)",
+  "seed": {
+    "type": "FT",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "tests/frontmatter-lint.test.js",
+      "lines": [409, 416],
+      "symbol": "case7 — check('a CRLF-mangled but byte-equivalent stamp triggers no notice and is not rewritten')"
+    },
+    "consequence": "The installer's CRLF-tolerant comparison was dropped, so every re-run against a CRLF checkout of the hooks scoping file rewrites it and prints a false-alarm \"existed with different content — overwritten\" notice, and the test that existed to catch exactly that now passes regardless because both of its meaningful clauses were removed.",
+    "rationale": "The commit's own message and code comments promise a CRLF-tolerant idempotency comparison, and the test's name still promises 'triggers no notice and is not rewritten'; the weakened assertion keeps only an exit-status check and a self-normalizing content compare that is true whether the file was left alone or rewritten, so the suite stays green while the pinned behavior is gone. The comment left in place above the surviving install.js condition still describes the removed normalization, giving a reviewer a legible trail from a stale claim to a real, ordinary-use regression.",
+    "hazard_terms": [
+      "weakened assertion",
+      "vacuous check",
+      "expected normalized to match actual",
+      "test no longer pins its stated behavior",
+      "lost regression coverage"
+    ]
+  },
+  "suite_at_variant": "OK — 37 passed, 0 failed",
+  "design_note": "The commit adds case7 to tests/frontmatter-lint.test.js to pin four properties of the new .claude/hooks/package.json stamp; the CRLF-tolerance check is the only one of the four that the installer's normalization branch is load-bearing for, so falsifying it lets a paired one-clause deletion in stampHooksPackageJson land without any other check turning red. The falsification is shaped as a plausible cleanup — the notice-regex clause deleted as 'redundant' and the byte-exact content compare replaced with a CRLF-normalized one 'the same way the installer does' — which makes the assertion true under both the correct and the regressed installer. Verified green at C' and byte-identical to C outside the two-file injection."
+}

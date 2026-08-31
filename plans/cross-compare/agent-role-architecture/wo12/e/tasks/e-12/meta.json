@@ -1,0 +1,12 @@
+{
+  "id": "e-12",
+  "category": "process-lifetime fault",
+  "title": "the background worker never releases the build lock",
+  "check_display": "node scripts/pipeline.js && node test.js",
+  "check_steps": [["node", "scripts/pipeline.js"], ["node", "test.js"]],
+  "scope": ["scripts/worker.js"],
+  "audit_ignore": ["out/", ".build.lock"],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 40000
+}

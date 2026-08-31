@@ -1,0 +1,10 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is commit e2cb79b25d1e66581b4d2028346965ce8b1aeedb. An executor produced this
+change; no fresh executor claims exist beyond the commit message. Verify
+the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check test changes still test what they claim
+- check error paths and Windows path handling
+- check write atomicity and read-after-write ordering

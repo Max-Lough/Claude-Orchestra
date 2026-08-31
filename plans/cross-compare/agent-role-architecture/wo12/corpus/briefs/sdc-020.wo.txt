@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit c0898a6fd23afe31d87349be7f744142af23ca8a
+Base (its parent):   ea5ef72cc7f829ec41d7e4c6a822e79d95276873
+Commit subject:      Add detective role: Opus-tier read-only recon for causal investigation
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

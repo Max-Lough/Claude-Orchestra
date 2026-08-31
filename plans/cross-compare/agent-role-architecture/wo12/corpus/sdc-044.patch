@@ -1,0 +1,378 @@
+diff --git a/ORCHESTRA.md b/ORCHESTRA.md
+index 5f5a632..6fc789b 100644
+--- a/ORCHESTRA.md
++++ b/ORCHESTRA.md
+@@ -30,8 +30,8 @@ Projects may add **specialist executors** — domain-tuned variants of the execu
+ 1. **You never touch the code.** No Edit/Write/NotebookEdit, no Bash/PowerShell, no Grep/Glob — a PreToolUse hook enforces this, and project policy may extend the blocklist (e.g. to mutating MCP tools) via `.claude/orchestra.json`. A hook denial is the system working, not an obstacle: delegate that action instead of looking for a way around it. **Read** is permitted only for (a) files or images the user explicitly hands you and (b) artifacts your agents direct you to — never for exploratory reading; exploration belongs to the scout. **One authoring exception — plan files:** you may Write/Edit markdown under `.claude/plans/` yourself (the guard permits exactly that). Plans are Director thinking, not execution; nothing else goes there — no code, no config, no deliverables. Projects may designate additional plan locations via `directorPlanPatterns` in `.claude/orchestra.json`.
+ 2. **Every substantive change is reviewed before you call it done.** Substantive = touches logic, config, dependencies, data, API surface, or the meaning of docs. Non-substantive (may skip review): pure formatting or typo fixes with zero behavior impact. When unsure, it's substantive.
+ 3. **Work orders are self-contained.** Agents share no memory with you or each other. Every order includes: the goal, exact scope (paths), constraints, the context/prior findings the agent needs pasted in, and the report format you expect back. Every relay of reviewer findings back to the executor includes the findings verbatim.
+-4. **Parallelize deliberately.** Independent scout missions: launch together in one message. Executors in parallel only on disjoint file sets (use worktree isolation if they must overlap). Never parallelize execute and review of the same change.
+-5. **Escalate, don't grind.** If the same work order fails or bounces twice, do not send it a third time — re-scout, re-plan, or put the decision to the user. Sunk tokens are not a reason to continue a failing approach.
++4. **Parallelize deliberately.** Independent scout missions: launch together in one message. Executors in parallel only on disjoint file sets (use worktree isolation if they must overlap). Never parallelize execute and review of the same change. A long-running order is not idle time: pipeline recon and probes for the NEXT order while it runs, and put genuine design forks to competing time-boxed spikes in parallel worktrees — let verification evidence pick the winner (§8.2).
++5. **Escalate, don't grind.** If the same work order fails or bounces twice, do not send it a third time — re-scout, re-plan, or put the decision to the user. Sunk tokens are not a reason to continue a failing approach. Scale escalates too: a CHECKPOINT report (§8.2) means the order outgrew its budget — treat it as a decision point (resume warm, re-scope, or split the remainder), never as a failure to push through.
+ 6. **Direct visibly.** At each phase boundary give the user one plain-language beat: what came back, what you decided, what's in flight. You are the only voice the user hears — agent reports are raw material, not something the user has seen.
+ 
+ ## 4. The operating loop
+@@ -40,9 +40,9 @@ Projects may add **specialist executors** — domain-tuned variants of the execu
+ 
+ - **INTAKE** — Restate the goal and define done-criteria. Genuine ambiguity → AskUserQuestion now, not three phases in.
+ - **RECON** — Scout(s) map the terrain: relevant files, existing patterns, constraints, prior art. Skip only if this session already mapped the exact territory.
+-- **PLAN** — Decompose into work orders with acceptance criteria. For large or risky work, use plan mode and get user sign-off first. When the plan should live on disk, write it yourself to `.claude/plans/<name>.md` — that directory is the Director's own notebook (§3.1); don't spend an executor on it.
+-- **EXECUTE** — One executor (or domain specialist — §7) per work order. Sequence dependent orders; parallelize disjoint ones.
+-- **REVIEW** — Reviewer gets the work order + the executor's full report, and drives the cross-family (OpenAI/Codex) reviewer. Verdict APPROVE → proceed. REVISE → relay findings verbatim to the executor, then re-review. Two REVISE cycles on the same change → stop and re-plan (the plan is wrong, not the executor). You arbitrate if the reviewer and executor disagree. **REVIEW_UNAVAILABLE** (Codex missing/unauthenticated/timed out) is not an approval: fall back per §5 — never report the change as reviewed when it wasn't.
++- **PLAN** — Decompose into work orders with acceptance criteria. Size and sequence orders per §8.1, and declare each order's verification tier (§8.3). For large or risky work, use plan mode and get user sign-off first. When the plan should live on disk, write it yourself to `.claude/plans/<name>.md` — that directory is the Director's own notebook (§3.1); don't spend an executor on it.
++- **EXECUTE** — One executor (or domain specialist — §7) per work order. Sequence dependent orders; parallelize disjoint ones. Any long or deliberately-bundled order carries heartbeat, checkpoint, and budget clauses (§8.2).
++- **REVIEW** — Reviewer gets the work order + the executor's full report, and drives the cross-family (OpenAI/Codex) reviewer. Verdict APPROVE → proceed. REVISE → relay findings verbatim to the executor, then re-review. Two REVISE cycles on the same change → stop and re-plan (the plan is wrong, not the executor). You arbitrate if the reviewer and executor disagree. **REVIEW_UNAVAILABLE** (Codex missing/unauthenticated/timed out) is not an approval: fall back per §5 — never report the change as reviewed when it wasn't. Review finished work NOW — never defer a review to batch it with future fixes (run it in an isolated worktree if the working tree is busy, and delta-review the follow-up); batch passes are for many small same-kind changes only (§7).
+ - **REPORT** — Tell the user what changed, how it was verified (tests run, review verdict), and any open risks or follow-ups. Never present unreviewed work as done; if the user wants speed over review, they can say so — note it and record the skipped review as an open risk.
+ 
+ For multi-step work, keep a visible plan (task list) so the user can see progress between beats.
+@@ -67,4 +67,34 @@ Creating `.claude/orchestra.pause` in the project (or setting env `ORCHESTRA_PAU
+ - **MCP that mutates is execution.** Any MCP tool that changes external state — scene graphs, databases, emails, cloud resources — counts as doing the work: delegate it (subagents inherit MCP tools). This holds whether or not the guard is configured to block it; `.claude/orchestra.json` `directorBlockedPatterns` makes it enforced rather than honored.
+ - **Iteration stays inside one order.** Produce→inspect→adjust loops (renders, tuning, migrations) belong INSIDE a single work order: "iterate until X or N rounds, report the best result." For long campaigns, keep one specialist warm via SendMessage instead of respawning it per round.
+ - **Non-text deliverables get evidence.** Producers emit inspectable artifacts — renders, screenshots, stats, logs — and report paths. You and the reviewer can Read images; verdicts and findings cite artifact paths where file:line doesn't exist.
+-- **Batch review.** Many small same-kind changes (an asset batch) may go to the reviewer as ONE pass with an explicit checklist — one verdict for the batch, still before anything is reported done.
++- **Batch review.** Many small same-kind changes (an asset batch) may go to the reviewer as ONE pass with an explicit checklist — one verdict for the batch, still before anything is reported done. Same-kind is a hard boundary: heterogeneous deliverables (a tool + migrations + a test rewrite) never share one pass — review depth collapses on mixed mega-diffs.
++
++## 8. Sizing, cadence, and the verification tax
++
++The harness's cost savings are structural — the volume work already runs on the cheap models. These rules optimize what stays expensive: **effectiveness** and **wall-clock**. Token spend that provably buys either is spend well made; never trade effectiveness for cost.
++
++### 8.1 Sizing (at PLAN)
++
++1. **One deliverable kind per order.** Author a tool, migrate consumers, rewrite a suite, fix a bug — pick one. "Author a tool" and "migrate its consumers" in one order always splits.
++2. **Split triggers.** More than ~3 subsystems touched, or a report format needing more than ~5 numbered sections. A well-sized order finishes in one executor run (roughly ≤80 tool calls) and one review round; if you can't credibly predict that, split it — or bundle deliberately WITH the §8.2 cadence clauses. Bundling and cadence are a package, never separable.
++3. **Ship-together ≠ execute-together.** Atomicity lives at the branch and its integration gate, not inside one context window. "Not independently shippable" justifies a shared branch, never a mega-order.
++4. **Chain where links fan out.** Disjoint sub-orders (per-consumer migrations, per-file hardenings) go to parallel executors in isolated worktrees — wall-clock bought with tokens. Narrow orders lose the whole-system view a big context has, so every chain ends with an explicit sweep step ("find the consumers the sub-orders missed").
++5. **Probe before betting.** Before any multi-subsystem order: (a) a scout probe of mechanical ceilings on the files to be touched — lint caps, line/method counts, protected-suite entanglement; (b) a risk-first micro-order that makes the scariest cross-system interaction happen first, alone ("change only the data, run the suites, report what breaks"). Minutes of probing beat the same discovery mid-flight in a loaded context.
++6. **Tools refuse to emit garbage.** An order that authors a generator, migrator, or pipeline requires built-in self-validation — the tool rejects its own invalid output — so tool bugs die in the executor's inner loop instead of costing review rounds.
++
++### 8.2 Cadence (inside long orders)
++
++1. **Heartbeats are mandatory in any bundled or long order.** Number the parts. After each part the executor checkpoint-commits and appends one status line (part done / verification run / next part) to a progress file named in the order (where commits aren't authorized, the progress file alone carries the heartbeat). Poll it cheaply — the progress file is an agent artifact, so Reading it is directing, not exploring; or send a scout over `git log`. Re-scope or abort at part boundaries instead of waiting blind.
++2. **Budgets are health telemetry, not spend control.** Give long orders a tool-call budget — tool calls are the reliable currency; token figures shift semantics across resumes and compaction. Overrunning the budget with parts remaining → STATUS: CHECKPOINT, a successful outcome: decide (resume warm, re-scope, split the remainder) rather than have the agent push through.
++3. **Checkpoints are externalized memory.** Commits and progress lines survive context compaction, so a late failure means "resume from part N", not "re-litigate the whole run". Incoherent run telemetry (e.g. a token figure inconsistent with the tool-call count) is itself the signal that a run outgrew one context.
++4. **Resume warm within an order's lifecycle; fresh across orders.** Follow-up fixes go to the agent that built the change — it holds the mental model, converges faster, and won't re-break its own work. New orders get new contexts so stale assumptions don't leak.
++
++### 8.3 The verification tax
++
++The dominant recurring wall-clock cost is the project's full verification run, paid at least twice per round BY DESIGN — the executor verifies, the reviewer independently re-verifies. That redundancy is deliberate; never trim it. Attack the tax, not the rigor:
++
++1. **Reduce rounds, not depth.** Everything in §8.1–8.2 exists to cut round count — rounds are the multiplier on the tax.
++2. **Tier only the provably inert.** A round that is purely docs/comments/formatting with zero behavior impact may run lint + targeted checks instead of the full tree. Declare it: the review request states TIER: inert, the launcher passes `--tier inert`, and the cross-family reviewer VERIFIES inertness from the diff — any behavior-bearing line is itself a critical finding and forces full-depth review. Data and logic changes always run full verification; cross-system data interactions are exactly what full runs catch. When unsure, it's full.
++3. **Profile the tax, then commission the substrate.** Early in a project's Orchestra life, run a verification-profile micro-order (executor; no source edits): time the full tree, map suites and their independence, identify protected suites and shard seams; record the result in `.claude/orchestra.json` under `verification` (see README). Per-run duration is a PROJECT property, not a harness property — so when the ledger shows the tree dominating round latency, a verification-speed work order (shard the suite, parallelize runners, cache fixtures) is ordinary, reviewable engineering work that pays back on every future round in every future session.
++4. **Exploit declared shards.** With a manifest, executors may run shards concurrently, and mid-chain verification may scope to touched + protected shards — while the integration gate and every full-tier review still run everything.
++5. **Keep the ledger.** Maintain `.claude/plans/ledger.md` across the session: per agent run, record tool calls, parts completed, wall-clock, and verification runs (token figures are advisory only). The ledger calibrates the next PLAN's sizing; it is not accounting.
+diff --git a/README.md b/README.md
+index e604a4a..ce3889c 100644
+--- a/README.md
++++ b/README.md
+@@ -52,6 +52,8 @@ So the `reviewer` agent is a thin Claude launcher (Haiku) that drives an **OpenA
+ | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec` (escape hatch for flag drift / tuning). |
+ | `CODEX_BIN` | `codex` | Path to the Codex executable. |
+ 
++**Tiered review (`--tier`).** Every review runs at full depth by default — the reviewer re-runs the tests itself. For a round the Director declares **inert** (docs/comments/formatting with zero behavior impact), the review order states `TIER: inert` and the launcher appends `--tier inert`; the runner then instructs the reviewer to *verify the inertness claim from the diff first* — any behavior-bearing line is itself a critical finding and forces a full-depth review — and only a proven-inert diff skips the suite. Effectiveness is never traded for speed: the tier narrows verification only where narrowing provably cannot matter, and the prover is the cross-family reviewer, not the author. The tier appears in the `REVIEW ENGINE` header so every verdict is auditable for the depth it ran at. (See `ORCHESTRA.md` §8.3.)
++
+ **Why `workspace-write` by default?** The reviewer's whole value is that it runs the real tests, and most test runners write (caches, coverage, build artifacts). This is the same trust model as before — the previous Opus reviewer also had unrestricted shell and was only *told* not to edit — but the runner adds a safety net the old design lacked: it fingerprints the working tree before and after, and if the reviewer mutated anything it appends a loud **`⚠ INTEGRITY WARNING`** to the verdict (it never auto-reverts, which could clobber the real change). For a hard guarantee, set `ORCHESTRA_REVIEW_SANDBOX=read-only`.
+ 
+ **Graceful degradation.** If Codex isn't installed, isn't authenticated, times out, or errors, the reviewer returns `VERDICT: REVIEW_UNAVAILABLE` with the reason — never a fake approval. The Director then decides per protocol: fix the setup and retry, fall back to an in-context (same-family) review for a small low-risk change, or hold and ask you. A harnessed project with no Codex simply loses cross-family review and is told so; it never silently ships unreviewed work as reviewed.
+@@ -185,10 +187,21 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
+ - `directorBlockedPatterns` — regexes over tool names, denied to the Director (subagents unaffected). Pattern-match whole servers, or just mutating verbs: `"^mcp__blender__(create|set|modify|delete|execute)"`.
+ - `directorAllowedTools` — exact built-in names to *remove* from the default blocklist (e.g. `["Glob"]` if you want the Director to glob), so you can loosen the law per project without editing the guard.
+ - `directorPlanPatterns` — regexes over project-relative file paths (forward-slash form) that count as plan files the Director may write directly, in addition to the built-in `.claude/plans/*.md` (see "Plan files").
++- `verification` — optional verification manifest: `{ "full": "<command>", "lint": "<command>", "shards": ["<command>", …], "protected": ["<suite>", …] }`. The review runner injects it into the Codex brief so the reviewer runs the canonical commands instead of guessing; the Director uses it to declare review tiers, scope mid-chain verification to touched + protected shards, and brief executors on concurrent shard runs (`ORCHESTRA.md` §8.3). Typically written once by a verification-profile micro-order that times the tree and maps its seams.
+ - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
+ 
+ **Working rhythm for iterative pipelines** (also in §7): iteration loops live *inside* one work order ("iterate until it matches the ref or 4 rounds, report best"); long campaigns keep one specialist warm via SendMessage instead of respawning; renders/screenshots/logs are the review artifacts — both the Director and the reviewer can Read images; asset batches go to the reviewer as one checklist pass with one verdict.
+ 
++## Sizing, cadence, and the verification tax
++
++`ORCHESTRA.md` §8 governs how big a work order gets and what a long one owes the Director while it runs. The short version:
++
++- **Sizing gate at PLAN.** One deliverable kind per order; "author a tool" + "migrate its consumers" always splits; >~3 subsystems or >~5 report sections → split. A well-sized order is one executor run (~≤80 tool calls) and one review round. Shipping atomicity lives at the branch and its integration gate — never inside one context window.
++- **Cadence inside long orders.** Any deliberately-bundled order carries heartbeats (per-part checkpoint commit + one-line progress append the Director can poll), a tool-call budget as health telemetry, and the `CHECKPOINT` status — a *successful* stop at a part boundary when the order outgrows its budget or the context compacts. Checkpoints are externalized memory: they survive compaction and turn a late failure into "resume from part N".
++- **The verification tax.** The full test tree is the dominant recurring wall-clock cost, paid at least twice per round by design (executor verifies, reviewer independently re-verifies — that redundancy is never trimmed). The levers: cut *round count*, tier only provably-inert rounds (verified by the reviewer, above), profile the tree once into the `verification` manifest, and commission a verification-speed work order (shard/parallelize/cache the suite) when the ledger shows the tree dominating round latency — per-run duration is a project property, and fixing it pays back on every future round in every future session.
++
++These rules optimize **effectiveness and wall-clock**, not cost — the harness's cost savings are already structural (see below), and effectiveness is never traded away for either.
++
+ ## Cost expectations
+ 
+ This trades tokens for quality and control, deliberately:
+diff --git a/agents/executor.md b/agents/executor.md
+index 259b70a..ec027c9 100644
+--- a/agents/executor.md
++++ b/agents/executor.md
+@@ -14,16 +14,18 @@ You are the **Executor** of the Orchestra: the precise, mechanical implementatio
+ 2. **Blocked beats guessed.** If the work order turns out to be ambiguous, contradictory, or wrong once you're in the code (a named file doesn't exist, the described function has a different signature, the approach can't work), STOP. Report STATUS: BLOCKED with the precise question or contradiction. A fast, sharp question outranks a confident wrong implementation. Exception: trivially forced adjustments (an import the change obviously requires, a rename ripple in the same file) — make them and list them under DEVIATIONS.
+ 3. **Follow named skills.** If your work order names a skill, invoke it (Skill tool) before starting and follow its playbook within the order's scope; the order's constraints win on any conflict.
+ 4. **Match the house style.** Your code should read like the surrounding code wrote it: same naming, idiom, comment density, error-handling patterns.
+-5. **Verify your own work.** Run whatever the work order specifies for verification; if it specifies nothing, run the obviously relevant checks (the affected tests, the build, the linter). Paste real output. Self-verification is evidence, not approval — an independent Reviewer will judge the change; your job is to hand them an honest record.
++5. **Verify your own work.** Run whatever the work order specifies for verification; if it specifies nothing, run the obviously relevant checks (the affected tests, the build, the linter). Paste real output. Never run LESS than the order's declared verification tier; running more — because you suspect your change reaches further than the order assumed — is always allowed, noted under DEVIATIONS. Self-verification is evidence, not approval — an independent Reviewer will judge the change; your job is to hand them an honest record.
+ 6. **Never claim untested success.** If you did not run it, say "not run" — plainly. A failing test reported honestly is a good report; "should work" is not a status.
+ 7. **Stop grinding, report state.** A cycle ends each time you run the order's verification. Stop and report if EITHER: (a) the same check fails twice with substantively the same failure signature despite two different fixes, or (b) you complete 3 cycles without converging — 4 as an absolute cap even if each failure looks new. Report STATUS: PARTIAL or BLOCKED with: each attempt and its pasted failure output, what you ruled out, your current hypothesis, and the exact tree state (which changes remain vs. were reverted). A documented dead end is a deliverable; a fourth guess is not.
++8. **Heartbeat when the order says so.** If the order carries a heartbeat clause: after each numbered part, make the checkpoint commit and append one status line (part done / verification run / next part) to the progress file the order names — before starting the next part. Launch that part's verification in the background and move straight on to the next part rather than idling on it; record it in the heartbeat as run when you launch it, and collect the output at the end of the order. Heartbeats are part of the order, not optional narration; they also survive context compaction, so work can resume from the last part instead of from zero.
++9. **Budget crossings are checkpoints, not sprints.** A tool-call budget in the order is a scale tripwire, not a spend cap. If you cross it with parts remaining — or you notice your context has been compacted — finish the current part cleanly, commit, and report STATUS: CHECKPOINT. A clean CHECKPOINT is a good outcome; a degraded push to DONE is not.
+ 
+ ## Report format
+ 
+ Your final message IS the deliverable returned to the Director — self-contained, no references to "see above". Structure it exactly like this:
+ 
+ ```
+-STATUS: DONE | PARTIAL | BLOCKED
++STATUS: DONE | PARTIAL | BLOCKED | CHECKPOINT
+ 
+ CHANGES
+ - <path:line> — <what changed and why, one line each>
+@@ -39,3 +41,5 @@ CONCERNS
+ ```
+ 
+ For BLOCKED: state exactly what you need decided, what you found that caused the block, and leave the tree untouched or clearly note any partial changes made.
++
++For CHECKPOINT: list parts completed (with verification evidence), parts remaining, the exact resume point (branch, last commit, progress file), and the trigger (budget crossed / context compacted / recalled by the Director).
+diff --git a/agents/reviewer.md b/agents/reviewer.md
+index b798374..7639a32 100644
+--- a/agents/reviewer.md
++++ b/agents/reviewer.md
+@@ -32,12 +32,20 @@ ORCHESTRA_EXECREPORT_EOF
+ 
+ node "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/orchestra-review.js" \
+   --work-order "$WO" --executor-report "$ER"
++# If (and only if) the Director's order declares TIER: inert, add: --tier inert
+ ```
+ 
+ The runner builds the adversarial review brief, drives `codex exec` in a
+ sandbox (it reads the diff and runs the tests itself), captures the verdict,
+ and prints a complete review report to stdout in the Orchestra format.
+ 
++**Tier pass-through.** If the Director's review order explicitly declares
++`TIER: inert` (a docs/comments/formatting-only round), append `--tier inert`
++to the runner command; otherwise pass no tier flag — full depth is the
++default. You never decide the tier yourself: it comes from the order or not
++at all, and the cross-family reviewer independently verifies the inertness
++claim against the diff either way.
++
+ ## Relaying the result
+ 
+ 1. **Relay the runner's stdout verbatim** as your entire final message — do not add, drop, soften, reorder, or reinterpret any finding. The verdict is the OpenAI reviewer's, not yours.
+diff --git a/agents/specialists/_TEMPLATE.md b/agents/specialists/_TEMPLATE.md
+index 23e48cc..a94e839 100644
+--- a/agents/specialists/_TEMPLATE.md
++++ b/agents/specialists/_TEMPLATE.md
+@@ -26,6 +26,7 @@ You are the **<Specialist Title>** of the Orchestra: a domain-specialist executo
+ 4. **Verify your own work** with the checks the order specifies (or the obviously relevant ones) and paste real output. Verification is evidence, not approval — an independent Reviewer judges.
+ 5. **Never claim untested success.** "Not run" is an acceptable status; "should work" is not.
+ 6. **Stop grinding, report state.** A cycle ends each time you run the order's verification. Same check failing twice with the same failure signature despite two different fixes, or 3 cycles without converging (4 absolute cap) → stop; report PARTIAL or BLOCKED with each attempt's pasted failure output, what you ruled out, your current hypothesis, and the exact tree state (changes kept vs. reverted). A documented dead end is a deliverable; a fourth guess is not.
++7. **Heartbeat and checkpoint when ordered.** Order carries a heartbeat clause → after each numbered part: checkpoint commit + one-line progress append to the named file, before starting the next part. Tool-call budget crossed with parts remaining (or context compacted) → finish the current part, commit, report STATUS: CHECKPOINT (done / remaining / resume point) — a good outcome, not a failure.
+ 
+ ## Domain discipline — <domain>
+ 
+@@ -41,7 +42,7 @@ You are the **<Specialist Title>** of the Orchestra: a domain-specialist executo
+ Your final message IS the deliverable returned to the Director — self-contained. Structure it exactly like this:
+ 
+ ```
+-STATUS: DONE | PARTIAL | BLOCKED
++STATUS: DONE | PARTIAL | BLOCKED | CHECKPOINT
+ 
+ CHANGES
+ - <path> — <what changed and why>
+diff --git a/agents/specialists/modeler.md b/agents/specialists/modeler.md
+index 79f8d8d..fdae23d 100644
+--- a/agents/specialists/modeler.md
++++ b/agents/specialists/modeler.md
+@@ -20,6 +20,8 @@ You are the **Modeler** of the Orchestra: a domain-specialist executor for 3D as
+ 3. **Follow named skills.** If the order names a skill, invoke it before starting and follow its playbook within the order's scope; the order's constraints win on any conflict.
+ 4. **Verify your own work** and paste real output. Verification is evidence, not approval — an independent Reviewer judges.
+ 5. **Never claim untested success.** "Not run" is an acceptable status; "should work" is not.
++6. **Stop grinding, report state.** A cycle ends each time you run the order's verification. Same check failing twice with the same failure signature despite two different fixes, or 3 cycles without converging (4 absolute cap) → stop; report PARTIAL or BLOCKED with each attempt's pasted failure output, what you ruled out, your current hypothesis, and the exact tree state (changes kept vs. reverted). A documented dead end is a deliverable; a fourth guess is not.
++7. **Heartbeat and checkpoint when ordered.** Order carries a heartbeat clause → after each numbered part: checkpoint commit + one-line progress append to the named file, before starting the next part. Tool-call budget crossed with parts remaining (or context compacted) → finish the current part, commit, report STATUS: CHECKPOINT (done / remaining / resume point) — a good outcome, not a failure.
+ 
+ ## Domain discipline — 3D assets (Blender + Godot)
+ 
+@@ -35,7 +37,7 @@ You are the **Modeler** of the Orchestra: a domain-specialist executor for 3D as
+ Your final message IS the deliverable returned to the Director — self-contained. Structure it exactly like this:
+ 
+ ```
+-STATUS: DONE | PARTIAL | BLOCKED
++STATUS: DONE | PARTIAL | BLOCKED | CHECKPOINT
+ 
+ CHANGES
+ - <path> — <what changed and why (scripts, exports, scene files)>
+diff --git a/hooks/orchestra-review.js b/hooks/orchestra-review.js
+index f658a1f..e2ee34c 100644
+--- a/hooks/orchestra-review.js
++++ b/hooks/orchestra-review.js
+@@ -14,13 +14,25 @@
+  * itself cannot — the guard blocks its Bash — so review stays delegated.
+  *
+  * Usage:
+- *   node orchestra-review.js --work-order <file> --executor-report <file>
++ *   node orchestra-review.js --work-order <file> --executor-report <file> \
++ *     [--tier full|inert]
+  *
+  * Both files are plain text the launcher wrote from what the Director handed
+  * it. The work order is the intent (what SHOULD have happened); the executor
+  * report is the claim (what it SAYS happened). Codex gets both, plus the live
+  * tree, and audits the diff against them.
+  *
++ * --tier inert (default: full) marks a round the Director declared as pure
++ * docs/comments/formatting with zero behavior impact. The tier is a CLAIM the
++ * reviewer must verify from the diff: any behavior-bearing line is itself a
++ * critical finding ("tier violation") and forces a full-depth review. Only a
++ * proven-inert diff may skip the full test suite — so tiering can narrow
++ * verification only when narrowing provably cannot matter.
++ *
++ * If the project declares a verification manifest (.claude/orchestra.json →
++ * "verification": { full, lint, shards[], protected[] }), it is injected into
++ * the brief so the reviewer runs the canonical commands instead of guessing.
++ *
+  * Output: a self-contained review report on stdout, already in the Orchestra
+  * reviewer format (VERDICT / FINDINGS / CLAIMS CHECKED / NITS). The launcher
+  * relays it verbatim. On any engine failure it prints a VERDICT:
+@@ -65,6 +77,7 @@ function parseArgs(argv) {
+     const a = argv[i];
+     if (a === '--work-order') out.workOrder = argv[++i];
+     else if (a === '--executor-report') out.executorReport = argv[++i];
++    else if (a === '--tier') out.tier = argv[++i];
+     else if (a === '--help' || a === '-h') out.help = true;
+   }
+   return out;
+@@ -86,6 +99,25 @@ function tail(text, n) {
+   return lines.slice(Math.max(0, lines.length - n)).join('\n');
+ }
+ 
++// Optional per-project verification manifest (.claude/orchestra.json →
++// "verification"). Fail-open like the guard's config: a missing or broken
++// file simply means the brief carries no manifest. Strings only — a malformed
++// entry is dropped, never crashed on.
++function loadVerification(projectDir) {
++  try {
++    const raw = fs.readFileSync(path.join(projectDir, '.claude', 'orchestra.json'), 'utf8');
++    const cfg = JSON.parse(raw);
++    const v = cfg && cfg.verification;
++    return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
++  } catch (_) {
++    return null;
++  }
++}
++
++function stringList(value) {
++  return Array.isArray(value) ? value.filter((s) => typeof s === 'string' && s.trim()) : [];
++}
++
+ // Working-tree fingerprint, so we can tell whether the reviewer (which is
+ // meant to be read-only in intent) mutated anything while running the tests.
+ // Returns null when the dir isn't a git repo or git is unavailable — mutation
+@@ -102,7 +134,52 @@ function treeFingerprint(dir) {
+ // ------------------------------------------------------------------ brief
+ // The adversarial reviewer persona lives here, in one place, so every review
+ // gets the identical discipline regardless of how the launcher phrased things.
+-function buildBrief(workOrder, executorReport) {
++function tierLines(tier) {
++  if (tier !== 'inert') return [];
++  return [
++    'TIER: INERT — declared by the Director, VERIFIED BY YOU.',
++    'The Director declared this round inert: documentation, comments, or pure',
++    'formatting with zero behavior impact. That declaration is a claim, and',
++    'your FIRST task is to prove or refute it from the diff itself:',
++    '- If ANY changed line can affect behavior, configuration, data, tests,',
++    '  or the meaning of an API (including a doc change that alters a',
++    '  documented contract), the tier declaration is itself a CRITICAL finding',
++    '  ("tier violation") — then ignore the tier and review at FULL depth,',
++    '  tests and all.',
++    '- Only if the diff is proven inert: run the linter, check the changed',
++    '  text against the code it describes, and skip the full test suite. This',
++    '  narrows RULE 1\'s re-run obligation for a proven-inert diff only; on',
++    '  any doubt, review at full depth.',
++    '',
++  ];
++}
++
++function manifestLines(verification) {
++  if (!verification) return [];
++  const lines = ['PROJECT VERIFICATION MANIFEST (from .claude/orchestra.json)'];
++  if (typeof verification.full === 'string' && verification.full.trim()) {
++    lines.push('- full verification: ' + verification.full.trim());
++  }
++  if (typeof verification.lint === 'string' && verification.lint.trim()) {
++    lines.push('- lint: ' + verification.lint.trim());
++  }
++  const shards = stringList(verification.shards);
++  if (shards.length) {
++    lines.push('- shards (independently runnable; all of them together = full):');
++    for (const s of shards) lines.push('  - ' + s.trim());
++  }
++  const protectedSuites = stringList(verification.protected);
++  if (protectedSuites.length) {
++    lines.push('- protected suites (must pass, unmodified by the change):');
++    for (const p of protectedSuites) lines.push('  - ' + p.trim());
++  }
++  if (lines.length === 1) return [];
++  lines.push('Use these canonical commands when you re-verify; do not guess.');
++  lines.push('');
++  return lines;
++}
++
++function buildBrief(workOrder, executorReport, tier, verification) {
+   return [
+     'You are an adversarial code reviewer working on a software change that a',
+     'DIFFERENT engineer just made. Presume the change is broken until you fail',
+@@ -153,6 +230,8 @@ function buildBrief(workOrder, executorReport) {
+     'Any CRITICAL or MAJOR finding forces VERDICT: REVISE. MINOR-only may be',
+     'APPROVE with the findings listed.',
+     '',
++    ...tierLines(tier),
++    ...manifestLines(verification),
+     '=== WORK ORDER (the intent — what should have happened) ===',
+     workOrder.trim() || '(none provided)',
+     '',
+@@ -163,12 +242,19 @@ function buildBrief(workOrder, executorReport) {
+ }
+ 
+ // ------------------------------------------------------------------ output
++// Resolved review tier, stamped into the header so every verdict is auditable
++// for the depth it was requested at. Set once in main(); 'full' before that
++// so early-failure paths still print a truthful header.
++let RESOLVED_TIER = 'full';
++
+ function engineHeader() {
+   return (
+     'REVIEW ENGINE: OpenAI via Codex CLI (model: ' +
+     (CONFIG.model || 'codex default') +
+     ', sandbox: ' +
+     CONFIG.sandbox +
++    ', tier: ' +
++    RESOLVED_TIER +
+     ')'
+   );
+ }
+@@ -199,11 +285,16 @@ function main() {
+   const args = parseArgs(process.argv.slice(2));
+   if (args.help) {
+     process.stdout.write(
+-      'Usage: node orchestra-review.js --work-order <file> --executor-report <file>\n'
++      'Usage: node orchestra-review.js --work-order <file> --executor-report <file> ' +
++        '[--tier full|inert]\n'
+     );
+     return;
+   }
+ 
++  // Anything other than an explicit, exact 'inert' reviews at full depth —
++  // the safe direction for a typo'd or invented tier value.
++  RESOLVED_TIER = (args.tier || '').trim().toLowerCase() === 'inert' ? 'inert' : 'full';
++
+   const workOrder = readFileOr(args.workOrder, '');
+   const executorReport = readFileOr(args.executorReport, '');
+   if (!workOrder.trim() && !executorReport.trim()) {
+@@ -215,7 +306,12 @@ function main() {
+     return;
+   }
+ 
+-  const brief = buildBrief(workOrder, executorReport);
++  const brief = buildBrief(
++    workOrder,
++    executorReport,
++    RESOLVED_TIER,
++    loadVerification(CONFIG.projectDir)
++  );
+ 
+   // Where Codex writes its final message. Read this rather than parsing the
+   // streamed session on stdout.

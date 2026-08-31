@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit f2c7bd1e271333ee3c3ed7e4e613043554eab6a2
+Base (its parent):   7c8d6dde015e0ca5c55f535812ab4ddf13d78936
+Commit subject:      WO-8 round 5e: checkout identity from git's own records; guard-timeout kills gated
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

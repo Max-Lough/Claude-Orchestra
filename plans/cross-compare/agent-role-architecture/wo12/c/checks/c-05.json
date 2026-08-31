@@ -1,0 +1,35 @@
+{
+  "order": "c-05",
+  "title": "Notification banner set (info/warn/error)",
+  "requiredStructure": [
+    { "name": "banner-info: id, class, role=status", "pattern": "<div class=\"banner banner-info\" id=\"banner-info\" role=\"status\">" },
+    { "name": "banner-info fixed copy", "pattern": "<p>Your changes have been saved successfully\\.</p>" },
+    { "name": "banner-warn: id, class, role=status", "pattern": "<div class=\"banner banner-warn\" id=\"banner-warn\" role=\"status\">" },
+    { "name": "banner-warn fixed copy", "pattern": "<p>Your session will expire in 5 minutes\\.</p>" },
+    { "name": "banner-error: id, class, role=alert", "pattern": "<div class=\"banner banner-error\" id=\"banner-error\" role=\"alert\">" },
+    { "name": "banner-error fixed copy", "pattern": "<p>Unable to save changes\\. Please try again\\.</p>" }
+  ],
+  "contrastPairs": [
+    {
+      "name": "info banner text on info background",
+      "min": 4.5,
+      "blockPattern": "\\.banner-info\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    },
+    {
+      "name": "warn banner text on warn background",
+      "min": 4.5,
+      "blockPattern": "\\.banner-warn\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    },
+    {
+      "name": "error banner text on error background",
+      "min": 4.5,
+      "blockPattern": "\\.banner-error\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    }
+  ]
+}

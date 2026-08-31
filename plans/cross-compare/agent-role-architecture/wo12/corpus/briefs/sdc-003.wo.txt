@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit e5fd1bda1d7447a98a6ecc58ac52a4bf5240e836
+Base (its parent):   3900142ff195c91ae38de27f45abc58707b63eae
+Commit subject:      WO-8 round 5f: pre-add records as a hard prerequisite; residual strand self-healing pinned
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

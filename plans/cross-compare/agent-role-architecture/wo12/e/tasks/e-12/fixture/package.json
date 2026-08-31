@@ -1,0 +1,11 @@
+{
+  "name": "two-stage-build",
+  "version": "1.0.3",
+  "private": true,
+  "description": "Two-stage build with a background stage-1 worker and a build lock.",
+  "scripts": {
+    "build": "node scripts/pipeline.js",
+    "test": "node scripts/pipeline.js && node test.js"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,29 @@
+{
+  "id": "sdc-002",
+  "kind": "seeded",
+  "phase": 0,
+  "variant": "V2",
+  "base": "b8a1957838da66600f5320d13c83e54c43d59130",
+  "commit": "acbf8f2cf6f98bb642a23df3734a0edd35c29e5f",
+  "subject": "WO-11: P0 R4 default forecast corrected to WO-2 measured draw; floor governs",
+  "seed": {
+    "type": "OO",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "quartermaster/quartermaster.js",
+      "lines": [645, 647],
+      "symbol": "predictThrottle"
+    },
+    "consequence": "A flat trend (two readings of the same remaining fraction at different timestamps) no longer takes the typed no-prediction branch: it falls into the extrapolation, divides by a zero rate, and predictThrottle() — and report(), and the --report/--state CLI paths that call it — throw RangeError: Invalid time value instead of returning a result.",
+    "rationale": "MAJOR: incorrect behaviour reachable by entirely ordinary use (an allowance that has not moved between two readings is the common case), and it violates the order's explicit out-of-scope constraint that the throttle-prediction method be left exactly as it is. Not CRITICAL: the failure is a loud throw on the advisory prediction/report surface, not a silently wrong verdict — bucketState(), belowReserve and the P15 gate input are numerically untouched, and no evidence is lost or corrupted.",
+    "hazard_terms": [
+      "unrequested mutation",
+      "scope drift",
+      "while-I-was-here edit",
+      "undisclosed adjacent change",
+      "out-of-scope refinement"
+    ]
+  },
+  "suite_at_variant": "node tests/quartermaster.test.js -> \"ALL CHECKS PASSED — 154 passed\"; node tests/router.test.js -> \"ALL CHECKS PASSED — 135 passed\" (both green at C', matching the counts the commit message claims)",
+  "design_note": "The injected edit is a label refinement a diligent executor would plausibly make in passing: the comment for the non-negative-rate branch already called a flat trend a 'window reset', which is arguably wrong, so the branch is narrowed to rising rates and the doc bullet is updated to match. The executor's reasoning is legible and defensible; what it misses is that the flat case then reaches the crossing-time division, where a zero rate yields an infinite ETA and an Invalid Date. Nothing in the suite pairs two equal readings at different timestamps, so the defect escapes green, and neither the commit message nor the executor report mentions the prediction path at all."
+}

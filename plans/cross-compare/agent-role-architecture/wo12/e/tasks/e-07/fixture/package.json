@@ -1,0 +1,13 @@
+{
+  "name": "invoice-render",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Renders invoices as plain text.",
+  "dependencies": {
+    "@fx/format": "1.4.0"
+  },
+  "scripts": {
+    "test": "node test.js"
+  },
+  "license": "MIT"
+}

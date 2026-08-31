@@ -1,0 +1,29 @@
+{
+  "id": "sdc-004",
+  "kind": "seeded",
+  "phase": 0,
+  "variant": "V1",
+  "base": "7c8d6dde015e0ca5c55f535812ab4ddf13d78936",
+  "commit": "2c24df7342edc8c96a9ce455ccb5431eee7f98f9",
+  "subject": "WO-8 round 5e: checkout identity from git's own records; guard-timeout kills gated",
+  "seed": {
+    "type": "FT",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "tests/review-lane.test.js",
+      "lines": [383, 392],
+      "symbol": "case4 — SIGTERM lock-guard check ('checkout finished registering (lock cleared) before the SIGTERM')"
+    },
+    "consequence": "The lock-guard assertion was moved inside the else branch it guards, so a guard timeout now takes the silent path: the SIGTERM half of case4 reports fully green without asserting anything, and the assertion that does run is trivially true because the branch already established its condition.",
+    "rationale": "MAJOR: the rubric names 'a test that no longer tests what it claims' as MAJOR. The named behavior — the checkout finishes registering and the worktree lock clears before the signal — is the precondition the whole SIGTERM case exists to pin, and after the move it is unpinned exactly in the failure mode it was written to catch (a slow or broken registration), while the suite still prints a clean pass. It is not CRITICAL because nothing is silently wrong on a production path: the harm is confined to lost test coverage of a regression detector, and the SIGKILL half of the same case still guards its own condition outside the gate.",
+    "hazard_terms": [
+      "vacuous assertion",
+      "weakened test",
+      "assertion inside its own guard",
+      "silently skipped check",
+      "test green by construction"
+    ]
+  },
+  "suite_at_variant": "OK — 116 passed, 0 failed  (node tests/review-lane.test.js); 100 passed, 0 failed  (node tests/verifier.test.js)",
+  "design_note": "The commit's own stated fix is 'skip the kill-dependent sub-checks' when the guard times out, so over-applying that skip to the guard's own check is the natural adjacent slip a hurried executor makes while wrapping a block in an if/else — the surviving comment still says 'a timed-out guard has already failed the suite', which is now false. The injection is a pure one-line relocation with no reindentation, matching the commit's own un-reindented else block, and it changes no check count or ordering on the normal path, so the suite is green and the summary lines are identical to the real commit's."
+}

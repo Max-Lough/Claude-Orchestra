@@ -1,0 +1,38 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 6099bdca8bc1a3fbec5158e54bebdc379d8073a2
+Base (its parent):   92430aaec54f4f194c904642f0fb3c1da80b0469
+Commit subject:      guard: memory files are Director-editable; add harness versioning
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.
+
+Work order as issued:
+
+Add memory files to the Director's authoring exceptions in the guard hook —
+CLAUDE.md / CLAUDE.local.md anywhere in the project, user-level memory under
+Claude's config dir (its own CLAUDE.md plus markdown inside memory/memories
+directories, i.e. the auto-memory notebook), and any project-relative path
+matching a new directorMemoryPatterns knob in orchestra.json. Memory distills
+the conversation only the Director holds, and blocking it breaks Claude Code's
+built-in auto-memory. Document the exception in the protocol and the README,
+and reuse the plan carve-out's containment discipline: resolved paths,
+traversal-checked, nothing outside the project or the config dir.
+
+Fence the exception with exactly one rule. The managed
+<!-- ORCHESTRA:BEGIN --> ... <!-- ORCHESTRA:END --> block in CLAUDE.md is not
+the Director's to touch: that block is what wires the harness into the project,
+and §6 reserves disabling the harness for the user. Simulate each memory write
+(Write / Edit / MultiEdit semantics), then deny any result that does not carry
+that whole block through byte-for-byte unchanged. Surviving marker lines are
+not sufficient evidence — the text between the markers must come through
+intact too, or the write is denied. Keep the new denial model-aware like every
+other one, and leave every non-memory path blocked exactly as it is today; the
+exception must not widen into a general write loophole.
+
+Separately, add harness versioning: a VERSION file at the master root as the
+single source of truth, stamped by the installer into the installed protocol
+header so any project can report the version it is on, and surfaced by
+/orchestra-status alongside the count of configured memory patterns. Do not
+change the version format.

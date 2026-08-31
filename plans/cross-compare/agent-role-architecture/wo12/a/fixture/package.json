@@ -1,0 +1,11 @@
+{
+  "name": "clikit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A tiny dependency-free CLI utility library.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "license": "MIT"
+}

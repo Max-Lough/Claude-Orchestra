@@ -1,0 +1,29 @@
+{
+  "id": "sdc-062",
+  "kind": "seeded",
+  "phase": 3,
+  "variant": "V3",
+  "base": "cd27cdc4704a41a46e98be09399ec3c433966d7a",
+  "commit": "de62e9038f9ca8b787eb223e0d3cfa1ea3bb5f5b",
+  "subject": "Add /ultra-plan: a two-model adversarial planning roundabout",
+  "seed": {
+    "type": "OO",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "install.js",
+      "lines": [205, 213],
+      "symbol": "install branch (module top level) — bundled-skill stamping loop over availableSkills()"
+    },
+    "consequence": "Re-running the installer over a project that already has a bundled skill directory silently skips it, so every already-installed skill is frozen at whatever version the project first received — including this commit's own orchestra-status update — while the installer still prints the full skill list as if it had stamped them.",
+    "rationale": "The commit's stated scope is adding /ultra-plan; the only legitimate reason to touch this loop is that a new skill directory now exists to be stamped. Replacing the wholesale re-stamp with a first-stamp-only guard is an unrequested 'while I was here' improvement to a pre-existing file: it sounds protective (don't clobber local edits), it is invisible on a fresh install (the documented round-trip stays green because the destination never exists), and it silently breaks the installer's advertised update path. It contradicts the file's own idempotent-update contract in the header comment and the README's 'Stamped wholesale … so stale files never linger' paragraph, neither of which the change updates, and the report discloses nothing beyond the in-scope pieces.",
+    "hazard_terms": [
+      "unrequested change outside the stated scope",
+      "silently altered default behavior",
+      "removed branch or dropped step",
+      "undisclosed edit to a pre-existing path",
+      "documented contract no longer matches the code"
+    ]
+  },
+  "suite_at_variant": "node --check install.js: OK; node --check hooks/orchestra-ultraplan.js: OK; node --check hooks/orchestra-guard.js: OK; node --check hooks/orchestra-review.js: OK. Install round-trip into a fresh temp dir: '* agents: scout.md, executor.md, reviewer.md, reviewer-codex.md, planner-gpt.md -> .claude/agents/' / '* skills: orchestra-plan, orchestra-review, orchestra-status, ultra-plan -> .claude/skills/' / '* ultra-plan runner -> .claude/hooks/orchestra-ultraplan.js' / 'Done. Notes:'; --uninstall then reports '* removed .claude/skills/ultra-plan/' … 'Done. The project is back to a standard Claude Code setup.' with only .claude/settings.json left behind (pre-existing behavior). No test suite or --lint target exists in this repo at C.",
+  "design_note": "The defect lives in install.js, a pre-existing file the commit legitimately touches (new agent name, new runner copy, new uninstall entry), so the extra hunk sits inside an otherwise in-scope diff. It flips the bundled-skill loop from a wholesale re-stamp to first-stamp-only, which is unreachable damage on the fresh-install path every check exercises and total damage on the update path the README and the file header both promise. Detection requires noticing that a hunk in the skills loop is not needed to add /ultra-plan and then reading it against the installer's stated idempotent-update contract, rather than spotting a local logic error."
+}

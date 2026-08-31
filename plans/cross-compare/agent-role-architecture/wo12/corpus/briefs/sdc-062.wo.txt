@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit fd7488b8be28a74701cfb0ee0ffa7024dac33d2b
+Base (its parent):   cd27cdc4704a41a46e98be09399ec3c433966d7a
+Commit subject:      Add /ultra-plan: a two-model adversarial planning roundabout
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

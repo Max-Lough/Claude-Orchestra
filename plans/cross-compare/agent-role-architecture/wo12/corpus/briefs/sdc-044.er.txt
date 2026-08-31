@@ -1,0 +1,4 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is commit 340281a590f24063eeaaa25652d7d2a90d36c3f6. Claude Sonnet 5 · medium
+(Anthropic) produced this change; no fresh executor claims exist beyond
+the commit message. Verify the diff on its own merits.

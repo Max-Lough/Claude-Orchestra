@@ -22,8 +22,14 @@
  *     the same way);
  *   - all nine headings are present with non-empty bodies;
  *   - mirror-or-declared-exception: the seat's casting table carries a
- *     mirror rung, a declared noMirrorFor exception, or is the computed
- *     Reviewer (whose matrix spans both families by construction).
+ *     mirror rung, a declared noMirrorFor exception (any rung key — a
+ *     partial-rung refusal like Archivist's videoAudio, or a whole-rung
+ *     exception like Interface Artisan's primary), a declared
+ *     crossFamilyByConstruction exception (Test Designer — mirror
+ *     substitution is unlawful by the seat's own cast rule), or is the
+ *     computed Reviewer (whose matrix spans both families by
+ *     construction). A declared exception only counts with a non-empty
+ *     `reason` string — a truthy key alone does not satisfy the check.
  */
 'use strict';
 
@@ -72,6 +78,17 @@ function lint() {
   const legacyNames = new Set(
     fs.readdirSync(path.join(MASTER, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''))
   );
+  // agents/ is not flat — agents/specialists/*.md carries live specialist
+  // files (e.g. modeler.md) that a roster seat can supersede/shadow by name
+  // (WO-10: spatial-specialist.md supersedes agents/specialists/modeler.md
+  // per router/aliases.json). A roster file named e.g. modeler.md would
+  // collide undetected if this directory were left unscanned.
+  const specialistsDir = path.join(MASTER, 'agents', 'specialists');
+  if (fs.existsSync(specialistsDir)) {
+    for (const f of fs.readdirSync(specialistsDir)) {
+      if (f.endsWith('.md')) legacyNames.add(f.replace(/\.md$/, ''));
+    }
+  }
   const files = fs.readdirSync(ROSTER_DIR).filter(isRoleFile);
   const seen = new Set();
 
@@ -87,7 +104,7 @@ function lint() {
       if (seen.has(fm.name)) problems.push(file + ': duplicate roster agent name ' + fm.name);
       seen.add(fm.name);
       if (legacyNames.has(fm.name)) {
-        problems.push(file + ': name "' + fm.name + '" collides with a legacy agents/*.md — both rosters co-install during shadow (§6.6)');
+        problems.push(file + ': name "' + fm.name + '" collides with a legacy agents/*.md or agents/specialists/*.md — both rosters co-install during shadow (§6.6)');
       }
     }
 
@@ -143,10 +160,17 @@ function lint() {
       if (content.length < 20) problems.push(file + ': field "' + field + '" is empty or trivial');
     }
 
-    // Mirror-or-declared-exception.
+    // Mirror-or-declared-exception. A declared exception must carry a
+    // non-empty reason string to count — a truthy key alone is not enough.
     const hasMirror = !!(role.rungs || {}).mirror;
-    const hasException = !!role.noMirrorFor;
-    if (!hasMirror && !hasException && !role.computed && seat !== 'Conductor') {
+    const noMirrorReasons = Object.keys(role.noMirrorFor || {})
+      .filter((k) => k !== 'unstatedInPlan')
+      .map((k) => role.noMirrorFor[k]);
+    const hasNoMirrorException = noMirrorReasons.length > 0
+      && noMirrorReasons.every((r) => typeof r === 'string' && r.trim().length > 0);
+    const cfbc = role.crossFamilyByConstruction;
+    const hasCrossFamilyException = !!cfbc && typeof cfbc.reason === 'string' && cfbc.reason.trim().length > 0;
+    if (!hasMirror && !hasNoMirrorException && !hasCrossFamilyException && !role.computed && seat !== 'Conductor') {
       // Conductor's mirror is a rung named mirror too, so this is general.
       problems.push(file + ': seat ' + seat + ' has neither a mirror rung nor a declared no-mirror exception in castings.json');
     }

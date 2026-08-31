@@ -234,6 +234,68 @@ failure would force it.
    report for the closest honest exercise proposed, and the gap it does
    not close.
 
+## Dispositions
+
+Closing the three conflicts raised in "Plan-silence / conflict spots" above,
+per the Director's WO-10 ruling (2026-08-30):
+
+**(a) Q0/E5 `router/castings.json` gap (conflict item 2) — closed.**
+`router/castings.json` now carries two declared exceptions, quoting the
+ruling's own rationale for each:
+
+- **Test Designer (Q0)**: a `crossFamilyByConstruction` annotation. Ruling:
+  "mirror substitution is UNLAWFUL by construction — the seat is cast
+  opposite the implementation author's family, so substituting the other
+  lane under pool outage would place the test designer same-family with the
+  author, violating the invariant." Checked against `router.js` before
+  writing the reason: there is no special-cased Q0 outage branch. Rung
+  selection (`router.js:417-430`) always names `vsAnthropicAuthor` /
+  `vsOpenaiAuthor` from `implementationAuthorFamily`; since the role carries
+  no `mirror` rung, `cast()`'s generic degradation fallback
+  (`router.js:475-488`) finds `role.rungs.mirror` undefined, the
+  Data-Engineer-only `reversibleT1` fallback does not apply, and it falls
+  through to the final refusal — outcome `WAIT`, reason "no lawful casting:
+  ... and the role declares no mirror for this work" (`router.js:485-488`).
+  Exactly the honest fallback the ruling anticipated for the case router.js
+  has no special handling: outage means wait, never a same-family
+  substitution.
+- **Interface Artisan (E5)**: a `noMirrorFor.primary` declared exception
+  (reusing the existing `noMirrorFor` mechanism — its rung-keyed
+  reason-string shape fit a whole-primary-rung exception cleanly), marked
+  `unstatedInPlan: true`. Ruling: "the plan names no authoring mirror for
+  the E5 primary (the closing rung is a SEPARATE READ-ONLY review-shaped
+  order, the critic a ceiling — neither is an authoring substitution
+  target)." Verified against `final-plan.md` Part 2 seat 15 (lines
+  675–703): the Casting bullet documents generation (Sol), closing (Opus,
+  "dispatched as a separate READ-ONLY order ... always a different family
+  from the generator") and critic (Fable, ceiling) — no mirror line for the
+  primary anywhere in the section.
+
+Both are data annotations only; `router.js`'s `cast()` treats the new keys
+as inert (full router suite: 135 passed, unchanged from before this round —
+no routing behavior changed). `roster/lint.js`'s mirror-or-declared-
+exception check was taught to accept both forms (see (c)'s sibling fix
+below), each requiring a non-empty `reason` string to count; `node
+roster/lint.js` now exits 0.
+
+**(b) Refactorer/Doc Writer missing plan Tools bullets (conflict item 1) —
+already closed, cross-referenced here.** Both seats' role files synthesize
+a Tools grant from surrounding Purpose/Contract/Owns prose rather than
+transcribing a bullet `final-plan.md` Part 2 does not carry for either
+seat, per WO-8/WO-9 precedent (the same posture WO-9's band record took for
+the missing `**Strengths.**` bullets across most of Band A/B). No change
+this round; see "Plan-silence / conflict spots" item 1 above for the full
+citation.
+
+**(c) `agents/specialists/*.md` lint blind spot (conflict item 3) —
+closed.** `roster/lint.js`'s name-collision check now also reads
+`agents/specialists/*.md` (previously a non-recursive `readdirSync` over
+`agents/` only). Verified once the check was widened: no CURRENT roster
+file's frontmatter `name` collides with either file under
+`agents/specialists/` (`modeler`, `_TEMPLATE`) — `spatial-specialist.md`
+(name `spatial-specialist`) stays clear, and `node roster/lint.js` reports
+zero collision violations with the widened scan.
+
 ## Exercises
 
 _(pending — stage 2; see the stage-2 exercise map delivered in the WO-10

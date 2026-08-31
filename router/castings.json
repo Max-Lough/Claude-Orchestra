@@ -253,6 +253,10 @@
         "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med–high", "note": "generation, with a browser/screenshot loop" },
         "closing": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "dispatched as a separate READ-ONLY order — no WRITE-TREE; an edit would make it a co-author and disqualify it from closing; always a different family from the generator" },
         "critic": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "rare — passes every check and still looks wrong; effort unstated in the plan, high adopted to match the E6 critic (WO-6 default)", "unstatedInPlan": "effort" }
+      },
+      "noMirrorFor": {
+        "primary": "declared no-mirror exception, unstated in the plan: final-plan.md Part 2 seat 15 names no authoring mirror for the E5 primary — closing (Opus 5, high) is dispatched as a SEPARATE READ-ONLY order (an edit would make it a co-author and disqualify it from closing) and critic (Fable 5, ceiling) is a rare global-critique ceiling; neither is an authoring substitution target for the Sol primary. Pool outage on the primary casting waits or returns typed UNAVAILABLE.",
+        "unstatedInPlan": true
       }
     },
     "Spatial Specialist": {
@@ -293,7 +297,10 @@
         "vsOpenaiAuthor": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" }
       },
       "castRule": "cast opposite the implementation author's family; a human-authored implementation takes whichever pool is healthier, tie → the Anthropic lane (protects the OpenAI review reserve, Part 5)",
-      "directorCreated": "Q0 is always Director-created, never spawned by the implementer — the independence is the point"
+      "directorCreated": "Q0 is always Director-created, never spawned by the implementer — the independence is the point",
+      "crossFamilyByConstruction": {
+        "reason": "mirror substitution is unlawful by construction — the seat is cast opposite the implementation author's family, so substituting the other lane under pool outage would place the test designer same-family with the author, violating the invariant. router.js has no special-cased Q0 outage handling: rung selection (router.js:417-430) always names vsAnthropicAuthor or vsOpenaiAuthor from implementationAuthorFamily, and this role carries no `mirror` rung, so when that rung's bucket cannot take the authoring purpose, cast()'s generic degradation fallback (router.js:475-488) finds role.rungs.mirror undefined, the Data-Engineer-only reversibleT1 fallback does not apply, and it falls through to the final refusal: outcome WAIT, reason 'no lawful casting: <model> bucket at <state> ... and the role declares no mirror for this work' (router.js:485-488). Outage means wait, or a typed UNAVAILABLE at the caller — never a same-family substitution."
+      }
     },
     "Doc Writer": {
       "class": "D0",

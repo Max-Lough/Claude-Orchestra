@@ -126,9 +126,12 @@ configuration, not of service, and the 12f report must say so. (ix) *Round-3 bli
 test result and round-4 amendment:* a fresh evaluator scored 10/24 (41.7%) on the
 regenerated briefs (round 2: 83%); its only high-confidence hits keyed on capitalized
 labels (`Constraint:`, `IN SCOPE:`) present in five seeded orders and no control — a
-**label-tell lint** now requires every capitalized label-plus-colon token to appear in
-both populations or neither, the five orders are rewritten as prose, and a second blind
-test on a different 24-id draw is recorded before any pass.
+**label-tell lint** now forbids any capitalized label-plus-colon token inside ORDER or
+CLAIMS prose outright (a wider scan found such labels scattered in both populations in
+different forms — "Verification:" in seeds, "Suites:" in controls — so both-or-neither
+was not a usable rule); every affected sentence in all 84 content files is rewritten as
+plain prose, and a second blind test on a different 24-id draw is recorded before any
+pass.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

@@ -177,9 +177,13 @@ complete corpus is scored against §3.
 
 ### 2.7 12h blinding factor
 
-Three packet variants, assigned per artifact by stratified rotation (within each
-type×severity stratum and within controls, in corpus order: V1, V2, V3, V1, …), the same
-variant for every lane on that artifact:
+Three packet variants, assigned per artifact by stratified rotation — for seeds, within
+each defect **type** in corpus order with a staggered start per type (offsets 0,1,2,0,1,2
+over CV,OO,LC,FT,HF,RC → 10/10/10 over the 30 seeds); for controls, in corpus order (V1,
+V2, V3, V1, …) — the same variant for every lane on that artifact. *(Pre-run amendment,
+2026-08-31, before any pass: the first draft rotated within type×severity strata, which
+left every 1-member stratum on V1 and split the seeds 18/6/6 — useless as a factor. No
+model pass had run.)*
 
 - **V1 blind** — executor report names no vendor, model, effort or price ("an executor").
 - **V2 identity-visible** — report names the true casting ("Claude Sonnet 5 · medium",

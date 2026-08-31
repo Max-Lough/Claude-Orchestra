@@ -663,7 +663,13 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   unigram-exclusivity gate, a content pass on all 84 files, and a stated stopping
   standard — every gated feature passes and the delta reviewer's best ungated style
   classifier stays under 80% precision; the human-facing standard (≤65%) has been
-  met since round 3. A third blind test on the round-7 briefs follows.
+  met since round 3. Round-7 content (all 84 files) sealed at `34098ce` and tooling at
+  `54b6eeb` (809 checks): on the sealed content every gate passes — sentence floor 0
+  failures, shortest-sentence means 10.9 vs 9.6 (Δ1.3, limit 3), unigram exclusivity 0
+  at df≥8, plus all earlier gates. The identity gate now parses `served_model` first
+  (a contradiction fails gate 5; absence reads LIMITED; only an explicit match is
+  evidence). Regeneration, the third blind test (seeded draw `wo12-round7`), and the
+  round-7 delta review follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

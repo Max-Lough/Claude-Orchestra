@@ -689,7 +689,13 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   a feature family + the specific fixes, then content re-authored against its report,
   blind test #4 with the draw stored verbatim, and a rounds-8 delta. Ships as 2.4.0.
   OpenAI lane: attempts 4 (stub engine) and 5 (foreground cap, Conductor dispatch
-  error) VOID; attempt 6 running with the runner backgrounded and `CODEX_BIN` pinned.
+  error) VOID; **attempt 6 (`wo12-r0-review-openai-6.md`, engine verified) REVISE —
+  1 CRITICAL / 4 MAJOR / 3 MINOR, accepted.** Four of its findings converge with the
+  Anthropic lane's, reached blind (identity spoof, FINDINGS terminator from the
+  opposite direction, id-named clone dir, lowercase splitter). New from it: an unchecked
+  `--run-clone-root` inside the repository reaches the live key; the stopping standard
+  is rendered but unenforced; resume resets the run index so gate 6's streak can be
+  split. All folded into round 8. Rounds 3–7 now carry a cross-vendor verdict.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

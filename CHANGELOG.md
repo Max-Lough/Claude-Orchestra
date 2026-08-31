@@ -77,7 +77,14 @@ saw it.
   the protocol text exactly. Two lessons recorded: a builder agent wiped 54
   untracked content files with its own `rm -rf` (now impossible in-tool:
   `O_EXCL` writes and a byte-level directory snapshot asserted before every
-  exit), and shared directories are committed per batch from now on.
+  exit), and shared directories are committed per batch from now on. CI then
+  caught what no local run could: `build-corpus.js`'s nested-clone guard was
+  inoperative on macOS and Windows runners — a clone destination does not exist
+  yet, so a one-sided `realpath` left the two paths in different namespaces
+  (`/var` vs `/private/var`; `RUNNER~1` vs `runneradmin`) and the guard would
+  have created a clone inside the tree under review. Fixed by resolving the
+  nearest existing ancestor on both sides and comparing segment-wise, case-folded
+  on win32/darwin, with every source-spelling × destination-spelling pair pinned.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

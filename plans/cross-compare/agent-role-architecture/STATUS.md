@@ -574,8 +574,12 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   (seeds 144±12, controls 128±18 words), idempotent to the byte, all suites green. KIND
   declared pool-wide as `code`; phases run in a deterministic interleaved order.
   Incident recorded: a builder agent's own `rm -rf` wiped 54 untracked content files
-  (rewritten; now impossible in-tool; batches are committed on arrival). Delta review
-  of round 2 to follow.
+  (rewritten; now impossible in-tool; batches are committed on arrival). CI on the
+  round-2 commit caught a real cross-platform defect (5/9 red): the nested-clone guard
+  was inoperative on macOS/Windows because a not-yet-existing clone path cannot be
+  realpath'd and the comparison went one-sided — fixed at `1ff2730` (nearest-existing-
+  ancestor resolution, segment-wise `path.relative`, case-folded on win32/darwin; every
+  spelling pair pinned; 406 checks). Delta review of round 2 (both lanes) in progress.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

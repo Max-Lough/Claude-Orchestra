@@ -3844,6 +3844,24 @@ section('70. assemble-key.js — sentence shape and unigram exclusivity (round-7
       /sentence floor/.test(std) && /unigram exclusivity/i.test(std) && /3-gram exclusivity/.test(std) && /no sha in any brief/.test(std),
       std.slice(std.indexOf('| # |'), std.indexOf('| # |') + 1400));
     check('(c) …with the disclosed-not-removed list', /Disclosed rather than removed/.test(std));
+
+    // Round-7 MINOR 6: amendment (x)'s text names only the ratio arm; the code
+    // also fails on present-in-one/absent-in-the-other, where no ratio exists.
+    // CONSTRUCTION.md must document the arm that is actually enforced.
+    const flat = md.replace(/\s+/g, ' ');
+    check('MINOR 6: the idiom section names all five watched idioms',
+      assembleKeyLib.IDIOMS.every((i) => flat.indexOf('"' + i.label + '"') !== -1),
+      assembleKeyLib.IDIOMS.map((i) => i.label).join(' | '));
+    check('MINOR 6: …states the 0.5–2.0 frequency-ratio arm',
+      /Present in both populations.*frequency ratio must fall within 0\.5–2/.test(flat), flat.slice(flat.indexOf('Idiom balance'), flat.indexOf('Idiom balance') + 500));
+    check('MINOR 6: …documents the stricter absent-from-one arm as a hard failure',
+      /Present in one population and absent from the other.*hard failure/.test(flat));
+    check('MINOR 6: …says that arm is stricter than amendment (x)\'s text',
+      /stricter than amendment \(x\)'s text and is enforced regardless/.test(flat));
+    check('MINOR 6: …and that absent-from-both passes',
+      /Absent from both populations.*passes/.test(flat));
+    check('MINOR 6: the rendered verdicts still distinguish the three arms',
+      /absent from both — pass/.test(md) || /one population only/.test(md) || /\| pass \|/.test(md), md.slice(md.indexOf('| idiom |'), md.indexOf('| idiom |') + 600));
   }
 }
 

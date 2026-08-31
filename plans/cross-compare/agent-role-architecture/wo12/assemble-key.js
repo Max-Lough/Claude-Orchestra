@@ -1859,7 +1859,30 @@ function renderDistributionReport(rows) {
       if (report.unigramsReported.length > 15) lines.push('| …' + (report.unigramsReported.length - 15) + ' more | | |');
     }
     lines.push('');
-    lines.push('**(5) Idiom balance** — per-artifact frequency ratio within ' + IDIOM_RATIO_MIN + '–' + IDIOM_RATIO_MAX + ', or absent from both');
+    lines.push('**(5) Idiom balance** — the five watched idioms, gated on three arms.');
+    lines.push('');
+    // Round-7 MINOR 6: amendment (x)'s text describes this gate as "a
+    // per-population frequency ratio outside 0.5-2.0" and stops there, but the
+    // code has a STRICTER arm the protocol never mentions — presence in one
+    // population and absence from the other, where no ratio exists at all. The
+    // code is right and this record now says so, so that the strictest arm of
+    // the gate is not the undocumented one.
+    lines.push('The watched idioms are ' + IDIOMS.map((i) => '"' + i.label + '"').join(', ') + '.');
+    lines.push('');
+    lines.push('1. **Present in both populations** — the per-artifact frequency ratio must fall within ' +
+      IDIOM_RATIO_MIN + '–' + IDIOM_RATIO_MAX + '. This is the arm amendment (x) describes.');
+    lines.push('2. **Present in one population and absent from the other** — a hard failure. No ratio exists');
+    lines.push('   here (the denominator is zero), so arm 1 cannot see this case, and it is the *strongest*');
+    lines.push('   form of the tell rather than a lesser one: an idiom no artifact of the other population');
+    lines.push('   ever uses is a 100%-precision authorship rule. **This arm is stricter than amendment (x)\'s');
+    lines.push('   text and is enforced regardless.**');
+    lines.push('3. **Absent from both populations** — passes. An idiom nobody uses cannot separate anyone.');
+    lines.push('');
+    lines.push('A caution the round-4 review earned: gating a LITERAL string is not the same as removing the');
+    lines.push('habit behind it. `and nothing else` reads 0/0 here and passes on arm 3, while the habit it');
+    lines.push('stood for — `with nothing else touched`, `nowhere else`, `anything else`, `anywhere else` —');
+    lines.push('survived at 12 controls to 0 seeds. The generic test that catches that class is the unigram');
+    lines.push('exclusivity gate (7) below, not this hand-written list.');
     lines.push('');
     lines.push('| idiom | seeded (total / per artifact) | control (total / per artifact) | ratio | verdict |');
     lines.push('|---|---|---|---|---|');

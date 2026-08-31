@@ -2603,6 +2603,156 @@ section('53. assemble-key.js — skeletonize masks the SUBJECT before the shas (
   check('the subject is still masked', /Commit subject:      <SUBJECT>/.test(sk), JSON.stringify(sk));
 }
 
+section('54. assemble-key.js — the LABEL-TELL lint (round 4: a lexical label only seeds carried)');
+{
+  // A round-3 blind evaluator separated the populations on `IN SCOPE:` /
+  // `Constraint:` inside ORDER prose — 5 seeded content files, 0 controls.
+  // Nothing upstream can see it: skeletonize() collapses the whole ORDER block
+  // to one token, and the word/hardness gates are distributional.
+  const L = assembleKeyLib.extractLabels;
+  check('a line-start label is extracted', Array.from(L('Constraint: do not touch the adjacent module.')).join(',') === 'Constraint');
+  check('a label after a sentence end is extracted', Array.from(L('Do the thing. IN SCOPE: these files only.')).join(',') === 'IN SCOPE');
+  check('a label after a newline is extracted', Array.from(L('line one\nNote: a note here')).join(',') === 'Note');
+  check('several labels in one string are all extracted',
+    Array.from(L('Scope: a. Verification: b. Note: c')).sort().join(',') === 'Note,Scope,Verification');
+  check('prose with no labels yields none', Array.from(L('The order asks for a bounded change with no labels at all.')).length === 0);
+  check('a time or ratio is not a label', Array.from(L('the ratio is 3:1 and the time is 10:30')).length === 0);
+  check('a lowercase word before a colon is not a label', Array.from(L('A sentence ends. lowercase: not a label')).length === 0);
+  check('a mid-sentence colon is not a label', Array.from(L('Do it; however: not like that')).length === 0);
+  check('contentLabels merges order and claims', assembleKeyLib.contentLabels({
+    order: 'Constraint: keep it.', claims: 'Verification: the suite is green.',
+  }).join(',') === 'Constraint,Verification');
+
+  check('a clause too long to be a heading is not a label (>' + assembleKeyLib.LABEL_MAX_WORDS + ' words)',
+    Array.from(L('One two three four five: still prose')).length === 0,
+    JSON.stringify(Array.from(L('One two three four five: still prose'))));
+  check('a four-word heading IS a label', Array.from(L('Keep the write idempotent: do so')).join(',') === 'Keep the write idempotent');
+
+  const row = (id, kind, labels) => ({ id, kind, variant: 'V1', baseKind: 'code', orderWords: 100, claimsWords: 50, orderHardness: 2, labels });
+
+  // ZERO TOLERANCE. The first draft of this lint asked for both-or-neither;
+  // a scan of the sealed corpus refuted it — 15 distinct labels, all 15
+  // one-population — so any label at all now fails.
+
+  // (a) a seed-only label FAILS, naming the file and the token.
+  {
+    const rows = [
+      row('sdc-001', 'seeded', ['Constraint']), row('sdc-002', 'seeded', ['Constraint']),
+      row('sdc-003', 'control', []), row('sdc-004', 'control', []),
+    ];
+    const findings = [];
+    assembleKeyLib.labelTellLint(rows, findings);
+    check('round 4: a seed-only label is a hard failure, once per file', findings.length === 2, JSON.stringify(findings));
+    check('…and each finding names the content file', /content\/sdc-001\.json/.test(findings[0]) && /content\/sdc-002\.json/.test(findings[1]), JSON.stringify(findings));
+    check('…and names the label token', findings.every((f) => /"Constraint:"/.test(f)), JSON.stringify(findings));
+    check('…and says which population the file belongs to', /\(seeded\)/.test(findings[0]), findings[0]);
+  }
+
+  // (b) a control-only label fails identically — no population is privileged.
+  {
+    const rows = [row('sdc-001', 'seeded', []), row('sdc-002', 'control', ['IN SCOPE'])];
+    const findings = [];
+    assembleKeyLib.labelTellLint(rows, findings);
+    check('round 4: a control-only label is a hard failure too',
+      findings.length === 1 && /content\/sdc-002\.json \(control\)/.test(findings[0]) && /"IN SCOPE:"/.test(findings[0]), JSON.stringify(findings));
+  }
+
+  // (c) a label present in BOTH populations STILL fails — the rule is not balance.
+  {
+    const rows = [
+      row('sdc-001', 'seeded', ['Constraint']), row('sdc-002', 'seeded', ['Constraint', 'Note']),
+      row('sdc-003', 'control', ['Constraint']), row('sdc-004', 'control', ['Note']),
+    ];
+    const findings = [];
+    assembleKeyLib.labelTellLint(rows, findings);
+    check('round 4: a label present in BOTH populations still FAILS (zero tolerance, not balance)',
+      findings.length === 5, JSON.stringify(findings.length));
+    check('…every labelled file is named', ['sdc-001', 'sdc-002', 'sdc-003', 'sdc-004'].every((id) => findings.some((f) => f.indexOf('content/' + id + '.json') !== -1)));
+  }
+
+  // (d) no labels anywhere passes — the only way to pass.
+  {
+    const rows = [row('sdc-001', 'seeded', []), row('sdc-002', 'control', [])];
+    const findings = [];
+    const use = assembleKeyLib.labelTellLint(rows, findings);
+    check('round 4: no labels at all passes', findings.length === 0 && use.labelled.length === 0, JSON.stringify(findings));
+  }
+
+  // (e) one label in one file out of many still fails the whole assembly.
+  {
+    const rows = [row('sdc-001', 'seeded', ['Scope'])];
+    for (let i = 2; i <= 20; i++) rows.push(row('sdc-0' + String(i).padStart(2, '0'), 'control', []));
+    const findings = [];
+    const use = assembleKeyLib.labelTellLint(rows, findings);
+    check('round 4: a single label in a single file of 20 is decisive',
+      findings.length === 1 && use.labelled.join(',') === 'sdc-001', JSON.stringify(findings));
+  }
+
+  // (f) a single-population corpus is still checked — the rule no longer needs
+  // two populations to have an opinion.
+  {
+    const findings = [];
+    assembleKeyLib.labelTellLint([row('sdc-001', 'seeded', ['Constraint'])], findings);
+    check('a single-population corpus is still checked (zero tolerance needs no comparison)',
+      findings.length === 1 && /"Constraint:"/.test(findings[0]), JSON.stringify(findings));
+  }
+}
+
+section('55. assemble-key.js — a label tell REFUSES the whole assembly, and CONSTRUCTION.md inventories labels');
+{
+  const repo = makeSourceRepo();
+  const work = tmpDir('wo12-label-e2e-');
+  const contentDir = path.join(work, 'content');
+  const briefsDir = path.join(work, 'briefs');
+  fs.mkdirSync(contentDir, { recursive: true });
+  const slots = [
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
+  ];
+  const patch = makePatchAgainstBase(repo, (d) => {
+    fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  return a - b;\n}\n');
+  });
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.seed.json'), JSON.stringify({
+    id: 'sdc-001', base: repo.base, commit: repo.commit, phase: 0, variant: 'V1',
+    seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'app.js', lines: [1, 3], symbol: 'add' }, consequence: 'x', rationale: 'y', hazard_terms: ['a'] },
+  }), 'utf8');
+  fs.writeFileSync(path.join(work, 'base-pool.json'), JSON.stringify({ slots }, null, 2), 'utf8');
+  const cliArgs = ['--pool', path.join(work, 'base-pool.json'), '--corpus-dir', work, '--briefs-dir', briefsDir,
+    '--content-dir', contentDir, '--source-repo', repo.dir, '--clone-root', path.join(work, 'clone')];
+
+  // Both orders identical in length and register; only the LABEL differs.
+  const body = ('The order must be followed exactly and the guard must never be widened; ' +
+    'the adjacent module stays byte-identical and unchanged. ').repeat(3) + Array(58).fill('detail').join(' ');
+  const claims = Array(45).fill('the change was made and verified').join(' ').split(' ').slice(0, 45).join(' ');
+  const labelled = 'Constraint: ' + body.split(' ').slice(0, 148).join(' ');
+  const plain = body.split(' ').slice(0, 149).join(' ');
+  fs.writeFileSync(path.join(contentDir, 'sdc-001.json'), JSON.stringify({ order: labelled, claims }), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'), JSON.stringify({ order: plain, claims }), 'utf8');
+  const rBad = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  check('round 4: a label REFUSES assembly even when length and register match',
+    rBad.status !== 0 && /assembly REFUSED/.test(rBad.stderr || '') && /label tell/.test(rBad.stderr || ''), rBad.stderr);
+  check('the refusal names the label and the content file to fix',
+    /"Constraint:"/.test(rBad.stderr || '') && /content\/sdc-001\.json/.test(rBad.stderr || ''), rBad.stderr);
+  check('nothing was written', !fs.existsSync(path.join(work, 'key.json')));
+
+  // Giving the CONTROL the same label does NOT help — zero tolerance.
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'), JSON.stringify({ order: 'Constraint: ' + plain.split(' ').slice(0, 148).join(' '), claims }), 'utf8');
+  const rBoth = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  check('round 4: balancing the label across both populations does NOT satisfy the lint',
+    rBoth.status !== 0 && /label tell/.test(rBoth.stderr || '') && /content\/sdc-002\.json/.test(rBoth.stderr || ''), rBoth.stderr);
+
+  // Folding the label into ordinary prose is what passes.
+  fs.writeFileSync(path.join(contentDir, 'sdc-001.json'), JSON.stringify({ order: plain, claims }), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'), JSON.stringify({ order: plain, claims }), 'utf8');
+  const rOk = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  check('round 4: label-free content assembles', rOk.status === 0, (rOk.stderr || '') + (rOk.stdout || '').slice(-400));
+  const md = fs.readFileSync(path.join(work, 'CONSTRUCTION.md'), 'utf8');
+  check('CONSTRUCTION.md carries the inline-label section', /### Inline labels \(round 4\)/.test(md), md.slice(0, 400));
+  check('the inventory is empty in a corpus that assembles', /\*\*No inline labels in any content file\.\*\*/.test(md),
+    md.slice(md.indexOf('### Inline labels'), md.indexOf('### Inline labels') + 900));
+}
+
 // ---------------------------------------------------------------- summary
 
 console.log('\n' + (failures === 0 ? 'OK' : 'FAILED') + ' — ' + passes + ' passed, ' + failures + ' failed');

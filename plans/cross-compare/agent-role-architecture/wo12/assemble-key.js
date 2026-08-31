@@ -171,6 +171,85 @@ function hardnessScore(text) {
   return m ? m.length : 0;
 }
 
+// ----------------------------------------------------- label tells (round 4)
+//
+// A blind evaluator separated the populations on a purely LEXICAL label that
+// only seeds carried: `IN SCOPE:` / `Constraint:` appeared inside the ORDER
+// prose of 5 seeded content files and 0 controls. Nothing upstream could see
+// it — the word bands passed, the register (hardness) matched, and
+// `skeletonize` collapses the whole ORDER block to one `<ORDER>` token, so the
+// structural-tell lint is blind to anything INSIDE the prose by construction.
+//
+// A label is an inline section heading: a capitalized phrase of one to four
+// words followed by a colon, at a line start or after a sentence end —
+// `Constraint:`, `IN SCOPE:`, `Note:`, `Verification:`, `Suites:`.
+//
+// The rule is ZERO TOLERANCE: any such label in `order` or `claims` is a hard
+// failure. The first draft of this lint asked only that each label appear in
+// BOTH populations or NEITHER, which sounds weaker but is unusable in practice:
+// a scan of all 84 content files found 15 distinct labels and EVERY ONE was
+// one-population — `Verification:` on 3 seeds, `Suites:` on 7 controls, and a
+// dozen one-offs like `Prove it:` and `The diff is small:`. Balancing a
+// long tail of bespoke labels across two populations is not achievable; not
+// writing them is. Nothing is exempt — the generated template's own headings
+// (`ORDER:`, `CLAIMS:`, `Commit subject:`) live in the template, not in the
+// content fields this lint reads.
+const LABEL_RE = /(^|[\r\n]|[.!?]["'’”)\]]?[ \t])[ \t]*([A-Z][A-Za-z -]{1,24}):/g;
+const LABEL_MAX_WORDS = 4;
+
+/** Every distinct inline label in a piece of content prose. */
+function extractLabels(text) {
+  const out = new Set();
+  const s = String(text || '');
+  let m;
+  LABEL_RE.lastIndex = 0;
+  while ((m = LABEL_RE.exec(s))) {
+    const label = m[2].trim();
+    if (!label) continue;
+    if (label.split(/\s+/).length > LABEL_MAX_WORDS) continue; // a clause, not a heading
+    out.add(label);
+  }
+  return out;
+}
+
+function contentLabels(content) {
+  const out = new Set();
+  for (const label of extractLabels(content.order)) out.add(label);
+  for (const label of extractLabels(content.claims)) out.add(label);
+  return Array.from(out).sort();
+}
+
+/**
+ * The label-tell lint (round 4). ZERO TOLERANCE: every inline label is a hard
+ * failure naming the file and the token.
+ *
+ * Why not "both populations or neither": that was the first rule, and a scan of
+ * the sealed corpus refuted it — 15 distinct labels, all 15 carried by exactly
+ * one population. Labels are bespoke to the change each brief describes, so
+ * they do not repeat across the populations and cannot be balanced. The lint
+ * that can actually be satisfied is the one that says: don't write them.
+ *
+ * Nothing upstream can see this. `skeletonize()` collapses the whole ORDER
+ * block to a single `<ORDER>` token, so the structural-tell lint is blind to
+ * anything inside the prose by construction; the word bands and the hardness
+ * ratio are distributional and a single label is decisive.
+ */
+function labelTellLint(rows, findings) {
+  const byLabel = new Map();
+  for (const r of rows) {
+    for (const label of (r.labels || [])) {
+      if (!byLabel.has(label)) byLabel.set(label, { seeded: [], control: [] });
+      const bucket = byLabel.get(label)[r.kind];
+      if (bucket) bucket.push(r.id);
+      findings.push('label tell: content/' + r.id + '.json (' + r.kind + ') carries the inline label ' +
+        JSON.stringify(label + ':') + ' in its `order`/`claims` prose. Inline labels are forbidden outright — they are ' +
+        'bespoke to the change, so they never balance across the two populations, and a single one is enough for a reader ' +
+        'to key on. Fold the labelled text into ordinary prose (write the constraint as a sentence, not as a heading).');
+    }
+  }
+  return { byLabel, labelled: rows.filter((r) => (r.labels || []).length).map((r) => r.id) };
+}
+
 // ------------------------------------------------------- hazard vocabulary
 
 // VARIANTS.md v2 § "Executor report — V3 blind + hazard": a CLOSED vocabulary
@@ -993,6 +1072,37 @@ function renderLengthReport(rows) {
   lines.push('The hardness proxy counts whole-word occurrences of `must`, `never`, `exactly`, `only`, `byte-identical`,');
   lines.push('`unchanged` and `forbid*` in the ORDER prose — the vocabulary the round-2 blind evaluator named when it');
   lines.push('explained how it was telling the populations apart.');
+  lines.push('');
+  lines.push('### Inline labels (round 4)');
+  lines.push('');
+  lines.push('A round-3 blind evaluator separated the populations on a purely lexical label — `IN SCOPE:` / `Constraint:`');
+  lines.push('inside the ORDER prose of 5 seeded content files and 0 controls. Inline labels are now forbidden OUTRIGHT in');
+  lines.push('`order` and `claims`: a capitalized phrase of up to ' + LABEL_MAX_WORDS + ' words followed by a colon, at a line start or after a');
+  lines.push('sentence end, is a hard failure. A first draft asked only that each label appear in both populations or');
+  lines.push('neither, but a scan of the sealed corpus found 15 distinct labels of which all 15 were one-population —');
+  lines.push('labels are bespoke to the change they describe, so they never balance. The skeleton lint cannot see any of');
+  lines.push('this: `skeletonize()` collapses the whole ORDER block to a single `<ORDER>` token.');
+  lines.push('');
+  {
+    const byLabel = new Map();
+    for (const r of rows) {
+      for (const label of (r.labels || [])) {
+        if (!byLabel.has(label)) byLabel.set(label, { seeded: 0, control: 0 });
+        if (byLabel.get(label)[r.kind] !== undefined) byLabel.get(label)[r.kind]++;
+      }
+    }
+    if (!byLabel.size) {
+      lines.push('**No inline labels in any content file.** (This table is empty in every corpus that assembles — a');
+      lines.push('non-empty one would have failed the lint.)');
+    } else {
+      lines.push('| label | seeded | control |');
+      lines.push('|---|---|---|');
+      for (const label of Array.from(byLabel.keys()).sort()) {
+        const u = byLabel.get(label);
+        lines.push('| `' + label + ':` | ' + u.seeded + ' | ' + u.control + ' |');
+      }
+    }
+  }
   return lines.join('\n');
 }
 
@@ -1408,6 +1518,7 @@ function generateAndLint(key, heads, pool, paths) {
       id: a.id, kind: a.kind, variant: a.variant, baseKind, head,
       orderWords: counts.order, claimsWords: counts.claims,
       orderHardness: hardnessScore(content.order),
+      labels: contentLabels(content),
       wo: briefs.wo, er: briefs.er,
       woSkeleton: skeletonize(briefs.wo, a, head),
       erSkeleton: skeletonize(briefs.er, a, head),
@@ -1417,6 +1528,7 @@ function generateAndLint(key, heads, pool, paths) {
   structuralTellLint(rows, findings);
   lintKindSymmetry(rows, findings);
   const balance = populationBalanceLint(rows, findings);
+  const labelUse = labelTellLint(rows, findings);
 
   const erByVariant = {};
   for (const v of VARIANTS) {
@@ -1434,7 +1546,7 @@ function generateAndLint(key, heads, pool, paths) {
     kinds: Array.from(kindPopulations.keys()).sort(),
     asymmetricKinds: Array.from(kindPopulations.values()).filter((s) => s.size === 1).length,
   };
-  return { rows, findings, skeletonSummary, balance };
+  return { rows, findings, skeletonSummary, balance, labelUse };
 }
 
 function writeAtomic(file, content) {
@@ -1583,6 +1695,7 @@ module.exports = {
   guardedWriteContentFile, snapshotContentDir, assertContentDirPreserved, CONTENT_IMPORT_REPORT_BASENAME,
   leakageLint, vendorLint, hazardLint, wordBandLint, structuralTellLint, lintKindSymmetry,
   populationBalanceLint, hardnessScore,
+  labelTellLint, extractLabels, contentLabels, LABEL_RE, LABEL_MAX_WORDS,
   MEAN_WORD_TOLERANCE, HARDNESS_RATIO_MIN, HARDNESS_RATIO_MAX,
   isSubjectLine, isV2AuthorLine,
   computeTallies, renderTalliesTable, renderConstructionMd, renderLengthReport, meanSd,

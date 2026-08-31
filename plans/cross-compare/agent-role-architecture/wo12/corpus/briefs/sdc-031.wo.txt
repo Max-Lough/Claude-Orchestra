@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 4ed7a03a48a8b2efb389b00aefcc89c18f5b96fe
+Base (its parent):   a245f0970676989692f38b8b0710e74f9cd979f9
+Commit subject:      chore(orchestra): fix silent agent-load failure in codex pack definitions
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

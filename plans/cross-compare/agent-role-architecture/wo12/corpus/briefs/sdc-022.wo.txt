@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 8dce7590cb91aa27dced1f695b0631a7f23cf65b
+Base (its parent):   ed6643587eca22bfa2cdc0638dc89699aae79938
+Commit subject:      Make the guard model-aware: enforce only for director models
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

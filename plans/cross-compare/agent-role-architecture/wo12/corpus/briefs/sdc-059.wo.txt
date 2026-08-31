@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 69127bdbb56e8ffaf6781b4ce27663fc710ca7f0
+Base (its parent):   a338bf5d6f4f2f096a79c2345d21a6ce565dc609
+Commit subject:      Apply the final owner-delegated model-selection ruling: merge I0/I1, add §4.0 total decision procedure, adopt routing-hypothesis error stance
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

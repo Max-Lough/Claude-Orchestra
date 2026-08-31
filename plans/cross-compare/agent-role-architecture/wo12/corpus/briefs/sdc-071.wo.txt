@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 80bbdc0d78206585f5be16661af463e161a34d95
+Base (its parent):   67d5c98a82640d731ebb75391ec4867237457f8b
+Commit subject:      Apply Part-4 boundary redraw #2 from the WO-7a-bis disagreement ledger
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 4e509b581a65caee8540ccde895c752823d8c9aa
+Base (its parent):   09a824e1f153fa656f6903b22fc8de2c9592edce
+Commit subject:      Record the R0-EX6 verdict; draw up R0-EX7 for the round-5b fix
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

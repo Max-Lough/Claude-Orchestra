@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 444eaf3c84b5fa8d370b4df6794fe6c71a84fa73
+Base (its parent):   d00a7aedd28ad2cc17260b2aaec921c65dcdec5c
+Commit subject:      Draw up R0-EX3: cross-vendor gate re-review order for the round-2 diff
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

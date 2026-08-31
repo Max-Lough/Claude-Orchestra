@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 772a6881219f61db76a79b9e99846cc97512b70e
+Base (its parent):   7bf8e794306376835716c422313e85d997eaf7c0
+Commit subject:      WO-11 round 3: Sol·max holistic findings applied (exercise debt ledgered, R3 48h, records); verdicts committed
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

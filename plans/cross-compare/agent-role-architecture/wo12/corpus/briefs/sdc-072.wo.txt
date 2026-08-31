@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 67d5c98a82640d731ebb75391ec4867237457f8b
+Base (its parent):   410537818dcc663e020fe84b8b5f800ac945d473
+Commit subject:      Score WO-7a-bis blind: 17/20 (85%) FAIL; record the disagreement ledger
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

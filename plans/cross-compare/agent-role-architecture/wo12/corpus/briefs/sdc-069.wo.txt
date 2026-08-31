@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit d9af01673efd2e098b5647d4d609398822bc031b
+Base (its parent):   998b97830ac54d121c6e1b4903eb86e2068a5c9b
+Commit subject:      Record the Sol cross-vendor REVISE on PR #27 and apply its dispositions
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

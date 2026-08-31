@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit e3b730da0f823c04c378df380d55518e0ad9a035
+Base (its parent):   8dce7590cb91aa27dced1f695b0631a7f23cf65b
+Commit subject:      executor: add stop-grinding rule (bounded implement-verify cycles, PARTIAL over degraded DONE)
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

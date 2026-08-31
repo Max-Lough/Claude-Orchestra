@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 16484c959bf4315cdc1db02e71ab6569784cfb63
+Base (its parent):   1ab4a19ea73054b565e2fb890517ce0a286d720e
+Commit subject:      WO-9 evidence band: staff seats 4-8 (Scout, Researcher, LC Analyst, Investigator, Archivist)
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

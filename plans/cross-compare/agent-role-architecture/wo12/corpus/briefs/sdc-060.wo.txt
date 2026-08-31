@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit a338bf5d6f4f2f096a79c2345d21a6ce565dc609
+Base (its parent):   2965c047bab02af413287d90cfdcaae3023ea023
+Commit subject:      Score WO-7a-quater validation gates
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

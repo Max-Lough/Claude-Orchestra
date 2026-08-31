@@ -1,0 +1,4 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is commit e7545f60a6e55718179afd07c70ed6d420de3069. An executor produced this
+change; no fresh executor claims exist beyond the commit message. Verify
+the diff on its own merits.

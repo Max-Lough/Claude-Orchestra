@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 7bf8e794306376835716c422313e85d997eaf7c0
+Base (its parent):   9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86
+Commit subject:      WO-11 round 2: confirmation validity re-anchored to live evidence; boundary validation; D1 re-ruled in full
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

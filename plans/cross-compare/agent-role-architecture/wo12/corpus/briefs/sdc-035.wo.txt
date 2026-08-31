@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit d3080957c86695a85ac59207b2e6a07988ef82fd
+Base (its parent):   7b0d9d0e4ce9cd81c18e4ebeda41a0e5d4b6d662
+Commit subject:      WO-10 construction band, part 2: Runner, Data Engineer, Interface Artisan, Spatial Specialist, Doc Writer
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

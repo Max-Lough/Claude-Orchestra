@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 9ff2a530ec2c5fb99dde185ef4fbafdc60154ea1
+Base (its parent):   d7738df9075141c5495913e78a33558a31cf0e0f
+Commit subject:      fix(codex): launcher launch-discipline — repo-root cwd, scratch-dir output, pinned-review warmup
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

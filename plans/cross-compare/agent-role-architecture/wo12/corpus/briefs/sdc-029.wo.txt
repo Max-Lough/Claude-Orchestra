@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 46364797ff7456d085b6d838a7f3c6084d1f63bf
+Base (its parent):   3b86e77803493e1895b15b8901eaa036aff0ff39
+Commit subject:      Apply the 2026-08-28 second-session lineup rulings to the plan record
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

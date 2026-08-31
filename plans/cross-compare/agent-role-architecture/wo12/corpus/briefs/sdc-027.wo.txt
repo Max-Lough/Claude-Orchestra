@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit a0e38c048be14a0757428808ccb03299cb55de1d
+Base (its parent):   d3080957c86695a85ac59207b2e6a07988ef82fd
+Commit subject:      WO-10: declared cross-family/no-mirror exceptions for Q0 and E5; lint scans specialists/
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

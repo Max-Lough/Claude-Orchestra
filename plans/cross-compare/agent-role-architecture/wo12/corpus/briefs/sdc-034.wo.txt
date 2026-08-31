@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 00076a270f46759c81d3b4481b4b35e7365248e4
+Base (its parent):   bbbd9839d3d9856886896f71a203a3c0eee5b412
+Commit subject:      Add .gitattributes: LF for sh/js/md, mark install.sh executable
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 6f0436051ea91bce53fd55e8f6383e383b8cee95
+Base (its parent):   dab5fe54f07ea9d54850dd796a7fb811a3fc58ed
+Commit subject:      Make the review engine hot-swappable via reviewEngine in orchestra.json
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

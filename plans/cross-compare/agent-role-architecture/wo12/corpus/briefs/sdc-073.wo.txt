@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit c15f090444e551d88afabf66d117ac73253b8f2c
+Base (its parent):   901c8fcac7fe9905b1fe3714f1e857d713a74ab7
+Commit subject:      Score WO-7a (31/40 FAIL) and redraw the Part-4 class boundaries
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

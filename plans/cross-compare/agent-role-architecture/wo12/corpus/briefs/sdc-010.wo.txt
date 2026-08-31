@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5
+Base (its parent):   5d649d86ee6c68640a6435630e20766361cb69f6
+Commit subject:      WO-6: router, casting tables, review matrix, degradation machine, Q0 triggers
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

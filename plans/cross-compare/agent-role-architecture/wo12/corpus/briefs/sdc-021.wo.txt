@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit e7545f60a6e55718179afd07c70ed6d420de3069
+Base (its parent):   e3b730da0f823c04c378df380d55518e0ad9a035
+Commit subject:      guard: stand down on undetermined model instead of enforcing
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

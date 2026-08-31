@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit f98316fb13836c5f64576b8e13170c9264896a5d
+Base (its parent):   e37a25da1d964afc30d66773e4ce26ae7fb98847
+Commit subject:      WO-10 round 2: fix all R0 review findings (stale conflict text, inert-tier rule, 12-rule audit, honest tallies)
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

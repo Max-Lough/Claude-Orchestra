@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit acbf8f2cf6f98bb642a23df3734a0edd35c29e5f
+Base (its parent):   b8a1957838da66600f5320d13c83e54c43d59130
+Commit subject:      WO-11: P0 R4 default forecast corrected to WO-2 measured draw; floor governs
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

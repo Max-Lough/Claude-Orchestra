@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 357c96dbd56f9ac75af765d7dcb728261826487a
+Base (its parent):   ee5aec43e474f211aa237ddf4224e592e2f2dcd5
+Commit subject:      WO-9 round 4: post-APPROVE residual cleanup; review-round ledger
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

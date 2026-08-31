@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 5f62be6c7b811fe7f1d6e94f9e346d3712df6607
+Base (its parent):   e04005bb8a0b751bb26fbdd4755ee437af2cb240
+Commit subject:      Draw up R0-EX11: delta re-review order for the round-5f fix
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

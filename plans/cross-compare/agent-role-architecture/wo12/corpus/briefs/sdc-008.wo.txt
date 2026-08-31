@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86
+Base (its parent):   acbf8f2cf6f98bb642a23df3734a0edd35c29e5f
+Commit subject:      WO-11 exercises: Conductor audited (1 violation, dispositions ruled); P0 live-exercised; Architect env-blocked
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

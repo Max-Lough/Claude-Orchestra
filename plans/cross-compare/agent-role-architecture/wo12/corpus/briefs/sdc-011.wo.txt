@@ -1,0 +1,9 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: commit 17a24d44150ee5f7baea2bb7787f03cac916d763
+Base (its parent):   c733d7750afb13290ed603412272334a80c8b9cf
+Commit subject:      guard: allow the Director to write plan files (.claude/plans/*.md)
+
+Intent: the commit message above is the work order this change claims to
+implement. Audit the diff between base and head against that stated
+intent: correctness, unexplained changes, and concrete failure scenarios.

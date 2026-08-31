@@ -564,8 +564,18 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   Round 2 (pre-run, before any pass): protocol amendments committed at `10f44cb`
   (real-commit metadata on variants; sanitized review clones with refs/reflogs removed
   and objects pruned; briefs generated from per-artifact content files under one
-  structure; hazards from a closed kind-vocabulary; strict-path hits), 54 control
-  content files written, tooling fixes in progress — delta review to follow.
+  structure; hazards from a closed kind-vocabulary; strict-path hits). **Round 2
+  applied:** every finding from both verdicts closed with a pinning test (tooling suite
+  368 checks); 84 content files authored (54 controls from commit bodies; 30 seeds by
+  type-grouped authors preserving each seed's constraint/scope/claim); the corpus
+  re-assembled and re-sealed — 1 work-order skeleton and 1 report skeleton per variant
+  across all 84, sanitized run clones identical in shape for seeds and controls (0
+  refs, key unreachable), 0 leakage/vendor findings, order-prose bands overlapping
+  (seeds 144±12, controls 128±18 words), idempotent to the byte, all suites green. KIND
+  declared pool-wide as `code`; phases run in a deterministic interleaved order.
+  Incident recorded: a builder agent's own `rm -rf` wiped 54 untracked content files
+  (rewritten; now impossible in-tool; batches are committed on arrival). Delta review
+  of round 2 to follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

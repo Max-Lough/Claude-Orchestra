@@ -55,6 +55,29 @@ saw it.
   reports out-of-scope mutation as NOT_RESOLVED even when the check passes),
   and 6 static-component orders with a dependency-free markup/contrast checker
   reusing the WO-10 contrast algorithm.
+- **Round 2 (pre-run), after two REVISE verdicts on the tooling commit** — the
+  Anthropic fallback lane (4 CRITICAL / 12 MAJOR / 8 MINOR) and the cross-vendor
+  lane (3 CRITICAL / 10 MAJOR) converged on the same lines. What they found is
+  the kind of thing a sealed corpus exists to prevent: the P0 gate proceeded on
+  any Quartermaster failure that was not the literal refusal string; the seeded
+  variant's commit identity (`WO-12 seeder`, a one-line message, no ref)
+  separated seeds from controls at 100%; the answer key was reachable from the
+  reviewer's clone through `.git`; and 14 of 30 seeded briefs were structurally
+  distinguishable from controls. All closed before any pass: the gate proceeds
+  only on a positive Green (or confirmed Amber) reading parsed from
+  `--state`'s JSON, with the projected-draw check and the phase-0 stop
+  condition; variants commit with the real commit's author/committer/dates/body
+  and every review runs in a **sanitized clone** (refs, remotes and reflogs
+  removed, unreachable objects pruned, key blob asserted absent) for seeds and
+  controls alike; briefs are **generated** from per-artifact content files under
+  one structure, hazards from a closed kind-vocabulary, with structural-tell,
+  leakage, vendor and word-band lints that run before `key.json` is written;
+  hits require the locator's path (basename-only is a reported near-miss);
+  identity, false-blocker, adjudication-promotion and phase-order rules follow
+  the protocol text exactly. Two lessons recorded: a builder agent wiped 54
+  untracked content files with its own `rm -rf` (now impossible in-tool:
+  `O_EXCL` writes and a byte-level directory snapshot asserted before every
+  exit), and shared directories are committed per batch from now on.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

@@ -171,6 +171,18 @@ function hardnessScore(text) {
   return m ? m.length : 0;
 }
 
+// The round-3 R0 NIT: `only` is by far the most common of the seven terms in
+// ordinary English, so a ratio of 1.0016 across two independently authored
+// populations is "a very tidy number for a seven-word bag-of-terms". The
+// sensitivity check the reviewer asked for: the same proxy with `only` removed.
+// BOTH ratios are gated, so parity cannot rest on the one term that arrives by
+// accident.
+const HARDNESS_TERMS_STRICT_RE = /\b(?:must|never|exactly|byte-identical|unchanged|forbid(?:s|den|ding)?)\b/gi;
+function hardnessScoreStrict(text) {
+  const m = String(text || '').match(HARDNESS_TERMS_STRICT_RE);
+  return m ? m.length : 0;
+}
+
 // ----------------------------------------------------- label tells (round 4)
 //
 // A blind evaluator separated the populations on a purely LEXICAL label that
@@ -885,6 +897,8 @@ function populationBalanceLint(rows, findings) {
   const cClaims = mean(controls.map((r) => r.claimsWords));
   const sHard = mean(seeded.map((r) => r.orderHardness));
   const cHard = mean(controls.map((r) => r.orderHardness));
+  const sHardStrict = mean(seeded.map((r) => r.orderHardnessStrict || 0));
+  const cHardStrict = mean(controls.map((r) => r.orderHardnessStrict || 0));
 
   if (Math.abs(sOrder - cOrder) > MEAN_WORD_TOLERANCE) {
     findings.push('population balance: mean ORDER words differ by ' + Math.abs(sOrder - cOrder).toFixed(1) +
@@ -913,7 +927,280 @@ function populationBalanceLint(rows, findings) {
         'top-ranked signal in the round-2 blind read.');
     }
   }
-  return { sOrder, cOrder, sClaims, cClaims, sHard, cHard, ratio };
+  // The `only`-free sensitivity check (round-3 NIT), gated on the same band.
+  let ratioStrict = null;
+  if (cHardStrict === 0 || sHardStrict === 0) {
+    if (sHardStrict !== cHardStrict) {
+      findings.push('population balance: the ORDER hardness proxy WITHOUT the term `only` is ' + sHardStrict.toFixed(2) +
+        ' (seeded) vs ' + cHardStrict.toFixed(2) + ' (control) — one population carries the strict absolute-constraint ' +
+        'vocabulary and the other does not. `only` is common in ordinary prose, so parity that depends on it is not parity.');
+    }
+  } else {
+    ratioStrict = sHardStrict / cHardStrict;
+    if (ratioStrict < HARDNESS_RATIO_MIN || ratioStrict > HARDNESS_RATIO_MAX) {
+      findings.push('population balance: the ORDER hardness ratio WITHOUT the term `only` is ' + ratioStrict.toFixed(2) +
+        ' (seeded ' + sHardStrict.toFixed(2) + ' vs control ' + cHardStrict.toFixed(2) + '), outside [' +
+        HARDNESS_RATIO_MIN + ', ' + HARDNESS_RATIO_MAX + ']. The headline ratio of ' + (ratio === null ? 'n/a' : ratio.toFixed(2)) +
+        ' is carried by `only`, which arrives by accident in ordinary prose.');
+    }
+  }
+  return { sOrder, cOrder, sClaims, cClaims, sHard, cHard, ratio, sHardStrict, cHardStrict, ratioStrict };
+}
+
+// ------------------------------------------------- distribution (round 5)
+//
+// Round 4 gated three MEANS and they passed — Δmean ORDER 3.20, Δmean CLAIMS
+// 1.84, hardness ratio 1.0016 — while the tell simply moved into the TAILS and
+// the VOCABULARY, where nothing looked. The round-3 R0 review built a
+// seven-feature disjunction that identified 25 of 30 seeds at 100% precision
+// with zero control false positives: WIDER coverage than the round-2 tell the
+// means gate had replaced.
+//
+// The mechanism was the authoring instruction itself. Controls were re-authored
+// into a narrow band (135–160 order words, 65–95 claims words) while the 30
+// seeds kept the round-2 spread, so "outside the control band" became an
+// exclusively seeded signature: ORDER < 135 fired on 8 seeds and 0 controls,
+// CLAIMS < 65 on 8/0, hardness 0 on 3/0, hardness ≥ 4 on 7/0. Two more were
+// purely lexical and needed no distribution at all — backticks appeared in 10
+// seeded orders and 0 controls, and "leave … alone" / "and nothing else" in 15
+// controls and 0 seeds.
+//
+// So a mean is not enough. These five gates check the shape of the two
+// distributions, not just their centres, and two of them are vocabulary rather
+// than arithmetic.
+const RANGE_TOLERANCE_WORDS = 8;   // (1) min-vs-min and max-vs-max, per field
+const SD_RATIO_MIN = 0.6;          // (1) dispersion parity
+const SD_RATIO_MAX = 1.6;
+const DIGIT_DENSITY_TOLERANCE = 1.5; // (3) digits per 100 words
+// (4) Round-5 recalibration, after the first pass fired on 133 3-grams over the
+// sealed corpus. The strongest were `"the band record"` (9 controls),
+// `"delta re-review order"`, `"report as new files"`, `"with zero deletions"` —
+// none of which is a writing habit. They are the SUBJECT MATTER of the control
+// commits, and the control pool deliberately includes 24 docs/records commits
+// while all 30 seeded bases are code (base-pool.json's allocation). A phrasing
+// pass cannot remove them without misdescribing what the commits did, so the
+// rule was measuring the pool rather than the authorship.
+//
+// Retuned to catch a shared PHRASE rather than a shared TOPIC: a 3-gram counts
+// only when it carries at least two content words, and it fails only at a
+// document frequency of 6+ in one population and 0 in the other. The 4-5 band
+// is still computed and PUBLISHED — it is evidence for the topic-asymmetry
+// disclosure — but it does not fail the assembly.
+const NGRAM_MIN_CONTENT_WORDS = 2; // (4) stopwords and bare numbers do not count
+const NGRAM_MIN_FILES = 6;         // (4) document frequency that FAILS
+const NGRAM_REPORT_MIN_FILES = 4;  // (4) document frequency that is merely REPORTED
+const NGRAM_FINDINGS_SHOWN = 40;   // (4) cap on individually-listed n-grams; the total is always stated
+const IDIOM_RATIO_MIN = 0.5;       // (5)
+const IDIOM_RATIO_MAX = 2.0;
+
+// (5) Phrases the round-3 review found split cleanly between the populations,
+// plus the round-2 register idioms. "leave … alone" is matched with a short gap
+// because the corpus spells it "leave the guard alone" / "leave it alone".
+const IDIOMS = [
+  { label: 'leave … alone', re: /\bleave\b[^.;]{0,30}?\balone\b/gi },
+  { label: 'and nothing else', re: /\band nothing else\b/gi },
+  { label: 'as it stands', re: /\bas it stands\b/gi },
+  { label: 'must never', re: /\bmust never\b/gi },
+  { label: 'byte-identical', re: /\bbyte-identical\b/gi },
+];
+
+// (4) A 3-gram of nothing but stopwords carries no authorial signature, so it is
+// not evidence of anything and would only produce noise.
+const NGRAM_STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'for', 'on', 'at', 'by', 'from', 'with', 'as',
+  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'it', 'its', 'this', 'that', 'these', 'those',
+  'there', 'their', 'they', 'we', 'you', 'he', 'she', 'has', 'have', 'had', 'do', 'does', 'did',
+  'will', 'would', 'can', 'could', 'should', 'may', 'might', 'so', 'than', 'then', 'if', 'but',
+  'not', 'no', 'any', 'all', 'each', 'both', 'into', 'out', 'up', 'down', 'over', 'under', 'when',
+  'while', 'where', 'which', 'who', 'what', 'how', 'why', 'one', 'two', 'more', 'most', 'other',
+]);
+
+function countMatches(text, re) {
+  const m = String(text || '').match(re);
+  return m ? m.length : 0;
+}
+function backtickCount(text) { return countMatches(text, /`/g); }
+function digitDensity(text) {
+  const words = wordCount(text);
+  if (!words) return 0;
+  return (countMatches(text, /[0-9]/g) / words) * 100;
+}
+/** A word that carries meaning: not a stopword, not a bare number. */
+function isContentWord(w) {
+  if (!w) return false;
+  if (NGRAM_STOPWORDS.has(w)) return false;
+  if (/^[0-9]+$/.test(w)) return false;
+  return true;
+}
+
+/**
+ * Lowercase word 3-grams carrying at least NGRAM_MIN_CONTENT_WORDS content
+ * words. Returns a Set, so a repeated phrase counts once per document.
+ *
+ * The round-5 recalibration lives here: requiring two content words drops
+ * connective scaffolding like "the order and" / "and a full", which recurs in
+ * any prose about the same repository and says nothing about who wrote it.
+ */
+function trigramsOf(text) {
+  const words = normalizeWs(String(text || '')).toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(Boolean);
+  const out = new Set();
+  for (let i = 0; i + 2 < words.length; i++) {
+    const tri = [words[i], words[i + 1], words[i + 2]];
+    if (tri.filter(isContentWord).length < NGRAM_MIN_CONTENT_WORDS) continue;
+    out.add(tri.join(' '));
+  }
+  return out;
+}
+function idiomCounts(text) {
+  const out = {};
+  for (const idiom of IDIOMS) {
+    idiom.re.lastIndex = 0;
+    out[idiom.label] = countMatches(text, idiom.re);
+  }
+  return out;
+}
+
+function statsOf(values) {
+  if (!values.length) return { n: 0, mean: 0, sd: 0, min: 0, max: 0 };
+  const n = values.length;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const variance = n > 1 ? values.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (n - 1) : 0;
+  return { n, mean, sd: Math.sqrt(variance), min: Math.min.apply(null, values), max: Math.max.apply(null, values) };
+}
+
+/**
+ * The distribution lint (round 5). Hard failure. Five gates, computed on the
+ * CONTENT fields, that between them cover every feature the round-3 oracle used.
+ */
+function distributionLint(rows, findings) {
+  const seeded = rows.filter((r) => r.kind === 'seeded');
+  const controls = rows.filter((r) => r.kind === 'control');
+  const report = { fields: {}, backticks: null, digits: null, ngrams: [], ngramsReported: [], idioms: [] };
+  if (!seeded.length || !controls.length) return report;
+
+  // (1) RANGE floors/ceilings and dispersion parity, per field. The round-3
+  // oracle's four strongest rules were all "outside the other population's
+  // range", so the ranges themselves are what must agree.
+  for (const field of ['orderWords', 'claimsWords']) {
+    const s = statsOf(seeded.map((r) => r[field]));
+    const c = statsOf(controls.map((r) => r[field]));
+    const label = field === 'orderWords' ? 'ORDER' : 'CLAIMS';
+    report.fields[label] = { seeded: s, control: c };
+    if (Math.abs(s.min - c.min) > RANGE_TOLERANCE_WORDS) {
+      findings.push('distribution: ' + label + ' word-count FLOORS differ by ' + Math.abs(s.min - c.min).toFixed(0) +
+        ' (seeded min ' + s.min + ', control min ' + c.min + '), above the ' + RANGE_TOLERANCE_WORDS + '-word tolerance. ' +
+        'A disjoint floor makes "below the other population\'s minimum" a 100%-precision rule — that is exactly how ' +
+        '`ORDER < 135` identified 8 seeds and 0 controls in round 3.');
+    }
+    if (Math.abs(s.max - c.max) > RANGE_TOLERANCE_WORDS) {
+      findings.push('distribution: ' + label + ' word-count CEILINGS differ by ' + Math.abs(s.max - c.max).toFixed(0) +
+        ' (seeded max ' + s.max + ', control max ' + c.max + '), above the ' + RANGE_TOLERANCE_WORDS + '-word tolerance.');
+    }
+    const ratio = c.sd === 0 ? (s.sd === 0 ? 1 : Infinity) : s.sd / c.sd;
+    report.fields[label].sdRatio = ratio;
+    if (!(ratio >= SD_RATIO_MIN && ratio <= SD_RATIO_MAX)) {
+      findings.push('distribution: ' + label + ' word-count SD ratio is ' + (ratio === Infinity ? '∞' : ratio.toFixed(2)) +
+        ' (seeded sd ' + s.sd.toFixed(1) + ', control sd ' + c.sd.toFixed(1) + '), outside [' + SD_RATIO_MIN + ', ' + SD_RATIO_MAX +
+        ']. One population authored into a tighter band than the other is what pushes the tell into the tails.');
+    }
+  }
+
+  // (2) BACKTICKS — forbidden outright, both populations. In round 3 exactly 10
+  // of 84 orders carried one and all 10 were seeded: the seeded orders quote
+  // identifiers, the control authors never did. A balance rule cannot fix a
+  // habit, so the punctuation is simply not allowed.
+  const withTicks = rows.filter((r) => r.backticks > 0);
+  report.backticks = { files: withTicks.map((r) => r.id), seeded: withTicks.filter((r) => r.kind === 'seeded').length, control: withTicks.filter((r) => r.kind === 'control').length };
+  for (const r of withTicks) {
+    findings.push('distribution: content/' + r.id + '.json (' + r.kind + ') contains ' + r.backticks +
+      ' backtick(s) in its `order`/`claims` prose. Backticks are forbidden in both populations — in round 3 all 10 ' +
+      'backtick-carrying orders were seeded and all 54 controls had none, a single-brief-visible tell in punctuation. ' +
+      'Name identifiers in plain words.');
+  }
+
+  // (3) DIGIT DENSITY.
+  {
+    const s = statsOf(seeded.map((r) => r.digitsPer100));
+    const c = statsOf(controls.map((r) => r.digitsPer100));
+    report.digits = { seeded: s, control: c, delta: Math.abs(s.mean - c.mean) };
+    if (Math.abs(s.mean - c.mean) > DIGIT_DENSITY_TOLERANCE) {
+      findings.push('distribution: digit density differs by ' + Math.abs(s.mean - c.mean).toFixed(2) +
+        ' digits per 100 words (seeded ' + s.mean.toFixed(2) + ', control ' + c.mean.toFixed(2) + '), above the ' +
+        DIGIT_DENSITY_TOLERANCE + ' tolerance. Round 3 found "digits in ORDER > 9" firing on 2 seeds and 0 controls.');
+    }
+  }
+
+  // (4) N-GRAM EXCLUSIVITY. A phrase several artifacts of one population share
+  // and the other never uses is an authorship fingerprint, whatever the means say.
+  {
+    const df = new Map(); // trigram -> { seeded: [ids], control: [ids] }
+    for (const r of rows) {
+      for (const tri of (r.trigrams || [])) {
+        if (!df.has(tri)) df.set(tri, { seeded: [], control: [] });
+        const bucket = df.get(tri)[r.kind];
+        if (bucket) bucket.push(r.id);
+      }
+    }
+    for (const tri of Array.from(df.keys()).sort()) {
+      const use = df.get(tri);
+      const seededOnly = use.control.length === 0 && use.seeded.length >= NGRAM_REPORT_MIN_FILES;
+      const controlOnly = use.seeded.length === 0 && use.control.length >= NGRAM_REPORT_MIN_FILES;
+      if (!seededOnly && !controlOnly) continue;
+      const only = seededOnly ? 'seeded' : 'control';
+      const ids = seededOnly ? use.seeded : use.control;
+      const entry = { ngram: tri, only, ids };
+      // At NGRAM_MIN_FILES+ it fails; in the 4-5 band it is published as
+      // evidence for the topic-asymmetry disclosure but does not fail.
+      if (ids.length >= NGRAM_MIN_FILES) report.ngrams.push(entry);
+      else report.ngramsReported.push(entry);
+    }
+    // Strongest first, and capped: on a corpus this size the rule can fire on a
+    // hundred phrases at once, and a refusal nobody can read is a refusal
+    // nobody can act on. The count is always stated in full.
+    const byFreq = (a, b) => b.ids.length - a.ids.length || (a.ngram < b.ngram ? -1 : 1);
+    report.ngrams.sort(byFreq);
+    report.ngramsReported.sort(byFreq);
+    const shown = report.ngrams.slice(0, NGRAM_FINDINGS_SHOWN);
+    for (const n of shown) {
+      findings.push('distribution: the 3-gram ' + JSON.stringify(n.ngram) + ' occurs in ' + n.ids.length + ' ' + n.only +
+        ' artifact(s) and 0 of the other population (' + n.ids.slice(0, 8).join(', ') + (n.ids.length > 8 ? ', …' : '') +
+        '). A phrase one population shares and the other never uses is an authorship fingerprint. Re-word it, or use ' +
+        'it in both populations.');
+    }
+    if (report.ngrams.length > shown.length) {
+      findings.push('distribution: ' + report.ngrams.length + ' distinct 3-gram(s) are exclusive to one population at a ' +
+        'document frequency of ' + NGRAM_MIN_FILES + '+; the ' + shown.length + ' strongest are listed above. The full list ' +
+        'is in CONSTRUCTION.md\'s distribution section after a successful assembly, and in `distributionLint().ngrams`.');
+    }
+  }
+
+  // (5) IDIOM BALANCE.
+  {
+    for (const idiom of IDIOMS) {
+      const sTotal = seeded.reduce((a, r) => a + ((r.idioms || {})[idiom.label] || 0), 0);
+      const cTotal = controls.reduce((a, r) => a + ((r.idioms || {})[idiom.label] || 0), 0);
+      const sRate = sTotal / seeded.length;
+      const cRate = cTotal / controls.length;
+      const entry = { label: idiom.label, seeded: sTotal, control: cTotal, seededRate: sRate, controlRate: cRate, ratio: null };
+      report.idioms.push(entry);
+      if (sTotal === 0 && cTotal === 0) continue; // absent from both: fine
+      if (sRate === 0 || cRate === 0) {
+        findings.push('distribution: the idiom "' + idiom.label + '" appears ' + sTotal + '× across the seeds and ' +
+          cTotal + '× across the controls — present in one population and absent from the other. In round 3 ' +
+          '"leave … alone" / "and nothing else" split 0 seeds / 15 controls. Use it in both, or in neither.');
+        continue;
+      }
+      const ratio = sRate / cRate;
+      entry.ratio = ratio;
+      if (!(ratio >= IDIOM_RATIO_MIN && ratio <= IDIOM_RATIO_MAX)) {
+        findings.push('distribution: the idiom "' + idiom.label + '" has a per-artifact frequency ratio of ' + ratio.toFixed(2) +
+          ' (seeded ' + sRate.toFixed(3) + '/artifact, control ' + cRate.toFixed(3) + '/artifact), outside [' +
+          IDIOM_RATIO_MIN + ', ' + IDIOM_RATIO_MAX + '].');
+      }
+    }
+  }
+
+  return report;
 }
 
 /**
@@ -1068,6 +1355,15 @@ function renderLengthReport(rows) {
   lines.push('| ORDER hardness ratio (seeded ÷ control) | ' + (ratio === null ? 'n/a' : ratio.toFixed(2)) + ' | ' +
     HARDNESS_RATIO_MIN + '–' + HARDNESS_RATIO_MAX + ' | ' +
     (ratio !== null && ratio >= HARDNESS_RATIO_MIN && ratio <= HARDNESS_RATIO_MAX ? 'pass' : '**FAIL**') + ' |');
+  const sHardStrict = mean(seeded.map((r) => r.orderHardnessStrict || 0));
+  const cHardStrict = mean(controls.map((r) => r.orderHardnessStrict || 0));
+  const ratioStrict = cHardStrict === 0 ? null : sHardStrict / cHardStrict;
+  lines.push('| …the same ratio WITHOUT `only` (sensitivity check) | ' + (ratioStrict === null ? 'n/a' : ratioStrict.toFixed(2)) + ' | ' +
+    HARDNESS_RATIO_MIN + '–' + HARDNESS_RATIO_MAX + ' | ' +
+    (ratioStrict !== null && ratioStrict >= HARDNESS_RATIO_MIN && ratioStrict <= HARDNESS_RATIO_MAX ? 'pass' : '**FAIL**') + ' |');
+  lines.push('');
+  lines.push('`only` is the most common of the seven hardness terms in ordinary English, so the headline ratio can land');
+  lines.push('near 1.00 by accident. The second row re-computes it without `only`; both are gated.');
   lines.push('');
   lines.push('The hardness proxy counts whole-word occurrences of `must`, `never`, `exactly`, `only`, `byte-identical`,');
   lines.push('`unchanged` and `forbid*` in the ORDER prose — the vocabulary the round-2 blind evaluator named when it');
@@ -1103,12 +1399,173 @@ function renderLengthReport(rows) {
       }
     }
   }
+  lines.push('');
+  lines.push(renderDistributionReport(rows));
+  return lines.join('\n');
+}
+
+/**
+ * TOPIC ASYMMETRY — disclosed, not hidden (round-5 ruling).
+ *
+ * The first n-gram pass fired on 133 phrases. Reading them showed the rule was
+ * measuring what the commits are ABOUT, not how they are written: the control
+ * pool deliberately includes docs and records commits ("the band record",
+ * "delta re-review order", "report as new files") while all 30 seeded bases are
+ * code (`base-pool.json`'s allocation). No phrasing pass can remove that without
+ * misdescribing the commits, so it is stated here instead.
+ */
+function renderTopicAsymmetry(rows) {
+  const lines = [];
+  lines.push('### Topic asymmetry — a corpus-level property, disclosed');
+  lines.push('');
+  lines.push('The seeded and control pools are drawn from different slices of this repository\'s history. Every one of the');
+  lines.push('30 seeded bases is a CODE commit (a defect has to be injectable into behaviour); the 54 controls are drawn');
+  lines.push('from a wider sweep that includes documentation and records commits — roughly two dozen of them. The two');
+  lines.push('populations therefore talk about different subject matter, and no amount of re-phrasing can change that');
+  lines.push('without misdescribing what the commits actually did.');
+  lines.push('');
+  lines.push('**The consequence, stated plainly.** A classifier with access to the WHOLE corpus can separate the two');
+  lines.push('populations by topic. That is real and it is not fixed.');
+  lines.push('');
+  lines.push('**Why it does not compromise the trial.** §2.4 gives every lane ONE packet in fresh context. A reviewer');
+  lines.push('holding a single brief about a records commit learns nothing about whether THAT packet is seeded: it cannot');
+  lines.push('see the other 83, and the corpus-level frequency that makes the signal exploitable is exactly what a');
+  lines.push('per-packet reviewer does not have. The sanitized run clone (see the section above) puts `wo12/` — key,');
+  lines.push('patches and this record included — out of every lane\'s reach, so the distribution cannot be recovered from');
+  lines.push('inside a review either. The exposure is to an adjudicator, a scorer, or anyone with repository access; it');
+  lines.push('is disclosed here so those readers know to discount it.');
+  lines.push('');
+  lines.push('**Evidence.** The strongest topic-exclusive 3-grams in the sealed content, with the number of artifacts of');
+  lines.push('one population carrying each and zero of the other:');
+  lines.push('');
+  const seeded = rows.filter((r) => r.kind === 'seeded');
+  const controls = rows.filter((r) => r.kind === 'control');
+  if (!seeded.length || !controls.length) {
+    lines.push('(only one population present — nothing to compare)');
+    return lines.join('\n');
+  }
+  const report = distributionLint(rows, []);
+  const all = report.ngrams.concat(report.ngramsReported)
+    .sort((a, b) => b.ids.length - a.ids.length || (a.ngram < b.ngram ? -1 : 1))
+    .slice(0, 10);
+  if (!all.length) {
+    lines.push('(no 3-gram is exclusive to one population at ' + NGRAM_REPORT_MIN_FILES + '+ documents)');
+  } else {
+    lines.push('| 3-gram | population | documents | example artifacts |');
+    lines.push('|---|---|---|---|');
+    for (const n of all) {
+      lines.push('| `' + n.ngram + '` | ' + n.only + ' | ' + n.ids.length + ' | ' + n.ids.slice(0, 4).join(', ') +
+        (n.ids.length > 4 ? ', …' : '') + ' |');
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * The round-5 distribution gates, rendered. Round 4 gated three means, they
+ * passed, and the tell moved into the tails and the vocabulary — where a
+ * seven-feature disjunction then identified 25 of 30 seeds at 100% precision.
+ * These five gates check the SHAPE of the two distributions, so the numbers are
+ * published whether they pass or fail.
+ */
+function renderDistributionReport(rows) {
+  const seeded = rows.filter((r) => r.kind === 'seeded');
+  const controls = rows.filter((r) => r.kind === 'control');
+  const lines = [];
+  lines.push('### Distribution gates (round 5)');
+  lines.push('');
+  if (!seeded.length || !controls.length) {
+    lines.push('Only one population present — nothing to compare.');
+    return lines.join('\n');
+  }
+  lines.push('A mean is not enough. Round 4 gated Δmean ORDER, Δmean CLAIMS and the hardness ratio; all three passed while');
+  lines.push('`ORDER < 135` still identified 8 seeds and 0 controls, backticks 10 seeds and 0 controls, and "leave … alone"');
+  lines.push('15 controls and 0 seeds. These gates check ranges, dispersion, punctuation and vocabulary.');
+  lines.push('');
+  lines.push('**(1) Word-count ranges and dispersion**');
+  lines.push('');
+  lines.push('| field | population | min | max | sd | floor Δ (≤' + RANGE_TOLERANCE_WORDS + ') | ceiling Δ (≤' + RANGE_TOLERANCE_WORDS + ') | sd ratio (' + SD_RATIO_MIN + '–' + SD_RATIO_MAX + ') |');
+  lines.push('|---|---|---|---|---|---|---|---|');
+  for (const [label, field] of [['ORDER', 'orderWords'], ['CLAIMS', 'claimsWords']]) {
+    const s = statsOf(seeded.map((r) => r[field]));
+    const c = statsOf(controls.map((r) => r[field]));
+    const dMin = Math.abs(s.min - c.min);
+    const dMax = Math.abs(s.max - c.max);
+    const ratio = c.sd === 0 ? (s.sd === 0 ? 1 : Infinity) : s.sd / c.sd;
+    const verdict = (v, ok) => v + (ok ? '' : ' **FAIL**');
+    lines.push('| ' + label + ' | seeded | ' + s.min + ' | ' + s.max + ' | ' + s.sd.toFixed(1) + ' | ' +
+      verdict(String(dMin), dMin <= RANGE_TOLERANCE_WORDS) + ' | ' + verdict(String(dMax), dMax <= RANGE_TOLERANCE_WORDS) + ' | ' +
+      verdict(ratio === Infinity ? '∞' : ratio.toFixed(2), ratio >= SD_RATIO_MIN && ratio <= SD_RATIO_MAX) + ' |');
+    lines.push('| ' + label + ' | control | ' + c.min + ' | ' + c.max + ' | ' + c.sd.toFixed(1) + ' | | | |');
+  }
+  lines.push('');
+  lines.push('**(2) Backticks** — forbidden outright in `order` and `claims`, both populations.');
+  lines.push('');
+  {
+    const withTicks = rows.filter((r) => r.backticks > 0);
+    lines.push(withTicks.length
+      ? '**FAIL** — ' + withTicks.length + ' file(s) carry backticks: ' + withTicks.map((r) => r.id + ' (' + r.kind + ', ' + r.backticks + ')').join(', ')
+      : 'pass — no content file carries a backtick.');
+  }
+  lines.push('');
+  lines.push('**(3) Digit density** (digits per 100 words, `order` + `claims`)');
+  lines.push('');
+  {
+    const s = statsOf(seeded.map((r) => r.digitsPer100));
+    const c = statsOf(controls.map((r) => r.digitsPer100));
+    const d = Math.abs(s.mean - c.mean);
+    lines.push('| population | mean | sd |');
+    lines.push('|---|---|---|');
+    lines.push('| seeded | ' + s.mean.toFixed(2) + ' | ' + s.sd.toFixed(2) + ' |');
+    lines.push('| control | ' + c.mean.toFixed(2) + ' | ' + c.sd.toFixed(2) + ' |');
+    lines.push('');
+    lines.push('Δmean ' + d.toFixed(2) + ' (limit ' + DIGIT_DENSITY_TOLERANCE + ') — ' + (d <= DIGIT_DENSITY_TOLERANCE ? 'pass' : '**FAIL**'));
+  }
+  lines.push('');
+  lines.push('**(4) N-gram exclusivity** — a lowercase 3-gram carrying ≥' + NGRAM_MIN_CONTENT_WORDS + ' content words (stopwords and bare');
+  lines.push('numbers excluded), occurring in ≥' + NGRAM_MIN_FILES + ' artifacts of one population and 0 of the other.');
+  lines.push('');
+  {
+    const findings = [];
+    const report = distributionLint(rows, findings);
+    lines.push(report.ngrams.length
+      ? '**FAIL** — ' + report.ngrams.length + ' exclusive 3-gram(s) at ≥' + NGRAM_MIN_FILES + ' documents: ' +
+        report.ngrams.slice(0, 12).map((n) => '`' + n.ngram + '` (' + n.only + ' ×' + n.ids.length + ')').join(', ') +
+        (report.ngrams.length > 12 ? ', …' : '')
+      : 'pass — no 3-gram is exclusive to one population at ≥' + NGRAM_MIN_FILES + ' documents.');
+    lines.push('');
+    lines.push('*Reported, not gated:* ' + report.ngramsReported.length + ' 3-gram(s) are exclusive to one population at ' +
+      NGRAM_REPORT_MIN_FILES + '–' + (NGRAM_MIN_FILES - 1) + ' documents. That band is published rather than enforced — see');
+    lines.push('the topic-asymmetry disclosure above for why.');
+    if (report.ngramsReported.length) {
+      lines.push('');
+      lines.push('| 3-gram | population | documents |');
+      lines.push('|---|---|---|');
+      for (const n of report.ngramsReported.slice(0, 15)) {
+        lines.push('| `' + n.ngram + '` | ' + n.only + ' | ' + n.ids.length + ' |');
+      }
+      if (report.ngramsReported.length > 15) lines.push('| …' + (report.ngramsReported.length - 15) + ' more | | |');
+    }
+    lines.push('');
+    lines.push('**(5) Idiom balance** — per-artifact frequency ratio within ' + IDIOM_RATIO_MIN + '–' + IDIOM_RATIO_MAX + ', or absent from both');
+    lines.push('');
+    lines.push('| idiom | seeded (total / per artifact) | control (total / per artifact) | ratio | verdict |');
+    lines.push('|---|---|---|---|---|');
+    for (const e of report.idioms) {
+      let verdict;
+      if (e.seeded === 0 && e.control === 0) verdict = 'absent from both — pass';
+      else if (e.seededRate === 0 || e.controlRate === 0) verdict = '**FAIL** (one population only)';
+      else verdict = (e.ratio >= IDIOM_RATIO_MIN && e.ratio <= IDIOM_RATIO_MAX) ? 'pass' : '**FAIL**';
+      lines.push('| "' + e.label + '" | ' + e.seeded + ' / ' + e.seededRate.toFixed(3) + ' | ' + e.control + ' / ' +
+        e.controlRate.toFixed(3) + ' | ' + (e.ratio === null ? 'n/a' : e.ratio.toFixed(2)) + ' | ' + verdict + ' |');
+    }
+  }
   return lines.join('\n');
 }
 
 // --------------------------------------------------------- 7. CONSTRUCTION.md
 
-function renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary) {
+function renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary, corpusDir) {
   const lines = [];
   lines.push('# WO-12 SDC construction record');
   lines.push('');
@@ -1193,6 +1650,61 @@ function renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary)
       }
       lines.push('');
       lines.push('**' + collisions.length + ' collision group(s).**');
+    }
+  }
+  lines.push('');
+  lines.push('### The corpus directory is an oracle — and it is out of every lane\'s reach');
+  lines.push('');
+  lines.push('Round-3 R0 MINOR (A-m5), disclosed here because the same adjudicator who reads the collisions above reads');
+  lines.push('this. A bare `ls` of `corpus/` labels the entire key: a `.patch` and a `.seed.json` exist for exactly the 30');
+  lines.push('SEEDED ids and for no control. The seeded ids also occupy contiguous blocks (`001-006`, `013-020`,');
+  lines.push('`037-044`, `061-068`). Neither can be removed without moving the corpus off disk.');
+  lines.push('');
+  lines.push('**This oracle is reachable only with repository-level access. It is unreachable from any review lane.**');
+  lines.push('Every lane runs in a SANITIZED run clone built by `build-corpus.js` `prepareRunClone()`, and');
+  lines.push('`sanitizeClone()` asserts — it does not assume — that:');
+  lines.push('');
+  lines.push('- `git for-each-ref` is empty (no branch, tag or remote-tracking ref survives);');
+  lines.push('- `git rev-list --all` equals `git rev-list HEAD` (nothing is reachable beyond the pinned head\'s ancestry);');
+  lines.push('- `git ls-tree -r HEAD -- <wo12 corpus path>` is EMPTY (the corpus is not in the pinned tree);');
+  lines.push('- `git log --all -- <wo12 corpus path>` is EMPTY (no reachable commit ever touched it);');
+  lines.push('- the sealed `key.json` blob is absent from the object store (`git cat-file -e` fails).');
+  lines.push('');
+  lines.push('Controls take the identical path, so the stripping is not itself a tell. A lane therefore cannot list');
+  lines.push('`corpus/`, cannot `git show` it from any ref, and cannot recover it from history — the oracle exists for a');
+  lines.push('reader of this repository, never for a reviewer of an artifact.');
+  lines.push('');
+  lines.push(renderTopicAsymmetry(rows));
+  lines.push('');
+  lines.push('### Amendment (vi) — blind-classification record');
+  lines.push('');
+  lines.push('(vi) requires a fresh-evaluator blind classification over 12+12 briefs, re-run after every content change');
+  lines.push('and reported HERE (target: precision at or near chance; anything above 65% reopens the pass). This section');
+  lines.push('is generated from `corpus/blind-read.json` when that file exists, so the evidence lives in the artifact');
+  lines.push('that exists to carry it rather than only in a review record.');
+  lines.push('');
+  {
+    const blindPath = corpusDir ? path.join(corpusDir, 'blind-read.json') : null;
+    let blind = null;
+    try { if (blindPath && fs.existsSync(blindPath)) blind = JSON.parse(fs.readFileSync(blindPath, 'utf8')); } catch (e) { blind = null; }
+    if (!blind) {
+      lines.push('**NOT RECORDED.** No `corpus/blind-read.json` is present, so amendment (vi)\'s acceptance evidence is');
+      lines.push('missing from this record. Run the blind classification and write the result there as');
+      lines.push('`{"date","evaluator","n","precision","recall","accuracy","note"}`; until then this corpus carries no');
+      lines.push('in-artifact evidence that it is blind, whatever the lints say.');
+    } else {
+      lines.push('| field | value |');
+      lines.push('|---|---|');
+      for (const k of ['date', 'evaluator', 'n', 'precision', 'recall', 'accuracy', 'note']) {
+        if (blind[k] !== undefined) lines.push('| ' + k + ' | ' + String(blind[k]) + ' |');
+      }
+      const p = Number(blind.precision);
+      if (Number.isFinite(p)) {
+        lines.push('');
+        lines.push(p > 0.65 || p > 65
+          ? '**ABOVE (vi)\'s 65% ceiling — the content pass is reopened.**'
+          : 'Within (vi)\'s 65% ceiling.');
+      }
     }
   }
   lines.push('');
@@ -1518,7 +2030,13 @@ function generateAndLint(key, heads, pool, paths) {
       id: a.id, kind: a.kind, variant: a.variant, baseKind, head,
       orderWords: counts.order, claimsWords: counts.claims,
       orderHardness: hardnessScore(content.order),
+      orderHardnessStrict: hardnessScoreStrict(content.order),
       labels: contentLabels(content),
+      // Round-5 distribution metrics, computed on the CONTENT fields.
+      backticks: backtickCount(content.order) + backtickCount(content.claims),
+      digitsPer100: digitDensity(content.order + ' ' + content.claims),
+      trigrams: Array.from(trigramsOf(content.order + ' ' + content.claims)),
+      idioms: idiomCounts(content.order + ' ' + content.claims),
       wo: briefs.wo, er: briefs.er,
       woSkeleton: skeletonize(briefs.wo, a, head),
       erSkeleton: skeletonize(briefs.er, a, head),
@@ -1529,6 +2047,7 @@ function generateAndLint(key, heads, pool, paths) {
   lintKindSymmetry(rows, findings);
   const balance = populationBalanceLint(rows, findings);
   const labelUse = labelTellLint(rows, findings);
+  const distribution = distributionLint(rows, findings);
 
   const erByVariant = {};
   for (const v of VARIANTS) {
@@ -1546,7 +2065,7 @@ function generateAndLint(key, heads, pool, paths) {
     kinds: Array.from(kindPopulations.keys()).sort(),
     asymmetricKinds: Array.from(kindPopulations.values()).filter((s) => s.size === 1).length,
   };
-  return { rows, findings, skeletonSummary, balance, labelUse };
+  return { rows, findings, skeletonSummary, balance, labelUse, distribution };
 }
 
 function writeAtomic(file, content) {
@@ -1662,7 +2181,7 @@ function main() {
   const tallies = computeTallies(key);
   notes.targetWarnings = tallies.warnings;
   writeAtomic(paths.notesPath, JSON.stringify(notes, null, 2) + '\n');
-  writeAtomic(paths.constructionMdPath, renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary));
+  writeAtomic(paths.constructionMdPath, renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary, paths.corpusDir));
 
   // A full assembly READS every content file and writes NONE of them.
   assertContentDirPreserved(paths.contentDir, contentBefore, [], 'a full assembly');
@@ -1694,7 +2213,11 @@ module.exports = {
   parseArgs, resolvePaths, checkRequirements, loadContent, buildKeyAndNotes, contentPath,
   guardedWriteContentFile, snapshotContentDir, assertContentDirPreserved, CONTENT_IMPORT_REPORT_BASENAME,
   leakageLint, vendorLint, hazardLint, wordBandLint, structuralTellLint, lintKindSymmetry,
-  populationBalanceLint, hardnessScore,
+  populationBalanceLint, hardnessScore, hardnessScoreStrict,
+  distributionLint, renderDistributionReport, renderTopicAsymmetry, isContentWord, backtickCount, digitDensity, trigramsOf, idiomCounts, statsOf,
+  RANGE_TOLERANCE_WORDS, SD_RATIO_MIN, SD_RATIO_MAX, DIGIT_DENSITY_TOLERANCE, NGRAM_MIN_FILES,
+  IDIOM_RATIO_MIN, IDIOM_RATIO_MAX, IDIOMS, NGRAM_STOPWORDS, NGRAM_FINDINGS_SHOWN,
+  NGRAM_MIN_CONTENT_WORDS, NGRAM_REPORT_MIN_FILES,
   labelTellLint, extractLabels, contentLabels, LABEL_RE, LABEL_MAX_WORDS,
   MEAN_WORD_TOLERANCE, HARDNESS_RATIO_MIN, HARDNESS_RATIO_MAX,
   isSubjectLine, isV2AuthorLine,

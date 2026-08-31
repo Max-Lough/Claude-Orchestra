@@ -567,8 +567,10 @@ function scoreRecords(records, key, opts) {
       expectedModel, servedModel, identity, identityKnown, identityMismatch, identityUnknown,
       identityEvidence: identityEvidence(engineHeader, expectedModel),
       emptyFindingsSection,
-      // The verdict text an adjudication promotion must quote FROM.
-      verdictText: last ? String(last.stdout || '') : '',
+      // The text an adjudication promotion must quote FROM: the FINDINGS
+      // section only (round-5, Anthropic MAJOR 3). The raw transcript is kept
+      // in the results file, verbatim, and is not a place a FINDING lives.
+      findingsText,
       // `order` is the CORPUS position, recovered from the id; `runIndex` is
       // the position in the lane's own interleaved dispatch order. Both are
       // kept: the first is what the key means by "corpus order", the second is
@@ -688,13 +690,31 @@ function applyAdjudicatedPromotions(scored, key, adjudication) {
       });
       continue;
     }
+    // §2.5's severity floor governs every way a hit can be minted, not only the
+    // mechanical one (round-5, Anthropic MAJOR 3: "mechanical hits require the
+    // seed's severity; a promotion requires none"). Checked before the haystack
+    // so the reason names the cheapest defect first.
+    const quoteSeverity = parseSeverity(String(quote));
+    if (!quoteSeverity || !SEVERITIES.includes(quoteSeverity)) {
+      rejected.push({
+        id: entry.id, lane: entry.lane,
+        reason: 'the quoted line carries no CRITICAL/MAJOR/MINOR severity tag — §2.5\'s "severity ≥ MINOR" floor governs a promotion exactly as it governs a mechanical hit',
+      });
+      continue;
+    }
     let applied = false;
     for (const r of targets) {
-      const haystack = normalizeWhitespace(String(r.verdictText || ''));
+      // The haystack is the FINDINGS SECTION, never the raw transcript
+      // (round-5, Anthropic MAJOR 3). `last.stdout` carries PREFLIGHT lines,
+      // CLAIMS CHECKED, NITS and any echo of the brief; the reviewer promoted a
+      // seed by quoting a CLAIMS CHECKED line about a different file. A finding
+      // is something written in FINDINGS.
+      const haystack = normalizeWhitespace(String(r.findingsText || ''));
       if (!needle || haystack.indexOf(needle) === -1) {
         rejected.push({
           id: entry.id, lane: entry.lane,
-          reason: 'the quoted line does not appear in that lane\'s own verdict text for that artifact — a promotion must quote the verdict it promotes',
+          reason: 'the quoted line does not appear in the FINDINGS SECTION of that lane\'s own verdict for that artifact — ' +
+            'a promotion must quote a FINDING, not a CLAIMS CHECKED line, a NIT, or runner preamble',
         });
         continue;
       }
@@ -720,13 +740,25 @@ function applyAdjudicatedPromotions(scored, key, adjudication) {
 
 function normalizeWhitespace(s) { return String(s).replace(/\s+/g, ' ').trim(); }
 
-/** Does this quoted finding cite `locatorFile` by its full repo-relative path? */
+/**
+ * Does this quoted finding cite `locatorFile` by its full repo-relative path?
+ *
+ * Round-5 (Anthropic MAJOR 3): the substring fallback is DELETED. It read
+ *
+ *     return normalizePath(quote).indexOf(normalizePath(locatorFile)) !== -1;
+ *
+ * which is the `exact-path` suffix tier that round 4 removed from
+ * `classifyFileMatch`, alive again on the adjudication path — the string
+ * `codex/hooks/orchestra-guard.js` contains `hooks/orchestra-guard.js`, so a
+ * finding about the vendored pack copy passed. The reviewer used exactly that
+ * to promote `sdc-061` to a HIT out of an APPROVE verdict. A citation now has to
+ * parse as a citation and resolve to the locator's own path.
+ */
 function citesLocatorFile(quote, locatorFile) {
   for (const c of parseCitations(quote)) {
     if (classifyFileMatch(c.file, locatorFile) === 'exact-path') return true;
   }
-  // A citation without a line number still names the path.
-  return normalizePath(quote).indexOf(normalizePath(locatorFile)) !== -1;
+  return false;
 }
 
 /**
@@ -734,12 +766,19 @@ function citesLocatorFile(quote, locatorFile) {
  * 1): "IDENTITY_UNKNOWN runs are re-run once; if still unknown, the artifact is
  * excluded from BOTH lanes' counts and the exclusion listed."
  *
- *   - `excluded`  — an artifact whose identity is still unknown or mismatched
- *                   on a lane AFTER the re-run (>= 2 attempts). It leaves BOTH
- *                   lanes' counts entirely and is listed.
- *   - `pendingRerun` — identity unresolved on a single attempt. The remedy has
- *                   not been applied yet, so the item is INCOMPLETE, not FAIL:
- *                   the run has to happen before anything can be concluded.
+ *   - `excluded`  — an artifact whose identity is still UNKNOWN on a lane AFTER
+ *                   the re-run (>= 2 attempts). It leaves BOTH lanes' counts
+ *                   entirely and is listed.
+ *   - `pendingRerun` — identity UNKNOWN on a single attempt. The remedy has not
+ *                   been applied yet, so the item is INCOMPLETE, not FAIL: the
+ *                   run has to happen before anything can be concluded.
+ *
+ * Round-5: a MISMATCH is never excluded. §3.1 item 5's remedy is written for
+ * `IDENTITY_UNKNOWN` — a run whose served model could not be ESTABLISHED. A
+ * mismatch is the opposite: the served model was established and it was the
+ * wrong one. Excluding it would let a lane served entirely by the flagship read
+ * PASS with 84 exclusions listed underneath, which is precisely the outcome the
+ * gate exists to prevent. A mismatch stays counted and fails the gate.
  */
 function identityExclusions(scored) {
   const excluded = new Map(); // id -> [{lane, identity, servedModel, expectedModel}]
@@ -747,6 +786,7 @@ function identityExclusions(scored) {
   for (const r of scored) {
     if (r.finalStatus !== 'COMPLETED') continue;
     if (r.identity === 'MATCHED') continue;
+    if (r.identity === 'MISMATCHED') continue; // established, wrong, and counted
     const entry = { lane: r.lane, identity: r.identity, servedModel: r.servedModel, expectedModel: r.expectedModel };
     const target = r.attemptCount >= 2 ? excluded : pendingRerun;
     if (!target.has(r.id)) target.set(r.id, []);
@@ -813,6 +853,20 @@ function stabilityForLane(scoredLane) {
 // ------------------------------------------------------------- 12f gate
 
 function gate12f(scored, key, adjudication, exclusions) {
+  // Round-5 (Anthropic MINOR): the exported API is a test seam and a library
+  // entry point, so it validates its own input rather than throwing a raw
+  // `TypeError: adjudication.filter is not a function` the way the round-4 code
+  // did on any truthy non-array. The CLI already refuses a non-array file; this
+  // is the same rule one layer in, in a file whose whole argument is fail-closed.
+  if (adjudication !== null && adjudication !== undefined && !Array.isArray(adjudication)) {
+    // THROWS rather than `fail()`ing: this is the library path, and a caller
+    // (including the suite) must be able to catch it. `fail()` exits the
+    // process, which is right for the CLI and wrong here.
+    const err = new Error('gate12f: `adjudication` must be an array or null/undefined (got ' + typeof adjudication + ') — ' +
+      'an adjudication is a list of finding-by-finding rulings (§2.5), never a bare object.');
+    err.wo12BadAdjudication = true;
+    throw err;
+  }
   // §3.1 item 5's exclusion is applied HERE, before any count (round-2, MAJOR
   // 1): an artifact whose served identity stayed unresolved after its one
   // re-run leaves BOTH lanes. Completeness is judged on what was RECORDED
@@ -934,13 +988,21 @@ function gate12f(scored, key, adjudication, exclusions) {
         if (!texts.length) continue;
         const entries = adjByArtifact.get(r.id) || [];
         for (const text of texts) {
+          // Round-5 (Anthropic MAJOR 4): coverage is an EXACT normalized match
+          // against one blocker finding, subject to the same 20-character floor
+          // the promotion path already enforced. The round-4 predicate was an
+          // unbounded BIDIRECTIONAL substring test, so a single entry whose
+          // `finding` was the three characters `"js:"` covered every blocker on
+          // the artifact and flipped this gate from INCOMPLETE to PASS at 0% —
+          // the cross-vendor round-2 CRITICAL verbatim, reachable from a
+          // three-character string.
+          const f = normalizeWhitespace(text);
           const covered = entries.some((e) => {
             const t = normalizeWhitespace(String(e.finding || e.quote || ''));
-            if (!t) return false;
-            const f = normalizeWhitespace(text);
-            return f.indexOf(t) !== -1 || t.indexOf(f) !== -1;
+            if (t.length < MIN_ADJUDICATION_QUOTE_CHARS) return false;
+            return t === f;
           });
-          if (!covered) unadjudicatedFindings.push(r.id + ': ' + normalizeWhitespace(text).slice(0, 70));
+          if (!covered) unadjudicatedFindings.push(r.id + ': ' + f.slice(0, 70));
         }
       }
       const needsAdjudication = Array.from(new Set(unadjudicatedFindings.map((s) => s.split(':')[0])));
@@ -1015,9 +1077,27 @@ function gate12f(scored, key, adjudication, exclusions) {
         '(orchestra-review.js builds its header from CONFIG.model), not on a vendor-reported served model — a silent ' +
         'substitution would still read MATCHED here. Closing that needs a served_model line from the runner.');
     }
+    // Round-5, Anthropic MAJOR 2. The round-4 code recorded the evidence limit
+    // honestly in `detail` and still printed PASS in `status` — the field
+    // `overall` and every consumer of score-output.json actually read. The gate
+    // could not fail for the thing it names: `classifyIdentity` returns MATCHED
+    // whenever the header names the requested model, which it always does.
+    //
+    // A gate whose evidence is an echo of its own request is not satisfied. Its
+    // status is LIMITED: not a PASS, not a FAIL (nothing is known to be wrong),
+    // and distinct from INCOMPLETE (nothing further will arrive from THIS
+    // runner — closing it needs a served_model line, i.e. a change to
+    // orchestra-review.js). Protocol amendment (viii): "gate 5 is evidence of
+    // configuration, not of service."
+    let status5;
+    if (!complete || pending.length || terraDead.length) status5 = 'INCOMPLETE';
+    else if (stillWrong.length !== 0) status5 = 'FAIL';
+    else if (echoed && !independent) status5 = 'LIMITED';
+    else status5 = 'PASS';
     items.push({
       n: 5, name: 'exact model identity on every counted X-Terra run',
-      status: !complete || pending.length || terraDead.length ? 'INCOMPLETE' : (stillWrong.length === 0 ? 'PASS' : 'FAIL'),
+      status: status5,
+      identityEvidence: independent ? 'independent' : (echoed ? 'echoed-request' : 'none'),
       detail: detailBits.join('; ') + (complete ? '' : ' (corpus not complete)') + deadNote(terraDead, 'X-Terra'),
     });
   }
@@ -1049,7 +1129,11 @@ function gate12f(scored, key, adjudication, exclusions) {
 
   const anyFail = items.some((i) => i.status === 'FAIL');
   const anyIncomplete = items.some((i) => i.status === 'INCOMPLETE');
-  const overall = anyIncomplete ? 'INCOMPLETE' : (anyFail ? 'FAIL' : 'PASS');
+  const anyLimited = items.some((i) => i.status === 'LIMITED');
+  // LIMITED propagates to `overall` (round-5, MAJOR 2): §3.1 says "no partial
+  // pass exists", so an item that cannot be evidenced must not leave the
+  // headline reading PASS. FAIL and INCOMPLETE still dominate it.
+  const overall = anyIncomplete ? 'INCOMPLETE' : (anyFail ? 'FAIL' : (anyLimited ? 'LIMITED' : 'PASS'));
   return {
     complete, items, overall,
     countedArtifacts, totalArtifacts, countedSeeds: totalSeeds,
@@ -1345,6 +1429,13 @@ function buildReport(ctx) {
   ));
   out.push('');
   out.push('**OVERALL: ' + gate12fResult.overall + '** (No partial pass exists — PASS requires all 6 items PASS.)');
+  if (gate12fResult.overall === 'LIMITED' || gate12fResult.items.some((i) => i.status === 'LIMITED')) {
+    out.push('');
+    out.push('`LIMITED` means an item could not be EVIDENCED, not that it failed. Gate 5 reads LIMITED whenever the only');
+    out.push('served-model evidence is the runner echoing the model it was asked for (`orchestra-review.js` builds its');
+    out.push('header from `CONFIG.model`), which amendment (viii) calls "evidence of configuration, not of service". It is');
+    out.push('not a PASS and it never becomes one from this runner: closing it needs a vendor-reported `served_model`.');
+  }
 
   out.push('');
   out.push('## 12d — cross-family vs same-family recall (protocol §3.2)');

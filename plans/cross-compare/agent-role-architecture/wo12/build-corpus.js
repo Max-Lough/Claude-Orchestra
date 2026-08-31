@@ -272,7 +272,27 @@ function isCaseInsensitiveFs(somePath) {
     if (parent === dir) break; // reached the root with nothing to swap
     dir = parent;
   }
-  if (result === null) result = true; // inconclusive -> fail closed (see above)
+  if (result === null) {
+    // Round-5 (Anthropic MINOR): the read-only probe cannot conclude when no
+    // ancestor basename has a letter to swap — `isCaseInsensitiveFs('C:/')` and
+    // `isCaseInsensitiveFs('/')` both fell straight to the fail-closed default,
+    // which over-refuses on a case-SENSITIVE mount rooted at `/`. Before
+    // defaulting, try a WRITE probe: create a mixed-case temp entry in the
+    // probed directory and stat the case-swapped spelling. Nothing is left
+    // behind, and a failure to write simply falls through to the default.
+    const probeName = '.wo12-case-probe-Aa' + process.pid + Math.random().toString(36).slice(2, 8);
+    const probeFile = path.join(probed, probeName);
+    try {
+      fs.writeFileSync(probeFile, '');
+      try { fs.statSync(path.join(probed, swapCase(probeName))); result = true; }
+      catch (e) { result = false; }
+    } catch (e) {
+      result = null;
+    } finally {
+      try { fs.rmSync(probeFile, { force: true }); } catch (e) { /* best effort */ }
+    }
+  }
+  if (result === null) result = true; // still inconclusive -> fail closed (see above)
 
   CASE_PROBE_CACHE.set(probed, result);
   return result;

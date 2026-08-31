@@ -258,8 +258,9 @@ function usage() {
     '',
     'lanes: ' + Object.keys(LANES).join(' | '),
     '--override-p0 is OWNER USE ONLY: it records the given reason into the',
-    '  results file AND into wo12/p0-overrides.log INSTEAD OF refusing on a P0',
-    '  gate that did not return a positive OU signal. It never bypasses --yes.',
+    '  results file AND into <--results-dir>/p0-overrides.log INSTEAD OF refusing',
+    '  on a P0 gate that did not return a positive OU signal. It never bypasses',
+    '  --yes. --override-log <path> names that ledger outright.',
     '--draw-per-review <fraction> is REQUIRED for phases 1-3 (§2.6): the phase',
     '  refuses unless remainingFraction - (projected reviews x draw) is still at',
     '  or above the Quartermaster\'s requiredReserve. Measure it in phase 0.',
@@ -277,6 +278,7 @@ function parseArgs(argv) {
     lane: null, phase: null, dryRun: false, yes: false, timeoutMs: null,
     overrideP0: null, drawPerReview: null, key: null, briefsDir: null, patchesDir: null,
     sourceRepo: null, cloneRoot: null, runCloneRoot: null, resultsDir: null, runner: null,
+    overrideLog: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -301,6 +303,7 @@ function parseArgs(argv) {
     else if (a === '--clone-root') out.cloneRoot = argv[++i];
     else if (a === '--run-clone-root') out.runCloneRoot = argv[++i];
     else if (a === '--results-dir') out.resultsDir = argv[++i];
+    else if (a === '--override-log') out.overrideLog = argv[++i];
     else if (a === '--runner') out.runner = argv[++i];
     else if (a === '--help' || a === '-h') { process.stdout.write(usage() + '\n'); process.exit(0); }
     else fail('unknown argument: ' + a + '\n\n' + usage());
@@ -664,16 +667,44 @@ function countUnavailableOnDisk(resultsDir, phase, lanes) {
   const perLane = {};
   for (const lane of lanes) {
     const file = path.join(resultsDir, 'results-' + lane + '-phase' + phase + '.json');
-    let recs = [];
-    try { recs = readResults(file); } catch (e) { recs = []; } // an unreadable file is handled elsewhere
+    // Round-5 (Anthropic MAJOR 5). The round-4 code was
+    //     try { recs = readResults(file); } catch (e) { recs = []; }
+    // with the comment "an unreadable file is handled elsewhere". It is not:
+    // `planResume` protects only the CURRENT lane's file, and this function is
+    // the ONLY reader of the sibling lane's. So a results file truncated by a
+    // crash mid-write — the exact failure `appendResult`'s whole corruption
+    // discipline exists for — counted as ZERO unavailable and silently disarmed
+    // the §2.6 halt, at the one moment it matters most: the other lane has
+    // already burned its budget on a failing engine and died. A safety stop
+    // must fail closed, so the read error propagates.
+    let recs;
+    try { recs = readResults(file); }
+    catch (e) {
+      const err = new Error(
+        'refusing to evaluate the §2.6 phase-' + phase + ' stop condition: ' + lane + '\'s results file cannot be read — ' +
+        e.message + '. This counter is the halt, and an unreadable file is not evidence of zero failures; it is most ' +
+        'likely a crash mid-write, which is precisely when the halt matters. Repair or move ' + file + ' and re-run.'
+      );
+      err.wo12ResultsCorrupt = true;
+      throw err;
+    }
+    // §2.6 counts ">2 FINAL UNAVAILABLE". A record whose single attempt is
+    // unavailable has not had the one retry §2.5 grants it, so it is not final
+    // yet — counted separately and disclosed rather than folded into the halt
+    // (round-5, Anthropic MINOR: "the code and the protocol say different
+    // things"). `planResume` re-dispatches those records, so they resolve.
     let n = 0;
     const ids = [];
+    let pending = 0;
+    const pendingIds = [];
     for (const rec of recs) {
       const attempts = rec && Array.isArray(rec.attempts) ? rec.attempts : [];
       const last = attempts.length ? attempts[attempts.length - 1] : null;
-      if (isUnavailableAttempt(last)) { n++; ids.push(rec.id); }
+      if (!isUnavailableAttempt(last)) continue;
+      if (attempts.length >= 2) { n++; ids.push(rec.id); }
+      else { pending++; pendingIds.push(rec.id); }
     }
-    perLane[lane] = { count: n, ids };
+    perLane[lane] = { count: n, ids, pending, pendingIds };
   }
   return perLane;
 }
@@ -963,7 +994,18 @@ function main() {
       '  recorded at: ' + at + '\n' +
       banner + '\n\n'
     );
-    const logFile = path.join(HERE, OVERRIDE_LOG_BASENAME);
+    // The ledger lives NEXT TO THE RESULTS FILE it belongs to — never at a
+    // fixed path inside the repository.
+    //
+    // Round-5 incident: this was `path.join(HERE, …)`, i.e. the wo12 script
+    // directory, so EVERY invocation with `--override-p0` wrote into the live
+    // tree no matter where its results went. The suite's own §8 check does
+    // exactly that, and an interrupted run (SIGTERM from a `timeout`, so the
+    // suite's `process.on('exit')` cleanup never fired) left an untracked
+    // `wo12/p0-overrides.log` behind in the repository. An override belongs to
+    // one lane × phase, and so does its ledger: it now follows `--results-dir`,
+    // and `--override-log` names it outright.
+    const logFile = args.overrideLog ? path.resolve(args.overrideLog) : path.join(resultsDir, OVERRIDE_LOG_BASENAME);
     appendOverrideLog(logFile, overrideStamp);
     process.stdout.write('  ledgered in ' + logFile + '\n\n');
   } else if (args.overrideP0) {
@@ -1041,7 +1083,8 @@ function main() {
       const perLane = countUnavailableOnDisk(resultsDir, args.phase, Object.keys(LANES));
       const breached = Object.keys(perLane).filter((l) => perLane[l].count > PHASE0_MAX_UNAVAILABLE);
       if (breached.length) {
-        const detail = breached.map((l) => l + ': ' + perLane[l].count + ' (' + perLane[l].ids.join(', ') + ')').join('; ');
+        const detail = breached.map((l) => l + ': ' + perLane[l].count + ' final (' + perLane[l].ids.join(', ') + ')' +
+          (perLane[l].pending ? ' plus ' + perLane[l].pending + ' awaiting their retry (' + perLane[l].pendingIds.join(', ') + ')' : '')).join('; ');
         fail(
           'HALTING phase 0 (§2.6 stop condition): more than ' + PHASE0_MAX_UNAVAILABLE + ' final UNAVAILABLE result(s) — ' + detail +
           '. The rule is ">2 in EITHER lane", counted across every invocation from the results files on disk, so this halts ' +

@@ -48,6 +48,26 @@ let failures = 0;
 let passes = 0;
 const cleanups = [];
 
+// ------------------------------------------------- working-tree guard (round 5)
+//
+// No check in this suite may write into the repository. Round-5 incident: §8
+// drove `run-lane.js --override-p0`, which appended to a FIXED repo path
+// (`wo12/p0-overrides.log`); the save/restore that hid it lived in
+// `process.on('exit')`, which does not run when the suite is killed by a
+// SIGTERM from `timeout`, so an interrupted run left an untracked file behind.
+//
+// `git status --porcelain` over wo12/ is captured HERE, before any section
+// runs, and compared at the end. Comparing start-to-end rather than requiring a
+// clean tree is deliberate: the corpus legitimately carries other agents'
+// uncommitted work, and this guard is about what THIS SUITE does.
+function wo12PorcelainStatus() {
+  const r = spawnSync('git', ['-C', MASTER, 'status', '--porcelain', '--',
+    'plans/cross-compare/agent-role-architecture/wo12'], { encoding: 'utf8' });
+  if (r.status !== 0) return null; // not a git checkout: the guard reports that and skips
+  return (r.stdout || '').split(/\r?\n/).filter(Boolean).sort().join('\n');
+}
+const WO12_STATUS_AT_START = wo12PorcelainStatus();
+
 function check(name, ok, detail) {
   if (ok) {
     passes++;
@@ -727,12 +747,16 @@ section('8. run-lane.js — --override-p0 is loud, ledgered, and stamped (MINOR 
   const runner = writeStub(stubs, 'stub-runner.js',
     'process.stdout.write("REVIEW ENGINE: codex model: gpt-5.6-terra\\n\\nVERDICT: APPROVE\\n\\nFINDINGS\\n- none\\n");\n');
   const refused = writeStub(stubs, 'refused.js', 'process.stderr.write("REFUSED for OU: no recorded reading.\\n");\nprocess.exit(1);\n');
-  const overrideLog = path.join(WO12, runLaneLib.OVERRIDE_LOG_BASENAME);
-  const before = fs.existsSync(overrideLog) ? fs.readFileSync(overrideLog, 'utf8') : null;
-  cleanups.push(() => {
-    if (before === null) { try { fs.rmSync(overrideLog, { force: true }); } catch (e) { /* best effort */ } }
-    else { try { fs.writeFileSync(overrideLog, before, 'utf8'); } catch (e) { /* best effort */ } }
-  });
+  // The ledger follows --results-dir, so it lands in this test's own temp
+  // directory and the repository is never touched. Round-5 incident: it used to
+  // be written to a FIXED path inside the repo (`wo12/p0-overrides.log`), and
+  // this check's save/restore lived in `process.on('exit')` — which does not
+  // run when the suite is killed by a SIGTERM from `timeout`. An interrupted
+  // run therefore left an untracked file in the live tree. No save/restore is
+  // needed now: nothing outside the temp dir is written in the first place.
+  const overrideLog = path.join(corpus.dir, runLaneLib.OVERRIDE_LOG_BASENAME);
+  const repoOverrideLog = path.join(WO12, runLaneLib.OVERRIDE_LOG_BASENAME);
+  const repoLogBefore = fs.existsSync(repoOverrideLog);
 
   const r = runLane([
     '--lane', 'X-Terra', '--phase', '0', '--yes', '--override-p0', 'owner: OU reading recorded manually, see /status',
@@ -745,7 +769,29 @@ section('8. run-lane.js — --override-p0 is loud, ledgered, and stamped (MINOR 
   check('an overridden run completes', r.status === 0, (r.stderr || '') + '\n' + (r.stdout || '').slice(-800));
   check('MINOR 8(a): the override prints a LOUD banner', /P0 GATE OVERRIDDEN — OWNER USE ONLY/.test(r.stdout || ''), (r.stdout || '').slice(0, 1500));
   check('the banner quotes what the gate actually said', /the gate said:/.test(r.stdout || ''), (r.stdout || '').slice(0, 1500));
-  check('MINOR 8(b): the override is appended to wo12/p0-overrides.log', fs.existsSync(overrideLog), overrideLog);
+  check('MINOR 8(b): the override is appended to <results-dir>/p0-overrides.log', fs.existsSync(overrideLog), overrideLog);
+  check('round-5 incident: the ledger is NOT written to the repository\'s wo12/ directory',
+    fs.existsSync(repoOverrideLog) === repoLogBefore, repoOverrideLog + ' appeared during this check');
+  check('the run reports where it ledgered, and it is the temp dir', (() => {
+    const m = /ledgered in (.+)/.exec(r.stdout || '');
+    return !!m && path.resolve(m[1].trim()) === path.resolve(overrideLog);
+  })(), (r.stdout || '').slice(0, 1500));
+
+  // --override-log names the ledger outright.
+  {
+    const explicit = path.join(tmpDir('wo12-ovlog-'), 'nested', 'ledger.log');
+    const corpus2 = miniLaneCorpus(repo);
+    const r2 = runLane([
+      '--lane', 'X-Terra', '--phase', '0', '--yes', '--override-p0', 'owner: explicit ledger path',
+      '--key', corpus2.keyPath, '--briefs-dir', corpus2.briefs, '--patches-dir', corpus2.dir,
+      '--source-repo', repo.dir, '--results-dir', corpus2.dir, '--override-log', explicit,
+      '--clone-root', path.join(corpus2.dir, 'clone'), '--run-clone-root', path.join(corpus2.dir, 'run'),
+      '--runner', runner,
+    ], { WO12_QM_CMD: q(process.execPath) + ' ' + q(refused) });
+    check('--override-log writes the ledger exactly where it is told', r2.status === 0 && fs.existsSync(explicit),
+      (r2.stderr || '') + ' | ' + explicit);
+    check('…creating intermediate directories', fs.existsSync(path.dirname(explicit)));
+  }
   if (fs.existsSync(overrideLog)) {
     const lines = fs.readFileSync(overrideLog, 'utf8').trim().split('\n').filter(Boolean);
     let last = null;
@@ -1012,8 +1058,17 @@ section('18. score.js — identity gate compares the SERVED model to the lane\'s
     { id: 'x3', lane: 'X-Terra', finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, servedModel: 'gpt-5.6-terra', expectedModel: 'gpt-5.6-terra' },
   ];
   const ex = scoreLib.identityExclusions(scored);
-  check('MAJOR 1: an artifact still wrong AFTER the re-run is EXCLUDED', ex.excludedIds.join(',') === 'x1', JSON.stringify(ex.excludedIds));
-  check('MAJOR 1: an artifact whose re-run has not happened yet is PENDING, not excluded', ex.pendingRerunIds.join(',') === 'x2', JSON.stringify(ex.pendingRerunIds));
+  // Round-5: exclusion is §3.1 item 5's remedy for IDENTITY_UNKNOWN — a served
+  // model that could not be ESTABLISHED. A MISMATCH was established and was
+  // wrong; excluding it would let a wholly mis-served lane read PASS with the
+  // exclusions listed underneath.
+  check('round-5: a MISMATCH is never excluded — it stays counted and fails the gate',
+    ex.excludedIds.indexOf('x1') === -1 && ex.pendingRerunIds.indexOf('x1') === -1, JSON.stringify(ex));
+  check('MAJOR 1: an artifact whose identity is UNKNOWN and un-re-run is PENDING', ex.pendingRerunIds.join(',') === 'x2', JSON.stringify(ex.pendingRerunIds));
+  check('an UNKNOWN artifact still unresolved AFTER the re-run IS excluded', (() => {
+    const rerun = [{ id: 'x4', lane: 'X-Terra', finalStatus: 'COMPLETED', identity: 'UNKNOWN', attemptCount: 2, servedModel: null, expectedModel: 'gpt-5.6-terra' }];
+    return scoreLib.identityExclusions(rerun).excludedIds.join(',') === 'x4';
+  })());
   check('a matched artifact is neither', ex.excludedIds.indexOf('x3') === -1 && ex.pendingRerunIds.indexOf('x3') === -1);
 }
 
@@ -1751,11 +1806,12 @@ section('37. score.js — §2.5 adjudicated HIT promotions reach recall (openai-
   // to appear verbatim in that lane's own verdict text for that artifact and
   // cite the seed's locator file — and every entry must name a `lane`.
   const REAL_QUOTE = '[CRITICAL] a.js:1 — the seeded fault, cited by the reviewer in prose';
-  const verdictText = 'REVIEW ENGINE: codex model: gpt-5.6-terra\nVERDICT: REVISE\n\nFINDINGS\n- ' + REAL_QUOTE + '\n';
+  // Round 5: the haystack is the FINDINGS SECTION, not the raw transcript.
+  const findingsText = '- ' + REAL_QUOTE;
   const scored = [
-    { id: 'p-1', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'CRITICAL', verdictText },
-    { id: 'p-2', lane: 'X-Terra', kind: 'seeded', hit: true, adjudicatedPromotion: false, order: 1, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'MAJOR', verdictText },
-    { id: 'p-1', lane: 'X-Sol', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'CRITICAL', verdictText: 'VERDICT: APPROVE\n\nFINDINGS\n- none\n' },
+    { id: 'p-1', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'CRITICAL', findingsText },
+    { id: 'p-2', lane: 'X-Terra', kind: 'seeded', hit: true, adjudicatedPromotion: false, order: 1, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'MAJOR', findingsText },
+    { id: 'p-1', lane: 'X-Sol', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'CRITICAL', findingsText: 'VERDICT: APPROVE\n\nFINDINGS\n- none\n' },
   ];
   const adjudication = [
     { id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: REAL_QUOTE },
@@ -1776,9 +1832,9 @@ section('37. score.js — §2.5 adjudicated HIT promotions reach recall (openai-
 
   // MAJOR 4's two demonstrated holes, closed.
   {
-    const fresh = () => [{ id: 'p-1', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, verdictText },
-      { id: 'p-1', lane: 'X-Sol', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, verdictText },
-      { id: 'p-1', lane: 'S-Opus', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, verdictText }];
+    const fresh = () => [{ id: 'p-1', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, findingsText },
+      { id: 'p-1', lane: 'X-Sol', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, findingsText },
+      { id: 'p-1', lane: 'S-Opus', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, findingsText }];
 
     const noLane = fresh();
     const r1 = scoreLib.applyAdjudicatedPromotions(noLane, key, [{ id: 'p-1', verdict: 'HIT', quote: REAL_QUOTE }]);
@@ -1798,12 +1854,12 @@ section('37. score.js — §2.5 adjudicated HIT promotions reach recall (openai-
     const r3b = scoreLib.applyAdjudicatedPromotions(notInVerdict, key, [
       { id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: '[CRITICAL] a.js:1 — a finding nobody actually wrote' }]);
     check('MAJOR 4: a long, locator-citing quote that is NOT in the verdict is still REFUSED',
-      r3b.promotions.length === 0 && /does not appear in that lane's own verdict/.test(r3b.rejected[0].reason), JSON.stringify(r3b));
+      r3b.promotions.length === 0 && /does not appear in the FINDINGS SECTION/.test(r3b.rejected[0].reason), JSON.stringify(r3b));
 
     const wrongFile = fresh();
     const wrongQuote = '[CRITICAL] other/file.js:1 — a real line of the verdict, but not the locator';
     const wrongVerdict = 'VERDICT: REVISE\n\nFINDINGS\n- ' + wrongQuote + '\n';
-    for (const r of wrongFile) r.verdictText = wrongVerdict;
+    for (const r of wrongFile) r.findingsText = wrongVerdict;
     const r4 = scoreLib.applyAdjudicatedPromotions(wrongFile, key, [{ id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: wrongQuote }]);
     check('MAJOR 4: a quote that is in the verdict but does NOT cite the locator file is REFUSED',
       r4.promotions.length === 0 && /does not cite the seed's locator file/.test(r4.rejected[0].reason), JSON.stringify(r4));
@@ -2751,6 +2807,481 @@ section('55. assemble-key.js — a label tell REFUSES the whole assembly, and CO
   check('CONSTRUCTION.md carries the inline-label section', /### Inline labels \(round 4\)/.test(md), md.slice(0, 400));
   check('the inventory is empty in a corpus that assembles', /\*\*No inline labels in any content file\.\*\*/.test(md),
     md.slice(md.indexOf('### Inline labels'), md.indexOf('### Inline labels') + 900));
+}
+
+// ============================================================ ROUND 5
+// roster/wo12-r0-review-anthropic-3.md
+
+section('56. score.js — gate 5 is LIMITED, never PASS, on echoed-request evidence (round-5 MAJOR 2)');
+{
+  const artifacts = [];
+  for (let i = 1; i <= 30; i++) artifacts.push({ id: 'sd-' + i, kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } });
+  for (let i = 1; i <= 54; i++) artifacts.push({ id: 'ct-' + i, kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null });
+  const key = { version: 1, artifacts };
+  // Seeds carry a hit; CONTROLS carry no findings at all, so gate 3 has nothing
+  // to adjudicate and can reach PASS. That isolates gate 5 as the only item
+  // that is not a clean PASS, which is what makes `overall` readable here.
+  function recsWith(header) {
+    const out = [];
+    for (const lane of ['X-Sol', 'X-Terra']) {
+      for (const a of artifacts) {
+        const seeded = a.kind === 'seeded';
+        out.push({
+          id: a.id, lane, phase: 0, variant: 'V1', expectedModel: scoreLib.LANE_EXPECTED_MODEL[lane], runIndex: 0,
+          attempts: [{
+            wallMs: 1, verdict: seeded ? 'REVISE' : 'APPROVE', status: 'COMPLETED', unavailable: false,
+            engineHeader: header(lane), integrityWarning: false,
+            stdout: seeded
+              ? 'VERDICT: REVISE\n\nFINDINGS\n- [MAJOR] a.js:1 — found it\n\nCLAIMS CHECKED\n- none\n'
+              : 'VERDICT: APPROVE\n\nFINDINGS\n- none\n\nCLAIMS CHECKED\n- none\n',
+          }],
+        });
+      }
+    }
+    return out;
+  }
+  // One adjudication entry so the lane is not "NOT ADJUDICATED"; no control
+  // carries a blocker finding, so coverage is complete.
+  const ADJ = [{ id: 'ct-1', lane: 'X-Terra', severity: 'MINOR', finding: 'a MINOR nit, not a blocker finding at all', verdict: 'DEBATABLE', second: 'DEBATABLE' }];
+  // The production runner echoes the REQUESTED model.
+  const echoed = scoreLib.scoreRecords(recsWith((l) => 'REVIEW ENGINE: OpenAI via Codex CLI (model: ' + scoreLib.LANE_EXPECTED_MODEL[l] + ', sandbox: workspace-write)'), key, {}).scored;
+  const gEcho = scoreLib.gate12f(echoed, key, ADJ, scoreLib.identityExclusions(echoed));
+  const item5 = gEcho.items.find((i) => i.n === 5);
+  check('round-5 MAJOR 2: gate 5 status is LIMITED on echoed-request evidence, not PASS',
+    item5.status === 'LIMITED', item5.status + ' — ' + item5.detail);
+  check('…and the item carries the evidence class as a FIELD, not only in prose',
+    item5.identityEvidence === 'echoed-request', JSON.stringify(item5.identityEvidence));
+  check('…and the detail still states the limit', /EVIDENCE LIMIT/.test(item5.detail), item5.detail);
+  check('round-5 MAJOR 2: `overall` carries LIMITED — the field every consumer reads',
+    gEcho.overall === 'LIMITED', gEcho.overall);
+
+  // Independent evidence (a served_model line) restores a real PASS.
+  const independent = scoreLib.scoreRecords(recsWith((l) => 'REVIEW ENGINE: codex served_model: ' + scoreLib.LANE_EXPECTED_MODEL[l]), key, {}).scored;
+  const gInd = scoreLib.gate12f(independent, key, ADJ, scoreLib.identityExclusions(independent));
+  const item5b = gInd.items.find((i) => i.n === 5);
+  check('independent served-model evidence gives a real PASS', item5b.status === 'PASS', item5b.status + ' — ' + item5b.detail);
+  check('…and the evidence class says so', item5b.identityEvidence === 'independent');
+
+  // A genuine mismatch still FAILs, and FAIL dominates LIMITED in `overall`.
+  const wrong = scoreLib.scoreRecords(recsWith(() => 'REVIEW ENGINE: codex model: gpt-4o'), key, {}).scored;
+  const gWrong = scoreLib.gate12f(wrong, key, ADJ, scoreLib.identityExclusions(wrong));
+  check('a served model outside the known families still FAILs the gate',
+    gWrong.items.find((i) => i.n === 5).status === 'FAIL', gWrong.items.find((i) => i.n === 5).detail);
+  check('FAIL dominates LIMITED in `overall`', gWrong.overall === 'FAIL', gWrong.overall);
+}
+
+section('57. score.js — promotions: no substring fallback, FINDINGS-only haystack, severity floor (round-5 MAJOR 3)');
+{
+  const key = {
+    version: 1,
+    artifacts: [{
+      id: 'sdc-061', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's',
+      seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'hooks/orchestra-guard.js', lines: [339, 345], symbol: 'guard' }, consequence: '', rationale: '', hazard_terms: [] },
+    }],
+  };
+  const mk = (findingsText) => [{
+    id: 'sdc-061', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0,
+    finalStatus: 'COMPLETED', attemptCount: 1, findingsText,
+  }];
+
+  // (1) The exact scenario the reviewer used: an APPROVE verdict that misses the
+  // seed, with the pack copy mentioned only in CLAIMS CHECKED.
+  const packQuote = '[MINOR] codex/hooks/orchestra-guard.js:12 — the pack copy was not updated';
+  const rowsClaims = mk('- [MINOR] docs/readme.md:3 — a stale link.');
+  const r1 = scoreLib.applyAdjudicatedPromotions(rowsClaims, key, [{ id: 'sdc-061', lane: 'X-Terra', verdict: 'HIT', quote: packQuote }]);
+  check('round-5 MAJOR 3: a CLAIMS CHECKED line cannot promote — the haystack is the FINDINGS section',
+    r1.promotions.length === 0 && rowsClaims[0].hit === false, JSON.stringify(r1));
+  check('…and the reason names the FINDINGS section', /FINDINGS SECTION/.test(r1.rejected[0].reason), r1.rejected[0].reason);
+
+  // (2) Even IN the findings section, the vendored copy is not the locator.
+  const rowsPack = mk('- ' + packQuote);
+  const r2 = scoreLib.applyAdjudicatedPromotions(rowsPack, key, [{ id: 'sdc-061', lane: 'X-Terra', verdict: 'HIT', quote: packQuote }]);
+  check('round-5 MAJOR 3: the substring fallback is gone — the vendored copy no longer counts as the locator',
+    r2.promotions.length === 0 && /does not cite the seed's locator file/.test(r2.rejected[0].reason), JSON.stringify(r2));
+  check('citesLocatorFile rejects the pack copy directly',
+    scoreLib.citesLocatorFile('[MINOR] codex/hooks/orchestra-guard.js:12 — pack copy stale', 'hooks/orchestra-guard.js') === false);
+  check('citesLocatorFile still accepts the real path',
+    scoreLib.citesLocatorFile('[MAJOR] hooks/orchestra-guard.js:340 — the seeded fault here', 'hooks/orchestra-guard.js') === true);
+
+  // (3) The severity floor governs a promotion as it governs a mechanical hit.
+  const untagged = 'hooks/orchestra-guard.js:340 — something is odd in the guard here';
+  const rowsUntagged = mk('- ' + untagged);
+  const r3 = scoreLib.applyAdjudicatedPromotions(rowsUntagged, key, [{ id: 'sdc-061', lane: 'X-Terra', verdict: 'HIT', quote: untagged }]);
+  check('round-5 MAJOR 3: an UNTAGGED quote cannot promote (§2.5 severity floor)',
+    r3.promotions.length === 0 && /severity/.test(r3.rejected[0].reason), JSON.stringify(r3));
+
+  // (4) An honest promotion still works.
+  const good = '[MAJOR] hooks/orchestra-guard.js:340 — the guard was widened past its stated scope';
+  const rowsGood = mk('- ' + good);
+  const r4 = scoreLib.applyAdjudicatedPromotions(rowsGood, key, [{ id: 'sdc-061', lane: 'X-Terra', verdict: 'HIT', quote: good }]);
+  check('an honest, tagged, locator-citing FINDINGS quote still promotes',
+    r4.promotions.length === 1 && rowsGood[0].hit === true && rowsGood[0].adjudicatedPromotion === true, JSON.stringify(r4));
+
+  // scoreRecords must supply findingsText, not the raw transcript.
+  const scored = scoreLib.scoreRecords([{
+    id: 'sdc-061', lane: 'X-Terra', phase: 0, expectedModel: 'gpt-5.6-terra',
+    attempts: [{ status: 'COMPLETED', verdict: 'APPROVE', engineHeader: 'REVIEW ENGINE: codex model: gpt-5.6-terra', integrityWarning: false,
+      stdout: 'PREFLIGHT: noise\nVERDICT: APPROVE\n\nFINDINGS\n- none\n\nCLAIMS CHECKED\n- "x" -> codex/hooks/orchestra-guard.js:12 mentioned here\n' }],
+  }], key, {}).scored;
+  check('scoreRecords exposes the FINDINGS section as the promotion haystack',
+    scored[0].findingsText.indexOf('CLAIMS CHECKED') === -1 && scored[0].findingsText.indexOf('PREFLIGHT') === -1,
+    JSON.stringify(scored[0].findingsText));
+}
+
+section('58. score.js — gate-3 coverage is an EXACT match above the quote floor (round-5 MAJOR 4)');
+{
+  const artifacts = [];
+  for (let i = 1; i <= 30; i++) artifacts.push({ id: 'sd-' + i, kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } });
+  for (let i = 1; i <= 54; i++) artifacts.push({ id: 'ct-' + i, kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null });
+  const key = { version: 1, artifacts };
+  const BLOCKERS = [
+    '[CRITICAL] router/router.js:10 — first blocker on the control',
+    '[MAJOR] router/router.js:20 — second blocker on the control',
+    '[MAJOR] router/router.js:30 — third blocker on the control',
+  ];
+  const scored = [];
+  for (const lane of ['X-Sol', 'X-Terra']) {
+    artifacts.forEach((a, idx) => scored.push({
+      id: a.id, lane, phase: 0, variant: 'V1', order: idx, kind: a.kind, type: a.seed ? 'CV' : null,
+      severity: a.seed ? 'MAJOR' : null, hit: false, nearMisses: [], adjudicatedPromotion: false,
+      blockerFindings: a.id === 'ct-1' ? BLOCKERS.length : 0,
+      blockerFindingTexts: a.id === 'ct-1' ? BLOCKERS.slice() : [],
+      unavailableFinal: false, noVerdict: false, integrityWarning: false,
+      expectedModel: scoreLib.LANE_EXPECTED_MODEL[lane], servedModel: scoreLib.LANE_EXPECTED_MODEL[lane],
+      identity: 'MATCHED', identityKnown: true, identityMismatch: false, identityUnknown: false,
+      identityEvidence: 'independent', emptyFindingsSection: false, finalStatus: 'COMPLETED', attemptCount: 1, sourceFile: 'x',
+    }));
+  }
+  const gate = (adj) => scoreLib.gate12f(scored, key, adj, scoreLib.identityExclusions(scored)).items.find((i) => i.n === 3);
+
+  for (const cheat of ['js:', 'invented', 'blocker finding', 'router', '[MAJOR]']) {
+    const g = gate([{ id: 'ct-1', lane: 'X-Terra', severity: 'MAJOR', finding: cheat, verdict: 'REAL', second: 'REAL' }]);
+    check('round-5 MAJOR 4: the substring cheat ' + JSON.stringify(cheat) + ' does NOT cover a blocker',
+      g.status === 'INCOMPLETE' && /PARTIALLY ADJUDICATED/.test(g.detail), g.status + ' — ' + g.detail.slice(0, 160));
+  }
+  const partial = gate([{ id: 'ct-1', lane: 'X-Terra', severity: 'CRITICAL', finding: BLOCKERS[0], verdict: 'REAL', second: 'REAL' }]);
+  check('an exact match covers exactly ONE blocker, leaving the gate INCOMPLETE',
+    partial.status === 'INCOMPLETE' && /2 MAJOR\/CRITICAL finding\(s\)/.test(partial.detail), partial.detail.slice(0, 200));
+  const full = gate(BLOCKERS.map((t) => ({ id: 'ct-1', lane: 'X-Terra', severity: 'MAJOR', finding: t, verdict: 'REAL', second: 'REAL' })));
+  check('exact entries for every blocker complete the coverage and the gate can PASS',
+    full.status === 'PASS', full.status + ' — ' + full.detail.slice(0, 160));
+  const shortExact = gate([{ id: 'ct-1', lane: 'X-Terra', severity: 'MAJOR', finding: 'short', verdict: 'REAL', second: 'REAL' }]);
+  check('an entry below the ' + 20 + '-char floor never covers, even if it matched',
+    shortExact.status === 'INCOMPLETE', shortExact.detail.slice(0, 160));
+  check('whitespace differences do not defeat an honest exact match', (() => {
+    const g = gate(BLOCKERS.map((t) => ({ id: 'ct-1', lane: 'X-Terra', severity: 'MAJOR', finding: '  ' + t.replace(/ /g, '  ') + '  ', verdict: 'REAL', second: 'REAL' })));
+    return g.status === 'PASS';
+  })());
+
+  // The exported API validates its own input (round-5 MINOR).
+  let threw = null;
+  try { scoreLib.gate12f(scored, key, { not: 'an array' }, scoreLib.identityExclusions(scored)); } catch (e) { threw = e; }
+  check('round-5 MINOR: gate12f refuses a non-array adjudication instead of throwing a raw TypeError',
+    !!threw && /must be an array/.test(threw.message), threw && threw.message);
+}
+
+section('59. run-lane.js — the stop counter FAILS CLOSED on an unreadable results file (round-5 MAJOR 5)');
+{
+  const dir = tmpDir('wo12-stopclosed-');
+  const healthy = [];
+  for (let i = 1; i <= 4; i++) {
+    healthy.push({ id: 'sdc-00' + i, attempts: [{ status: 'UNAVAILABLE', unavailable: true }, { status: 'UNAVAILABLE', unavailable: true }] });
+  }
+  const solFile = path.join(dir, 'results-X-Sol-phase0.json');
+  fs.writeFileSync(solFile, JSON.stringify(healthy, null, 2), 'utf8');
+  const counts = runLaneLib.countUnavailableOnDisk(dir, 0, ['X-Sol', 'X-Terra']);
+  check('a healthy sibling file counts its final UNAVAILABLE records', counts['X-Sol'].count === 4, JSON.stringify(counts['X-Sol']));
+
+  // The reviewer's exact scenario: truncate the file to 70%, as a crash would.
+  const good = fs.readFileSync(solFile, 'utf8');
+  fs.writeFileSync(solFile, good.slice(0, Math.floor(good.length * 0.7)), 'utf8');
+  let threw = null;
+  try { runLaneLib.countUnavailableOnDisk(dir, 0, ['X-Sol', 'X-Terra']); } catch (e) { threw = e; }
+  check('round-5 MAJOR 5: an unreadable sibling-lane file THROWS rather than counting zero',
+    !!threw && threw.wo12ResultsCorrupt === true, threw && threw.message);
+  check('…and the refusal explains that a safety stop must fail closed',
+    !!threw && /not evidence of zero failures/.test(threw.message), threw && threw.message);
+
+  // §2.6 counts FINAL unavailable; an unretried record is pending, not final.
+  fs.writeFileSync(solFile, JSON.stringify([
+    { id: 'sdc-001', attempts: [{ status: 'UNAVAILABLE', unavailable: true }, { status: 'UNAVAILABLE', unavailable: true }] },
+    { id: 'sdc-002', attempts: [{ status: 'UNAVAILABLE', unavailable: true }] },
+  ], null, 2), 'utf8');
+  const c2 = runLaneLib.countUnavailableOnDisk(dir, 0, ['X-Sol'])['X-Sol'];
+  check('round-5 MINOR: a record whose retry has not been spent is PENDING, not final',
+    c2.count === 1 && c2.pending === 1 && c2.pendingIds.join(',') === 'sdc-002', JSON.stringify(c2));
+
+  // End to end: the halt refuses rather than proceeding past a corrupt sibling.
+  const repo = makeSourceRepo();
+  const briefs = path.join(dir, 'briefs');
+  fs.mkdirSync(briefs, { recursive: true });
+  const artifacts = [];
+  for (let i = 1; i <= 2; i++) {
+    const id = 'sdc-01' + i;
+    artifacts.push({ id, kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
+    fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
+    fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
+  }
+  const keyPath = writeKey(dir, artifacts);
+  fs.writeFileSync(solFile, '{not json', 'utf8');
+  const stubs = tmpDir('wo12-stopclosed-stub-');
+  const runner = writeStub(stubs, 'ok.js', 'process.stdout.write("REVIEW ENGINE: codex model: gpt-5.6-terra\\n\\nVERDICT: APPROVE\\n\\nFINDINGS\\n- none\\n");\n');
+  const green = qmStubJson(stubs, 'green.js', ouState(0.85));
+  const r = runLane(['--lane', 'X-Terra', '--phase', '0', '--yes', '--key', keyPath, '--briefs-dir', briefs,
+    '--patches-dir', dir, '--source-repo', repo.dir, '--results-dir', dir,
+    '--clone-root', path.join(dir, 'clone3'), '--run-clone-root', path.join(dir, 'run3'), '--runner', runner],
+  { WO12_QM_CMD: q(process.execPath) + ' ' + q(green) });
+  check('round-5 MAJOR 5: the phase refuses rather than proceeding past a corrupt sibling-lane file',
+    r.status !== 0 && /cannot be read/.test(r.stderr || ''), (r.stderr || '').slice(0, 400));
+}
+
+section('60. assemble-key.js — the distribution lint (round-5 MAJOR 1)');
+{
+  const mkRow = (id, kind, o) => Object.assign({
+    id, kind, variant: 'V1', baseKind: 'code', orderWords: 145, claimsWords: 76, orderHardness: 2,
+    orderHardnessStrict: 1, labels: [], backticks: 0, digitsPer100: 1.0, trigrams: [], idioms: {},
+  }, o || {});
+  const balanced = () => {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('sdc-' + String(i + 1).padStart(3, '0'), 'seeded', { orderWords: 140 + (i % 10), claimsWords: 72 + (i % 8) }));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('sdc-' + String(i + 31).padStart(3, '0'), 'control', { orderWords: 140 + (i % 10), claimsWords: 72 + (i % 8) }));
+    return rows;
+  };
+  { const f = []; assembleKeyLib.distributionLint(balanced(), f); check('a balanced corpus passes every distribution gate', f.length === 0, JSON.stringify(f)); }
+
+  // (1) range floors / ceilings / sd.
+  {
+    const rows = balanced();
+    rows[0].orderWords = 100; // a seed far below every control
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(1) a disjoint ORDER floor is a hard failure', f.some((x) => /ORDER word-count FLOORS differ/.test(x)), JSON.stringify(f));
+  }
+  {
+    const rows = balanced();
+    rows[0].claimsWords = 130;
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(1) a disjoint CLAIMS ceiling is a hard failure', f.some((x) => /CLAIMS word-count CEILINGS differ/.test(x)), JSON.stringify(f));
+  }
+  {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('sdc-' + String(i + 1).padStart(3, '0'), 'seeded', { orderWords: 140 + (i % 20), claimsWords: 76 }));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('sdc-' + String(i + 31).padStart(3, '0'), 'control', { orderWords: 148 + (i % 2), claimsWords: 76 }));
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(1) one population authored into a tighter band fails the SD-ratio gate',
+      f.some((x) => /SD ratio/.test(x)), JSON.stringify(f));
+  }
+
+  // (2) backticks.
+  {
+    const rows = balanced();
+    rows[0].backticks = 3;
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(2) a backtick anywhere is a hard failure naming the file',
+      f.some((x) => /backtick/.test(x) && /sdc-001/.test(x)), JSON.stringify(f));
+    check('(2) the report lists the offending files', rep.backticks.files.join(',') === 'sdc-001');
+  }
+  check('(2) backticks are forbidden in CONTROLS too, not just seeds', (() => {
+    const rows = balanced();
+    rows[40].backticks = 1;
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    return f.some((x) => /backtick/.test(x) && /control/.test(x));
+  })());
+
+  // (3) digit density.
+  {
+    const rows = balanced();
+    for (const r of rows) if (r.kind === 'seeded') r.digitsPer100 = 4.0;
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(3) a digit-density gap above the tolerance is a hard failure',
+      f.some((x) => /digit density differs/.test(x)), JSON.stringify(f));
+  }
+  {
+    const rows = balanced();
+    for (const r of rows) if (r.kind === 'seeded') r.digitsPer100 = 2.0;
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(3) a gap inside the tolerance passes', !f.some((x) => /digit density/.test(x)), JSON.stringify(f));
+  }
+
+  // (4) n-gram exclusivity, as retuned in round 5: ≥2 content words, and a
+  // document frequency of ≥6 to FAIL. The 4-5 band is reported, not gated —
+  // the first calibration fired on 133 phrases that turned out to be commit
+  // TOPIC (the control pool carries docs/records commits the seeded pool does
+  // not), which no phrasing pass can remove.
+  {
+    const rows = balanced();
+    for (let i = 0; i < 6; i++) rows[i].trigrams = ['resolve the canonical path'];
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(4) a 3-gram in 6 seeds and 0 controls is a hard failure naming it',
+      f.some((x) => /3-gram "resolve the canonical path"/.test(x)), JSON.stringify(f));
+    check('(4) the report names the files', rep.ngrams.length === 1 && rep.ngrams[0].ids.length === 6, JSON.stringify(rep.ngrams));
+  }
+  for (const n of [4, 5]) {
+    const rows = balanced();
+    for (let i = 0; i < n; i++) rows[i].trigrams = ['resolve the canonical path'];
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(4) ' + n + ' documents is REPORTED, not failed', f.length === 0 && rep.ngramsReported.length === 1, JSON.stringify(f) + ' | ' + JSON.stringify(rep.ngramsReported));
+  }
+  {
+    const rows = balanced();
+    for (let i = 0; i < 3; i++) rows[i].trigrams = ['resolve the canonical path'];
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(4) three documents is below the reporting band entirely', f.length === 0 && rep.ngramsReported.length === 0);
+  }
+  {
+    const rows = balanced();
+    for (let i = 0; i < 8; i++) rows[i].trigrams = ['resolve the canonical path'];
+    rows[40].trigrams = ['resolve the canonical path'];
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(4) a 3-gram used by BOTH populations passes at any frequency', f.length === 0, JSON.stringify(f));
+  }
+  check('(4) all-stopword 3-grams are ignored', assembleKeyLib.trigramsOf('the of and to in for').size === 0);
+  check('(4) round 5: ONE content word is not enough', assembleKeyLib.trigramsOf('the of guard').size === 0);
+  check('(4) round 5: two content words qualify', assembleKeyLib.trigramsOf('the canonical path').size === 1);
+  check('(4) round 5: bare numbers are not content words',
+    assembleKeyLib.isContentWord('42') === false && assembleKeyLib.isContentWord('guard') === true);
+  check('(4) round 5: "verifier 99 99" has one content word and is dropped', assembleKeyLib.trigramsOf('verifier 99 99').size === 0);
+  check('(4) round 5: connective scaffolding is dropped', assembleKeyLib.trigramsOf('the order and the').size === 0);
+  check('(4) findings are capped and the total is stated', (() => {
+    const rows = balanced();
+    for (let g = 0; g < 45; g++) {
+      for (let i = 0; i < 6; i++) rows[i].trigrams = (rows[i].trigrams || []).concat(['phrase' + g + ' content word']);
+    }
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    const listed = f.filter((x) => /^distribution: the 3-gram/.test(x)).length;
+    return rep.ngrams.length === 45 && listed === assembleKeyLib.NGRAM_FINDINGS_SHOWN &&
+      f.some((x) => /45 distinct 3-gram\(s\) are exclusive/.test(x));
+  })());
+
+  // (5) idiom balance.
+  {
+    const rows = balanced();
+    for (let i = 0; i < 15; i++) rows[30 + i].idioms = { 'leave … alone': 1 };
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(5) an idiom in 15 controls and 0 seeds is a hard failure',
+      f.some((x) => /idiom "leave … alone"/.test(x) && /present in one population/.test(x)), JSON.stringify(f));
+  }
+  {
+    const rows = balanced();
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(5) an idiom absent from BOTH populations passes', !f.some((x) => /idiom/.test(x)), JSON.stringify(f));
+  }
+  {
+    const rows = balanced();
+    for (let i = 0; i < 6; i++) rows[i].idioms = { 'must never': 1 };
+    for (let i = 0; i < 11; i++) rows[30 + i].idioms = { 'must never': 1 };
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(5) a balanced idiom (0.20 vs 0.20 per artifact) passes', !f.some((x) => /idiom/.test(x)), JSON.stringify(f));
+  }
+  {
+    const rows = balanced();
+    for (let i = 0; i < 15; i++) rows[i].idioms = { 'byte-identical': 1 };
+    for (let i = 0; i < 2; i++) rows[30 + i].idioms = { 'byte-identical': 1 };
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(5) an idiom ratio outside 0.5–2.0 is a hard failure',
+      f.some((x) => /idiom "byte-identical"/.test(x) && /frequency ratio/.test(x)), JSON.stringify(f));
+  }
+
+  // The `only`-free hardness sensitivity check (round-3 NIT).
+  {
+    const rows = balanced();
+    for (const r of rows) { r.orderHardness = 2; r.orderHardnessStrict = r.kind === 'seeded' ? 2 : 0.5; }
+    const f = [];
+    assembleKeyLib.populationBalanceLint(rows, f);
+    check('the hardness ratio is ALSO gated with `only` removed',
+      f.some((x) => /WITHOUT the term `only`/.test(x)), JSON.stringify(f));
+  }
+}
+
+section('61. assemble-key.js — the distribution report renders, and CONSTRUCTION.md carries the disclosures');
+{
+  const rows = [];
+  for (let i = 0; i < 3; i++) rows.push({ id: 'sdc-00' + (i + 1), kind: 'seeded', variant: 'V1', baseKind: 'code', orderWords: 140 + i, claimsWords: 70 + i, orderHardness: 2, orderHardnessStrict: 1, labels: [], backticks: i === 0 ? 2 : 0, digitsPer100: 1, trigrams: [], idioms: { 'must never': 1 } });
+  for (let i = 0; i < 3; i++) rows.push({ id: 'sdc-01' + (i + 1), kind: 'control', variant: 'V1', baseKind: 'code', orderWords: 145 + i, claimsWords: 74 + i, orderHardness: 2, orderHardnessStrict: 1, labels: [], backticks: 0, digitsPer100: 1, trigrams: [], idioms: {} });
+  const md = assembleKeyLib.renderDistributionReport(rows);
+  check('the report has all five gate sections',
+    /\(1\) Word-count ranges and dispersion/.test(md) && /\(2\) Backticks/.test(md) && /\(3\) Digit density/.test(md) &&
+    /\(4\) N-gram exclusivity/.test(md) && /\(5\) Idiom balance/.test(md), md.slice(0, 600));
+  check('the backtick section names the offending file and marks FAIL', /\*\*FAIL\*\*.*sdc-001/.test(md), md);
+  check('the idiom table shows the one-population idiom as a FAIL',
+    /"must never".*\*\*FAIL\*\* \(one population only\)/.test(md), md.slice(md.indexOf('(5) Idiom'), md.indexOf('(5) Idiom') + 800));
+  check('the ranges table prints min/max/sd for both populations', /\| ORDER \| seeded \| 140 \| 142 \|/.test(md), md.slice(0, 1200));
+  check('the n-gram section states both the failing and the reported band',
+    /≥6 artifacts of one population/.test(md) && /Reported, not gated/.test(md), md.slice(md.indexOf('(4) N-gram'), md.indexOf('(4) N-gram') + 700));
+
+  // The topic-asymmetry disclosure.
+  {
+    const topicRows = [];
+    for (let i = 0; i < 6; i++) topicRows.push({ id: 'sdc-00' + (i + 1), kind: 'seeded', variant: 'V1', baseKind: 'code', orderWords: 145, claimsWords: 76, orderHardness: 2, orderHardnessStrict: 1, labels: [], backticks: 0, digitsPer100: 1, trigrams: [], idioms: {} });
+    for (let i = 0; i < 8; i++) topicRows.push({ id: 'sdc-01' + (i + 1), kind: 'control', variant: 'V1', baseKind: 'code', orderWords: 145, claimsWords: 76, orderHardness: 2, orderHardnessStrict: 1, labels: [], backticks: 0, digitsPer100: 1, trigrams: ['the band record'], idioms: {} });
+    const t = assembleKeyLib.renderTopicAsymmetry(topicRows);
+    check('the topic-asymmetry section exists', /### Topic asymmetry — a corpus-level property, disclosed/.test(t), t.slice(0, 300));
+    const tFlat = t.replace(/\s+/g, ' ');
+    check('…it states that controls carry docs/records commits the seeds do not',
+      /documentation and records commits/.test(tFlat) && /every one of the 30 seeded bases is a CODE commit/i.test(tFlat), tFlat.slice(0, 900));
+    check('…it says a whole-corpus classifier CAN separate them', /classifier with access to the WHOLE corpus can separate/.test(tFlat), t.slice(0, 1200));
+    check('…and that a per-packet reviewer learns nothing about ITS packet',
+      /learns nothing about whether THAT packet is seeded/.test(tFlat), t.slice(0, 1600));
+    check('…it points at the sanitized run clone as the reason the distribution is unreachable',
+      /sanitized run clone/.test(tFlat), t.slice(0, 1800));
+    check('…and it lists the exclusive n-grams as evidence, with counts',
+      /\| `the band record` \| control \| 8 \|/.test(t), t.slice(t.indexOf('| 3-gram'), t.indexOf('| 3-gram') + 500));
+    check('the evidence table is capped at ten rows', (() => {
+      const many = topicRows.map((r) => Object.assign({}, r));
+      for (let i = 6; i < 14; i++) {
+        many[i].trigrams = [];
+        for (let g = 0; g < 20; g++) many[i].trigrams.push('control phrase' + g + ' here');
+      }
+      const t2 = assembleKeyLib.renderTopicAsymmetry(many);
+      return (t2.match(/^\| `/gm) || []).length === 10;
+    })());
+  }
+}
+
+section('62. the suite itself writes NOTHING into the repository (round-5 incident guard)');
+{
+  if (WO12_STATUS_AT_START === null) {
+    check('working-tree guard: not a git checkout, so the guard cannot run (reported, not silently skipped)', false,
+      'git status --porcelain failed in ' + MASTER);
+  } else {
+    const now = wo12PorcelainStatus();
+    check('`git status --porcelain` under wo12/ is UNCHANGED by this suite', now === WO12_STATUS_AT_START, (() => {
+      const before = new Set(WO12_STATUS_AT_START.split('\n').filter(Boolean));
+      const after = (now || '').split('\n').filter(Boolean);
+      const added = after.filter((l) => !before.has(l));
+      const gone = Array.from(before).filter((l) => after.indexOf(l) === -1);
+      return 'NEW: ' + (added.join(' | ') || '(none)') + '\nGONE: ' + (gone.join(' | ') || '(none)');
+    })());
+    check('specifically: no p0-overrides.log was created in the repository',
+      !/p0-overrides\.log/.test(now || ''), now || '');
+    check('specifically: no key.json / CONSTRUCTION.md / brief was rewritten by this suite',
+      (now || '') === WO12_STATUS_AT_START, 'see the previous check for the delta');
+  }
+
+  // The ledger path is derived, not fixed — the property that makes the above
+  // true no matter how a check is interrupted.
+  const args = runLaneLib.parseArgs(['--lane', 'X-Terra', '--phase', '0', '--results-dir', 'C:\\tmp\\r']);
+  check('parseArgs accepts --override-log', runLaneLib.parseArgs(['--lane', 'X-Terra', '--phase', '0', '--override-log', 'x.log']).overrideLog === 'x.log');
+  check('--override-log defaults to null so the ledger follows --results-dir', args.overrideLog === null);
+  check('run-lane.js contains no fixed-repo-path ledger write', (() => {
+    const src = fs.readFileSync(RUN_LANE, 'utf8');
+    return !/path\.join\(HERE,\s*OVERRIDE_LOG_BASENAME\)/.test(src);
+  })(), 'path.join(HERE, OVERRIDE_LOG_BASENAME) must not reappear');
 }
 
 // ---------------------------------------------------------------- summary

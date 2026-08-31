@@ -103,6 +103,20 @@ not the packet prose. Registered follow-on before phase 1: `quartermaster.js --s
 must publish the OU `requiredReserve` figure (computed in `analyze()` but not emitted)
 for `run-lane.js`'s projected-draw check; phase 0 does not need it.
 
+*Pre-run amendment (round 3, 2026-08-31, after the round-2 delta review measured a
+residual tell — a fresh evaluator separated seeds from controls at 83% on ORDER
+hardness and length alone):* (vi) control ORDER/CLAIMS prose is authored to the seeds'
+register (135–160 / 65–95 words, ≥2 hard constraints the real commit body supports) and
+a **population-balance lint** fails assembly when the seeded/control mean order or
+claims length differ by more than 6 words or the hardness proxy (whole-word
+must/never/exactly/only/byte-identical/unchanged/forbid per ORDER) falls outside a
+0.8–1.25 ratio; a fresh-evaluator blind classification over 12+12 briefs is re-run
+after every content change and reported in CONSTRUCTION.md (target: precision at or
+near chance; anything above 65% reopens the pass). (vii) The 10 controls sharing a
+base commit with a seed (§2.1 pool-shortfall allowance) stay: the history pool has no
+further non-merge commits, and removing them would put the corpus under the 80-artifact
+gate; the collision list is disclosed in CONSTRUCTION.md.
+
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is
 used for **at most one seeded variant and at most one control**; no seeded variant's

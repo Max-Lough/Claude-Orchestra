@@ -622,8 +622,11 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   neighbour. **Round 5 opened** (protocol amendment x): both populations to the same
   bands, backticks forbidden, a distribution lint (range floors/ceilings, sd ratio,
   digit density, 3-gram exclusivity, watched idioms), and the adjacent-path closures;
-  content passes on all 84 files and the tooling closures in progress; the second
-  blind test runs on the round-5 corpus.
+  content passes on all 84 files complete (final means: ORDER 150.3 vs 147.5, CLAIMS
+  79.9 vs 78.0, ranges 136–159 vs 135–160 and 66–90 vs 66–93, backticks 0, watched
+  idioms balanced or absent); the tooling closures and distribution lint, the round-5
+  assembly/verification, the second blind test on a disjoint draw, and the round-5
+  delta review follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

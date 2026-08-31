@@ -18,7 +18,7 @@ back-derivation from call counts, no decay applied to an old number.
 |---|---|
 | `quartermaster.js` | The whole substrate: recording + hard validation, the fail-closed bucket-state builder (the router's `normalizeBuckets` input), the Amber-arm confirmation protocol, two-point throttle prediction, the human report, the snapshot publisher, and the CLI |
 | `README.md` | This file — the rulings, the CLI reference, the plan citations |
-| `../tests/quartermaster.test.js` | 152 checks, including the router-interop proof (a P0-produced state fed to the real `router/router.js`) |
+| `../tests/quartermaster.test.js` | 187 checks, including the router-interop proof (a P0-produced state fed to the real `router/router.js`) and the round-2 adversarial suite (confirmation-validity exploit reproduction, `confirm()` blind-grant refusals, module-boundary validation, `predictThrottle` staleness/horizon guards) |
 
 Data files, both **gitignored** (operator data about a personal allowance; it
 never enters version control):
@@ -46,6 +46,18 @@ AU and nothing else changes).
 Every gap the plan leaves is settled here, numbered, with its status marked:
 **plan-cited** (the plan says it, here is where) or **unstatedInPlan** (the plan
 is silent; the Director ruled, and this is the ruling).
+
+**Module-boundary validation (added round 2).** Every public API entry that
+accepts caller-supplied numeric options (`forecast.mandatoryReviewDraw`,
+`forecast.incidentDraw`, `maxFreshMs`, `maxStaleMs`) validates them as `typeof
+number` and finite, and throws a typed error otherwise — never coerces. The
+round-1 review demonstrated `forecast: {mandatoryReviewDraw: '0.3', incidentDraw:
+'0.1'}` (both strings) reaching `requiredReserve()`, where `(m + i) * (1 +
+buffer)` string-concatenated before the `*` coerced the result to `NaN`;
+`remainingFraction < NaN` is always `false`, so `belowReserve` silently read
+`false` for every bucket and the P15 reserve gate was deleted without a single
+thrown error. A caller-supplied numeric string, `NaN`, or non-finite value now
+throws immediately, fail-closed, before it can reach a comparison.
 
 ### R1 — The contract is the router's `normalizeBuckets` input · *plan-cited (de facto)*
 
@@ -130,6 +142,19 @@ incidentDraw        = 0
 `incidentDraw` is **not derivable** from anything measured today, so it is left
 at zero — a *disclosed under-estimate* rather than a fabricated number.
 
+**Nit, honest margin (round 2):** the operator's own second manual-readings
+row (`.claude/orchestra-manual-readings.md`, "Whole WO-2 exercise (25
+reviews): ~92%→86% remaining ≈ 6 pts / 25") implies a DIFFERENT weekly-volume
+estimate — treating that 25-review batch the same way the adopted default
+treats the 20-review batch gives `mandatoryReviewDraw ≈ 0.06`, double the
+0.03 actually adopted. Stated honestly rather than silently favoring the
+smaller figure: even at 0.06, the dynamic term is `0.06 × 1.3 = 0.078`, which
+*still* sits under the 8% floor — so the floor-governs-the-default conclusion
+below is unchanged either way, but the margin is thin (0.078 vs the 0.08
+floor, a 0.002 gap) rather than wide. If the operator judges 25-review weeks
+more representative than 20-review weeks, `--forecast-mandatory 0.06`
+overrides the default explicitly.
+
 **Consequence.** `requiredReserve(default) = 0.03 × 1.3 = 0.039`, which sits
 **below** the plan's own 8% floor (`max(floorFractionOfBucket,
 twoGateClassReviewsCostFraction) = max(0.08, 0.003) = 0.08`), so
@@ -159,7 +184,7 @@ This alternative is **no longer the default** but remains available to any
 caller who explicitly wants a peak-sustained forecast, by passing
 `{mandatoryReviewDraw: 0.504, incidentDraw: 0}` (or the CLI flags) directly.
 
-### R5 — The Amber-arm confirmation protocol · *unstatedInPlan*
+### R5 — The Amber-arm confirmation protocol · *unstatedInPlan, CORRECTED by Director ruling (WO-11 P0 round-2 review)*
 
 §5.5 arms a gate — *"below 40% AU-opus, no Opus dispatch without Quartermaster
 confirmation"* — and never defines confirming. Undefined, it degenerates into a
@@ -171,12 +196,42 @@ rubber stamp, which is the exact failure P15 exists to prevent. The ruling:
 > (0.20) — i.e. the bucket is genuinely in the Amber band the gate was written
 > for, not sliding through Orange or Red behind a stale number.
 
+`confirm()` also REFUSES — appending nothing — on three more facts the round-1
+review demonstrated it used to grant through: a throttle (soft **or** hard)
+fresh for the bucket; the bucket reading zero (exhausted); the bucket's latest
+raw line being malformed (the true current reading is unknown, so a prior one
+cannot stand in for it).
+
 A grant appends a `confirmation` entry (the audit trail that makes a wrong
 confirmation attributable afterwards) and returns `{confirmed: true, evidence}`.
 A refusal returns `{confirmed: false, reason}` and **appends nothing** — a
 refused confirmation must leave no artifact a later reader could mistake for a
-grant. `quartermasterConfirmation: true` appears on the published state only
-while a recorded confirmation is itself inside the freshness window.
+grant.
+
+**CRITICAL, corrected round 2 — the confirmation outlives its evidence.** A
+grant is a **fact about the reading it was made against**, not a standing
+permission for the rest of `maxFreshMs`. `analyze()` re-validates a recorded
+confirmation against **live** state at every call, and `quartermasterConfirmation:
+true` appears on the published state only when ALL of the following hold RIGHT
+NOW, not merely at grant time:
+
+1. the confirmation itself was recorded within `maxFreshMs`;
+2. its `evidenceTs` equals the bucket's **current** latest valid reading's
+   `ts` — a newer reading landing since the grant **voids** it (superseded
+   evidence);
+3. that current reading's own fraction still satisfies the R5 predicate
+   (strictly above `orangeBelow`) — checked against the LIVE reading, never
+   against the confirmation's own recorded fraction;
+4. no throttle is fresh and the bucket is not exhausted, right now;
+5. the bucket carries no malformed-latest poison (structural: a poisoned
+   bucket already fails the whole bucket closed before confirmation logic
+   runs at all).
+
+Any violation voids the confirmation — the state publishes without it, and
+both `bucketStateDetail()`'s analysis and the human report state exactly why
+(`info.confirmation.voidReason`). The exploit this closes: a confirmation
+granted on a 0.35 reading no longer arms the gate once a later 0.10 reading
+lands — re-confirmation is required on the CURRENT evidence, every time.
 
 ### R6 — Throttle prediction: two-point linear, v1 · *unstatedInPlan*
 
@@ -202,6 +257,15 @@ record is an observation — and the report shows the observation list with an
 explicit note that scoring needs a prediction history v1 does not keep. It
 scores nothing it cannot yet compute. *Follow-on:* persist predictions so the
 comparison becomes a number.
+
+**Two more typed refusals, round 2:** a latest reading older than `maxStaleMs`
+refuses with `"readings too stale to be evidence"` rather than fitting a trend
+line to stale points (that is not lower-confidence evidence, it is
+non-evidence); and an extremely small decline rate (e.g. `1e-12`) that would
+put a crossing time outside a JS `Date`'s representable range (past
+±8.64e15ms/epoch) is typed `beyondHorizon: true` rather than throwing a
+`RangeError` — `report()` calls `predictThrottle()` internally and must never
+throw.
 
 ### R7 — The Exhausted evidence rule · *unstatedInPlan*
 
@@ -250,6 +314,29 @@ Adding a seventh schema would also mean touching `registry/`, which WO-11 does
 not own. *Possible follow-on:* promote the entry shapes to a registry schema if
 another seat ever needs to produce or validate them.
 
+### R11 — Ledger maintenance · *DECLARED NOT IMPLEMENTED in v1, added round 2*
+
+The P0 duties this substrate was built against imply a maintenance obligation
+for the readings/telemetry files it depends on and produces — rotation and
+integrity of `.claude/orchestra-pool-readings.jsonl` (and the snapshot it
+publishes) as the append-only log grows across the life of a project. v1 has
+no rotation, compaction, or integrity-check tooling; every function reads the
+whole file on every call. **Registered follow-on**, not built here: a
+maintenance pass (rotate past some size/age, verify hash continuity, archive
+rather than delete) — scope not yet designed.
+
+### R12 — Cost reporting · *DECLARED NOT IMPLEMENTED in v1, added round 2*
+
+The plan's per-class draw model (final-plan.md:1476-1519) implies a
+per-window cost summary — how much of each bucket a given work order or
+review round actually drew — that this substrate does not compute. It is
+blocked on the same gap R2 already names: **ledger attribution is impossible
+today** (`.claude/hooks/orchestra-telemetry.js` records no role, effort,
+vendor, or bucket per row). **Registered follow-on**, not built here: once
+R2's follow-on (extending the telemetry hook, WO-1's lane) supplies
+attribution, a per-window draw-summary report becomes possible; it is not
+invented here as a number this substrate cannot yet evidence.
+
 ## CLI
 
 ```
@@ -296,7 +383,7 @@ suite run entirely on temp fixtures and never touch the real `.claude/` files.
 
 ## Proof
 
-`node tests/quartermaster.test.js` — **152 checks**, all on `mkdtemp` fixtures.
+`node tests/quartermaster.test.js` — **187 checks**, all on `mkdtemp` fixtures.
 The load-bearing ones are the **interop** section, which feeds a P0-produced
 state into the real `router/router.js`:
 
@@ -309,6 +396,7 @@ state into the real `router/router.js`:
 | `AU-opus` hard-throttled at 92% remaining | `effectiveState('Opus 5')` → `Exhausted`; the Investigator recasts to the openai mirror, disclosed |
 | `AU-opus` read at zero | both exhausted **and** below reserve; the stricter P15 reserve stop wins — `GATED`, not a silent recast |
 | `OU` hard-throttled | mandatory T2 review of Anthropic work → `DOES_NOT_CLOSE` with wait / named-human / park |
+| `AU-opus` confirmed on a 0.35 reading, THEN a later 0.10 reading lands (round-2 CRITICAL exploit repro) | the confirmation VOIDS (superseded evidence); `dispatch(I0, purpose:'review')` → `GATED`, gate `AU-O armed (Amber, §5.5)` |
 
 Plus: threshold boundary exactness against router semantics (0.40 Green, 0.399
 Amber, 0.20 Amber, 0.199 Orange, 0.08 Orange, 0.0799 Red, 0 Exhausted); every
@@ -317,7 +405,11 @@ future-dated and malformed-latest evidence; the confirmation protocol granted,
 refused and audited; prediction vectors (declining, single-reading,
 non-monotonic, same-instant, already-crossed); throttle Red-precedence and the
 R7 hard-throttle rule; snapshot publish and its fail-closed refusal to write;
-and eleven hand-corrupted JSONL tamper cases.
+eleven hand-corrupted JSONL tamper cases; and, round 2: the confirmation-voids-
+on-superseded/failed-predicate/fresh-throttle matrix (§13), `confirm()`'s three
+blind-grant refusals (§14), the module-boundary validation set including the
+exact `'0.3'+'0.1'` string-concat NaN exploit vector (§15), and `predictThrottle`'s
+staleness refusal plus its 1e-12-decline RangeError guard (§16).
 
 ## Plan and work-order citations
 

@@ -292,7 +292,7 @@ section('4. The contract shape (ruling R1)');
     qm.bucketState({ file: f, now: NOW })['AU-all'].belowReserve === false);
   check('…nor is a 60% bucket — the corrected default reserve is the 8% floor, not ~65.5%',
     (() => { const g = newFile(); seedAll(g, 0.6, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === false; })());
-  check('…but a bucket AT the floor (8%) IS below reserve under the default forecast',
+  check('…but a bucket JUST BELOW the floor (0.0799 < 8%) IS below reserve under the default forecast',
     (() => { const g = newFile(); seedAll(g, 0.0799, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === true; })());
 }
 
@@ -665,6 +665,202 @@ section('12. CLI');
         && after.mtimeMs === REAL_READINGS_BEFORE.mtimeMs
         && after.hash === REAL_READINGS_BEFORE.hash;
     })());
+}
+
+// =========================================================================
+section('13. CRITICAL (round 2) — confirmation validity re-anchored to LIVE evidence');
+
+{
+  // (a) THE EXPLOIT REPRODUCTION, verbatim from the round-1 review: a
+  // confirmation granted on a 0.35 reading must NOT still arm the gate once
+  // a LATER 0.10 reading has landed — the confirmation's evidence has been
+  // superseded, and the current reading (Orange) does not even satisfy the
+  // R5 predicate any more.
+  const f = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.35 : 0.92, 'vendor UI', undefined, { file: f, now: ago(3) });
+  const grant = qm.confirm('AU-opus', { file: f, now: ago(3) });
+  check('exploit setup: the 0.35 reading grants confirmation', grant.confirmed === true);
+  qm.recordReading('AU-opus', 0.10, 'vendor UI', undefined, { file: f, now: ago(2) });
+  const st = qm.bucketState({ file: f, now: NOW, forecast: FC0 });
+  check('the confirmation is VOID once its evidence is superseded — quartermasterConfirmation is absent',
+    !Object.prototype.hasOwnProperty.call(st['AU-opus'], 'quartermasterConfirmation'));
+  const detail = qm.bucketStateDetail({ file: f, now: NOW, forecast: FC0 });
+  check('…and the analysis states WHY: the evidence was superseded',
+    /SUPERSEDED/.test(detail.analysis.buckets['AU-opus'].confirmation.voidReason));
+  const dGated = router.dispatch(order('I0'), st, { purpose: 'review' });
+  check('EXPLOIT REPRODUCTION: dispatch GATES — a confirmation granted on 0.35 evidence cannot arm the gate once a later 0.10 reading lands',
+    dGated.ok === false && dGated.outcome === 'GATED' && dGated.gate.gate === 'AU-O armed (Amber, §5.5)',
+    JSON.stringify(dGated).slice(0, 300));
+
+  // (b) A newer reading that ALSO satisfies the predicate still voids —
+  // re-confirmation is required on ITS OWN evidence, never inherited.
+  const f2 = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.35 : 0.92, 'vendor UI', undefined, { file: f2, now: ago(3) });
+  qm.confirm('AU-opus', { file: f2, now: ago(3) });
+  qm.recordReading('AU-opus', 0.36, 'vendor UI', undefined, { file: f2, now: ago(2) });
+  check('(b) a newer reading that STILL satisfies R5 does not inherit the old confirmation — evidenceTs must match exactly',
+    !Object.prototype.hasOwnProperty.call(qm.bucketState({ file: f2, now: NOW, forecast: FC0 })['AU-opus'], 'quartermasterConfirmation'));
+
+  // (c) A confirmation whose evidenceTs matches the current latest reading's
+  // ts EXACTLY, but that reading's own fraction fails the R5 predicate — a
+  // hand-tampered / hypothetically-mis-granted record. Voided on the LIVE
+  // reading's own fraction, never trusting the confirmation's recorded one.
+  const g = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.15 : 0.92, 'vendor UI', undefined, { file: g, now: ago(3) });
+  const readingTs = ago(3).toISOString();
+  fs.appendFileSync(g, JSON.stringify({ ts: ago(1).toISOString(), kind: 'confirmation', bucket: 'AU-opus', evidenceTs: readingTs, remainingFraction: 0.15 }) + '\n', 'utf8');
+  const st2 = qm.bucketState({ file: g, now: NOW, forecast: FC0 });
+  check('(c) evidenceTs matches but the LIVE reading fails the R5 predicate — voided',
+    !Object.prototype.hasOwnProperty.call(st2['AU-opus'], 'quartermasterConfirmation'));
+  const d2 = qm.bucketStateDetail({ file: g, now: NOW, forecast: FC0 });
+  check('…and the void reason names the failed predicate, not a superseded-evidence mismatch',
+    /no longer satisfies the R5 Amber predicate/.test(d2.analysis.buckets['AU-opus'].confirmation.voidReason));
+
+  // (d) A fresh throttle recorded AFTER a valid confirmation voids it even
+  // though the reading (and therefore evidenceTs) never changed.
+  const h = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.35 : 0.92, 'vendor UI', undefined, { file: h, now: ago(3) });
+  const grant2 = qm.confirm('AU-opus', { file: h, now: ago(3) });
+  check('(d) setup: confirmation granted on healthy evidence', grant2.confirmed === true);
+  qm.recordThrottle('AU-opus', 'soft', 'rate-limited after confirmation', { file: h, now: ago(1) });
+  const st3 = qm.bucketState({ file: h, now: NOW, forecast: FC0 });
+  check('(d) a fresh throttle recorded after confirmation voids it, even though evidenceTs still matches',
+    !Object.prototype.hasOwnProperty.call(st3['AU-opus'], 'quartermasterConfirmation'));
+  const d3 = qm.bucketStateDetail({ file: h, now: NOW, forecast: FC0 });
+  check('…and the void reason names the throttle',
+    /a confirmation cannot arm the gate over an active throttle/.test(d3.analysis.buckets['AU-opus'].confirmation.voidReason));
+  // preDispatchGate, evaluated directly against the requested Opus rung
+  // (the mechanism §5.5/P15 actually arms) rather than through cast()'s
+  // degradation machine — Red only permits "closing" for Opus, so a
+  // 'review'-purpose dispatch would recast away before ever reaching the
+  // gate; asserting on preDispatchGate isolates the confirmation's own
+  // effect from that unrelated recast choice.
+  const gateThrottled = router.preDispatchGate({ model: 'Opus 5' }, st3);
+  check('…and preDispatchGate refuses the requested Opus rung — the throttle forces Red and the voided confirmation cannot lift the arm',
+    gateThrottled.allowed === false && gateThrottled.gate === 'AU-O armed (Amber, §5.5)');
+
+  // (e) Structural: a malformed-latest poison landing AFTER a valid
+  // confirmation still fails the bucket fully closed — a confirmation can
+  // never rescue (or hide behind) a poisoned bucket. bucketState() throws
+  // before the confirmation logic is even reached (step (1) of analyze()).
+  const k = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.35 : 0.92, 'vendor UI', undefined, { file: k, now: ago(3) });
+  qm.confirm('AU-opus', { file: k, now: ago(3) });
+  fs.appendFileSync(k, '{"ts":"' + ago(1).toISOString() + '","kind":"reading","bucket":"AU-opus","remainingFraction":\n', 'utf8');
+  const e = threw(() => qm.bucketState({ file: k, now: NOW, forecast: FC0 }));
+  check('(e) a malformed-latest poison after a valid confirmation still fails the bucket closed',
+    e !== null && e.failClosed === true && /AU-opus/.test(e.message));
+}
+
+// =========================================================================
+section('14. MAJOR (round 2) — confirm() no longer blind-grants');
+
+{
+  // (a) A fresh throttle refuses, and appends nothing.
+  const f = newFile();
+  qm.recordReading('AU-opus', 0.35, 'vendor UI', undefined, { file: f, now: ago(2) });
+  qm.recordThrottle('AU-opus', 'soft', 'mid-window throttle', { file: f, now: ago(1) });
+  const before1 = lines(f).length;
+  const r1 = qm.confirm('AU-opus', { file: f, now: NOW });
+  check('confirm() REFUSES when a throttle is fresh for the bucket', r1.confirmed === false && /throttle is fresh/.test(r1.reason));
+  check('…and appends nothing', lines(f).length === before1);
+
+  // …a HARD throttle refuses too, not only soft.
+  const f2 = newFile();
+  qm.recordReading('AU-opus', 0.35, 'vendor UI', undefined, { file: f2, now: ago(2) });
+  qm.recordThrottle('AU-opus', 'hard', 'weekly cap', { file: f2, now: ago(1) });
+  const r1b = qm.confirm('AU-opus', { file: f2, now: NOW });
+  check('…and so does a HARD throttle', r1b.confirmed === false && /hard throttle is fresh/.test(r1b.reason));
+
+  // (b) An exhausted (zero) bucket refuses, and appends nothing.
+  const g = newFile();
+  qm.recordReading('AU-opus', 0, 'vendor UI', undefined, { file: g, now: ago(1) });
+  const before2 = lines(g).length;
+  const r2 = qm.confirm('AU-opus', { file: g, now: NOW });
+  check('confirm() REFUSES on an exhausted (zero) reading', r2.confirmed === false && /exhausted/.test(r2.reason));
+  check('…and appends nothing', lines(g).length === before2);
+
+  // (c) A malformed latest raw line refuses, and appends nothing.
+  const h = newFile();
+  qm.recordReading('AU-opus', 0.35, 'vendor UI', undefined, { file: h, now: ago(2) });
+  fs.appendFileSync(h, '{"ts":"' + ago(1).toISOString() + '","kind":"reading","bucket":"AU-opus","remainingFraction":\n', 'utf8');
+  const before3 = lines(h).length;
+  const r3 = qm.confirm('AU-opus', { file: h, now: NOW });
+  check('confirm() REFUSES when the bucket\'s latest raw line is malformed', r3.confirmed === false && /malformed record/.test(r3.reason));
+  check('…and appends nothing', lines(h).length === before3);
+}
+
+// =========================================================================
+section('15. MAJOR (round 2) — module-boundary validation');
+
+{
+  const f = newFile();
+  seedAll(f, 0.5, ago(1));
+  const rej = (what, fn, re) => {
+    const e = threw(fn);
+    check(what, e !== null && re.test(e.message), e ? e.message : '(did not throw)');
+  };
+  rej('a string mandatoryReviewDraw is refused, not coerced',
+    () => qm.bucketState({ file: f, now: NOW, forecast: { mandatoryReviewDraw: '0.3', incidentDraw: 0 } }),
+    /forecast\.mandatoryReviewDraw.*must be a finite number/);
+  rej('a string incidentDraw is refused, not coerced',
+    () => qm.bucketState({ file: f, now: NOW, forecast: { mandatoryReviewDraw: 0, incidentDraw: '0.1' } }),
+    /forecast\.incidentDraw.*must be a finite number/);
+  rej('THE EXPLOIT VECTOR — both as strings (used to string-concat \'0.3\'+\'0.1\' into NaN, ' +
+      'making belowReserve always false and silently deleting the P15 gate) — now throws',
+    () => qm.bucketState({ file: f, now: NOW, forecast: { mandatoryReviewDraw: '0.3', incidentDraw: '0.1' } }),
+    /must be a finite number/);
+  rej('a non-object forecast is refused', () => qm.bucketState({ file: f, now: NOW, forecast: 'default' }), /forecast.*must be an object/);
+  rej('a negative mandatoryReviewDraw is refused', () => qm.bucketState({ file: f, now: NOW, forecast: { mandatoryReviewDraw: -1, incidentDraw: 0 } }), /must be ≥ 0/);
+  rej('maxFreshMs as NaN is refused', () => qm.bucketState({ file: f, now: NOW, forecast: FC0, maxFreshMs: NaN }), /maxFreshMs.*must be a finite number/);
+  rej('maxStaleMs as a string is refused rather than silently disabling the staleness check',
+    () => qm.bucketState({ file: f, now: NOW, forecast: FC0, maxStaleMs: 'abc' }),
+    /maxStaleMs.*must be a finite number/);
+  rej('confirm() validates maxFreshMs at its own module boundary too',
+    () => qm.confirm('AU-opus', { file: f, now: NOW, maxFreshMs: 'soon' }),
+    /maxFreshMs.*must be a finite number/);
+
+  // The exact scenario the review named: without validation, `ageMs >
+  // maxStaleMs` compares a number against NaN (always false), so a
+  // 400-day-old reading would publish as if it were fresh evidence.
+  const g = newFile();
+  qm.recordReading('AU-opus', 0.5, 'vendor UI', undefined, { file: g, now: new Date(NOW.getTime() - 400 * 24 * H) });
+  const e2 = threw(() => qm.bucketState({ file: g, now: NOW, forecast: FC0, maxStaleMs: 'abc' }));
+  check('a bogus maxStaleMs throws BEFORE a 400-day-old reading could publish as fresh evidence',
+    e2 !== null && /maxStaleMs/.test(e2.message));
+}
+
+// =========================================================================
+section('16. MINOR (round 2) — predictThrottle staleness refusal and RangeError guard');
+
+{
+  const f = newFile();
+  qm.recordReading('AU-all', 0.90, 'vendor UI', undefined, { file: f, now: new Date(NOW.getTime() - 40 * 24 * H) });
+  qm.recordReading('AU-all', 0.50, 'vendor UI', undefined, { file: f, now: new Date(NOW.getTime() - 30 * 24 * H) });
+  const p = qm.predictThrottle('AU-all', { file: f, now: NOW });
+  check('predictThrottle refuses when the latest reading is older than maxStaleMs (30d old > 7d default)',
+    p.ok === false && /too stale to be evidence/.test(p.reason));
+
+  // 1e-12 decline vector: an extremely slow decline puts every crossing time
+  // far outside a JS Date's representable range (±8.64e15ms/epoch). Must not
+  // throw a RangeError.
+  const g = newFile();
+  qm.recordReading('AU-all', 0.9 + 1e-12, 'vendor UI', undefined, { file: g, now: ago(10) });
+  qm.recordReading('AU-all', 0.9, 'vendor UI', undefined, { file: g, now: ago(2) });
+  let threwHere = null;
+  let p2;
+  try { p2 = qm.predictThrottle('AU-all', { file: g, now: NOW }); } catch (e) { threwHere = e; }
+  check('an extreme 1e-12 decline does not throw a RangeError out of predictThrottle', threwHere === null, threwHere && threwHere.message);
+  check('…and every far-out estimate is typed "beyond representable horizon", not a fictional ETA',
+    p2 && p2.ok === true && p2.estimates.length === 4 && p2.estimates.every((e) => e.beyondHorizon === true && e.etaIso === null),
+    p2 && JSON.stringify(p2.estimates));
+
+  // report() calls predictThrottle internally and must never throw either.
+  let reportThrew = null;
+  let txt;
+  try { txt = qm.report({ file: g, now: NOW }); } catch (e) { reportThrew = e; }
+  check('report() never throws on the 1e-12 decline vector', reportThrew === null, reportThrew && reportThrew.message);
+  check('…and prints the beyond-horizon note rather than a bogus far-future date', txt && /beyond representable horizon/.test(txt));
 }
 
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

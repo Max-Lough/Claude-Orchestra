@@ -33,8 +33,10 @@ the owner at session launch (medium / high / xhigh by task), which also resolves
 self-assessed-ambiguity circularity the audit flagged (open item (a), superseded)
 (`final-plan.md:184-187`). `router/castings.json`'s `Conductor.rungs.primary` entry
 carries this as the special ladder value `"effort": "owner-set"` (one of exactly two
-special, non-numeric effort values on the ladder, alongside the Architect mirror's
-`matched` — `router/castings.json`'s `effortLadders.specials`), which is what this
+special, non-numeric effort values on the ladder, alongside this seat's OWN mirror's
+`matched` — `Conductor.rungs.mirror.effort` at `router/castings.json:119`, not the
+Architect's; `router/castings.json`'s own comment on `effortLadders.specials` says so
+directly: "specials are dispatch-time values the Conductor seat carries"), which is what this
 file's own `effort: owner-set` frontmatter resolves against — not a numeric point on the
 anthropic effort ladder (`off`/`low`/`med`/`high`/`xhigh`/`max`), by design: the owner
 sets it per session, not per file.

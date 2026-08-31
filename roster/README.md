@@ -67,9 +67,9 @@ runners, per the field-tested cross-vendor lane.
 | Construction | `interface-artisan.md` | E5 primary — Sol · med–high via Codex CLI, browser/screenshot loop | DEGRADED-ACCEPTED — all 3 files delivered and independently verified; pre-registered render-loop gap unexercised (see band record) |
 | Construction | `spatial-specialist.md` | E6 primary — Opus 5 · high | PASS — 15-check validator, negative control proves non-vacuity, byte-identical regeneration (see band record) |
 | Construction | `doc-writer.md` | D0 primary — Sonnet 5 · medium | PASS — 28 citations, mechanical checker fails closed (see band record) |
-| Orchestration | `conductor.md` | O0 primary — Fable 5 · owner-set effort, the interactive session model itself (no bootstrap layer; not a dispatchable subagent charter — see band record) | pending (WO-11 stage 2) |
-| Orchestration | `architect.md` | A0 primary — Sol · xhigh via Codex CLI (owner ruling 2026-08-28; WO-13 transport migration unclosed — see band record) | pending (WO-11 stage 2) |
-| Orchestration | `synthesizer.md` | A1 primary — Fable 5 · xhigh, in-harness, max-reserved once-per-project seat | pending (WO-11 stage 2) |
+| Orchestration | `conductor.md` | O0 primary — Fable 5 · owner-set effort, the interactive session model itself (no bootstrap layer; not a dispatchable subagent charter — see band record) | EXERCISED — fresh-context Opus 5 audit: 1 VIOLATION (direct Glob/Bash use; corrective adopted), 2 COMPLIANT, 2 INDETERMINATE; dispositions re-ruled in full on round-2 review (see band record) |
+| Orchestration | `architect.md` | A0 primary — Sol · xhigh via Codex CLI (owner ruling 2026-08-28; WO-13 transport migration unclosed — see band record) | BLOCKED-PENDING-ENVIRONMENT — 2 engine-reaching attempts, both hit the standing `unsupported protocol version 6` fault before reaching the reference source, no competency signal (see band record) |
+| Orchestration | `synthesizer.md` | A1 primary — Fable 5 · xhigh, in-harness, max-reserved once-per-project seat | DEFERRED-DECLARED — max-reserved once-per-project seat; exercised at its first real comparative session (see band record) |
 
 Exercise records and the review dispositions they produced (assurance band):
 `wo8-review-dispositions.md`. **The tranche's mandatory cross-vendor review

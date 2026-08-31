@@ -6,8 +6,15 @@ round. All nine Part 2.0 fields transcribed faithfully from
 `plans/cross-compare/agent-role-architecture/final-plan.md` Part 2 Band A
 (lines 177-311), cross-checked against `router/castings.json` and
 `router/charters.json`. `node roster/lint.js` and `node install.js --lint`
-(both `roster/` and repo-wide) pass; the five required test suites pass in
-full (counts below).
+(both `roster/` and repo-wide) pass; the **six required test suites** pass in
+full — named explicitly here rather than left as a dangling "(counts below)"
+with no table to land in: `tests/router.test.js` (135), `tests/registry.test.js`
+(31), `tests/review-lane.test.js` (116), `tests/verifier.test.js` (101),
+`tests/frontmatter-lint.test.js` (37), and `tests/quartermaster.test.js` (187
+as of the round-2 review fixes; 154 at this band's own build — see the
+Exercises row below). Reconciled against
+`plans/cross-compare/agent-role-architecture/STATUS.md`'s WO-11 entry, which
+this round corrects from "seven" to the same six (round-2 MINOR fix).
 
 **P0 Quartermaster substrate: separate order.** Seat 24 (Quartermaster, class
 P0) is a deterministic code substrate (`verifier/`-shaped, not an agent file)
@@ -145,7 +152,7 @@ gap found this round, with the verbatim grep evidence behind each.
    `2.0.0` entry confirms `/deep-plan`, `orchestra-deepplan.js`, and the
    `orchestra_deepplan` MCP tool are already deleted outright — "No lane
    bills a metered API any more... the codex pack now requires the Codex CLI
-   alone." But `plans/cross-compare/agent-role-architecture/STATUS.md:481-482`
+   alone." But `plans/cross-compare/agent-role-architecture/STATUS.md:521-523`
    still lists **WO-13 itself** unstruck among the parallelizable,
    not-yet-run orders: "WO-13 (metered planning transport; 'after WO-4, any
    time' — but scope needs a check against the `/deep-plan` retirement)."
@@ -170,33 +177,56 @@ terms below rather than forced into one uniform table.
 
 | Seat | Order | Casting used | Outcome |
 |---|---|---|---|
-| Conductor (O0) | Fresh-context retrospective discipline audit of the Conductor's own conduct across the 2026-08-30/31 session (WO-9/WO-10/WO-11 execution on this branch), dispatched to an agent carrying no prior session context, checked against `roster/conductor.md` as shipped and the plan text it transcribes | Claude Opus 5 (fresh-context dispatched auditor, no prior context) | **EXERCISED.** VERDICT: **1 VIOLATION** — the session used Glob/Bash directly (independent mechanical verification of dispatched-seat claims, and one file-count check), on at least four exercises across two work orders, narrated in the session's own first person; corrective adopted (see Conductor audit dispositions below). **2 COMPLIANT** — author≠approve (every closing verdict in both review chains is attributed to an R0 review, never to the Conductor, and the Conductor's own content inside reviewed diffs was corrected/overturned under review like anyone else's); restricted decisions (no T3 without a named human; every REVISE was obeyed, no Anthropic verdict overridden). **2 INDETERMINATE** — plan-authoring above the size threshold (the threshold is defined nowhere in the repository, so the routing rule is unenforceable and unauditable as written); disclosure duties (no rung was ever computed this session, since P0 did not exist until this same round, so §5.5's rung-change announcement duty never triggered — no unmet duty is shown, but the audit cannot rule out an undisclosed degradation state either). See `roster/wo11-conductor-ex1-audit.md` for the full five-question audit, its verbatim charter citations, and five named findings/gaps (F-1, G-1..G-5). |
+| Conductor (O0) | Fresh-context retrospective discipline audit of the Conductor's own conduct across the 2026-08-30/31 session (WO-9/WO-10/WO-11 execution on this branch), dispatched to an agent carrying no prior session context, checked against `roster/conductor.md` as shipped and the plan text it transcribes | Claude Opus 5 (fresh-context dispatched auditor, no prior context) | **EXERCISED.** VERDICT: **1 VIOLATION** — the session used Glob/Bash directly (independent mechanical verification of dispatched-seat claims, and one file-count check), on at least four exercises across two work orders, narrated in the session's own first person; corrective adopted (see Conductor audit dispositions below). **2 COMPLIANT** — author≠approve (every closing verdict in both review chains is attributed to an R0 review, never to the Conductor, and the Conductor's own content inside reviewed diffs was corrected/overturned under review like anyone else's); restricted decisions (no T3 without a named human; every REVISE was obeyed, no Anthropic verdict overridden). **2 INDETERMINATE** — plan-authoring above the size threshold (the threshold is defined nowhere in the repository, so the routing rule is unenforceable and unauditable as written); disclosure duties (no rung was ever computed this session, since P0 did not exist until this same round, so §5.5's rung-change announcement duty never triggered — no unmet duty is shown, but the audit cannot rule out an undisclosed degradation state either). See `roster/wo11-conductor-ex1-audit.md` for the full five-question audit, its verbatim charter citations, and six named findings/gaps (F-1, G-1..G-5). |
 | Architect (A0) | Class A0 planning order, T0, plan-only: design the extension of the `orchestra-telemetry.js` hook so its ledger records what P0 allowance accounting needs (role/seat, vendor, model, effort, bucket(s), tokens, remaining-allowance signal), stating precisely what the hook's own stdin parsing can evidence vs. what needs an external contract, forbidding fabricated stdin fields and forbidding a padded two-file-fix plan — deliver `plan-telemetry-extension.md`. Full order text in the appendix below | GPT-5.6 Sol · xhigh, via `orchestra-exec` (Codex CLI launcher) | **BLOCKED-PENDING-ENVIRONMENT.** 2 attempts (initial + one bounded retry, both engine-reaching — preflight auth/exec probe ok both times), both hit the standing `unsupported protocol version 6` sandbox fault at the identical point: `Get-Content -Raw reference\orchestra-telemetry.js` failed repeatedly before any read succeeded, before the model reached the reference source it needed to plan against. Neither attempt fabricated a single claim about the hook's fields or wrote a guessed plan — both returned honest `STATUS: BLOCKED` with `CHANGES: none`, a tree audit confirming no source paths changed, and a `CONCERNS` line naming the actual proximate cause; the order's own forbid-fabrication clause held under a broken toolchain rather than being tested against a working one. Report-format discipline (verbatim runner relay, no invented architecture) was the one thing still checkable from a BLOCKED transcript, and it held on both attempts. No competency signal on GPT-5.6 Sol at this mission was obtained — the casting itself never got a chance to plan. Exercise owed once the fault clears; the planning goal itself (the telemetry-hook extension design) is a registered follow-on deliverable independent of when the seat is re-exercised. See `roster/wo11-architect-ex1-transcript.md` (attempt 2, the bounded retry) and `roster/wo11-architect-ex1-transcript-attempt1.md` (attempt 1). |
 | Synthesizer (A1) | — (not dispatched this round) | — | **DEFERRED-DECLARED.** The Synthesizer's cast is max-reserved and once-per-project (`roster/wo11-band-record.md`'s own Seats-shipped notes; `synthesizer.md` Casting section); a toy comparative merge invented for the sole purpose of exercising the seat would prove little about a casting whose entire value is a genuine multi-source contest under real stakes, and would spend the once-per-project reservation on a synthetic problem. Declared rather than silently skipped: the seat is exercised at its first real comparative session, whenever that arrives in this program's own work, not on a schedule invented to close this row. Owner override invited if a synthetic exercise is wanted sooner. |
-| Quartermaster (P0) | substrate — no dispatch order; exercised by running the shipped code live: extract the one evidenced reading from `.claude/orchestra-manual-readings.md`, record it into the real (previously nonexistent) `.claude/orchestra-pool-readings.jsonl` via the module API, run `--report`/`--state`/`--publish` against that real file, then demonstrate the complete-state pipeline (`bucketState()` → real `router.dispatch()`) against a separate temp-file fixture completing the other three buckets | deterministic code substrate (`quartermaster/quartermaster.js`), no model in the loop | **EXERCISED LIVE: PASS with DEGRADED evidence coverage.** Real coverage is 1 of 4 buckets (OU only, 0.86 remaining, sourced from the WO-2 Codex-window probe row in the manual-readings file) — the manual-readings file currently carries no Claude `/status` row at all for any AU-side bucket, a genuine gap in operator practice, not a substrate defect. Fail-closed demonstrated verbatim for the three unevidenced buckets: `--state` and `--publish` both exit 1, name every missing bucket by name, and print the exact `--record` command that fixes each one, never defaulting to Green (fabricated capacity) or Red (fabricated scarcity); `--publish` wrote no snapshot file on the refusal. `--report` never throws — it printed the one real OU line (disclosed STALE at 2 days old, undiscounted) and the three REFUSED blocks in the same run. The full pipeline was proven end-to-end on a labeled, non-real fixture completing all four buckets: `bucketState()` fed into the real `router.dispatch()` for an I0 order casts the Investigator to its Opus 5 primary rung (Green, gate allowed) with the cross-family review closing on GPT-5.6 Sol — the mechanism works; the fixture readings are explicitly not a real operational routing decision. The real readings file now holds exactly one real, sourced, honestly timestamped line and stays on disk (gitignored, untouched by anything else this round). The 152/154-check `tests/quartermaster.test.js` suite (152 checks at P0's own build; 154 after this round's real-readings-file test-check fix, item 1 below) plus the router-interop section within it (§7, a P0-produced state fed through the real router end to end: Green path, the P15 reserve gate, the §5.5 Amber arm and its confirmation lift, the exhaustion-matrix recast, and the mandatory-review-does-not-close-same-family refusal) are the substrate's primary exercise — the same standing that WO-5's own unit suite was accepted as the Verifier substrate's exercise. See `roster/wo11-p0-ex1-report.md` for the full run transcript. |
+| Quartermaster (P0) | substrate — no dispatch order; exercised by running the shipped code live: extract the one evidenced reading from `.claude/orchestra-manual-readings.md`, record it into the real (previously nonexistent) `.claude/orchestra-pool-readings.jsonl` via the module API, run `--report`/`--state`/`--publish` against that real file, then demonstrate the complete-state pipeline (`bucketState()` → real `router.dispatch()`) against a separate temp-file fixture completing the other three buckets | deterministic code substrate (`quartermaster/quartermaster.js`), no model in the loop | **EXERCISED LIVE: PASS with DEGRADED evidence coverage.** Real coverage is 1 of 4 buckets (OU only, 0.86 remaining, sourced from the WO-2 Codex-window probe row in the manual-readings file) — the manual-readings file currently carries no Claude `/status` row at all for any AU-side bucket, a genuine gap in operator practice, not a substrate defect. Fail-closed demonstrated verbatim for the three unevidenced buckets: `--state` and `--publish` both exit 1, name every missing bucket by name, and print the exact `--record` command that fixes each one, never defaulting to Green (fabricated capacity) or Red (fabricated scarcity); `--publish` wrote no snapshot file on the refusal. `--report` never throws — it printed the one real OU line (disclosed STALE at 2 days old, undiscounted) and the three REFUSED blocks in the same run. The full pipeline was proven end-to-end on a labeled, non-real fixture completing all four buckets: `bucketState()` fed into the real `router.dispatch()` for an I0 order casts the Investigator to its Opus 5 primary rung (Green, gate allowed) with the cross-family review closing on GPT-5.6 Sol — the mechanism works; the fixture readings are explicitly not a real operational routing decision. The real readings file now holds exactly one real, sourced, honestly timestamped line and stays on disk (gitignored, untouched by anything else this round). The 152/154-check `tests/quartermaster.test.js` suite (152 checks at P0's own build; 154 after commit `acbf8f2`'s R4 test changes — the corrected-forecast test additions, not a readings-file check fix as an earlier draft of this row mis-attributed it) plus the router-interop section within it (§7, a P0-produced state fed through the real router end to end: Green path, the P15 reserve gate, the §5.5 Amber arm and its confirmation lift, the exhaustion-matrix recast, and the mandatory-review-does-not-close-same-family refusal) are the substrate's primary exercise — the same standing that WO-5's own unit suite was accepted as the Verifier substrate's exercise. See `roster/wo11-p0-ex1-report.md` for the full run transcript. |
 
-## Conductor audit dispositions (Director, 2026-08-31)
+## Conductor audit dispositions (Director, 2026-08-31; D1 re-ruled round 2, 2026-08-31)
 
-Closing the five findings/gaps the O0 audit (`roster/wo11-conductor-ex1-audit.md`)
+Closing the six findings/gaps the O0 audit (`roster/wo11-conductor-ex1-audit.md`)
 raised, per the Director's ruling on this band:
 
-- **D1 (F-1/violation, accepted in part).** The audit's VIOLATION finding —
-  the session used Glob/Bash directly during this window — is accepted **in
-  part**: the confirmed uses were orientation (locating files/status before
-  dispatch) and independent verification of dispatched-seat claims (a count
-  check, mechanical re-runs), not authorship of shipped work product.
-  **Corrective, effective immediately:** Conductor-side tool use is confined
-  to memory and record files (WRITE-DOC, as chartered); every verification
-  act — re-running a suite, re-counting a file inventory, re-deriving a
-  claimed figure — is dispatched to a seat chartered for it (Verifier,
-  Reviewer, or a scout/general-purpose agent), never performed by the
-  session directly, even where the session already holds the tool. **Re-
-  attribution:** where an orchestrator-agent (this repo's Conductor-adjacent
-  dispatching pattern) performs verification work itself, that is lawful
+- **D1 (violation, accepted in part) — SUPERSEDED IN ROUND 2, see the
+  Director's re-ruling immediately below.** Kept here, struck through, as the
+  record of what round 1 actually said; the round-1 title's "F-1/" label was
+  itself a mislabel (D1 addresses the VIOLATION finding, Q1 — not F-1, which
+  is a distinct charter gap disposed of in its own line below):
+
+  ~~The audit's VIOLATION finding — the session used Glob/Bash directly
+  during this window — is accepted **in part**: the confirmed uses were
+  orientation (locating files/status before dispatch) and independent
+  verification of dispatched-seat claims (a count check, mechanical
+  re-runs), not authorship of shipped work product. **Corrective, effective
+  immediately:** Conductor-side tool use is confined to memory and record
+  files (WRITE-DOC, as chartered); every verification act — re-running a
+  suite, re-counting a file inventory, re-deriving a claimed figure — is
+  dispatched to a seat chartered for it (Verifier, Reviewer, or a
+  scout/general-purpose agent), never performed by the session directly,
+  even where the session already holds the tool. **Re-attribution:** where
+  an orchestrator-agent (this repo's Conductor-adjacent dispatching
+  pattern) performs verification work itself, that is lawful
   dispatcher-verifier conduct under the architecture — but the record must
   name the acting agent by its actual seat/casting, never fold it into "the
   dispatching session" as an undifferentiated actor. This ruling is the
-  corrective the Exercises row above cites.
+  corrective the Exercises row above cites.~~
+
+  ---
+  D1 (revised, round 2): the audit's VIOLATION is accepted IN FULL, all counts as the audit recorded them: (a) direct Glob/Bash use by the session; (b) WRITE-of-source and EXECUTE — check.js authored and run on the session's verification path ("both denied" per the charter); (c) the verification-path fixture construction the audit's bounding sentence names. The round-1 disposition's "orientation" mitigation appears nowhere in the audit and is WITHDRAWN as invented. The "lawful dispatcher-verifier" re-attribution restated Defence (1), which the audit examined and rejected; it is WITHDRAWN as a ruling and may only be re-raised as a charter-amendment proposal to the owner — the lawful path. Corrective, broadened: ALL verification, fixture construction, and counting is dispatched to charters that own it; the session's own tools are confined to reading its memory/records and authoring its own dispatch/ruling texts.
+  ---
+
+- **F-1 (charter gap, registered as owner follow-on).** The audit's F-1
+  finding, dropped from round 1's record while its label was reused for D1
+  (fixed above): the author-and-approve prohibition (`conductor.md:42-51`,
+  `final-plan.md:209-214`) is scoped to the Sol depletion mirror only — it
+  binds the mirror, not the Fable primary. Nothing in the charter forbids
+  the Fable Conductor from author-and-approving the same plan, and this
+  session's two post-APPROVE cleanup rounds did exactly that (a
+  Conductor-authored ledger line as the only closing determination).
+  **Lawful today** — no violation — **worth closing**, since the
+  restriction was presumably written for the mirror because the mirror is
+  *less* trusted, not because the primary is exempt from the principle.
+  Registered as an owner follow-on (charter gap), not closed by this band.
 - **D2 (G-1, process gap).** Accepted: a post-APPROVE cleanup round that
   touches executable code is not the same act as re-revising the artifact a
   reviewer already read, and the "only CRITICAL/MAJOR forces REVISE" rule
@@ -207,7 +237,12 @@ raised, per the Director's ruling on this band:
   verifier, and roster/agent files all count. Applied retroactively here:
   commit `4680027`'s 15-line `roster/lint.js` addition (the WO-10 round-3
   cleanup the audit's G-1 named by number) is added to this band's own R0
-  review scope as a delta item, per D3 below.
+  review scope as a delta item. **Retroactive scope, second instance not
+  covered here:** the audit's G-1 finding also names commit `357c96d`
+  (`roster/researcher.md`, changed post-APPROVE in WO-9 round 4) as a second
+  instance of the same pattern. This band's review range does not extend to
+  WO-9, so `357c96d` is not retroactively reviewed by this ruling — it is
+  registered as owed to the NEXT delta review's scope.
 - **D3 (G-2, record gap).** Accepted: WO-9 and WO-10 committed no review
   artifacts at all — no order, no verdict, no reviewer casting — leaving the
   entire review chain attested only by a Conductor-written ledger row and
@@ -216,14 +251,30 @@ raised, per the Director's ruling on this band:
   is committed verbatim as a `roster/wo11-r0-review-*.md`-shaped record file
   (order/verdict, and the reviewer casting/lane that produced it), not
   summarized into a ledger row alone. WO-9/WO-10's missing verdicts are not
-  reconstructed by this ruling — see Follow-ons registered.
+  reconstructed by this ruling — see Follow-ons registered. **Consequence,
+  from the audit's G-2 itself:** without a committed verdict artifact for
+  each round, no auditor can check whether the R0 lane was actually
+  family-independent of the artifacts' Anthropic author set — which
+  `reviewer-anthropic.md:20,40` calls a dispatch defect if it was violated
+  ("if the packet reveals the artifact was Anthropic-authored at mandatory
+  class, that is a dispatch defect: say so and return no verdict"). The
+  committed-verdict practice this ruling restores is what makes
+  family-independence verifiable going forward, not merely assumed.
 - **D4 (G-3, charter gap).** Accepted: "plan authoring above the size
   threshold (→ A0)" appears three times across `conductor.md`,
   `final-plan.md`, and `router/charters.json`, and is defined numerically or
   structurally nowhere. **Ruling:** registered as an owner follow-on (a
   routing rule with an undefined trigger cannot be mechanically enforced or
   audited); not closed by this band, since defining it is a plan-level
-  decision outside a construction/staffing order's authority.
+  decision outside a construction/staffing order's authority. **Settling
+  condition (ii), addressed:** the audit named a second thing that would
+  settle Q4 — "the P0 order text committed to the record alongside the
+  substrate, so the rulings can be read as issued rather than reconstructed
+  from the artifact that consumed them." The P0 order's ten normative
+  rulings ARE committed to the record: they are `quartermaster/README.md`'s
+  R1-R10 design rulings, each numbered and marked plan-cited or
+  unstatedInPlan. See the Order texts appendix below for the honest-scope
+  statement of what is and is not preserved verbatim.
 - **D5 (G-4, disclosure gap).** Accepted, and now partially self-closing:
   the audit found five-plus Opus 5 dispatches proceeded this session with no
   Quartermaster in existence and therefore no way for the §5.5 P15 gate to
@@ -244,7 +295,12 @@ raised, per the Director's ruling on this band:
   exercise form for future bands — it is the closest audit this
   architecture can run on a seat whose real deliverable is the conversation
   itself, and it produced genuine, specific, checkable findings despite the
-  boundary.
+  boundary. **Formal rule, adopting the audit's own recommended remedy
+  (G-5: "something transcript-derived… has to enter the record"):** this
+  band record's Conductor audit dispositions section, together with its
+  Order texts appendix, jointly CONSTITUTE the per-work-order decision log
+  G-5 calls for, going forward — not a separate document to be built later.
+  Every future band's dispositions and order texts serve this same function.
 
 ## Dispositions
 
@@ -259,10 +315,18 @@ _(pending — stage 2/3, following an R0 review of this staffing round)_
    completed); a refusal that never reaches the engine … is a distinct
    fault, counted separately." By that rule, WO-9+WO-10 stood at **10 of 14**
    engine-reaching attempts hitting the `unsupported protocol version 6`
-   fault (`roster/wo10-band-record.md`'s Incidents section, cross-checked
-   against `plans/cross-compare/agent-role-architecture/STATUS.md`'s WO-10
-   entry, which states the same 10/14 split and the same fault-hit/clean
-   breakdown). This band's Architect exercise ran 2 attempts total — the
+   fault (`roster/wo10-band-record.md`'s Incidents section). **Stated as
+   what it is, not overstated as independent confirmation (round 2):**
+   `plans/cross-compare/agent-role-architecture/STATUS.md`'s WO-10 entry
+   repeats the same 10/14 figure, but both were written by the same
+   Conductor-session author in the same round — that is one figure
+   recorded in two places, not two independent derivations. The figure's
+   actual independent grounding is the WO-10 round-2 delta review itself:
+   MAJOR 5 of that review's fix commit (`f98316f`) is what derived the
+   exact 10-of-14 tally from a per-attempt list under an explicit counting
+   rule, REPLACING an earlier, wrong "6 of ~15" figure — that derivation,
+   not the STATUS.md mirror, is the re-check this figure actually rests on.
+   This band's Architect exercise ran 2 attempts total — the
    initial attempt (run nonce `c674e8e8ee3cc33b`) and one bounded retry (run
    nonce `5e45a429253dca7f`) — and **both reached the engine** (each
    transcript's own `PREFLIGHT: auth/exec probe: ok` line, at 6104ms and
@@ -278,11 +342,26 @@ _(pending — stage 2/3, following an R0 review of this staffing round)_
    Rather than writing its fixtures, transcripts, and reports under the
    session's assigned scratchpad directory, the dispatched exercise agent
    created three directories directly at the repository root:
-   `wo11-fixtures/`, `wo11-transcripts/`, `wo11-reports/` — all untracked,
-   confirmed by that agent's own report to have left no tracked file
-   touched (`git status --porcelain` before/after both attempts showed only
-   new untracked directories). Cleaned this commit: the evidence worth
-   keeping was copied into `roster/wo11-architect-ex1-transcript.md`,
+   `wo11-fixtures/`, `wo11-transcripts/`, `wo11-reports/` — all untracked.
+   **Corrected evidence basis (round 2):** the round-1 text attributed a
+   "`git status --porcelain` before/after both attempts" attestation to
+   this agent that does not exist verbatim in either transcript. The actual
+   basis is the Architect exercise agent's own report line, as the
+   dispatching session recorded it: *"git status --porcelain in the live
+   project root shows no modified/deleted tracked files — only new
+   untracked dirs this exercise created (`wo11-fixtures/`,
+   `wo11-transcripts/`, `wo11-reports/`) plus pre-existing unrelated
+   untracked material from a parallel agent building `quartermaster/`."*
+   **Reconciled against the sibling record:** `roster/wo11-p0-ex1-report.md:337-340`
+   states these same three directories "predate this session… left
+   untouched" from the P0 exercise task's own point of view. Both records
+   are consistent once the timeline is stated: the Architect exercise agent
+   created the three directories during its own run, ~19:10–19:15
+   (directory timestamps), and the P0 exercise task began later in the same
+   session window — correctly observing them as pre-existing relative to
+   ITSELF, not claiming to have created or touched them. Cleaned this
+   commit: the evidence worth keeping was copied into
+   `roster/wo11-architect-ex1-transcript.md`,
    `roster/wo11-architect-ex1-transcript-attempt1.md`, and this band
    record's Exercises row and Order-texts appendix; the three stray
    directories were then deleted in full. No tracked repository state was
@@ -344,6 +423,17 @@ _(pending — stage 2/3, following an R0 review of this staffing round)_
    verdict artifacts (G-2). Reconstruction — from the fix-commit bodies'
    reviewer-voice enumeration, if the owner judges that sufficient — is
    available but not performed here.
+6. **P0 ledger maintenance (round 2, `quartermaster/README.md` R11).**
+   DECLARED NOT IMPLEMENTED in v1: rotation/integrity of
+   `.claude/orchestra-pool-readings.jsonl` and the snapshot it publishes,
+   as the append-only log grows across the life of a project. Scope not
+   yet designed.
+7. **P0 cost reporting (round 2, `quartermaster/README.md` R12).**
+   DECLARED NOT IMPLEMENTED in v1: per-window draw summaries (how much of
+   a bucket a given work order or review round drew), blocked on the same
+   ledger-attribution gap R2 already names — becomes possible once
+   follow-on 1 above (or R2's own follow-on) extends the telemetry hook to
+   carry role/effort/vendor/bucket attribution.
 
 ## Order texts
 
@@ -375,6 +465,17 @@ band record's own convention for its six in-harness orders.
   fixture completing the other three buckets and demonstrate the full
   `bucketState()` → real `router.dispatch()` pipeline against it. Never
   fabricate a bucket the manual-readings file does not evidence.
+
+**P0's own build/design order, preserved by content rather than by transcript
+(D4 settling condition (ii), round 2).** The Quartermaster substrate itself
+was built under a separate Director order distinct from the live-exercise
+order condensed above; that build order's normative content — the ten design
+rulings it settled — is preserved in the session record with its full
+normative content mirrored by `quartermaster/README.md`'s R1-R10 (each
+plan-cited or unstatedInPlan, numbered, with its rationale stated). Honest
+scope: this is content preservation, not verbatim-prose reconstruction — the
+order's own original wording is not reproduced here the way the Architect's
+Codex order text is below, only the rulings it produced.
 
 ### Codex order text, verbatim
 

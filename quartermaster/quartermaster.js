@@ -183,6 +183,48 @@ function isNonEmptyString(v) {
 function isFraction(v) {
   return typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1;
 }
+
+// ---------------------------------------------------------------------------
+// module-boundary validation (WO-11 round 2, MAJOR). Every public API entry
+// that accepts caller-supplied numeric options validates them HERE, typed and
+// fail-closed, rather than trusting JS's implicit coercion. The exploit this
+// closes: `forecast: {mandatoryReviewDraw: '0.3', incidentDraw: '0.1'}` (both
+// strings) used to reach `requiredReserve()`, where `(m + i) * (1 +
+// buffer)` string-concatenates ('0.3' + '0.1' = '0.30.1') before the `*`
+// coerces it to NaN; `Math.max(NaN, floor)` is NaN; `remainingFraction < NaN`
+// is always false — so every bucket read `belowReserve: false` and the P15
+// reserve gate was silently deleted. `typeof number` is required; a numeric
+// STRING is refused, not coerced.
+function assertFiniteNumber(v, name) {
+  if (typeof v !== 'number' || !isFinite(v)) {
+    throw new Error(
+      'quartermaster: `' + name + '` must be a finite number — got ' + JSON.stringify(v) +
+      ' (' + (typeof v) + ') — caller-supplied options are validated at the module boundary, ' +
+      'never coerced (fail closed: a bad option routes the whole harness on a fabricated number)'
+    );
+  }
+}
+function assertNonNegativeFiniteNumber(v, name) {
+  assertFiniteNumber(v, name);
+  if (v < 0) {
+    throw new Error('quartermaster: `' + name + '` must be ≥ 0 — got ' + v);
+  }
+}
+function assertPositiveFiniteNumber(v, name) {
+  assertFiniteNumber(v, name);
+  if (!(v > 0)) {
+    throw new Error('quartermaster: `' + name + '` must be a positive number — got ' + v);
+  }
+}
+/** Validates a caller-supplied forecast override. Never mutates; throws on any violation. */
+function validateForecast(forecast) {
+  if (!forecast || typeof forecast !== 'object') {
+    throw new Error('quartermaster: `forecast` must be an object with numeric mandatoryReviewDraw/incidentDraw — got ' + JSON.stringify(forecast));
+  }
+  assertNonNegativeFiniteNumber(forecast.mandatoryReviewDraw, 'forecast.mandatoryReviewDraw');
+  assertNonNegativeFiniteNumber(forecast.incidentDraw === undefined ? 0 : forecast.incidentDraw, 'forecast.incidentDraw');
+  return forecast;
+}
 function toDate(v) {
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
   if (typeof v === 'number' && isFinite(v)) return new Date(v);
@@ -374,7 +416,13 @@ function analyze(opts) {
   const now = nowOf(opts);
   const maxFreshMs = opts.maxFreshMs === undefined ? DEFAULT_MAX_FRESH_MS : opts.maxFreshMs;
   const maxStaleMs = opts.maxStaleMs === undefined ? DEFAULT_MAX_STALE_MS : opts.maxStaleMs;
-  const forecast = opts.forecast || defaultForecast();
+  // Module-boundary validation (WO-11 round 2, MAJOR): every caller-supplied
+  // numeric option is validated HERE, typed, before anything downstream trusts
+  // it. Defaults are always well-formed, so this only ever rejects an
+  // explicit override.
+  assertPositiveFiniteNumber(maxFreshMs, 'maxFreshMs');
+  assertPositiveFiniteNumber(maxStaleMs, 'maxStaleMs');
+  const forecast = opts.forecast ? validateForecast(opts.forecast) : defaultForecast();
   const reserve = requiredReserve(forecast, RESERVE_CFG);
 
   const parsed = readEntries(file);
@@ -482,9 +530,50 @@ function analyze(opts) {
     if (throttleObserved) state.throttleObserved = true;
     if (exhausted) state.exhausted = true;
 
-    // (6) Amber-arm confirmation (ruling R5): present only when a confirm()
-    // was RECORDED inside the freshness window.
+    // (6) Amber-arm confirmation (ruling R5, CORRECTED round 2: confirmation
+    // validity is re-anchored to LIVE evidence at every analyze() call, not
+    // just at the moment confirm() was granted). The CRITICAL the round-1
+    // review demonstrated: a confirmation recorded against a 0.35 reading
+    // stayed "confirmed" for the rest of maxFreshMs even after a LATER
+    // reading of 0.10 landed — the confirmation outlived the evidence it was
+    // granted on. A recorded confirmation is honored ONLY when ALL of the
+    // following hold RIGHT NOW:
+    //   (a) it was itself recorded within maxFreshMs of now;
+    //   (b) its evidenceTs equals the CURRENT latest valid reading's ts —
+    //       a newer reading since landing VOIDS it (superseded evidence);
+    //   (c) that current latest reading's OWN fraction still satisfies the R5
+    //       predicate (strictly above orangeBelow) — checked against the live
+    //       reading, never against the confirmation's own recorded fraction;
+    //   (d) no throttle is fresh and the bucket is not exhausted for this
+    //       bucket right now — the same facts that make confirm() itself
+    //       refuse today (MAJOR, below);
+    //   (e) the bucket carries no malformed-latest poison — guaranteed
+    //       structurally: a poisoned bucket already returned at step (1)
+    //       above and never reaches this code.
+    // Any violation VOIDS the confirmation: quartermasterConfirmation is
+    // omitted, the state publishes without it, and both info.confirmation and
+    // the human report say exactly why.
     const freshConfirm = confirmations.filter((c) => now - c.at <= maxFreshMs && now - c.at >= 0).pop() || null;
+    let confirmationVoidReason = null;
+    if (freshConfirm) {
+      if (freshConfirm.evidenceTs !== latest.ts) {
+        confirmationVoidReason =
+          'confirmation evidence (ts ' + freshConfirm.evidenceTs + ') was SUPERSEDED by a newer reading ' +
+          '(line ' + latest.lineNumber + ', ts ' + latest.ts + ', ' + pct(latest.remainingFraction) + ') — ' +
+          'the confirmation is void; re-confirm on the current reading.';
+      } else if (!(latest.remainingFraction > THRESHOLDS.orangeBelow)) {
+        confirmationVoidReason =
+          'the confirmed reading (' + pct(latest.remainingFraction) + ') no longer satisfies the R5 Amber ' +
+          'predicate (strictly above orangeBelow, ' + pct(THRESHOLDS.orangeBelow) + ') — the confirmation is void.';
+      } else if (throttleObserved) {
+        confirmationVoidReason =
+          'a throttle is fresh for ' + bucket + ' — a confirmation cannot arm the gate over an active throttle signal; the confirmation is void.';
+      } else if (exhausted) {
+        confirmationVoidReason =
+          bucket + ' is exhausted — a confirmation cannot arm the gate for an exhausted bucket; the confirmation is void.';
+      }
+    }
+    const liveConfirm = freshConfirm && !confirmationVoidReason;
     if (freshConfirm) {
       info.confirmation = {
         ts: freshConfirm.ts,
@@ -492,11 +581,12 @@ function analyze(opts) {
         remainingFraction: freshConfirm.remainingFraction,
         dispatchRef: freshConfirm.dispatchRef || null,
         lineNumber: freshConfirm.lineNumber,
+        voidReason: confirmationVoidReason,
       };
     }
 
     const value = { state, belowReserve };
-    if (freshConfirm) value.quartermasterConfirmation = true;
+    if (liveConfirm) value.quartermasterConfirmation = true;
 
     info.value = value;
     info.poolState = poolState(state, LADDER);
@@ -554,6 +644,14 @@ function bucketStateDetail(opts) {
  *
  * A grant appends a confirmation entry — the audit trail that makes a wrong
  * confirmation attributable after the fact.
+ *
+ * MAJOR (WO-11 round 2): confirm() must not BLIND-GRANT — three more facts
+ * refuse it, each demonstrated by the round-1 review as a grant that should
+ * not have happened: a throttle (soft OR hard) recorded within maxFreshMs; a
+ * bucket that is exhausted (a reading of zero); the bucket's latest raw line
+ * being malformed (the true current reading is unknown, so a prior one
+ * cannot stand in for it). All three refuse and append nothing, same as
+ * every other refusal path here.
  */
 function confirm(bucket, opts) {
   opts = opts || {};
@@ -561,9 +659,30 @@ function confirm(bucket, opts) {
   const file = fileOf(opts);
   const now = nowOf(opts);
   const maxFreshMs = opts.maxFreshMs === undefined ? DEFAULT_MAX_FRESH_MS : opts.maxFreshMs;
+  assertPositiveFiniteNumber(maxFreshMs, 'maxFreshMs');
   const parsed = readEntries(file);
   const readings = entriesFor(parsed.entries, bucket, 'reading');
+  const throttles = entriesFor(parsed.entries, bucket, 'throttle');
   const latest = readings.length ? readings[readings.length - 1] : null;
+
+  // Malformed-latest poison: the same rule analyze() applies at its step (1).
+  // A corrupted record sitting in the latest position for this bucket means
+  // the true current reading is unknown — confirm() must refuse rather than
+  // grant against a reading that record may have superseded.
+  const poison = parsed.malformed.filter(
+    (m) => (m.bucket === bucket || m.bucket === null) && (!latest || m.lineNumber > latest.lineNumber)
+  );
+  if (poison.length > 0) {
+    const p = poison[0];
+    return {
+      confirmed: false,
+      bucket,
+      reason: 'malformed record at ' + file + ' line ' + p.lineNumber + ' (' + p.reason + ') sits in the latest ' +
+        'position for ' + bucket + ' — the true current reading is unknown, so confirmation cannot be granted ' +
+        'against a possibly-superseded prior reading. Repair or delete line ' + p.lineNumber + ', or append a fresh reading:\n  ' +
+        recordHint(bucket),
+    };
+  }
 
   if (!latest) {
     return { confirmed: false, bucket, reason: 'no recorded reading for ' + bucket + ' — confirmation is evidence, not permission; record one first:\n  ' + recordHint(bucket) };
@@ -574,6 +693,22 @@ function confirm(bucket, opts) {
   }
   if (ageMs > maxFreshMs) {
     return { confirmed: false, bucket, reason: 'latest ' + bucket + ' reading is ' + fmtAge(ageMs) + ' old (line ' + latest.lineNumber + '), past the ' + fmtAge(maxFreshMs) + ' freshness window — a stale number cannot arm a gate that exists because the bucket fails silently' };
+  }
+  const freshThrottle = throttles.find((t) => now - t.at <= maxFreshMs && now - t.at >= 0);
+  if (freshThrottle) {
+    return {
+      confirmed: false,
+      bucket,
+      reason: 'a ' + freshThrottle.severity + ' throttle is fresh for ' + bucket + ' (' + freshThrottle.ts + ', ' +
+        fmtAge(now - freshThrottle.at) + ' ago) — a confirmation cannot arm the gate over an active throttle signal',
+    };
+  }
+  if (latest.remainingFraction <= 0) {
+    return {
+      confirmed: false,
+      bucket,
+      reason: bucket + ' reads ' + pct(latest.remainingFraction) + ' remaining — exhausted; a confirmation cannot arm the gate for an exhausted bucket',
+    };
   }
   if (!(latest.remainingFraction > THRESHOLDS.orangeBelow)) {
     return {
@@ -617,12 +752,26 @@ function confirm(bucket, opts) {
  *     at confidence "low (two-point linear)". Never higher: two points cannot
  *     support a stronger claim, and predicted-vs-observed is the seat's own
  *     review criterion.
+ *
+ * MINOR (WO-11 round 2), two more typed refusals rather than a thrown
+ * exception or a fictional number:
+ *   - the latest reading is older than maxStaleMs → typed "readings too
+ *     stale to be evidence", same staleness bound analyze() enforces —
+ *     extrapolating a trend line from stale evidence is not lower-confidence
+ *     evidence, it is non-evidence.
+ *   - an extremely small |rate| can put a crossing time outside the range a
+ *     JS `Date` can represent at all (`new Date(...).toISOString()` throws
+ *     RangeError past ~±8.64e15ms/epoch) — that estimate is typed "beyond
+ *     representable horizon" rather than throwing. report() calls this
+ *     function and must never throw.
  */
 function predictThrottle(bucket, opts) {
   opts = opts || {};
   assertBucket(bucket);
   const file = fileOf(opts);
   const now = nowOf(opts);
+  const maxStaleMs = opts.maxStaleMs === undefined ? DEFAULT_MAX_STALE_MS : opts.maxStaleMs;
+  assertPositiveFiniteNumber(maxStaleMs, 'maxStaleMs');
   const parsed = readEntries(file);
   const readings = entriesFor(parsed.entries, bucket, 'reading');
   if (readings.length < 2) {
@@ -630,6 +779,16 @@ function predictThrottle(bucket, opts) {
   }
   const a = readings[readings.length - 2];
   const b = readings[readings.length - 1];
+  const bAgeMs = now - b.at;
+  if (bAgeMs > maxStaleMs) {
+    return {
+      ok: false,
+      bucket,
+      reason: 'readings too stale to be evidence (latest reading is ' + fmtAge(bAgeMs) + ' old, past the ' +
+        fmtAge(maxStaleMs) + ' staleness limit) — a trend line fit to stale points is not lower-confidence evidence, it is non-evidence',
+      readingCount: readings.length,
+    };
+  }
   const dtMs = b.at - a.at;
   if (!(dtMs > 0)) {
     return { ok: false, bucket, reason: 'non-monotonic timestamps — the two latest readings do not advance in time', readingCount: readings.length };
@@ -657,12 +816,28 @@ function predictThrottle(bucket, opts) {
     { name: 'Red', threshold: THRESHOLDS.redBelow },
     { name: 'Exhausted', threshold: 0 },
   ];
+  // A JS Date can represent at most ±8,640,000,000,000,000ms from the epoch
+  // (`Date.prototype.toISOString`'s own documented range); an extremely
+  // small |rate| (e.g. a 1e-12 decline) can put a crossing that many
+  // milliseconds out. Guarded rather than left to throw a RangeError.
+  const DATE_MS_HORIZON = 8640000000000000;
   const estimates = targets.map((t) => {
     if (b.remainingFraction <= t.threshold) {
       return { name: t.name, threshold: t.threshold, crossed: true, msFromNow: 0, etaIso: b.ts };
     }
     const msFromLatest = (b.remainingFraction - t.threshold) / -rate;
     const crossAt = b.at.getTime() + msFromLatest;
+    if (!isFinite(crossAt) || Math.abs(crossAt) > DATE_MS_HORIZON) {
+      return {
+        name: t.name,
+        threshold: t.threshold,
+        crossed: false,
+        beyondHorizon: true,
+        msFromNow: null,
+        etaIso: null,
+        note: 'beyond representable horizon — at this rate the crossing lies further out than a JS Date can express; not a typed ETA',
+      };
+    }
     const msFromNow = crossAt - now.getTime();
     return {
       name: t.name,
@@ -713,6 +888,7 @@ function report(opts) {
     if (info.throttles.length) flags.push(info.throttles.length + ' throttle(s) in window');
     if (info.value.state.exhausted) flags.push('EXHAUSTED');
     if (info.value.quartermasterConfirmation) flags.push('confirmed (Amber arm)');
+    if (info.confirmation && info.confirmation.voidReason) flags.push('CONFIRMATION VOIDED');
     out.push(
       pad(bucket, 10) +
       pad(pct(info.latest.remainingFraction), 10) +
@@ -747,6 +923,9 @@ function report(opts) {
       out.push('  confirmed ' + info.confirmation.ts + ' on evidence ' + info.confirmation.evidenceTs +
         ' (' + pct(info.confirmation.remainingFraction) + ')' +
         (info.confirmation.dispatchRef ? ' for dispatch ' + info.confirmation.dispatchRef : ''));
+      if (info.confirmation.voidReason) {
+        out.push('  VOID      ' + info.confirmation.voidReason);
+      }
     }
     const p = predictThrottle(bucket, opts);
     if (!p.ok) {
@@ -758,9 +937,11 @@ function report(opts) {
       for (const e of p.estimates) {
         const when = e.crossed
           ? 'already crossed (latest reading is at or below this rung)'
-          : e.overdue
-            ? 'ETA ' + e.etaIso + '  (OVERDUE by ' + fmtAge(-e.msFromNow) + ' — the trend line ran past now; record a fresh reading)'
-            : 'ETA ' + e.etaIso + '  (in ' + fmtAge(e.msFromNow) + ')';
+          : e.beyondHorizon
+            ? e.note
+            : e.overdue
+              ? 'ETA ' + e.etaIso + '  (OVERDUE by ' + fmtAge(-e.msFromNow) + ' — the trend line ran past now; record a fresh reading)'
+              : 'ETA ' + e.etaIso + '  (in ' + fmtAge(e.msFromNow) + ')';
         out.push('            ' + pad(e.name, 10) + when);
       }
     }

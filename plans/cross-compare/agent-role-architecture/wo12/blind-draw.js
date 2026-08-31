@@ -129,8 +129,7 @@ function linkageComponents(artifacts) {
  * component is already represented in `usedComponents` and any id in
  * `excluded`. Returns {picked, shortfall}.
  */
-function drawKind(artifacts, kind, size, rand, component, usedComponents, excluded) {
-  const pool = shuffle(artifacts.filter((a) => a.kind === kind && !excluded.has(a.id)), rand);
+function drawKind(pool, size, component, usedComponents) {
   const picked = [];
   for (const a of pool) {
     if (picked.length >= size) break;
@@ -140,6 +139,47 @@ function drawKind(artifacts, kind, size, rand, component, usedComponents, exclud
     picked.push(a.id);
   }
   return { picked, shortfall: size - picked.length };
+}
+
+// ROUND-8, OpenAI lane MINOR. `drawKind` is GREEDY: it walks the shuffled pool
+// once and takes whatever component is still free. On a pool where the linkage
+// graph is tight that reports a shortfall while a balanced draw plainly exists
+// — the reviewer's reproducer is a 3-seed / 2-control corpus at `--seed 0
+// --size 2`, where the greedy seed picks claim both components the controls
+// need. A shortfall is not a cosmetic complaint: it aborts the blind read, and
+// the blind read is the corpus's acceptance evidence.
+//
+// So the greedy pass is kept EXACTLY as it was — every draw already recorded
+// reproduces byte for byte — and a bounded backtracking search runs only when
+// it falls short. The search walks the same shuffled pools in the same order,
+// so it too is deterministic in the seed, and it prefers earlier-shuffled ids;
+// the node budget keeps a pathological linkage graph from wedging the tool.
+const BACKTRACK_NODE_BUDGET = 200000;
+
+function searchDraw(pools, size, component, budget) {
+  const picks = pools.map(() => []);
+  const used = new Set();
+  let nodes = 0;
+  let exhausted = false;
+  function rec(pi, start, remaining) {
+    if (pi === pools.length) return true;
+    if (remaining === 0) return rec(pi + 1, 0, size);
+    const pool = pools[pi];
+    for (let i = start; i < pool.length; i++) {
+      if (++nodes > budget) { exhausted = true; return false; }
+      if (pool.length - i < remaining) return false; // not enough candidates left
+      const c = component.get(pool[i].id);
+      if (used.has(c)) continue;
+      used.add(c);
+      picks[pi].push(pool[i].id);
+      if (rec(pi, i + 1, remaining - 1)) return true;
+      used.delete(c);
+      picks[pi].pop();
+    }
+    return false;
+  }
+  const ok = rec(0, 0, size);
+  return { picks: ok ? picks : null, nodes, exhausted };
 }
 
 /**
@@ -156,17 +196,44 @@ function blindDraw(key, opts) {
   const rand = mulberry32(fnv1a(seed));
   const usedComponents = new Set();
 
-  const seeded = drawKind(artifacts, 'seeded', size, rand, component, usedComponents, excluded);
-  const controls = drawKind(artifacts, 'control', size, rand, component, usedComponents, excluded);
+  // Hoisted so the backtracking fallback can walk the SAME shuffled pools. The
+  // rand stream is consumed in exactly the order the round-6 code consumed it
+  // (seeded shuffle, then control shuffle), so no recorded draw moves.
+  const seededPool = shuffle(artifacts.filter((a) => a.kind === 'seeded' && !excluded.has(a.id)), rand);
+  const controlPool = shuffle(artifacts.filter((a) => a.kind === 'control' && !excluded.has(a.id)), rand);
 
-  return {
+  const seeded = drawKind(seededPool, size, component, usedComponents);
+  const controls = drawKind(controlPool, size, component, usedComponents);
+
+  let picked = { seeded: seeded.picked, controls: controls.picked };
+  let shortfall = { seeded: seeded.shortfall, control: controls.shortfall };
+  let searched = false;
+  let searchNodes = 0;
+  if (shortfall.seeded > 0 || shortfall.control > 0) {
+    const found = searchDraw([seededPool, controlPool], size, component, BACKTRACK_NODE_BUDGET);
+    searched = true;
+    searchNodes = found.nodes;
+    if (found.picks) {
+      picked = { seeded: found.picks[0], controls: found.picks[1] };
+      shortfall = { seeded: 0, control: 0 };
+    }
+  }
+
+  const record = {
     seed, size,
-    seeded: seeded.picked, controls: controls.picked,
-    all: seeded.picked.concat(controls.picked).sort(),
-    shortfall: { seeded: seeded.shortfall, control: controls.shortfall },
+    seeded: picked.seeded, controls: picked.controls,
+    all: picked.seeded.concat(picked.controls).sort(),
+    shortfall,
     excludedCount: excluded.size,
     componentCount: new Set(Array.from(component.values())).size,
+    // Round-8 MAJOR 6: this record IS the draw's provenance. `--out` stores it
+    // verbatim as `corpus/blind-draw-round<n>.json` so a review never has to
+    // restate a seed it cannot be checked against.
+    greedySufficed: !searched,
+    searchNodes,
   };
+  if (opts.round !== null && opts.round !== undefined) record.round = opts.round;
+  return record;
 }
 
 // ------------------------------------------------------------------- CLI
@@ -176,6 +243,7 @@ function usage() {
     'usage:',
     '  node blind-draw.js --seed <string> --size <n> [--key <path>]',
     '      [--exclude <id,id,…>] [--exclude-file <path>] [--json]',
+    '      [--round <n>] [--out <path>]',
     '',
     'Draws <n> seeded + <n> control artifact ids from key.json for a blind read.',
     'Deterministic: the same --seed and --size always give the same draw.',
@@ -183,11 +251,15 @@ function usage() {
     '  pairs would otherwise hand the evaluator a free answer).',
     '--exclude / --exclude-file carry ids a previous round already used.',
     '--json prints the draw as JSON instead of as two labelled lists.',
+    '--round <n> stamps the record with the round it was drawn for.',
+    '--out <path> writes the JSON record verbatim (round-8 MAJOR 6: the draw is',
+    '  stored as corpus/blind-draw-round<n>.json, and THAT file is its provenance —',
+    '  the round-7 record restated a seed that did not reproduce its own sample).',
   ].join('\n');
 }
 
 function parseArgs(argv) {
-  const out = { seed: null, size: null, key: null, exclude: [], excludeFile: null, json: false };
+  const out = { seed: null, size: null, key: null, exclude: [], excludeFile: null, json: false, round: null, out: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--seed') out.seed = argv[++i];
@@ -198,6 +270,10 @@ function parseArgs(argv) {
     else if (a === '--exclude') out.exclude = out.exclude.concat(String(argv[++i] || '').split(',').map((s) => s.trim()).filter(Boolean));
     else if (a === '--exclude-file') out.excludeFile = argv[++i];
     else if (a === '--json') out.json = true;
+    else if (a === '--round') {
+      out.round = parseInt(argv[++i], 10);
+      if (!Number.isFinite(out.round)) fail('--round must be an integer');
+    } else if (a === '--out') out.out = argv[++i];
     else if (a === '--help' || a === '-h') { process.stdout.write(usage() + '\n'); process.exit(0); }
     else fail('unknown argument: ' + a + '\n\n' + usage());
   }
@@ -227,7 +303,14 @@ function main() {
     exclude = exclude.concat(fs.readFileSync(f, 'utf8').split(/[\s,]+/).map((s) => s.trim()).filter(Boolean));
   }
 
-  const draw = blindDraw(key, { seed: args.seed, size: args.size, exclude });
+  const draw = blindDraw(key, { seed: args.seed, size: args.size, exclude, round: args.round });
+
+  if (args.out) {
+    const outPath = path.resolve(args.out);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(draw, null, 2) + '\n', 'utf8');
+    process.stderr.write('blind-draw: draw record written verbatim to ' + outPath + '\n');
+  }
 
   if (args.json) {
     process.stdout.write(JSON.stringify(draw, null, 2) + '\n');
@@ -252,7 +335,8 @@ function main() {
   }
 }
 
-module.exports = { fnv1a, mulberry32, shuffle, linkageComponents, drawKind, blindDraw, parseArgs, loadKey };
+module.exports = { fnv1a, mulberry32, shuffle, linkageComponents, drawKind, searchDraw, blindDraw, parseArgs, loadKey,
+  BACKTRACK_NODE_BUDGET };
 
 if (require.main === module) {
   try {

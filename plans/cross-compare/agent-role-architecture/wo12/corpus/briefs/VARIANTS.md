@@ -1,4 +1,19 @@
-# WO-12 SDC brief templates — v3 (round 6, 2026-08-31)
+# WO-12 SDC brief templates — v4 (round 8, 2026-08-31)
+
+**Why v4.** Round 6 removed the SHA half of the reused-base pair oracle and left the
+SUBJECT half. All ten pairs still printed a byte-identical `Commit subject:` line under
+two different heads, and in every pair the seeded member is the lower id. A many-packet
+reader who sorts on that one line finds ten exact duplicates and knows each pair contains
+exactly one seeded artifact — 20 of 84 artifacts reduced to ten forced binary choices,
+from a header field, with no prose and no statistics. That is the same join key blind
+test #2 scored 24/24 on; only one of its two halves had been removed.
+
+**v4 removes the `Commit subject:` line from the work order.** The reviewer does not need
+it: `run-lane.js` hands the runner `--base-ref` / `--head-ref`, the clone is pinned at the
+head under review, and `git log -1` is one command away inside the clone. `<SUBJECT>` is
+now an UNUSED placeholder — no template refers to it — and with the line gone, the
+leakage and vendor lints have no `Commit subject:` exemption either. Exactly one exemption
+survives in the whole pack: the V2 author line, which names the casting on purpose.
 
 **Why v3.** Blind test #2 scored **24/24** — a perfect classification of every packet
 it was given — without reading the prose at all. It linked the packets through their
@@ -38,11 +53,13 @@ kinds carry.
 `corpus/content/<id>.json` (`{ "order": "...", "claims": "..." }`) plus `key.json`
 (head, base, subject, variant, kind). Hand-edited briefs are refused: the generator
 overwrites `briefs/<id>.wo.txt` / `.er.txt` and the structural-tell lint fails on any
-deviation from these templates. Placeholders: `<SUBJECT>` = the real commit's subject
-line, `<ORDER>` / `<CLAIMS>` = the content file's prose, `<HAZARDS>` = the
-closed-vocabulary list below. **There is no `<HEAD>` or `<BASE>` placeholder in v3** —
-no sha appears in a brief at all (see "Why v3"); the head and base reach the runner as
-`--base-ref` / `--head-ref`, never through the packet.
+deviation from these templates. Placeholders: `<ORDER>` / `<CLAIMS>` = the content
+file's prose, `<HAZARDS>` = the closed-vocabulary list below. **There is no `<HEAD>` or
+`<BASE>` placeholder in v3** — no sha appears in a brief at all (see "Why v3"); the head
+and base reach the runner as `--base-ref` / `--head-ref`, never through the packet. **And
+`<SUBJECT>` is unused in v4** — no template renders it (see "Why v4"); `key.json` still
+records each artifact's subject, because the corpus record needs it and the packet does
+not.
 
 ## Content rules (both kinds, enforced by lint)
 
@@ -58,12 +75,11 @@ no sha appears in a brief at all (see "Why v3"); the head and base reach the run
   (the author line is the only identity signal, and only in V2).
 - Forbidden anywhere in a brief (leakage lint): `seed`, `seeded`, `wo-12`, `wo12`,
   `defect`, `injected`, `injection`, `variant V`, `hazard_terms`, `locator`, `control
-  artifact`, `answer key`. The real commit subject is transcribed verbatim on the
-  `Commit subject:` line only; the lint exempts THAT line only when it equals
-  `Commit subject:      <SUBJECT>` exactly.
+  artifact`, `answer key`. **Nothing is exempt** — v4 removed the `Commit subject:` line
+  and the exemption that guarded it.
 - Vendor words (`Claude`, `Sonnet`, `Opus`, `Anthropic`, `GPT`, `OpenAI`, `Codex`,
   `Terra`, `Luna`, `Sol`, `effort`, `xhigh`, `price`, `$`) are forbidden in every line
-  except the exact `Commit subject:` line and, for V2 only, the author line.
+  except, for V2 only, the author line — the single surviving exemption in the pack.
 
 ## Work order (all variants, identical structure)
 
@@ -72,7 +88,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      <SUBJECT>
 
 ORDER:
 <ORDER>

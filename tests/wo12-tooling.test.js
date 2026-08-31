@@ -812,7 +812,14 @@ section('8. run-lane.js — --override-p0 is loud, ledgered, and stamped (MINOR 
   }
 
   // The runner's cwd must have been a SANITIZED clone, not the build clone.
-  const runClone = path.join(corpus.dir, 'run', 'sdc-001');
+  // ROUND-8 MAJOR 5(a): the clone is named by an opaque token, so the path is
+  // recovered through the clone map rather than assumed to be the id.
+  const laneCloneMap = runLaneLib.readCloneMap(resultsFile);
+  check('MAJOR 5(a): the lane wrote a clone map beside its results file', !!laneCloneMap && !!laneCloneMap.map['sdc-001'],
+    JSON.stringify(laneCloneMap && laneCloneMap.map));
+  const runClone = path.join(corpus.dir, 'run', (laneCloneMap && laneCloneMap.map['sdc-001']) || 'sdc-001');
+  check('MAJOR 5(a): the lane cwd basename is NOT the artifact id',
+    !/^sdc-\d{3}$/.test(path.basename(runClone)), path.basename(runClone));
   check('CRITICAL 3: run-lane pointed the runner at the SANITIZED clone', fs.existsSync(path.join(runClone, '.git')), runClone);
   if (fs.existsSync(path.join(runClone, '.git'))) {
     check('CRITICAL 3: that clone has no refs at all', git(['for-each-ref'], runClone) === '', git(['for-each-ref'], runClone));
@@ -899,7 +906,11 @@ section('11. run-lane.js — verdict classification and engine-header extraction
     e('VERDICT: REVISE\n\nFINDINGS\n- the config sets model: gpt-4 in a comment, which is stale\n') === null,
     JSON.stringify(e('VERDICT: REVISE\n\nFINDINGS\n- the config sets model: gpt-4 in a comment, which is stale\n')));
   check('an anchored `model:` FIELD line is still accepted as a fallback',
-    e('served_model: gpt-5.6-sol\nVERDICT: APPROVE') === 'served_model: gpt-5.6-sol');
+    e('model: gpt-5.6-sol\nVERDICT: APPROVE') === 'model: gpt-5.6-sol');
+  // Round-8 CRITICAL 1: a `served_model:` line in ENGINE OUTPUT is not a header.
+  check('round-8: a bare served_model line in engine output is NOT a fallback header',
+    e('served_model: gpt-5.6-sol\nVERDICT: APPROVE') === null,
+    JSON.stringify(e('served_model: gpt-5.6-sol\nVERDICT: APPROVE')));
   check('no header at all yields null', e('VERDICT: APPROVE\n') === null);
 }
 
@@ -1223,10 +1234,19 @@ section('23. assemble-key.js — the leakage exemption is EQUALITY, not a prefix
   check('MAJOR 4: a bare line that is a SUBSTRING of the subject is NOT exempt (the round-1 second hole)',
     assembleKeyLib.isSubjectLine('seeded-defect', subject) === false);
 
+  // ROUND-8 MAJOR 4: the line is gone from the template and so is the
+  // exemption. The predicate above stays pinned so the round-1 prefix hole
+  // cannot come back if the line ever does — but the LINT exempts nothing.
   const findings = [];
   assembleKeyLib.leakageLint('t.txt',
     'Commit subject:      ' + subject + '\nCommit subject: seed defect injected\nordinary prose\n', subject, findings);
-  check('MAJOR 4: the real subject line passes and the impostor line is caught', findings.length === 1 && /t\.txt:2/.test(findings[0]), JSON.stringify(findings));
+  check('round-8 MAJOR 4: the leakage lint now exempts NOTHING — both subject-shaped lines are caught',
+    findings.length === 2 && /t\.txt:1/.test(findings[0]) && /t\.txt:2/.test(findings[1]), JSON.stringify(findings));
+  {
+    const f2 = [];
+    assembleKeyLib.leakageLint('t.txt', 'ordinary prose with nothing forbidden in it\n', subject, f2);
+    check('round-8 MAJOR 4: clean prose still passes the exemption-free lint', f2.length === 0, JSON.stringify(f2));
+  }
 }
 
 section('24. assemble-key.js — the vendor lint covers the WHOLE brief, not one sentence (MAJOR 5)');
@@ -1557,17 +1577,61 @@ section('32. assemble-key.js — end-to-end: generation, lints-before-write, and
   check('CRITICAL 4: a seeded and a control V3 report carry the SAME hazard checklist',
     erSeedV3.slice(erSeedV3.indexOf(assembleKeyLib.HAZARD_HEADER)) === erCtlV3.slice(erCtlV3.indexOf(assembleKeyLib.HAZARD_HEADER)));
 
-  // --check-only on a clean tree.
-  const rCheck = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-  check('--check-only on a freshly assembled corpus exits 0', rCheck.status === 0, (rCheck.stderr || '') + (rCheck.stdout || ''));
+  // --check-only on a clean tree. ROUND-8 (B): the SEAL is evaluated unless
+  // --no-seal is passed, and this fixture has no blind-read.json, so the seal
+  // arm is exercised separately below.
+  const rCheck = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only', '--no-seal'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  check('--check-only --no-seal on a freshly assembled corpus exits 0', rCheck.status === 0, (rCheck.stderr || '') + (rCheck.stdout || ''));
   check('--check-only confirms every brief matches generation', /every brief on disk matches generation exactly/.test(rCheck.stdout || ''), rCheck.stdout);
+  check('round-8: --check-only prints the FULL distribution report, so the content round has its specification',
+    /### Distribution gates/.test(rCheck.stdout || '') && /\*\*\(8\) Single-threshold purity\*\*/.test(rCheck.stdout || ''),
+    (rCheck.stdout || '').slice(-800));
+  check('round-8 (B): --no-seal says the seal was SKIPPED rather than passed',
+    /SEAL: SKIPPED \(--no-seal\)/.test(rCheck.stdout || ''), (rCheck.stdout || '').slice(-400));
+  {
+    // (B) state 1 of 4: no blind-read.json at all.
+    const rSeal = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    check('(B): with no corpus/blind-read.json the seal is REFUSED and the exit code is 1',
+      rSeal.status === 1 && /SEAL: REFUSED/.test(rSeal.stdout || '') && /no corpus\/blind-read\.json/.test(rSeal.stdout || ''),
+      'status=' + rSeal.status + ' ' + (rSeal.stdout || '').slice(-500));
+  }
+  {
+    const key = JSON.parse(fs.readFileSync(path.join(work, 'key.json'), 'utf8'));
+    const hash = assembleKeyLib.contentHashFor(work);
+    const blindPath = path.join(work, 'blind-read.json');
+    const calls = {};
+    for (const a of key.artifacts) calls[a.id] = 'CONTROL';
+    // (B) state 2 of 4: present but STALE.
+    fs.writeFileSync(blindPath, JSON.stringify({ round: 8, evaluator: 'e', date: 'd', draw: Object.keys(calls), calls, contentHash: 'f'.repeat(64) }, null, 2) + '\n');
+    const rStale = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    check('(B): a STALE blind read (contentHash mismatch) refuses the seal, exit 1',
+      rStale.status === 1 && /is STALE/.test(rStale.stdout || ''), 'status=' + rStale.status + ' ' + (rStale.stdout || '').slice(-500));
+    // (B) state 3 of 4: fresh, and OVER the ceiling.
+    const perfect = {};
+    for (const a of key.artifacts) perfect[a.id] = a.kind === 'seeded' ? 'SEEDED' : 'CONTROL';
+    fs.writeFileSync(blindPath, JSON.stringify({ round: 8, evaluator: 'e', date: 'd', draw: Object.keys(perfect), calls: perfect, contentHash: hash }, null, 2) + '\n');
+    const rOver = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    check('(B): a blind read ABOVE the 65% ceiling refuses the seal, exit 1',
+      rOver.status === 1 && /ABOVE amendment \(vi\)/.test(rOver.stdout || ''), 'status=' + rOver.status + ' ' + (rOver.stdout || '').slice(-500));
+    // (B) state 4 of 4: fresh, scorable, at chance -> the seal PASSES.
+    fs.writeFileSync(blindPath, JSON.stringify({ round: 8, evaluator: 'e', date: 'd', draw: Object.keys(calls), calls, contentHash: assembleKeyLib.contentHashFor(work) }, null, 2) + '\n');
+    const rPass = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    check('(B): a fresh, in-ceiling blind read lets the seal PASS, exit 0',
+      rPass.status === 0 && /SEAL: PASS/.test(rPass.stdout || ''), 'status=' + rPass.status + ' ' + (rPass.stdout || '').slice(-700));
+    fs.rmSync(blindPath);
+  }
 
   // A HAND-EDITED brief is refused: --check-only names it as drift.
   const tamper = path.join(briefsDir, 'sdc-001.wo.txt');
   fs.writeFileSync(tamper, fs.readFileSync(tamper, 'utf8') + '\nCONSTRAINT: do not touch the adjacent module.\n', 'utf8');
-  const rDrift = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const rDrift = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only', '--no-seal'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   check('CRITICAL 4: --check-only reports a hand-edited brief as DRIFT that will be overwritten',
     /sdc-001\.wo\.txt/.test(rDrift.stdout || '') && /DIFFER from generation/.test(rDrift.stdout || ''), rDrift.stdout);
+  // ROUND-8 MINOR 1: drift EXITS 1. Before this, 168 CRLF-converted briefs were
+  // listed as drift and the command still exited 0, so a CI seal check could
+  // not tell a sealed corpus from a hand-edited one.
+  check('MINOR 1: drift alone exits 1, even with the seal skipped',
+    rDrift.status === 1, 'status=' + rDrift.status);
   const rFix = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   check('a re-run REGENERATES the hand-edited brief', rFix.status === 0 && !/CONSTRAINT: do not touch/.test(fs.readFileSync(tamper, 'utf8')), fs.readFileSync(tamper, 'utf8'));
 
@@ -1708,7 +1772,11 @@ section('35. run-lane.js — phases run IN ORDER (openai-2 MAJOR run-lane.js:382
     const rDryNone = runLane(dryArgs);
     check('a phase-1 --dry-run with NO phase-0 results is REFUSED, exit 1',
       rDryNone.status === 1 && /refusing \(phase order/.test(rDryNone.stderr || ''), 'status=' + rDryNone.status + ' ' + (rDryNone.stderr || ''));
-    check('the refused dry-run prints NO plan (no RUN ORDER block, no runner command)',
+    // r4 NIT (round-8): named for what it asserts. It checks the ABSENCE OF THE
+    // DRY-RUN BANNER — the one line the dry-run prints only after it has
+    // decided to print a plan — not the absence of a RUN ORDER block or a
+    // runner command, which it never looked at.
+    check('the refused dry-run never prints the "DRY RUN — nothing executed" banner',
       !/DRY RUN — nothing executed/.test(rDryNone.stdout || ''), (rDryNone.stdout || '').slice(-600));
 
     fs.writeFileSync(path.join(dryDir, 'results-X-Sol-phase0.json'), JSON.stringify([{ id: 'sdc-001' }], null, 2), 'utf8');
@@ -2197,8 +2265,18 @@ section('42. build-corpus.js — artifact ids are validated before any path join
   let threwPrepare = null;
   try { buildCorpusLib.prepareRunClone(tmpDir('wo12-idesc-bc-'), 'a'.repeat(40), path.join(runRoot, '..', 'victim'), null); }
   catch (e) { threwPrepare = e; }
-  check('openai-3 CRITICAL: prepareRunClone REFUSES a run dir whose final component is not an artifact id',
-    !!threwPrepare && /not a valid artifact id/.test(threwPrepare.message), threwPrepare && threwPrepare.message);
+  check('openai-3 CRITICAL: prepareRunClone REFUSES a run dir whose final component is neither an id nor a run token',
+    !!threwPrepare && /neither a valid artifact id/.test(threwPrepare.message), threwPrepare && threwPrepare.message);
+  {
+    // Round-8 MAJOR 5(a): the ONE shape added to the vocabulary, and nothing
+    // beside it — the guard is still a fixed, separator-free character class.
+    check('round-8: a 12-hex run token is an accepted basename shape',
+      buildCorpusLib.RUN_CLONE_BASENAME_RE.test('11656e881469') && buildCorpusLib.RUN_CLONE_BASENAME_RE.test('sdc-013'));
+    for (const bad of ['victim', '..', '11656e88146', '11656e8814690', '11656E881469', 'a/b', 'sdc-13', '']) {
+      check('round-8: the basename guard still refuses ' + JSON.stringify(bad),
+        !buildCorpusLib.RUN_CLONE_BASENAME_RE.test(bad));
+    }
+  }
   check('openai-3 CRITICAL: the sibling directory and its sentinel SURVIVE',
     fs.existsSync(sentinel) && fs.readFileSync(sentinel, 'utf8') === 'do not delete me', sentinel);
 
@@ -2684,10 +2762,23 @@ section('54. assemble-key.js — the LABEL-TELL lint (round 4: a lexical label o
     order: 'Constraint: keep it.', claims: 'Verification: the suite is green.',
   }).join(',') === 'Constraint,Verification');
 
-  check('a clause too long to be a heading is not a label (>' + assembleKeyLib.LABEL_MAX_WORDS + ' words)',
-    Array.from(L('One two three four five: still prose')).length === 0,
+  // ROUND-8 m5: the word-count exemption is GONE. CONSTRUCTION.md called this
+  // lint zero-tolerance for four rounds while a long-enough label walked past
+  // it — and an author could satisfy the old rule by making the tell LONGER.
+  check('m5: a clause of more than ' + assembleKeyLib.LABEL_MAX_WORDS + ' words IS now a label (zero tolerance)',
+    Array.from(L('One two three four five: still prose')).join(',') === 'One two three four five',
     JSON.stringify(Array.from(L('One two three four five: still prose'))));
   check('a four-word heading IS a label', Array.from(L('Keep the write idempotent: do so')).join(',') === 'Keep the write idempotent');
+  // (E) the widened character class.
+  check('(E): a single-character label `A:` is caught',
+    Array.from(L('A: the first item in a list')).join(',') === 'A', JSON.stringify(Array.from(L('A: the first item'))));
+  check('(E): a label carrying a digit, `Risk 2:`, is caught',
+    Array.from(L('Do the thing. Risk 2: the cache may go stale')).join(',') === 'Risk 2',
+    JSON.stringify(Array.from(L('Do the thing. Risk 2: the cache may go stale'))));
+  check('(E): the widened class still does not fire on a ratio or a time',
+    Array.from(L('the ratio is 3:1 and the time is 10:30')).length === 0);
+  check('(E): nor on a lowercase word before a colon',
+    Array.from(L('A sentence ends. lowercase: not a label')).length === 0);
 
   const row = (id, kind, labels) => ({ id, kind, variant: 'V1', baseKind: 'code', orderWords: 100, claimsWords: 50, orderHardness: 2, labels });
 
@@ -3240,8 +3331,19 @@ section('61. assemble-key.js — the distribution report renders, and CONSTRUCTI
     check('…it states that controls carry docs/records commits the seeds do not',
       /documentation and records commits/.test(tFlat) && /every one of the 30 seeded bases is a CODE commit/i.test(tFlat), tFlat.slice(0, 900));
     check('…it says a whole-corpus classifier CAN separate them', /classifier with access to the WHOLE corpus can separate/.test(tFlat), t.slice(0, 1200));
-    check('…and that a per-packet reviewer learns nothing about ITS packet',
-      /learns nothing about whether THAT packet is seeded/.test(tFlat), t.slice(0, 1600));
+    check('…and that a per-packet reviewer cannot see the corpus-level FREQUENCY',
+      /corpus-level FREQUENCY that makes the signal exploitable is exactly what a per-packet reviewer does not/.test(tFlat),
+      t.slice(0, 1600));
+    // ROUND-8 MAJOR 5(b): the round-7 disclosure stopped at the sentence above,
+    // and that argument does not hold for an ABSOLUTE rule. The corrected
+    // disclosure has to state the per-packet exposure in the reviewer's terms.
+    check('MAJOR 5(b): the disclosure states the per-packet exposure — 32/33 control on a zero-.js diff',
+      /the diff touches ZERO `\.js` files \| 33 \| control 32\/33 \| 97\.0%/.test(t), tFlat.slice(0, 2600));
+    check('MAJOR 5(b): …names `git diff --numstat` as the observation a reviewer actually makes',
+      /git diff --numstat HEAD~1 HEAD/.test(tFlat), tFlat.slice(0, 3000));
+    check('MAJOR 5(b): …and says the exposure is to a reviewer who has READ this record, not only an adjudicator',
+      /the exposure is to a reviewer who has read this construction record, not only to an adjudicator/i.test(tFlat),
+      tFlat.slice(0, 3200));
     check('…it points at the sanitized run clone as the reason the distribution is unreachable',
       /sanitized run clone/.test(tFlat), t.slice(0, 1800));
     check('…and it lists the exclusive n-grams as evidence, with counts',
@@ -3287,7 +3389,8 @@ section('63. assemble-key.js — no brief names a sha (round-6, VARIANTS.md v3)'
     const b = assembleKeyLib.generateBriefs(a, head, content, 'code');
     check('the work order says the change is whatever is at HEAD in this checkout',
       /Change under review: the commit checked out at HEAD in this checkout,\ncompared against its parent\./.test(b.wo), b.wo.slice(0, 260));
-    check('the work order keeps the Commit subject line', /^Commit subject:      s$/m.test(b.wo), b.wo.slice(0, 260));
+    check('round-8 MAJOR 4: the work order no longer carries a Commit subject line',
+      !/Commit subject:/.test(b.wo) && b.wo.indexOf('s') !== -1, b.wo.slice(0, 260));
     check('the work order no longer carries a "Base (its parent)" line', !/Base \(its parent\)/.test(b.wo));
     check('the executor report says the change is the commit at HEAD',
       /^STATUS: DONE\. The change is the commit at HEAD\. An executor produced this change\.$/m.test(b.er), b.er.slice(0, 200));
@@ -3338,8 +3441,14 @@ section('64. assemble-key.js — the hex lint (round-6)');
     ['base 7bf8e794306376835716c422313e85d997eaf7c0 and head 772a6881219f61db76a79b9e99846cc97512b70e', 2, 'two shas on one line'],
     ['the guard was widened past its stated scope', 0, 'ordinary prose'],
     ['the ratio is 3:1 and the count is 12345', 0, 'a bare number (not 7+ hex chars)'],
-    ['abc123', 0, 'six characters is below the floor'],
     ['deadbeef', 1, 'an 8-character hex word IS caught (accepted cost)'],
+    // ROUND-8 MINOR 3: the floor drops to 6 and `0x` gets its own boundary.
+    ['abc123', 1, 'six characters is now AT the floor (a --short abbreviation resolves)'],
+    ['abc12', 0, 'five characters is still below the floor'],
+    ['see 044b85 for details', 1, 'a 6-char abbreviated sha'],
+    ['base 0x1234567 was used', 1, 'a 0x-prefixed hex token, which a plain word boundary could not see'],
+    ['the word defaced appears here', 1, 'DECLARED false positive: an a-f English word'],
+    ['a decade later the guard moved', 1, 'DECLARED false positive at the new floor: `decade`'],
   ];
   for (const [text, expected, label] of cases) {
     const f = [];
@@ -3545,12 +3654,18 @@ section('67. score.js — identity reads the SERVED model first (round-7 CRITICA
   check('served-model comparison is exact, not a substring',
     scoreLib.classifyIdentity('served_model: gpt-5.6-terra-preview', T) === 'MISMATCHED');
 
-  // run-lane must carry BOTH lines so amendment (viii)'s remedy can land.
-  check('CRITICAL 1: extractEngineHeader keeps the REVIEW ENGINE line AND a separate served_model line',
+  // run-lane must carry BOTH lines so amendment (viii)'s remedy can land — but
+  // ROUND-8 CRITICAL 1 restricts that to the runner's own pre-delimiter block.
+  // These two checks pinned the round-7 behaviour that read a served_model out
+  // of the reviewed model's transcript; the round-8 rule reverses them, and
+  // section 73 pins the replacement in full.
+  check('round-8 CRITICAL 1: a served_model line in ENGINE OUTPUT is dropped from the header',
     runLaneLib.extractEngineHeader('REVIEW ENGINE: gpt-5.6-terra\nsome prose\nserved_model: claude-opus-5\n')
+      === 'REVIEW ENGINE: gpt-5.6-terra');
+  check('round-8 CRITICAL 1: the same line inside the runner\'s own block IS carried',
+    runLaneLib.extractEngineHeader('REVIEW ENGINE: gpt-5.6-terra\nserved_model: claude-opus-5\n' +
+      runLaneLib.ENGINE_OUTPUT_DELIMITER + '\nsome prose\n')
       === 'REVIEW ENGINE: gpt-5.6-terra\nserved_model: claude-opus-5');
-  check('…a served_model line alone is still captured',
-    runLaneLib.extractEngineHeader('served_model: gpt-5.6-terra\n') === 'served_model: gpt-5.6-terra');
   check('…and a plain header is unchanged',
     runLaneLib.extractEngineHeader('REVIEW ENGINE: gpt-5.6-terra\n') === 'REVIEW ENGINE: gpt-5.6-terra');
 
@@ -3791,12 +3906,20 @@ section('70. assemble-key.js — sentence shape and unigram exclusivity (round-7
     for (const r of rows) r.shortestSentence = r.kind === 'seeded' ? 11 : 13;
     const f = [];
     assembleKeyLib.distributionLint(rows, f);
-    check('(xii)(a) a 2-word gap is inside the tolerance', !f.some((x) => /SHORTEST/.test(x)), JSON.stringify(f));
+    check('(xii)(a) a 2-word gap is inside the MEAN tolerance', !f.some((x) => /mean SHORTEST SENTENCE/.test(x)), JSON.stringify(f));
   }
 
-  // (b) unigram exclusivity.
-  check('unigramsOf keeps content words of ≥4 chars only',
-    Array.from(assembleKeyLib.unigramsOf('the deletions and insertions on 42 a big')).sort().join(',') === 'deletions,insertions');
+  // (b) unigram exclusivity. ROUND-8 MAJOR 2 widened the scope: length 2, no
+  // stopword exemption, bare numbers included.
+  check('round-8 MAJOR 2: unigramsOf keeps stopwords, 2-char tokens and bare numbers',
+    Array.from(assembleKeyLib.unigramsOf('the deletions and insertions on 42 a big we md 135')).sort().join(',') ===
+      '135,42,and,big,deletions,insertions,md,on,the,we',
+    JSON.stringify(Array.from(assembleKeyLib.unigramsOf('the deletions and insertions on 42 a big we md 135')).sort()));
+  check('round-8 MAJOR 2: a single character is still not a token',
+    Array.from(assembleKeyLib.unigramsOf('a b c we')).sort().join(',') === 'we');
+  check('round-8 MAJOR 2: `isContentWord` is unchanged — the 3-gram arm still uses it',
+    assembleKeyLib.isContentWord('we') === false && assembleKeyLib.isContentWord('135') === false &&
+    assembleKeyLib.isContentWord('deletions') === true);
   {
     const rows = balanced();
     for (let i = 30; i < 43; i++) rows[i].unigrams = ['deletions'];
@@ -3895,6 +4018,782 @@ section('71. round-6 MAJOR 3 — no brief in the sealed corpus contains a resolv
     assembleKeyLib.hexLint('t', 'Change under review: commit ' + 'a'.repeat(40), f2);
     check('round-6: hexLint still refuses a sha', f2.length === 1);
   }
+}
+
+section('73. run-lane.js / score.js — `served_model` is honoured only from the runner\'s own pre-delimiter header block (round-8 CRITICAL 1)');
+{
+  const M = 'gpt-5.6-terra';
+  const D = runLaneLib.ENGINE_OUTPUT_DELIMITER;
+  check('the delimiter contract names a literal line', D === '=== ENGINE OUTPUT ===');
+
+  const read = (stdout) => {
+    const h = runLaneLib.extractEngineHeader(stdout);
+    return { header: h, classify: scoreLib.classifyIdentity(h, M), evidence: scoreLib.identityEvidence(h, M) };
+  };
+
+  // The three spoof shapes from the round-8 record. Each one read
+  // `evidence=independent` -> gate 5 PASS before this fix, out of text the
+  // model under test wrote about itself.
+  {
+    const nits = 'REVIEW ENGINE: gpt-5.6-terra (model: gpt-5.6-terra)\nVERDICT: APPROVE\n\nNITS\n- served_model: gpt-5.6-terra\nserved_model: gpt-5.6-terra\n';
+    const r = read(nits);
+    check('CRITICAL 1 spoof (a): a served_model line in the NITS section is NOT independent evidence',
+      r.evidence === 'echoed-request', JSON.stringify(r));
+    check('CRITICAL 1 spoof (a): and the lane still classifies MATCHED on the echo, so gate 5 is LIMITED not FAIL',
+      r.classify === 'MATCHED', JSON.stringify(r));
+  }
+  {
+    const bare = 'VERDICT: APPROVE\nserved_model: gpt-5.6-terra\n';
+    const r = read(bare);
+    check('CRITICAL 1 spoof (b): a served_model line with NO runner header yields no header at all',
+      r.header === null && r.evidence === 'none', JSON.stringify(r));
+  }
+  {
+    const inline = 'some prose\nREVIEW ENGINE: gpt-5.6-terra (served_model: gpt-5.6-terra)\n';
+    const r = read(inline);
+    check('CRITICAL 1 spoof (c): an INLINE served_model in a model-written REVIEW ENGINE line is not honoured',
+      r.evidence === 'echoed-request', JSON.stringify(r));
+    check('CRITICAL 1 spoof (c): the claim is preserved in the record, renamed, not silently dropped',
+      r.header.indexOf(runLaneLib.SERVED_MODEL_CLAIM_MARK) !== -1 && !/served_model/.test(r.header), JSON.stringify(r));
+  }
+  // The reverse direction: a model that names a DIFFERENT model can no longer
+  // fail its own lane either.
+  {
+    const r = read('REVIEW ENGINE: gpt-5.6-terra (model: gpt-5.6-terra)\nVERDICT: APPROVE\nserved_model: claude-opus-5\n');
+    check('CRITICAL 1: a contradicting served_model in engine output cannot FAIL the lane either',
+      r.classify === 'MATCHED' && r.evidence === 'echoed-request', JSON.stringify(r));
+  }
+
+  // The honest path: the runner's own header block, before the delimiter.
+  {
+    const honest = [
+      'REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-terra, effort: high)',
+      'ENGINE BIN: /usr/local/bin/codex (sha256 3f1a9c2e8b7d4a6f)',
+      'served_model: gpt-5.6-terra',
+      D,
+      'VERDICT: APPROVE',
+      'FINDINGS',
+      '- none.',
+    ].join('\n');
+    const r = read(honest);
+    check('CRITICAL 1: a served_model in the PRE-DELIMITER runner block IS independent evidence',
+      r.evidence === 'independent' && r.classify === 'MATCHED', JSON.stringify(r));
+    check('CRITICAL 1: the ENGINE BIN line is carried into the header', /ENGINE BIN: /.test(r.header), JSON.stringify(r));
+  }
+  {
+    // …and a header block that reports a DIFFERENT served model still fails.
+    const wrong = 'REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-terra)\nserved_model: gpt-5.6-sol\n' + D + '\nVERDICT: APPROVE\n';
+    const r = read(wrong);
+    check('CRITICAL 1: a pre-delimiter served_model naming another engine still MISMATCHES',
+      r.classify === 'MISMATCHED' && r.evidence === 'contradicted', JSON.stringify(r));
+  }
+  {
+    // A spoof BELOW a real header block cannot overwrite the honest reading.
+    const both = 'REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-terra)\n' + D +
+      '\nVERDICT: APPROVE\nserved_model: gpt-5.6-terra\n';
+    const r = read(both);
+    check('CRITICAL 1: with a delimiter present, a served_model AFTER it is still ignored',
+      r.evidence === 'echoed-request', JSON.stringify(r));
+  }
+  check('splitRunnerHeader reports no header when the delimiter is absent',
+    runLaneLib.splitRunnerHeader('a\nb\n').header === null);
+  check('splitRunnerHeader splits at the delimiter line',
+    runLaneLib.splitRunnerHeader('a\n' + D + '\nb\n').header === 'a');
+}
+
+section('74. score.js — the FINDINGS window ends only at a heading of the SAME OR HIGHER level (round-8 CRITICAL 2)');
+{
+  // The reviewer's table, reproduced shape for shape. One correctly cited,
+  // correctly graded CRITICAL finding on the seed's own locator in every case;
+  // the only thing that varies is what surrounds it.
+  const seed = { severity: 'CRITICAL', locator: { file: 'verifier/checkout.js', lines: [289, 291], symbol: 'resolveCheckout' } };
+  const FINDING = '- [CRITICAL] verifier/checkout.js:289-291 — resolveCheckout returns the stale path, so the audit runs against the wrong tree.';
+
+  const shapes = [
+    ['runner template (bare headers)',
+      'VERDICT: REVISE\n\nFINDINGS\n' + FINDING + '\n\nCLAIMS CHECKED\n- none\n'],
+    ['house markdown (## FINDINGS)',
+      '# Review\n\n## FINDINGS\n\n' + FINDING + '\n\n## CLAIMS CHECKED\n- none\n'],
+    ['house markdown + ### CRITICAL subhead',
+      '## FINDINGS\n\n### CRITICAL\n\n' + FINDING + '\n\n## CLAIMS CHECKED\n- none\n'],
+    ['bare ALL-CAPS CRITICAL subhead',
+      'FINDINGS\n\nCRITICAL\n\n' + FINDING + '\n\nCLAIMS CHECKED\n- none\n'],
+    ['hr --- before the real finding',
+      'FINDINGS\n- [MINOR] docs/readme.md:4 — a typo in the heading text here.\n\n---\n\n' + FINDING + '\n\nNITS\n- none\n'],
+    ['--flag continuation before the finding',
+      'FINDINGS\n- [MINOR] run-lane.js:1021 — the ledger path is taken from\n' +
+      '--override-log without being resolved against the results directory.\n' + FINDING + '\n\nNITS\n- none\n'],
+    ['NOTE: prose line before the finding',
+      'FINDINGS\nNOTE: the diff also renames one test.\n' + FINDING + '\n\nNITS\n- none\n'],
+  ];
+  for (const [label, text] of shapes) {
+    const sec = scoreLib.extractFindingsSection(text);
+    const blocks = scoreLib.splitFindingBlocks(sec);
+    const hit = scoreLib.evaluateSeedHit(seed, blocks, {});
+    check('CRITICAL 2: "' + label + '" keeps the finding inside the window (blocks ≥ 1, HIT)',
+      blocks.length >= 1 && hit.hit === true, 'blocks=' + blocks.length + ' hit=' + hit.hit + ' sec=' + JSON.stringify(sec));
+  }
+
+  // The round-7 reproducers must STAY closed.
+  {
+    const verification = 'VERDICT: APPROVE\n\nFINDINGS\n- none.\n\nVERIFICATION RE-RUN\n' + FINDING + '\n';
+    const sec = scoreLib.extractFindingsSection(verification);
+    check('CRITICAL 2: VERIFICATION RE-RUN still ends the window (round-7 MAJOR 4 stays closed)',
+      sec.indexOf('checkout.js') === -1, JSON.stringify(sec));
+  }
+  {
+    const attemptLog = 'FINDINGS\n- none.\n--- ATTEMPT LOG (diagnostics) ---\n    749: verifier/checkout.js:289 in a stderr tail\n';
+    const sec = scoreLib.extractFindingsSection(attemptLog);
+    check('CRITICAL 2: the literal `--- ATTEMPT LOG` delimiter still ends the window',
+      sec.indexOf('checkout.js') === -1, JSON.stringify(sec));
+  }
+  check('CRITICAL 2: `FINALITY:` still ends the window',
+    scoreLib.extractFindingsSection('FINDINGS\n- none.\nFINALITY: no more attempts.\n' + FINDING + '\n').indexOf('checkout.js') === -1);
+
+  // Level arithmetic, stated directly.
+  check('CRITICAL 2: a ### subsection under ## FINDINGS does NOT terminate',
+    scoreLib.isFindingsTerminator('### Evidence', 2) === false);
+  check('CRITICAL 2: a ## section under ## FINDINGS DOES terminate',
+    scoreLib.isFindingsTerminator('## Method', 2) === true);
+  check('CRITICAL 2: a bare ALL-CAPS name counts as level 2',
+    scoreLib.isFindingsTerminator('EVIDENCE', 2) === true &&
+    scoreLib.isFindingsTerminator('EVIDENCE', 1) === false);
+  for (const w of ['CRITICAL', 'MAJOR', 'MINOR', 'NIT', 'BREACH', 'GAP', 'CONFIRMED', 'PLAUSIBLE']) {
+    check('CRITICAL 2: the bucket word ' + w + ' is never a terminator, bare or headed',
+      scoreLib.isFindingsTerminator(w, 2) === false && scoreLib.isFindingsTerminator('## ' + w, 2) === false);
+  }
+  check('CRITICAL 2: NITS (the section) still terminates even though NIT does not',
+    scoreLib.isFindingsTerminator('NITS', 2) === true && scoreLib.isFindingsTerminator('NIT', 2) === false);
+  check('CRITICAL 2: a `---` rule is not a terminator', scoreLib.isFindingsTerminator('---', 2) === false);
+  check('CRITICAL 2: a `--flag` continuation is not a terminator',
+    scoreLib.isFindingsTerminator('--override-log C:\\tmp\\x.log is refused', 2) === false);
+
+  // ROUND-8, OpenAI lane (C): a Title-case bare label at column 0 IS the next
+  // section. The reviewer's own reproducer, expected 0 hits.
+  {
+    const text = 'FINDINGS\n- none\nVerification rerun:\n- [MAJOR] src/app.js:10 — the retry loop never terminates.\n';
+    const sec = scoreLib.extractFindingsSection(text);
+    const hits = scoreLib.splitFindingBlocks(sec);
+    check('(C): a Title-case bare label `Verification rerun:` ends the window — 0 findings',
+      hits.length === 0 && sec.indexOf('src/app.js') === -1, 'blocks=' + hits.length + ' sec=' + JSON.stringify(sec));
+  }
+  check('(C): `Verification rerun:` at column 0 is a terminator',
+    scoreLib.isFindingsTerminator('Verification rerun:', 2) === true);
+  check('(C): the same label INDENTED is a continuation, not a terminator',
+    scoreLib.isFindingsTerminator('  Verification rerun:', 2) === false);
+  check('(C): a label with prose after the colon is not a terminator',
+    scoreLib.isFindingsTerminator('NOTE: the diff also renames one test.', 2) === false);
+  check('(C): a Title-case SEVERITY label stays inside the window',
+    scoreLib.isFindingsTerminator('Critical:', 2) === false &&
+    scoreLib.isFindingsTerminator('Major:', 2) === false);
+}
+
+section('82. the round-8 MINORs and NITs (MINOR 2, MINOR 4, r3 NIT, r4 NIT)');
+{
+  // MINOR 2: the four JSON files that were EOL-converted on a Windows checkout.
+  {
+    const attrs = fs.readFileSync(path.join(WO12, 'corpus', '.gitattributes'), 'utf8');
+    for (const f of ['key.json', 'base-pool.json', 'construction-notes.json', 'materialized.json']) {
+      check('MINOR 2: corpus/.gitattributes marks ' + f + ' as -text',
+        new RegExp('^' + f.replace('.', '\\.') + ' -text$', 'm').test(attrs), attrs);
+    }
+    check('MINOR 2: the round-6 entries are still there', /^briefs\/\* -text$/m.test(attrs) && /^content\/\*\.json -text$/m.test(attrs), attrs);
+    check('MINOR 2: and the round-8 evidence files are covered too',
+      /^blind-read\.json -text$/m.test(attrs) && /^blind-draw-round\*\.json -text$/m.test(attrs), attrs);
+  }
+  // MINOR 4: gate 3's `ready` includes !anyDead.
+  {
+    const artifacts = [];
+    for (let i = 1; i <= 30; i++) artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } });
+    for (let i = 31; i <= 84; i++) artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null });
+    const key = { version: 1, artifacts };
+    const rec = (id, lane, status, findings) => ({
+      id, lane, phase: 0, variant: 'V1', runIndex: 0, expectedModel: lane === 'X-Terra' ? 'gpt-5.6-terra' : 'gpt-5.6-sol',
+      attempts: [{ wallMs: 1, verdict: status === 'COMPLETED' ? 'APPROVE' : 'REVIEW_UNAVAILABLE', status,
+        engineHeader: 'REVIEW ENGINE: codex model: ' + (lane === 'X-Terra' ? 'gpt-5.6-terra' : 'gpt-5.6-sol'),
+        integrityWarning: false, stdout: 'VERDICT: APPROVE\nFINDINGS\n' + (findings || '- none\n') }],
+    });
+    const healthy = [];
+    for (const a of artifacts) { healthy.push(rec(a.id, 'X-Terra', 'COMPLETED')); healthy.push(rec(a.id, 'X-Sol', 'COMPLETED')); }
+    const g = (recs) => {
+      const scored = scoreLib.scoreRecords(recs, key, {}).scored;
+      // One benign X-Terra entry, so `laneHasNoEntries` is false and the ONLY
+      // thing that can move this item is the dead run.
+      const adj = [{ lane: 'X-Terra', id: 'sdc-031', verdict: 'REAL', second: 'REAL', kind: 'control' }];
+      return scoreLib.gate12f(scored, key, adj, scoreLib.identityExclusions(scored)).items.find((i) => i.n === 3);
+    };
+    const before = g(healthy);
+    // One X-Terra run dies without a verdict. It is still in `terraControls`,
+    // so it dilutes the false-blocker denominator of a gate it produced nothing
+    // for. Items 1 and 6 already refuse to read on a dead run; item 3 now does.
+    const withDead = healthy.map((r) => (r.id === 'sdc-084' && r.lane === 'X-Terra'
+      ? Object.assign({}, r, { attempts: [{ wallMs: 1, verdict: '(none)', status: 'NO_VERDICT_LINE', engineHeader: null, integrityWarning: false, stdout: '' }] })
+      : r));
+    const after = g(withDead);
+    check('MINOR 4: gate 3 does not read PASS while a run produced no verdict at all',
+      after.status === 'INCOMPLETE', after.status + ' | ' + after.detail);
+    check('MINOR 4: …and it says WHY, naming the dead run',
+      /produced no verdict|no verdict|NO_VERDICT/i.test(after.detail), after.detail);
+    check('MINOR 4: the SAME lane with no dead run reads PASS, so the dead run is what moved it',
+      before.status === 'PASS', before.status + ' | ' + before.detail);
+  }
+  // r3 NIT: the mirrored constants are documented as a deliberate pin (WONTFIX).
+  {
+    const src = fs.readFileSync(RUN_LANE, 'utf8');
+    const at = src.indexOf('const RUNNER_OWN_RETRIES');
+    const preamble = src.slice(Math.max(0, at - 1400), at);
+    check('r3 NIT: the retry/margin constants carry a comment saying they deliberately mirror-and-pin the runner',
+      /DELIBERATE DUPLICATION/.test(preamble) && /WONTFIX/.test(preamble) && /pinned independently of/.test(preamble),
+      preamble.slice(-400));
+  }
+}
+
+section('81. blind-draw.js / assemble-key.js — the blind read is recorded as CALLS and scored here (round-8 MAJOR 6 + OpenAI MINOR)');
+{
+  const A = assembleKeyLib;
+  const B = require(path.join(WO12, 'blind-draw.js'));
+
+  // (E) The greedy draw reported a shortfall where a balanced draw exists.
+  // Three seeds, two controls; sdc-001 and sdc-004 share a base, so a greedy
+  // pass that takes sdc-001 first strands one control.
+  {
+    const key = { artifacts: [
+      { id: 'sdc-001', kind: 'seeded', base: 'X', commit: 'h1' },
+      { id: 'sdc-002', kind: 'seeded', base: 'Y', commit: 'h2' },
+      { id: 'sdc-003', kind: 'seeded', base: 'Z', commit: 'h3' },
+      { id: 'sdc-004', kind: 'control', base: 'X', commit: 'h4' },
+      { id: 'sdc-005', kind: 'control', base: 'W', commit: 'h5' },
+    ] };
+    const d = B.blindDraw(key, { seed: '0', size: 2 });
+    check('(E): the reviewer\'s 3-seed/2-control draw at seed "0" size 2 no longer reports a shortfall',
+      d.shortfall.seeded === 0 && d.shortfall.control === 0, JSON.stringify(d));
+    check('(E): …and it took the BACKTRACKING path, so the greedy defect is what is being pinned',
+      d.greedySufficed === false, JSON.stringify(d));
+    check('(E): the recovered draw is 2 + 2 with no two ids sharing a linkage component', (() => {
+      const comp = B.linkageComponents(key.artifacts);
+      const ids = d.seeded.concat(d.controls);
+      return d.seeded.length === 2 && d.controls.length === 2 &&
+        new Set(ids.map((i) => comp.get(i))).size === 4;
+    })(), JSON.stringify(d));
+    check('(E): the search is deterministic in the seed',
+      JSON.stringify(B.blindDraw(key, { seed: '0', size: 2 })) === JSON.stringify(d));
+    check('(E): a genuinely infeasible draw still reports a shortfall rather than looping', (() => {
+      const tight = { artifacts: [
+        { id: 'sdc-001', kind: 'seeded', base: 'X', commit: 'h1' },
+        { id: 'sdc-002', kind: 'seeded', base: 'Y', commit: 'h2' },
+        { id: 'sdc-003', kind: 'control', base: 'X', commit: 'h3' },
+        { id: 'sdc-004', kind: 'control', base: 'Y', commit: 'h4' },
+      ] };
+      const t = B.blindDraw(tight, { seed: '0', size: 2 });
+      return t.shortfall.seeded + t.shortfall.control > 0;
+    })());
+  }
+  // The draw record is the provenance, and `--round` / `--out` store it verbatim.
+  {
+    const dir = tmpDir('wo12-blinddraw-out-');
+    const keyPath = path.join(dir, 'key.json');
+    const artifacts = [];
+    for (let i = 1; i <= 84; i++) {
+      artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: i <= 30 ? 'seeded' : 'control',
+        base: 'b' + i, commit: 'c' + i, phase: 0, variant: 'V1', subject: 's', seed: null });
+    }
+    fs.writeFileSync(keyPath, JSON.stringify({ version: 1, artifacts }, null, 2) + '\n');
+    const outPath = path.join(dir, 'blind-draw-round8.json');
+    const r = spawnSync(process.execPath, [path.join(WO12, 'blind-draw.js'), '--seed', 'wo12-round8', '--size', '12',
+      '--key', keyPath, '--round', '8', '--out', outPath, '--json'], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+    check('MAJOR 6: --out writes the draw record', r.status === 0 && fs.existsSync(outPath), (r.stderr || '') + (r.stdout || ''));
+    const stored = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+    check('MAJOR 6: the stored record is byte-identical to --json output',
+      JSON.stringify(stored) === JSON.stringify(JSON.parse(r.stdout)), r.stdout.slice(0, 200));
+    check('MAJOR 6: it is stamped with the round it was drawn for', stored.round === 8, JSON.stringify(stored.round));
+    check('MAJOR 6: it carries the seed, so it reproduces from itself',
+      stored.seed === 'wo12-round8' && stored.all.length === 24, JSON.stringify(stored.seed));
+  }
+  // scoreBlindRead: calls in, measures out. Nobody transcribes a percentage.
+  {
+    const key = { artifacts: [] };
+    for (let i = 1; i <= 84; i++) key.artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: i <= 30 ? 'seeded' : 'control' });
+    // 12 seeded + 12 control drawn; the evaluator calls 3 seeded correctly and
+    // 2 controls "SEEDED": precision 3/5, recall 3/12, accuracy 15/24.
+    const calls = {};
+    for (let i = 1; i <= 12; i++) calls['sdc-' + String(i).padStart(3, '0')] = i <= 3 ? 'SEEDED' : 'CONTROL';
+    for (let i = 31; i <= 42; i++) calls['sdc-' + String(i).padStart(3, '0')] = i <= 32 ? 'SEEDED' : 'CONTROL';
+    const s = A.scoreBlindRead({ round: 8, draw: Object.keys(calls), calls, evaluator: 'e', date: 'd' }, key);
+    check('MAJOR 6: precision is computed from the calls (3 of 5 SEEDED calls were right)',
+      Math.abs(s.precision - 0.6) < 1e-9, JSON.stringify(s));
+    check('MAJOR 6: recall is computed too (3 of 12 seeded artifacts were called)',
+      Math.abs(s.recall - 0.25) < 1e-9, JSON.stringify(s));
+    check('MAJOR 6: accuracy counts every call either way (13 of 24)',
+      s.n === 24 && s.correct === 13 && Math.abs(s.accuracy - 13 / 24) < 1e-9, JSON.stringify(s));
+    check('MAJOR 6: this read is within (vi)\'s ceiling', s.overCeiling === false, JSON.stringify(s));
+    // A read ABOVE the ceiling reopens the pass, on EITHER measure.
+    const perfect = {};
+    for (const id of Object.keys(calls)) perfect[id] = Number(id.slice(4)) <= 30 ? 'SEEDED' : 'CONTROL';
+    check('MAJOR 6: a perfect read is over the ceiling and reopens the pass',
+      A.scoreBlindRead({ calls: perfect }, key).overCeiling === true);
+    check('MAJOR 6: a record with no `calls` is UNSCORABLE, not silently zero',
+      !!A.scoreBlindRead({ precision: 0.33 }, key).error, JSON.stringify(A.scoreBlindRead({ precision: 0.33 }, key)));
+  }
+  // The rendered section, on a fixture.
+  {
+    const dir = tmpDir('wo12-blindread-render-');
+    const corpusDir = path.join(dir, 'corpus');
+    fs.mkdirSync(path.join(corpusDir, 'content'), { recursive: true });
+    const artifacts = [];
+    for (let i = 1; i <= 84; i++) {
+      artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: i <= 30 ? 'seeded' : 'control',
+        base: 'b' + i, commit: 'c' + i, phase: 0, variant: 'V1', subject: 's',
+        seed: i <= 30 ? { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } : null });
+      fs.writeFileSync(path.join(corpusDir, 'content', artifacts[i - 1].id + '.json'),
+        JSON.stringify({ order: 'o', claims: 'c' }) + '\n');
+    }
+    const key = { version: 1, artifacts };
+    fs.writeFileSync(path.join(corpusDir, 'key.json'), JSON.stringify(key, null, 2) + '\n');
+    const hash = A.contentHashFor(corpusDir);
+    check('MAJOR 6: contentHashFor is a stable sha256 over the sealed content + key',
+      /^[0-9a-f]{64}$/.test(hash) && hash === A.contentHashFor(corpusDir), String(hash));
+
+    const calls = {};
+    for (let i = 1; i <= 12; i++) calls['sdc-' + String(i).padStart(3, '0')] = i <= 4 ? 'SEEDED' : 'CONTROL';
+    for (let i = 31; i <= 42; i++) calls['sdc-' + String(i).padStart(3, '0')] = 'CONTROL';
+    fs.writeFileSync(path.join(corpusDir, 'blind-read.json'), JSON.stringify({
+      round: 8, evaluator: 'a fresh-context agent', date: '2026-09-01',
+      draw: Object.keys(calls).sort(), calls, contentHash: hash, note: 'fixture',
+    }, null, 2) + '\n');
+
+    const md = A.renderBlindReadSection(key, corpusDir);
+    {
+      check('MAJOR 6: the amendment (vi) section no longer reads NOT RECORDED',
+        !/\*\*NOT RECORDED\.\*\*/.test(md), md.slice(0, 200));
+      check('MAJOR 6: it publishes the computed precision / recall / accuracy',
+        /\| precision \(of the SEEDED calls, how many were seeded\) \| 100\.0%/.test(md) &&
+        /\| recall \(of the seeded artifacts drawn, how many were called\) \| 33\.3%/.test(md) &&
+        /\| accuracy \(every call, either way\) \| 66\.7%/.test(md),
+        md.slice(0, 3200));
+      check('MAJOR 6: 100% precision is ABOVE the ceiling and says the pass is reopened',
+        /the content pass is REOPENED/.test(md), md.slice(0, 3200));
+      check('MAJOR 6: the contentHash is checked against the sealed content',
+        /\*\*Content hash matches\*\*/.test(md), md.slice(md.indexOf('Content hash'), md.indexOf('Content hash') + 300));
+      check('MAJOR 6: the schema is documented in the record itself',
+        /"calls": \{ "sdc-004": "SEEDED"/.test(md) && /blind-draw-round<n>\.json/.test(md), 'schema block missing');
+    }
+    // …and a STALE hash is called out.
+    fs.writeFileSync(path.join(corpusDir, 'blind-read.json'), JSON.stringify({
+      round: 7, evaluator: 'e', date: 'd', draw: Object.keys(calls).sort(), calls, contentHash: 'f'.repeat(64),
+    }, null, 2) + '\n');
+    {
+      const md2 = A.renderBlindReadSection(key, corpusDir);
+      check('MAJOR 6: a read whose contentHash does not match this corpus is marked STALE',
+        /\*\*STALE — the recorded contentHash/.test(md2), md2.slice(-500));
+    }
+    {
+      fs.rmSync(path.join(corpusDir, 'blind-read.json'));
+      const md3 = A.renderBlindReadSection(key, corpusDir);
+      check('MAJOR 6: with no blind-read.json the section says NOT RECORDED and points at the seal',
+        /\*\*NOT RECORDED\.\*\*/.test(md3) && /refuses the seal/.test(md3), md3.slice(-600));
+    }
+  }
+}
+
+section('80. run-lane.js — runIndex is the ABSOLUTE position in the run order, so a resumed phase keeps its streak (round-8, OpenAI lane MAJOR)');
+{
+  const repo = makeSourceRepo();
+  const dir = tmpDir('wo12-resumeidx-');
+  const briefs = path.join(dir, 'briefs');
+  fs.mkdirSync(briefs, { recursive: true });
+  const artifacts = [];
+  for (let i = 1; i <= 4; i++) {
+    const id = 'sdc-00' + i;
+    artifacts.push({ id, kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
+    fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
+    fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
+  }
+  const keyPath = writeKey(dir, artifacts);
+  const order = runLaneLib.phaseRunOrder(artifacts, 0).map((a) => a.id);
+  const stubs = tmpDir('wo12-resumeidxstub-');
+  const green = qmStubJson(stubs, 'green.js', ouState(0.85));
+  const okRunner = writeStub(stubs, 'ok.js',
+    'process.stdout.write("REVIEW ENGINE: codex model: gpt-5.6-terra\\n\\nVERDICT: APPROVE\\n\\nFINDINGS\\n- none\\n");\n');
+  const resultsFile = path.join(dir, 'results-X-Terra-phase0.json');
+
+  // Pass 1: the first TWO artifacts of the run order come back UNAVAILABLE,
+  // then the invocation is stopped. (Written directly, so the check is about
+  // runIndex arithmetic and not about how a crash is simulated.)
+  const mkRec = (id, runIndex, status) => ({
+    id, lane: 'X-Terra', phase: 0, variant: 'V1', runIndex, expectedModel: 'gpt-5.6-terra',
+    attempts: [
+      { wallMs: 1, verdict: 'REVIEW_UNAVAILABLE', status, engineHeader: 'REVIEW ENGINE: codex model: gpt-5.6-terra', integrityWarning: false, stdout: 'VERDICT: x\n' },
+      { wallMs: 1, verdict: 'REVIEW_UNAVAILABLE', status, engineHeader: 'REVIEW ENGINE: codex model: gpt-5.6-terra', integrityWarning: false, stdout: 'VERDICT: x\n' },
+    ],
+  });
+  const mkRec2 = (id, runIndex, status) => ({
+    id, lane: 'X-Terra', phase: 0, variant: 'V1', runIndex, expectedModel: 'gpt-5.6-terra',
+    attempts: [{ wallMs: 1, verdict: status === 'UNAVAILABLE' ? 'REVIEW_UNAVAILABLE' : 'APPROVE', status,
+      engineHeader: 'REVIEW ENGINE: codex model: gpt-5.6-terra', integrityWarning: false, stdout: 'VERDICT: x\n' }],
+  });
+  fs.writeFileSync(resultsFile, JSON.stringify([mkRec(order[0], 0, 'UNAVAILABLE'), mkRec(order[1], 1, 'UNAVAILABLE')], null, 2) + '\n');
+
+  // Pass 2: RESUME. The third artifact of the run order runs and also comes
+  // back UNAVAILABLE. Its runIndex must be 2 — the absolute position — not 0.
+  const deadRunner = writeStub(stubs, 'dead.js', 'process.stdout.write("REVIEW ENGINE: codex model: gpt-5.6-terra\\n\\nVERDICT: REVIEW_UNAVAILABLE\\n");\n');
+  const r2 = runLane(['--lane', 'X-Terra', '--phase', '0', '--yes', '--key', keyPath, '--briefs-dir', briefs,
+    '--patches-dir', dir, '--source-repo', repo.dir, '--results-dir', dir,
+    '--clone-root', path.join(dir, 'clone'), '--run-clone-root', path.join(dir, 'run'), '--runner', deadRunner],
+  { WO12_QM_CMD: q(process.execPath) + ' ' + q(green) });
+  const recs = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+  const resumed = recs.find((x) => x.id === order[2]);
+  check('(D): the resumed record exists', !!resumed, JSON.stringify(recs.map((x) => x.id)) + ' ' + (r2.stderr || '').slice(-300));
+  check('(D): its runIndex is the ABSOLUTE run-order position (2), not a restarted counter (0)',
+    resumed && resumed.runIndex === 2, JSON.stringify(recs.map((x) => x.id + '@' + x.runIndex)));
+
+  // And the consequence: gate 6 sees a streak of THREE across the crash.
+  const key = { version: 1, artifacts };
+  const scored = scoreLib.scoreRecords(recs, key, {}).scored;
+  const g = scoreLib.gate12f(scored, key, null, scoreLib.identityExclusions(scored));
+  const item6 = g.items.find((i) => i.n === 6);
+  check('(D): gate 6 reads a streak of 3 across the resume boundary and FAILS',
+    /max streak 3/.test(item6.detail) && item6.status !== 'PASS', item6.status + ' | ' + item6.detail);
+  // The counterfactual, stated on records built by hand so the arithmetic is
+  // the only variable: a resumed record whose counter restarted at 0 sorts
+  // NEXT TO the first artifact of the phase, which interleaves a COMPLETED run
+  // into what was really an unbroken run of three — and gate 6 reads 2.
+  {
+    const dispatch = ['sdc-004', 'sdc-002', 'sdc-001', 'sdc-003']; // corpus order is 001..004
+    const done = [mkRec2(dispatch[0], 0, 'COMPLETED'), mkRec2(dispatch[1], 1, 'UNAVAILABLE'), mkRec2(dispatch[2], 2, 'UNAVAILABLE')];
+    const trueRecs = done.concat([mkRec2(dispatch[3], 3, 'UNAVAILABLE')]);
+    const round7Recs = done.concat([mkRec2(dispatch[3], 0, 'UNAVAILABLE')]);
+    const streakOf = (rr) => {
+      const s = scoreLib.scoreRecords(rr, key, {}).scored;
+      return scoreLib.gate12f(s, key, null, scoreLib.identityExclusions(s)).items.find((i) => i.n === 6).detail;
+    };
+    check('(D): the absolute runIndex reads the true streak of 3', /max streak 3/.test(streakOf(trueRecs)), streakOf(trueRecs));
+    check('(D): the round-7 restarted counter reads a SHORTER streak from the same four runs',
+      /max streak 2/.test(streakOf(round7Recs)), streakOf(round7Recs));
+  }
+  check('(D): the unused ok-runner stub is not what produced these records', typeof okRunner === 'string');
+}
+
+section('79. run-lane.js — run clones are named by an opaque token, and --run-clone-root may not sit inside the repo (round-8 MAJOR 5(a) + OpenAI CRITICAL)');
+{
+  const R = runLaneLib;
+  const SEED = 'e6d3f1a09b47c25801fa3d6e9c14b7a2';
+  // (a) The token, and the property that matters: the lane's cwd basename is
+  // never the artifact id. `sdc-013` in a `basename "$PWD"` plus one public
+  // sentence about the contiguous seeded blocks was a complete oracle.
+  {
+    const tokens = new Set();
+    let leaked = null;
+    for (let i = 1; i <= 84; i++) {
+      const id = 'sdc-' + String(i).padStart(3, '0');
+      const t = R.cloneToken(SEED, id);
+      if (/^sdc-\d{3}$/.test(t)) leaked = id;
+      if (t.indexOf(id) !== -1 || String(i).padStart(3, '0') === t.slice(0, 3)) { /* not decisive; the regex is */ }
+      tokens.add(t);
+    }
+    check('MAJOR 5(a): no run-clone basename matches /^sdc-\\d{3}$/', leaked === null, String(leaked));
+    check('MAJOR 5(a): the 84 tokens are distinct', tokens.size === 84, String(tokens.size));
+    check('MAJOR 5(a): a token is ' + R.CLONE_TOKEN_HEX + ' hex characters',
+      new RegExp('^[0-9a-f]{' + R.CLONE_TOKEN_HEX + '}$').test(R.cloneToken(SEED, 'sdc-013')));
+    check('MAJOR 5(a): the token is deterministic in (runSeed, id)',
+      R.cloneToken(SEED, 'sdc-013') === R.cloneToken(SEED, 'sdc-013') &&
+      R.cloneToken(SEED, 'sdc-013') !== R.cloneToken('other-seed', 'sdc-013'));
+  }
+  // The map round-trips, beside the results file.
+  {
+    const dir = tmpDir('wo12-clonemap-');
+    const resultsFile = path.join(dir, 'X-Terra-phase0.json');
+    const ids = ['sdc-001', 'sdc-013', 'sdc-084'];
+    const p = R.writeCloneMap(resultsFile, SEED, 'X-Terra', 0, ids);
+    check('MAJOR 5(a): clone-map.json is written BESIDE the results file',
+      p === path.join(dir, R.CLONE_MAP_BASENAME) && fs.existsSync(p), p);
+    const m = R.readCloneMap(resultsFile);
+    check('MAJOR 5(a): the map round-trips id -> token -> id',
+      ids.every((id) => m.byToken[m.map[id]] === id), JSON.stringify(m && m.map));
+    check('MAJOR 5(a): the map records the run seed so a resumed phase reuses the same directories',
+      m.runSeed === SEED && R.resolveRunSeed(resultsFile, null) === SEED);
+    check('MAJOR 5(a): an explicit --run-seed still wins over the recorded one',
+      R.resolveRunSeed(resultsFile, 'forced') === 'forced');
+    const fresh = path.join(tmpDir('wo12-clonemap2-'), 'r.json');
+    const a = R.resolveRunSeed(fresh, null);
+    const b = R.resolveRunSeed(fresh, null);
+    check('MAJOR 5(a): with no map and no flag a fresh seed is minted each time',
+      /^[0-9a-f]{32}$/.test(a) && a !== b, a + ' ' + b);
+  }
+  // (OpenAI CRITICAL) --run-clone-root containment.
+  {
+    const repo = makeSourceRepo();
+    const inside = path.join(repo.dir, 'runs');
+    const outside = tmpDir('wo12-runroot-outside-');
+    const probe = (root) => spawnSync(process.execPath, ['-e',
+      'const R=require(process.argv[1]);R.assertRunCloneRootOutside(process.argv[2],process.argv[3]);' +
+      'process.stdout.write("ACCEPTED\\n");', RUN_LANE, root, repo.dir], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+    const refused = probe(inside);
+    check('OpenAI CRITICAL: --run-clone-root INSIDE the repository is refused, exit 2',
+      refused.status === 2 && /refusing --run-clone-root/.test(refused.stderr || ''),
+      'status=' + refused.status + ' ' + (refused.stderr || ''));
+    check('OpenAI CRITICAL: the refusal says WHY (the live key.json is reachable by relative path)',
+      /key\.json/.test(refused.stderr || ''), refused.stderr || '');
+    const accepted = probe(outside);
+    check('OpenAI CRITICAL: a scratch root outside the repository is accepted',
+      accepted.status === 0 && /ACCEPTED/.test(accepted.stdout || ''),
+      'status=' + accepted.status + ' ' + (accepted.stderr || ''));
+    const asRepo = probe(repo.dir);
+    check('OpenAI CRITICAL: the repository root ITSELF is refused', asRepo.status === 2, String(asRepo.status));
+  }
+}
+
+section('78. assemble-key.js — the `Commit subject:` line is gone from the work order (round-8 MAJOR 4)');
+{
+  const A = assembleKeyLib;
+  const head = 'a'.repeat(40);
+  const base = 'b'.repeat(40);
+  const SUBJ = 'Widen the checkout resolver and pin its cache';
+  const content = { order: 'The order asks for a bounded change to the resolver and to nothing beside it.',
+    claims: 'The suite was run and the resolver behaves exactly as the order asked.' };
+  for (const variant of ['V1', 'V2', 'V3']) {
+    const a = { id: 'sdc-001', kind: 'seeded', variant, base, subject: SUBJ };
+    const b = A.generateBriefs(a, head, content, 'code');
+    check('MAJOR 4: the ' + variant + ' work order carries no `Commit subject:` line',
+      !/Commit subject/.test(b.wo), b.wo.slice(0, 300));
+    check('MAJOR 4: the ' + variant + ' work order does not carry the subject text at all',
+      b.wo.indexOf(SUBJ) === -1, b.wo.slice(0, 300));
+    check('MAJOR 4: the ' + variant + ' executor report does not carry it either',
+      !/Commit subject/.test(b.er) && b.er.indexOf(SUBJ) === -1, b.er.slice(0, 300));
+  }
+  // The pair oracle it closed: two artifacts sharing a base, a head and a
+  // subject now produce IDENTICAL brief scaffolding, so sorting on the header
+  // no longer separates them.
+  {
+    const seededMember = A.generateBriefs({ id: 'sdc-001', kind: 'seeded', variant: 'V1', base, subject: SUBJ }, head, content, 'code');
+    const controlMember = A.generateBriefs({ id: 'sdc-075', kind: 'control', variant: 'V1', base, subject: SUBJ }, head, content, 'code');
+    check('MAJOR 4: a reused-base pair now shares no header field a reader can sort on',
+      seededMember.wo === controlMember.wo, 'differs');
+  }
+  check('MAJOR 4: `<SUBJECT>` is an unused placeholder — no template renders SUBJECT_LABEL', (() => {
+    const src = fs.readFileSync(ASSEMBLE_KEY, 'utf8');
+    return !/^\s*SUBJECT_LABEL \+ artifact\.subject,/m.test(src);
+  })());
+  check('MAJOR 4: `isSubjectLine` survives as a pinned predicate so the round-1 prefix hole cannot return',
+    A.isSubjectLine('Commit subject:      x', 'x') === true && A.isSubjectLine('Commit subject: x y', 'x') === false);
+}
+
+section('77. assemble-key.js — the splitter no longer needs a capital letter, and the shortest-sentence RANGE is gated (round-8 MAJOR 3)');
+{
+  const A = assembleKeyLib;
+  const S = A.splitIntoSentences;
+  const shape = (t) => S(t).map((x) => x.trim().split(/\s+/).length);
+
+  // The record's four strings, with the sentence counts and word shapes it
+  // measured. Strings 2 and 3 are the defect: the round-7 lookahead made them
+  // ONE sentence, so the 8-word floor could not see the "Done."
+  check('MAJOR 3: "Done. The tests pass …" → 2 sentences [1, 10]',
+    JSON.stringify(shape('Done. The tests pass and nothing else moved in this change.')) === '[1,10]',
+    JSON.stringify(S('Done. The tests pass and nothing else moved in this change.')));
+  check('MAJOR 3: "Done. install.js must not …" → 2 sentences [1, 10] (was 1 sentence [11])',
+    JSON.stringify(shape('Done. install.js must not be touched by this change at all.')) === '[1,10]',
+    JSON.stringify(S('Done. install.js must not be touched by this change at all.')));
+  check('MAJOR 3: "Make recon two-tier. tests/router.test.js stays green …" → 2 sentences [3, 6]',
+    JSON.stringify(shape('Make recon two-tier. tests/router.test.js stays green throughout the run.')) === '[3,6]',
+    JSON.stringify(S('Make recon two-tier. tests/router.test.js stays green throughout the run.')));
+  check('MAJOR 3: "Done.The tests pass …" (no space) → 1 sentence [11]',
+    JSON.stringify(shape('Done.The tests pass and nothing else moved in this whole change.')) === '[11]',
+    JSON.stringify(S('Done.The tests pass and nothing else moved in this whole change.')));
+
+  // The dotted tokens the lookahead used to protect are still safe, for a
+  // structural reason: a filename mid-sentence has no whitespace after its dot.
+  check('MAJOR 3: a filename mid-sentence still does not split',
+    S('The order says install.js must not move at all here.').length === 1);
+  for (const abbr of ['e.g.', 'i.e.', 'etc.', 'vs.']) {
+    check('MAJOR 3: the abbreviation ' + abbr + ' does not split a sentence',
+      S('The scope covers the resolver ' + abbr + ' the cache path and nothing beyond it.').length === 1,
+      JSON.stringify(S('The scope covers the resolver ' + abbr + ' the cache path and nothing beyond it.')));
+  }
+  check('MAJOR 3: the abbreviation list is closed and short', A.SENTENCE_ABBREVIATIONS.has('e.g.') && !A.SENTENCE_ABBREVIATIONS.has('js.'));
+  check('MAJOR 3: the 8-word floor now SEES the evaded short sentence', (() => {
+    const c = A.splitIntoSentences('Done. install.js must not be touched by this change at all.')
+      .map((x) => x.trim().split(/\s+/).length);
+    return Math.min.apply(null, c) < A.MIN_SENTENCE_WORDS;
+  })());
+
+  // The RANGE gate.
+  const mk = (id, kind, shortest) => ({ id, kind, variant: 'V1', baseKind: 'code', orderWords: 145, claimsWords: 76,
+    orderHardness: 2, orderHardnessStrict: 1, labels: [], backticks: 0, digitsPer100: 1.0, trigrams: [], idioms: {},
+    unigrams: [], sentences: { order: [{ text: 'x', words: 20 }], claims: [{ text: 'y', words: 20 }] },
+    shortestSentence: shortest });
+  const corpus = (sFn, cFn) => {
+    const rows = [];
+    for (let i = 1; i <= 30; i++) rows.push(mk('sdc-' + String(i).padStart(3, '0'), 'seeded', sFn(i)));
+    for (let i = 31; i <= 84; i++) rows.push(mk('sdc-' + String(i).padStart(3, '0'), 'control', cFn(i)));
+    return rows;
+  };
+  {
+    // The round-7 corpus's own shape: means 1.34 apart (inside the mean gate)
+    // with a disjoint floor — seeded min 9, control min 8.
+    const f = [];
+    A.distributionLint(corpus((i) => (i <= 8 ? 10 : 11), (i) => (i <= 45 ? 8 : 12)), f);
+    check('MAJOR 3: a 2-word disjoint FLOOR fails even when the mean passes',
+      f.some((x) => /SHORTEST-SENTENCE FLOORS differ/.test(x)) && !f.some((x) => /mean SHORTEST SENTENCE/.test(x)),
+      JSON.stringify(f.filter((x) => /SHORTEST/.test(x))));
+  }
+  {
+    const f = [];
+    A.distributionLint(corpus((i) => (i <= 5 ? 17 : 11), () => 11), f);
+    check('MAJOR 3: a 6-word disjoint CEILING fails even when the mean passes',
+      f.some((x) => /SHORTEST-SENTENCE CEILINGS differ/.test(x)) && !f.some((x) => /mean SHORTEST SENTENCE/.test(x)),
+      JSON.stringify(f.filter((x) => /SHORTEST/.test(x))));
+  }
+  {
+    const f = [];
+    A.distributionLint(corpus((i) => (i <= 5 ? 10 : 12), (i) => (i <= 35 ? 11 : 13)), f);
+    check('MAJOR 3: a floor Δ of 1 and a ceiling Δ of 1 are inside the tolerances',
+      !f.some((x) => /SHORTEST/.test(x)), JSON.stringify(f.filter((x) => /SHORTEST/.test(x))));
+  }
+}
+
+section('76. assemble-key.js — the unigram arm reaches `we`, `md` and bare numbers (round-8 MAJOR 2)');
+{
+  const A = assembleKeyLib;
+  const mk = (id, kind, unigrams) => ({ id, kind, variant: 'V1', baseKind: 'code', orderWords: 145, claimsWords: 76,
+    orderHardness: 2, orderHardnessStrict: 1, labels: [], backticks: 0, digitsPer100: 1.0, trigrams: [], idioms: {},
+    unigrams: unigrams || [], sentences: { order: [{ text: 'x', words: 20 }], claims: [{ text: 'y', words: 20 }] },
+    shortestSentence: 20 });
+  const corpus = () => {
+    const rows = [];
+    for (let i = 1; i <= 30; i++) rows.push(mk('sdc-' + String(i).padStart(3, '0'), 'seeded'));
+    for (let i = 31; i <= 84; i++) rows.push(mk('sdc-' + String(i).padStart(3, '0'), 'control'));
+    return rows;
+  };
+  // The record's own measurement: `we` in 13 controls and 0 seeds. Two
+  // characters AND a stopword — doubly exempt under the round-7 rule, so this
+  // check fails on the pre-round-8 code and passes after.
+  {
+    const rows = corpus();
+    for (let i = 30; i < 43; i++) rows[i].unigrams = A.unigramsOf('we ran the suite');
+    const f = [];
+    A.distributionLint(rows, f);
+    check('MAJOR 2: the 2-char stopword `we` at 0 seeded / 13 controls is a hard failure',
+      f.some((x) => /the word "we" occurs in 13 control artifact\(s\)/.test(x)),
+      JSON.stringify(f.filter((x) => /"we"/.test(x))));
+  }
+  // A bare number carried by 8 seeds and no control — `135` in the record.
+  {
+    const rows = corpus();
+    for (let i = 0; i < 8; i++) rows[i].unigrams = A.unigramsOf('the count reached 135 checks');
+    const f = [];
+    A.distributionLint(rows, f);
+    check('MAJOR 2: the bare number `135` at 8 seeded / 0 controls is a hard failure',
+      f.some((x) => /the word "135" occurs in 8 seeded artifact\(s\)/.test(x)),
+      JSON.stringify(f.filter((x) => /135/.test(x))));
+  }
+  // `md` at exactly the fail threshold, the token round-4 MAJOR 2 named.
+  {
+    const rows = corpus();
+    for (let i = 30; i < 38; i++) rows[i].unigrams = ['md'];
+    const f = [];
+    A.distributionLint(rows, f);
+    check('MAJOR 2: `md` at exactly the df ≥ ' + A.UNIGRAM_MIN_FILES + ' threshold fails',
+      f.some((x) => /the word "md" occurs in 8 control artifact\(s\)/.test(x)), JSON.stringify(f.filter((x) => /"md"/.test(x))));
+  }
+  // The report band is unchanged.
+  {
+    const rows = corpus();
+    for (let i = 0; i < 7; i++) rows[i].unigrams = ['we'];
+    const f = [];
+    const rep = A.distributionLint(rows, f);
+    check('MAJOR 2: 7 documents is still REPORTED, not failed',
+      !f.some((x) => /"we"/.test(x)) && rep.unigramsReported.some((u) => u.word === 'we'), JSON.stringify(f));
+  }
+}
+
+section('75. assemble-key.js — arm (8), single-threshold purity (round-8 MAJOR 1)');
+{
+  const A = assembleKeyLib;
+  const FEAT = '"and" per 100 words';
+  // A corpus that is IDENTICAL on every derived feature, so any failure the
+  // checks below see is the one they planted.
+  const flat = () => {
+    const base = A.purityFeaturesOf(
+      'The order asks for a bounded change to the resolver and to nothing beside it here.',
+      'The suite was run and the resolver behaves as the order asked of it now.');
+    const rows = [];
+    for (let i = 1; i <= 84; i++) {
+      rows.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: i <= 30 ? 'seeded' : 'control',
+        variant: 'V1', baseKind: 'code', orderWords: 145, claimsWords: 76, orderHardness: 2, orderHardnessStrict: 1,
+        labels: [], backticks: 0, digitsPer100: 1.0, trigrams: [], idioms: {}, unigrams: [],
+        sentences: { order: [{ text: 'x', words: 20 }], claims: [{ text: 'y', words: 20 }] }, shortestSentence: 20,
+        purity: Object.assign({}, base) });
+    }
+    return rows;
+  };
+  { const f = []; A.distributionLint(flat(), f);
+    check('(8) a corpus flat on every derived feature passes arm (8)',
+      !f.some((x) => /single-threshold rule/.test(x)), JSON.stringify(f.slice(0, 3))); }
+
+  // A PURE TAIL of exactly PURITY_MIN_FIRES seeded artifacts fails.
+  {
+    const rows = flat();
+    for (let i = 0; i < A.PURITY_MIN_FIRES; i++) rows[i].purity[FEAT] = 99;
+    const f = [];
+    const rep = A.distributionLint(rows, f);
+    const hit = f.filter((x) => /single-threshold rule/.test(x));
+    check('(8) a pure tail of exactly ' + A.PURITY_MIN_FIRES + ' seeded artifacts is a hard failure',
+      hit.length >= 1, JSON.stringify(f.slice(0, 3)));
+    check('(8) …the finding names the feature, the direction and the threshold',
+      hit.some((x) => x.indexOf('`' + FEAT + ' >= 99`') !== -1), JSON.stringify(hit));
+    check('(8) …and lists the CONTENT TARGETS by artifact id',
+      hit.some((x) => /CONTENT TARGETS \(5\): sdc-001, sdc-002, sdc-003, sdc-004, sdc-005/.test(x)), JSON.stringify(hit));
+    check('(8) …the report carries the failing rule with its counts and precision',
+      rep.purity.failures.some((r) => r.feature === FEAT && r.dir === '>=' && r.nSeed === 5 && r.nControl === 0 && r.precision === 1),
+      JSON.stringify(rep.purity.failures.map((r) => r.feature + r.dir + r.threshold)));
+  }
+  // FOUR is under the floor and passes.
+  {
+    const rows = flat();
+    for (let i = 0; i < A.PURITY_MIN_FIRES - 1; i++) rows[i].purity[FEAT] = 99;
+    const f = [];
+    A.distributionLint(rows, f);
+    check('(8) a pure tail of ' + (A.PURITY_MIN_FIRES - 1) + ' is under the floor and passes',
+      !f.some((x) => /single-threshold rule/.test(x)), JSON.stringify(f.filter((x) => /single-threshold/.test(x))));
+  }
+  // A tail that is BALANCED across the two populations passes at any size.
+  {
+    const rows = flat();
+    for (const i of [0, 1, 2, 3, 4, 5, 6, 7, 30, 31, 32, 33]) rows[i].purity[FEAT] = 99;
+    const f = [];
+    A.distributionLint(rows, f);
+    check('(8) a 12-artifact tail carrying BOTH populations passes',
+      !f.some((x) => /single-threshold rule/.test(x)), JSON.stringify(f.filter((x) => /single-threshold/.test(x))));
+  }
+  // The control direction, and the `<=` direction, both fire.
+  {
+    const rows = flat();
+    // Means that AGREE (3.10 seeded vs 2.08 control, Δ 1.02 — inside arm (3)'s
+    // 1.5 tolerance) while the ZERO BIN is 9 controls and no seed at all. This
+    // is exactly the shape a Δmean gate cannot see: round 7 passed digit
+    // density at Δ 0.41 while `digits per 100 words == 0` was 10S/0C.
+    for (const r of rows) r.purity['digits per 100 words'] = 2.5;
+    for (let i = 30; i < 30 + 9; i++) rows[i].purity['digits per 100 words'] = 0;
+    for (let i = 0; i < 9; i++) rows[i].purity['digits per 100 words'] = 4.5;
+    const f = [];
+    A.distributionLint(rows, f);
+    check('(8) the ZERO BIN of a feature whose MEANS agree is caught (`<=` direction, control side)',
+      f.some((x) => /single-threshold rule `digits per 100 words <= 0`/.test(x) && /fires on 9 control/.test(x)),
+      JSON.stringify(f.filter((x) => /digits/.test(x))));
+  }
+  // The feature family itself.
+  check('(8) the family covers word totals, sentence shape, punctuation, connectives and digits',
+    ['ORDER words', 'CLAIMS words', 'ORDER sentence count', 'CLAIMS sentence count', 'mean sentence length',
+      'shortest sentence', 'longest sentence', 'sentence-length sd', 'commas per 100 words', 'semicolons per 100 words',
+      'colons per 100 words', 'em/en dashes per 100 words', '"and" per 100 words', 'connectives per 100 words',
+      'digits per 100 words'].every((n) => A.PURITY_FEATURE_NAMES.indexOf(n) !== -1),
+    JSON.stringify(A.PURITY_FEATURE_NAMES));
+  check('(8) the rendered section names the failing rule AND its content targets', (() => {
+    const rows = flat();
+    for (let i = 0; i < 6; i++) rows[i].purity[FEAT] = 99;
+    const rep = A.distributionLint(rows, []);
+    const text = A.renderPuritySection(rep);
+    return /\*\*FAIL\*\*/.test(text) && /Content targets/.test(text) && /sdc-006/.test(text);
+  })());
 }
 
 section('72. the suite itself writes NOTHING into the repository (round-5 incident guard)');

@@ -155,6 +155,12 @@ function fail(msg) {
 // (`base-pool.json`), so the id is validated against that shape BEFORE it is
 // joined into any path or handed to any removal. Anything else is refused.
 const ARTIFACT_ID_RE = /^sdc-\d{3}$/;
+// Round-8 MAJOR 5(a): `run-lane.js` names each run clone by an opaque per-run
+// token (the first 12 hex of sha256(runSeed:id)) so the lane's own cwd basename
+// no longer announces its artifact id. Both shapes are separator-free and
+// traversal-free, which is the only property the delete guard below needs.
+const RUN_CLONE_TOKEN_RE = /^[0-9a-f]{12}$/;
+const RUN_CLONE_BASENAME_RE = /^(?:sdc-\d{3}|[0-9a-f]{12})$/;
 
 function assertSafeArtifactId(id, where) {
   if (typeof id !== 'string' || !ARTIFACT_ID_RE.test(id)) {
@@ -586,13 +592,22 @@ function keyBlobShaFor(sourceRepo, keyRelPath) {
 function prepareRunClone(buildClone, head, runDir, keyBlobSha) {
   const resolvedRun = path.resolve(runDir);
   // The last line of defence before a recursive delete (round-3, cross-vendor
-  // CRITICAL): whatever produced this path, its final component must be a
-  // well-formed artifact id. `path.resolve` has already collapsed any `..`, so
-  // an id like `../victim` shows up here as a basename that cannot match.
-  if (!ARTIFACT_ID_RE.test(path.basename(resolvedRun))) {
+  // CRITICAL): whatever produced this path, its final component must be a name
+  // this pack could have generated. `path.resolve` has already collapsed any
+  // `..`, so an id like `../victim` shows up here as a basename that cannot
+  // match either alternative.
+  //
+  // ROUND-8 MAJOR 5(a) widened the vocabulary by exactly one shape: a run clone
+  // is now named by `run-lane.js`'s opaque per-run TOKEN (12 lowercase hex),
+  // because naming it after the artifact id told every lane its own id and, via
+  // one public sentence about the contiguous seeded blocks, its own cohort. The
+  // guard's property is unchanged — a fixed, separator-free, traversal-free
+  // character class — and both alternatives are anchored.
+  if (!RUN_CLONE_BASENAME_RE.test(path.basename(resolvedRun))) {
     fail('refusing to prepare (and recursively delete) a run clone at ' + resolvedRun +
-      ' — its final path component is not a valid artifact id (' + ARTIFACT_ID_RE + '). This is the guard that stops a ' +
-      'crafted or malformed id from escaping --run-clone-root and deleting a sibling directory.');
+      ' — its final path component is neither a valid artifact id (' + ARTIFACT_ID_RE + ') nor an opaque run-clone ' +
+      'token (' + RUN_CLONE_TOKEN_RE + '). This is the guard that stops a crafted or malformed name from escaping ' +
+      '--run-clone-root and deleting a sibling directory.');
   }
   if (isInside(realResolve(buildClone), realResolve(resolvedRun))) {
     fail('refusing to build the run clone at ' + resolvedRun + ' — it is inside the build clone ' + buildClone);
@@ -815,6 +830,8 @@ module.exports = {
   GIT_PINS,
   KEY_REL_PATH,
   ARTIFACT_ID_RE,
+  RUN_CLONE_TOKEN_RE,
+  RUN_CLONE_BASENAME_RE,
   assertSafeArtifactId,
   isCaseInsensitiveFs,
   resetCaseProbeCache,

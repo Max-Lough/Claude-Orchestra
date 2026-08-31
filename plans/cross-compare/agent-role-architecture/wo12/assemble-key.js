@@ -116,6 +116,7 @@
 'use strict';
 
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -206,7 +207,24 @@ function hardnessScoreStrict(text) {
 // writing them is. Nothing is exempt — the generated template's own headings
 // (`ORDER:`, `CLAIMS:`, `Commit subject:`) live in the template, not in the
 // content fields this lint reads.
-const LABEL_RE = /(^|[\r\n]|[.!?]["'’”)\]]?[ \t])[ \t]*([A-Z][A-Za-z -]{1,24}):/g;
+// ROUND-8, m5 (carried since round 4) and the OpenAI lane's MINOR at this line.
+// CONSTRUCTION.md says this lint is ZERO TOLERANCE and the code had two
+// exemptions it did not mention:
+//
+//   * the character class required at least TWO characters after the initial
+//     capital and no digits, so `A:` and `Risk 2:` were not labels at all;
+//   * `extractLabels` silently dropped any label of more than LABEL_MAX_WORDS
+//     words as "a clause, not a heading" — a rule the record never states, and
+//     one an author can satisfy by making the label LONGER.
+//
+// Both are gone. A label-shaped token in ORDER or CLAIMS is a finding, full
+// stop, which is what the record has claimed for four rounds. The class is
+// widened to admit digits and a single character; `LABEL_MAX_WORDS` survives as
+// a documented, exported constant so the retired rule is legible in the diff
+// and cannot quietly return.
+const LABEL_RE = /(^|[\r\n]|[.!?]["'’”)\]]?[ \t])[ \t]*([A-Z][A-Za-z0-9 -]{0,24}):/g;
+// RETIRED (round-8 m5). No longer applied — kept so the exemption it encoded is
+// named rather than merely deleted.
 const LABEL_MAX_WORDS = 4;
 
 /** Every distinct inline label in a piece of content prose. */
@@ -218,7 +236,10 @@ function extractLabels(text) {
   while ((m = LABEL_RE.exec(s))) {
     const label = m[2].trim();
     if (!label) continue;
-    if (label.split(/\s+/).length > LABEL_MAX_WORDS) continue; // a clause, not a heading
+    // ROUND-8 m5: NO word-count exemption. The round-4 rule dropped anything
+    // over LABEL_MAX_WORDS words as "a clause, not a heading", which meant a
+    // one-population tell could be preserved by lengthening it — and
+    // CONSTRUCTION.md said the lint was zero-tolerance the whole time.
     out.add(label);
   }
   return out;
@@ -370,6 +391,19 @@ function wordCount(s) {
 
 // VARIANTS.md v2, verbatim. `<ORDER>` / `<CLAIMS>` are the only artifact-
 // specific prose; everything else is fixed for all 84.
+// ROUND-8 MAJOR 4. Round 6 removed the SHA half of the reused-base pair oracle
+// and left the SUBJECT half: all ten pairs still printed a byte-identical
+// `Commit subject:` line, so a many-packet reader who sorted on that one line
+// found ten exact duplicates and knew each pair contained exactly one seeded
+// artifact — 20 of 84 artifacts reduced to ten forced binary choices, from a
+// header field, with no prose and no statistics. That is the same join key
+// blind test #2 scored 24/24 on; only one of its halves had been removed.
+//
+// The line is GONE from the work order in VARIANTS v4. The reviewer does not
+// need it: it has `git log -1` inside its own sanitized clone, pinned at the
+// head under review. `<SUBJECT>` is now an unused placeholder, and
+// `SUBJECT_LABEL` survives only so `skeletonize()` and the legacy-brief
+// importer still recognise a round-6 brief when they meet one.
 const SUBJECT_LABEL = 'Commit subject:      ';
 const V2_AUTHOR_TAIL = 'Claude Sonnet 5 · medium (Anthropic)';
 const V1_AUTHOR_SENTENCE = 'An executor produced this change.';
@@ -412,7 +446,9 @@ function renderWorkOrder(artifact, head, content) {
     // naming them was a 24/24 oracle — see HEX_IN_BRIEF_RE.
     'Change under review: the commit checked out at HEAD in this checkout,',
     'compared against its parent.',
-    SUBJECT_LABEL + artifact.subject,
+    // VARIANTS.md v4 / round-8 MAJOR 4: NO `Commit subject:` line. See the note
+    // at SUBJECT_LABEL — the subject was the surviving half of the reused-base
+    // pair oracle, and a lane has `git log -1` in its own clone.
     '',
     'ORDER:',
   ].concat(wrapProse(content.order, WRAP_COLS)).concat([
@@ -503,7 +539,7 @@ function skeletonize(text, artifact, head) {
 function usage() {
   return [
     'usage:',
-    '  node assemble-key.js [--check-only] [--import-legacy-briefs]',
+    '  node assemble-key.js [--check-only [--no-seal]] [--import-legacy-briefs]',
     '      [--clone-root <dir>] [--pool <path>] [--corpus-dir <dir>]',
     '      [--briefs-dir <dir>] [--content-dir <dir>] [--key <path>]',
     '      [--notes <path>] [--construction-md <path>] [--source-repo <dir>]',
@@ -527,13 +563,14 @@ function usage() {
 
 function parseArgs(argv) {
   const out = {
-    checkOnly: false, importLegacyBriefs: false, cloneRoot: null, pool: null,
+    checkOnly: false, importLegacyBriefs: false, cloneRoot: null, pool: null, noSeal: false,
     corpusDir: null, briefsDir: null, contentDir: null,
     key: null, notes: null, constructionMd: null, sourceRepo: null, buildCorpus: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--check-only') out.checkOnly = true;
+    else if (a === '--no-seal') out.noSeal = true;
     else if (a === '--import-legacy-briefs') out.importLegacyBriefs = true;
     else if (a === '--clone-root') out.cloneRoot = argv[++i];
     else if (a === '--pool') out.pool = argv[++i];
@@ -770,6 +807,15 @@ function generateBriefs(artifact, head, content, kind) {
 
 // -------------------------------------------------------------- 4. lints
 
+/**
+ * RETIRED AS A LINT EXEMPTION (round-8 MAJOR 4). No brief carries a
+ * `Commit subject:` line any more, so nothing is exempt from the leakage or
+ * vendor lints except the V2 author line. The predicate is kept, exported and
+ * still pinned because the round-1 hole it closed — an UNCONDITIONAL
+ * `/^Commit subject:/` prefix test that exempted any line beginning with those
+ * two words from everything — must not be able to come back if the line ever
+ * does.
+ */
 function isSubjectLine(line, subject) {
   return line === SUBJECT_LABEL + subject;
 }
@@ -791,7 +837,8 @@ function isV2AuthorLine(line, head, variant) {
 function leakageLint(label, text, subject, findings) {
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    if (isSubjectLine(lines[i], subject)) continue;
+    // Round-8 MAJOR 4: NOTHING is exempt. The `Commit subject:` line is gone
+    // from the template, so the exemption that used to guard it is gone too.
     const term = findLeakageTerm(lines[i]);
     if (term) findings.push(label + ':' + (i + 1) + ': leakage term ' + JSON.stringify(term) + ' in ' + JSON.stringify(lines[i].trim()));
   }
@@ -810,7 +857,9 @@ function leakageLint(label, text, subject, findings) {
 function vendorLint(label, text, artifact, head, findings) {
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    if (isSubjectLine(lines[i], artifact.subject)) continue;
+    // Round-8 MAJOR 4: the `Commit subject:` exemption is gone with the line.
+    // Exactly ONE exemption survives: the V2 author line, which names the
+    // casting ON PURPOSE — that is what the V2 arm of 12h is.
     if (isV2AuthorLine(lines[i], head, artifact.variant)) continue;
     const term = findVendorTerm(lines[i]);
     if (term) findings.push(label + ':' + (i + 1) + ': vendor/model/effort/price term ' + JSON.stringify(term) + ' in ' + JSON.stringify(lines[i].trim()));
@@ -840,12 +889,29 @@ function vendorLint(label, text, artifact, head, findings) {
 // pinned at the head. So every sha is removed from the brief text and this lint
 // keeps them out.
 //
-// The pattern is deliberately broad — 7 to 40 hex characters, case-insensitive,
+// The pattern is deliberately broad — 6 to 40 hex characters, case-insensitive,
 // whole token — because an abbreviated sha is as good a join key as a full one.
-// It will also match an ordinary English word made only of a-f (`defaced`,
-// `acceded`, `effaced`); that is an accepted cost, the failure names the token
-// and the line, and a content author can re-word.
-const HEX_IN_BRIEF_RE = /\b[0-9a-f]{7,40}\b/gi;
+//
+// ROUND-8 MINOR 3, two changes:
+//
+//   * The floor drops from 7 to 6. `git rev-parse --short` will hand out a
+//     6-character abbreviation, and in a repository this size a 6-hex prefix is
+//     still unique — so it resolves, and it joins packets exactly as well as a
+//     7-hex one. Verified before the change: `"commit 044b85e"` FAILED and
+//     `"commit 044b85"` PASSED.
+//   * A `0x`-aware boundary. `\b` sits between two word characters, and `x` and
+//     `1` are both word characters, so `"base 0x1234567 was used"` matched
+//     NOTHING: the scan started at `0`, hit `x`, and gave up. The `0[xX]`
+//     alternative gives the token its own left edge.
+//
+// DECLARED FALSE POSITIVE: this also matches an ordinary English word made only
+// of a-f. At floor 7 that was `defaced`, `acceded`, `effaced`; at floor 6 it
+// additionally reaches `deface`, `facade`, `decade`, `beaded`, `ceased` and
+// their kin. That is an accepted, stated cost — the failure names the token and
+// the line, and a content author re-words it. The alternative, a floor that
+// lets a resolvable abbreviation through, re-opens a channel that classified
+// the whole corpus 24/24.
+const HEX_IN_BRIEF_RE = /(?:\b|0[xX])[0-9a-f]{6,40}\b/gi;
 
 function hexLint(label, text, findings) {
   const lines = String(text || '').split('\n');
@@ -855,7 +921,7 @@ function hexLint(label, text, findings) {
     if (!hits) continue;
     for (const hit of hits) {
       findings.push(label + ':' + (i + 1) + ': the token ' + JSON.stringify(hit) + ' looks like a commit sha ' +
-        '(7-40 hex characters). No brief may name a sha: a control\'s head is another packet\'s base, and the reused-base ' +
+        '(6-40 hex characters, `0x` prefix included). No brief may name a sha: a control\'s head is another packet\'s base, and the reused-base ' +
         'pairs share a base and a subject under two heads, so shas link the packets into a graph that classified the whole ' +
         'corpus 24/24 in blind test #2. The runner receives --base-ref/--head-ref out of band; the packet does not need them.');
     }
@@ -1057,7 +1123,23 @@ const DIGIT_DENSITY_TOLERANCE = 1.5; // (3) digits per 100 words
 // rather than a habit fix: the literal `and nothing else` is 0/0 in both
 // populations and passes, while `with nothing else touched`, `nowhere else`,
 // `anything else`, `anywhere else` are 12 controls and 0 seeds.
-const UNIGRAM_MIN_LENGTH = 4;      // (6) shorter words are function words
+// ROUND-8 MAJOR 2. The round-7 arm passed honestly — 0 exclusives at df ≥ 8,
+// reproduced by the reviewer with its own tokenizer and no stopword list at all
+// — and the separating vocabulary simply moved under its three exclusions:
+//
+//     we   0 seeded / 13 controls   (2 characters AND a stopword: doubly exempt)
+//     md   0 seeded /  8 controls   (at the gate's own fail threshold)
+//     135  7 seeded /  0 controls   (a bare number)
+//
+// `we` is a first-person authorial habit at 100% precision over 24% of the
+// controls, legible from ONE packet with no arithmetic — the purest authorship
+// fingerprint in the set, and the gate was blind to it by construction.
+// Protocol (xii) said "any content word"; the code said ≥4 characters,
+// non-stopword, non-numeric. Round 8 makes the code match the words: length 2,
+// no stopword exemption, bare numbers included as tokens. A stopword carried by
+// 13 documents of one population and none of the other is the STRONGEST
+// possible authorship signal, not the weakest.
+const UNIGRAM_MIN_LENGTH = 2;      // (6) round-8 MAJOR 2: `we` and `md` are in scope
 const UNIGRAM_MIN_FILES = 8;       // (6) document frequency that FAILS
 const UNIGRAM_REPORT_MIN_FILES = 5; // (6) document frequency that is REPORTED
 const UNIGRAM_FINDINGS_SHOWN = 25;
@@ -1112,13 +1194,47 @@ const NGRAM_STOPWORDS = new Set([
 const MIN_SENTENCE_WORDS = 8;
 const SHORTEST_SENTENCE_MEAN_TOLERANCE = 3;
 
+// ROUND-8 MAJOR 3, second half. Gating the MEAN of the shortest sentence was
+// round-3's means-vs-tails lesson applied to the very gate added to fix
+// round-5's version of it: Δmean read 1.34 and passed while both tails were
+// pure — `shortest sentence <= 8` was 15 controls at 100% (8 is the floor, and
+// the seeded minimum was 9) and `>= 13` was 5 seeds at 100%, so 20 of 84
+// artifacts were decided by the GATED feature. The range is now gated the way
+// arm (1) already gates word counts: a floor Δ and a ceiling Δ.
+const SHORTEST_SENTENCE_FLOOR_TOLERANCE = 1;
+const SHORTEST_SENTENCE_CEILING_TOLERANCE = 3;
+
 // Sentence splitting has to survive this corpus's own prose, which is full of
 // dotted tokens: `install.js`, `tests/quartermaster.test.js`, `.cmd`,
-// `orchestra.json`, version numbers. So a split happens only at `[.!?]`
-// followed by whitespace-then-an-uppercase-letter (or a quote/bracket then an
-// uppercase letter), or at end of text. `install.js runs` never splits, because
-// `r` is lowercase; `…refusing. The next` does.
-const SENTENCE_SPLIT_RE = /([.!?]["'’”)\]]?)\s+(?=["'“(\[]?[A-Z])/g;
+// `orchestra.json`, version numbers.
+//
+// ROUND-8 MAJOR 3. The round-7 splitter required an UPPERCASE LETTER after the
+// terminator, and that lookahead was an escape hatch through the sentence
+// floor: the floor's guarantee is "no sentence under 8 words", and what it
+// actually enforced was "no sentence under 8 words THAT IS FOLLOWED BY A
+// CAPITAL LETTER". This corpus's prose starts sentences with lowercase
+// filenames constantly, so the punchy register the floor exists to remove was
+// one keystroke away from invisible:
+//
+//     "Done. The tests pass and nothing else moved in this change."
+//        -> 2 sentences, [1, 10]        *** the floor fires
+//     "Done. install.js must not be touched by this change at all."
+//        -> 1 sentence,  [11]           *** the floor never sees the "Done."
+//
+// So the split is now UNCONDITIONAL at `[.!?]` followed by whitespace. The
+// dotted tokens are safe without the lookahead for a structural reason, not a
+// lucky one: a filename MID-SENTENCE has no whitespace after its dot
+// (`install.js must` — the dot is followed by `j`), and a filename at the END
+// of a sentence is genuinely a sentence boundary. What the lookahead really
+// bought was abbreviations, and those are a closed, short list.
+const SENTENCE_BOUNDARY_RE = /([.!?]["'’”)\]]?)(\s+)/g;
+
+// Dotted tokens whose trailing dot is NOT a sentence boundary. Deliberately
+// short and literal: a list that guesses (every `X.` two-letter token, say)
+// re-creates the round-7 hole in a new coat.
+const SENTENCE_ABBREVIATIONS = new Set([
+  'e.g.', 'i.e.', 'etc.', 'vs.', 'cf.', 'al.', 'approx.', 'resp.', 'fig.', 'no.', 'ca.',
+]);
 
 // Named `splitIntoSentences`, not `splitSentences`: the legacy-brief importer
 // further down already owns that name, and a second definition would silently
@@ -1126,9 +1242,23 @@ const SENTENCE_SPLIT_RE = /([.!?]["'’”)\]]?)\s+(?=["'“(\[]?[A-Z])/g;
 function splitIntoSentences(text) {
   const t = normalizeWs(text);
   if (!t) return [];
-  const SEP = String.fromCharCode(1); // a separator no brief can contain
-  return t.replace(SENTENCE_SPLIT_RE, '$1' + SEP).split(SEP)
-    .map((x) => x.trim()).filter(Boolean);
+  const out = [];
+  let start = 0;
+  let m;
+  SENTENCE_BOUNDARY_RE.lastIndex = 0;
+  while ((m = SENTENCE_BOUNDARY_RE.exec(t))) {
+    const end = m.index + m[1].length;               // just past the terminator
+    const candidate = t.slice(start, end);
+    const lastToken = candidate.split(' ').pop().toLowerCase();
+    if (SENTENCE_ABBREVIATIONS.has(lastToken)) continue;
+    const piece = candidate.trim();
+    if (piece) out.push(piece);
+    start = end + m[2].length;
+    SENTENCE_BOUNDARY_RE.lastIndex = start;
+  }
+  const tail = t.slice(start).trim();
+  if (tail) out.push(tail);
+  return out;
 }
 
 function sentenceWordCounts(text) {
@@ -1151,13 +1281,19 @@ function digitDensity(text) {
   if (!words) return 0;
   return (countMatches(text, /[0-9]/g) / words) * 100;
 }
-/** Lowercase content unigrams of a piece of prose, as a Set (document freq). */
+/**
+ * Lowercase unigrams of a piece of prose, as a Set (document frequency).
+ *
+ * Round-8 MAJOR 2: NO stopword exemption and NO bare-number exemption. The
+ * `isContentWord` filter is right for 3-grams — where a stopword-only phrase
+ * carries no signature and a number is topic — and wrong here, where a single
+ * token is the whole rule. `isContentWord` is still used by `trigramsOf`.
+ */
 function unigramsOf(text) {
   const words = normalizeWs(String(text || '')).toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(Boolean);
   const out = new Set();
   for (const w of words) {
     if (w.length < UNIGRAM_MIN_LENGTH) continue;
-    if (!isContentWord(w)) continue;
     out.add(w);
   }
   return out;
@@ -1204,6 +1340,277 @@ function statsOf(values) {
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const variance = n > 1 ? values.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (n - 1) : 0;
   return { n, mean, sd: Math.sqrt(variance), min: Math.min.apply(null, values), max: Math.max.apply(null, values) };
+}
+
+// ------------------------------------------- (8) single-threshold purity
+//
+// ROUND-8 MAJOR 1. Five rounds ran the same loop: a named statistic was gated,
+// it passed, and the separation moved one level down. Word TOTALS were gated,
+// so the tell moved to sentence shape; sentence MEANS were gated, so it moved
+// to sentence TAILS and to connective/punctuation density. At round 7 a
+// nine-rule deterministic decision list — every rule a single absolute
+// threshold a reader can carry in their head — labelled 58 of 84 artifacts with
+// ZERO errors:
+//
+//     and >= 13   n=10 (100% seeded)     digits per 100 words == 0  n=10
+//     shortest sentence >= 13  n=5       commas/100w <= 4.02  n=20 (100% control)
+//     mean ORDER sentence <= 22.14 n=20  shortest sentence <= 8   n=15
+//     longest sentence <= 34   n=15      ORDER sentences >= 8     n=12
+//     CLAIMS sentences >= 6    n=8
+//
+// Every one of those rules is invisible to a gate that compares MEANS: a Δmean
+// of 0.41 passes while the zero bin of the same feature is 10 seeds and 0
+// controls. So the gate stops naming statistics and states the property the
+// corpus actually has to have:
+//
+//   OVER A FAMILY OF DERIVED FEATURES, NO SINGLE-FEATURE THRESHOLD RULE MAY
+//   FIRE ON >= 5 ARTIFACTS OF ONE POPULATION AND 0 OF THE OTHER.
+//
+// The scan is exhaustive, not sampled: for every feature, every observed value
+// is tried as a threshold, in both directions. That is the same test that would
+// have caught the round-3 tails, the round-5 sentence shapes and every rule in
+// the list above, and it does not have to be re-derived when the residue moves
+// again.
+const PURITY_MIN_FIRES = 5;
+
+// The family. Raw counts where the count is what a reader sees (word totals,
+// sentence counts, sentence lengths) and per-100-words rates where the raw
+// count would only be measuring length.
+function purityFeaturesOf(orderText, claimsText) {
+  const order = String(orderText || '');
+  const claims = String(claimsText || '');
+  const both = order + ' ' + claims;
+  const words = wordCount(both) || 1;
+  const per100 = (n) => (n / words) * 100;
+  const oSent = sentenceWordCounts(order);
+  const cSent = sentenceWordCounts(claims);
+  const st = statsOf(oSent.concat(cSent));
+  return {
+    'ORDER words': wordCount(order),
+    'CLAIMS words': wordCount(claims),
+    'ORDER sentence count': oSent.length,
+    'CLAIMS sentence count': cSent.length,
+    'mean sentence length': st.mean,
+    'shortest sentence': st.min,
+    'longest sentence': st.max,
+    'sentence-length sd': st.sd,
+    'commas per 100 words': per100(countMatches(both, /,/g)),
+    'semicolons per 100 words': per100(countMatches(both, /;/g)),
+    'colons per 100 words': per100(countMatches(both, /:/g)),
+    'em/en dashes per 100 words': per100(countMatches(both, /[—–]/g)),
+    '"and" per 100 words': per100(countMatches(both, /\band\b/gi)),
+    'connectives per 100 words': per100(countMatches(both, /\b(?:but|or|so|then|while)\b/gi)),
+    // The ZERO BIN is the point: `digits per 100 words == 0` was 10 seeds and 0
+    // controls while the gated Δmean read 0.41 and passed.
+    'digits per 100 words': per100(countMatches(both, /[0-9]/g)),
+  };
+}
+
+const PURITY_FEATURE_NAMES = Object.keys(purityFeaturesOf('a b c.', 'd e f.'));
+
+/**
+ * Exhaustive single-threshold scan of one feature.
+ *
+ * Returns { best, failures } where `best` is the highest-precision rule that
+ * fires at all (ties broken by how many artifacts it decides) and `failures`
+ * are the strongest PURE rule per direction that fires on >= PURITY_MIN_FIRES
+ * artifacts of one population and none of the other. Reporting the strongest
+ * rule per direction rather than every threshold keeps the report readable:
+ * a pure tail produces one failing rule for every observed value in it, and
+ * they all name the same artifacts.
+ */
+function scanFeaturePurity(rows, feature) {
+  const vals = rows.map((r) => ({ id: r.id, kind: r.kind, v: Number(((r.purity || {})[feature])) }))
+    .filter((x) => Number.isFinite(x.v));
+  if (!vals.length) return { feature, best: null, failures: [] };
+  const thresholds = Array.from(new Set(vals.map((x) => x.v))).sort((a, b) => a - b);
+  let best = null;
+  const bestByDir = { '<=': null, '>=': null };
+  for (const dir of ['<=', '>=']) {
+    for (const t of thresholds) {
+      const fires = vals.filter((x) => (dir === '<=' ? x.v <= t : x.v >= t));
+      if (!fires.length) continue;
+      const ids = fires.map((x) => x.id);
+      const nSeed = fires.filter((x) => x.kind === 'seeded').length;
+      const nControl = fires.length - nSeed;
+      const n = Math.max(nSeed, nControl);
+      const precision = n / fires.length;
+      const rule = { feature, dir, threshold: t, nSeed, nControl, precision, n,
+        only: nSeed >= nControl ? 'seeded' : 'control', ids };
+      if (!best || precision > best.precision || (precision === best.precision && n > best.n)) best = rule;
+      const pure = (nSeed >= PURITY_MIN_FIRES && nControl === 0) || (nControl >= PURITY_MIN_FIRES && nSeed === 0);
+      if (pure && (!bestByDir[dir] || n > bestByDir[dir].n)) bestByDir[dir] = rule;
+    }
+  }
+  const failures = [bestByDir['<='], bestByDir['>=']].filter(Boolean);
+  return { feature, best, failures };
+}
+
+function purityScan(rows) {
+  const withFeatures = rows.filter((r) => r.purity && Object.keys(r.purity).length);
+  if (!withFeatures.length) return { features: [], failures: [], scanned: 0 };
+  const names = Object.keys(withFeatures[0].purity);
+  const features = names.map((f) => scanFeaturePurity(withFeatures, f));
+  const failures = features.reduce((a, x) => a.concat(x.failures), []);
+  failures.sort((a, b) => b.n - a.n || (a.feature < b.feature ? -1 : 1));
+  return { features, failures, scanned: withFeatures.length };
+}
+
+function fmtThreshold(v) {
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+function fmtPurityRule(rule) {
+  return rule.feature + ' ' + rule.dir + ' ' + fmtThreshold(rule.threshold) +
+    ' — ' + rule.nSeed + ' seeded / ' + rule.nControl + ' control, precision ' + (rule.precision * 100).toFixed(1) + '%';
+}
+
+// ------------------------------------------------ amendment (vi) evidence
+//
+// ROUND-8 MAJOR 6. The blind read is the corpus's acceptance evidence, and for
+// three rounds it lived as hand-written Markdown beside the artifact built to
+// carry it, while this record said "NOT RECORDED". The round-7 record's draw
+// did not reproduce from the seed it named — fourteen of twenty-four ids
+// overlapped — so its provenance could not be checked at all.
+//
+// Round 8 makes both halves mechanical: `blind-draw.js --json --out` stores the
+// draw verbatim, and the evaluator's CALLS (not its arithmetic) are recorded in
+// `corpus/blind-read.json` and scored HERE against `key.json`. Nobody writes a
+// precision figure down, so nobody can write the wrong one down.
+const BLIND_READ_CEILING = 0.65;
+
+function fmtPct(x) { return x === null || x === undefined || !Number.isFinite(x) ? 'n/a' : (x * 100).toFixed(1) + '%'; }
+
+/**
+ * Scores a blind-read record against the answer key.
+ *
+ * Accepts the round-8 schema — `{ round, draw, calls, evaluator, date }` — and
+ * returns `{ error }` for anything it cannot score, rather than guessing.
+ */
+function scoreBlindRead(blind, key) {
+  if (!blind || typeof blind !== 'object') return { error: 'blind-read.json is not an object' };
+  const calls = blind.calls;
+  if (!calls || typeof calls !== 'object') {
+    return { error: 'blind-read.json carries no `calls` object. The round-8 schema records the evaluator\'s CALLS ' +
+      'per artifact id; precision, recall and accuracy are computed from them here, never transcribed.' };
+  }
+  const kindById = new Map((key && Array.isArray(key.artifacts) ? key.artifacts : []).map((a) => [a.id, a.kind]));
+  const drawn = Array.isArray(blind.draw) ? blind.draw.length : Object.keys(calls).length;
+  let truePositives = 0, calledSeeded = 0, correct = 0, n = 0;
+  const unknown = [];
+  for (const id of Object.keys(calls).sort()) {
+    const actual = kindById.get(id);
+    if (!actual) { unknown.push(id); continue; }
+    const call = String(calls[id]).toUpperCase();
+    if (call !== 'SEEDED' && call !== 'CONTROL') { unknown.push(id); continue; }
+    n++;
+    if (call === 'SEEDED') { calledSeeded++; if (actual === 'seeded') truePositives++; }
+    if ((call === 'SEEDED') === (actual === 'seeded')) correct++;
+  }
+  if (!n) return { error: 'no call in blind-read.json names an artifact in key.json with a SEEDED/CONTROL verdict' };
+  const actualSeeded = Object.keys(calls).filter((id) => kindById.get(id) === 'seeded').length;
+  const precision = calledSeeded ? truePositives / calledSeeded : null;
+  const recall = actualSeeded ? truePositives / actualSeeded : null;
+  const accuracy = correct / n;
+  // Fail-closed on BOTH published measures: (vi)'s text names precision, the
+  // round-8 seal names accuracy, and a read that clears one while breaching the
+  // other has not shown the corpus is blind.
+  const overCeiling = accuracy > BLIND_READ_CEILING || (precision !== null && precision > BLIND_READ_CEILING);
+  return { n, drawn, calledSeeded, actualSeeded, truePositives, correct, precision, recall, accuracy, overCeiling, unknown };
+}
+
+/**
+ * A sha256 over the sealed content and the key: the identity of the corpus a
+ * blind read was taken on. Sorted by id and length-prefixed, so no rename or
+ * concatenation ambiguity can make two different corpora hash the same.
+ */
+function contentHashFor(corpusDir) {
+  const contentDir = path.join(corpusDir, 'content');
+  const keyPath = path.join(corpusDir, 'key.json');
+  if (!fs.existsSync(contentDir) || !fs.existsSync(keyPath)) return null;
+  const h = crypto.createHash('sha256');
+  const files = fs.readdirSync(contentDir).filter((f) => /\.json$/.test(f)).sort();
+  for (const f of files) {
+    const buf = fs.readFileSync(path.join(contentDir, f));
+    h.update(f + '|' + buf.length + '|');
+    h.update(buf);
+  }
+  const keyBuf = fs.readFileSync(keyPath);
+  h.update('key.json|' + keyBuf.length + '|');
+  h.update(keyBuf);
+  return h.digest('hex');
+}
+
+/**
+ * THE SEAL — round-8, OpenAI lane MAJOR (B).
+ *
+ * Amendment (xii) wrote down the condition under which the loop stops: *"the
+ * corpus is accepted when every gated feature passes and the delta reviewer's
+ * best ungated style classifier no longer reaches 80% precision over 84
+ * artifacts."* Nothing in this pack enforced it. The gates were checkable and
+ * the acceptance criterion was not, so "is this corpus ready to run on?" was a
+ * question only a review could answer, three rounds after the answer was
+ * written down.
+ *
+ * The seal answers it in one line and one exit code. Its four arms:
+ *
+ *   1. Every gated feature passes (the lint findings are empty).
+ *   2. No brief on disk has drifted from generation.
+ *   3. A blind read exists in `corpus/blind-read.json`, is scorable, is NOT
+ *      stale (its `contentHash` matches the content sealed here), and is at or
+ *      under amendment (vi)'s 65% ceiling.
+ *   4. Arm (8)'s single-threshold purity scan finds nothing. That is the
+ *      IN-TOOL PROXY for the classifier arm: it cannot run a logistic
+ *      regression, but every rule in the round-7 reviewer's nine-rule decision
+ *      list is a single absolute threshold, and arm (8) fails on all of them.
+ *      It is a proxy and this record says so — a delta reviewer's classifier is
+ *      still the standard, and the seal is a floor under it, not a substitute.
+ *
+ * `--no-seal` exists so a content author can iterate: it prints the report and
+ * skips the verdict. It never makes the seal PASS; it makes it not run.
+ */
+function evaluateSeal(key, rows, findings, drifted, corpusDir) {
+  const reasons = [];
+  let ok = true;
+  const fail = (why) => { ok = false; reasons.push(why); };
+
+  if (findings.length) fail(findings.length + ' gated lint finding(s)');
+  else reasons.push('every gated lint passes');
+
+  if (drifted && drifted.length) fail(drifted.length + ' brief(s) drifted from generation');
+
+  const report = distributionLint(rows, []);
+  const purityFailures = (report.purity && report.purity.failures) || [];
+  if (purityFailures.length) {
+    fail(purityFailures.length + ' single-threshold purity rule(s) at 100% precision on ≥' + PURITY_MIN_FIRES +
+      ' artifacts (arm (8) — the in-tool proxy for amendment (xii)\'s classifier arm)');
+  } else {
+    reasons.push('arm (8) purity clean');
+  }
+
+  const blindPath = corpusDir ? path.join(corpusDir, 'blind-read.json') : null;
+  let blind = null;
+  try { if (blindPath && fs.existsSync(blindPath)) blind = JSON.parse(fs.readFileSync(blindPath, 'utf8')); } catch (e) { blind = null; }
+  if (!blind) {
+    fail('no corpus/blind-read.json — amendment (vi)\'s acceptance evidence is absent');
+  } else {
+    const scored = scoreBlindRead(blind, key);
+    if (scored.error) fail('blind-read.json is UNSCORABLE: ' + scored.error);
+    else {
+      const want = corpusDir ? contentHashFor(corpusDir) : null;
+      if (want && String(blind.contentHash || '') !== want) {
+        fail('blind-read.json is STALE — its contentHash does not match the content sealed here, so it certifies a ' +
+          'corpus that no longer exists');
+      } else if (scored.overCeiling) {
+        fail('the blind read is ABOVE amendment (vi)\'s ' + Math.round(BLIND_READ_CEILING * 100) + '% ceiling ' +
+          '(precision ' + fmtPct(scored.precision) + ', accuracy ' + fmtPct(scored.accuracy) + ')');
+      } else {
+        reasons.push('blind read within (vi)\'s ceiling (precision ' + fmtPct(scored.precision) +
+          ', accuracy ' + fmtPct(scored.accuracy) + ')');
+      }
+    }
+  }
+
+  return { ok, status: ok ? 'PASS' : 'REFUSED', reasons };
 }
 
 /**
@@ -1363,6 +1770,20 @@ function distributionLint(rows, findings) {
         SHORTEST_SENTENCE_MEAN_TOLERANCE + '-word tolerance. This was a d = -1.80 separation in round 5 — the word budgets ' +
         'were balanced to a single word at both ends while the SENTENCE budgets were not balanced at all.');
     }
+    // Round-8 MAJOR 3: the RANGE, not only the mean.
+    if (Math.abs(sShort.min - cShort.min) > SHORTEST_SENTENCE_FLOOR_TOLERANCE) {
+      findings.push('distribution: the SHORTEST-SENTENCE FLOORS differ by ' + Math.abs(sShort.min - cShort.min).toFixed(0) +
+        ' words (seeded min ' + sShort.min + ', control min ' + cShort.min + '), above the ' +
+        SHORTEST_SENTENCE_FLOOR_TOLERANCE + '-word tolerance. A disjoint floor makes "the shortest sentence is at or ' +
+        'below the other population\'s minimum" a 100%-precision rule: in round 7 `shortest sentence <= 8` was 15 ' +
+        'controls and 0 seeds while the Δmean gate read 1.34 and passed.');
+    }
+    if (Math.abs(sShort.max - cShort.max) > SHORTEST_SENTENCE_CEILING_TOLERANCE) {
+      findings.push('distribution: the SHORTEST-SENTENCE CEILINGS differ by ' + Math.abs(sShort.max - cShort.max).toFixed(0) +
+        ' words (seeded max ' + sShort.max + ', control max ' + cShort.max + '), above the ' +
+        SHORTEST_SENTENCE_CEILING_TOLERANCE + '-word tolerance. In round 7 `shortest sentence >= 13` was 5 seeds and 0 ' +
+        'controls at the top of the same distribution.');
+    }
   }
 
   // (7) UNIGRAM exclusivity — amendment (xii)(b).
@@ -1400,6 +1821,18 @@ function distributionLint(rows, findings) {
     if (report.unigrams.length > shownU.length) {
       findings.push('distribution: ' + report.unigrams.length + ' word(s) are exclusive to one population at a document ' +
         'frequency of ' + UNIGRAM_MIN_FILES + '+; the ' + shownU.length + ' strongest are listed above.');
+    }
+  }
+
+  // (8) SINGLE-THRESHOLD PURITY — round-8 MAJOR 1. The generic gate.
+  {
+    report.purity = purityScan(rows);
+    for (const rule of report.purity.failures) {
+      findings.push('distribution: the single-threshold rule `' + rule.feature + ' ' + rule.dir + ' ' +
+        fmtThreshold(rule.threshold) + '` fires on ' + rule.n + ' ' + rule.only + ' artifact(s) and 0 of the other ' +
+        'population — a 100%-precision rule a reader can apply to ONE packet with no arithmetic. CONTENT TARGETS (' +
+        rule.ids.length + '): ' + rule.ids.join(', ') + '. Move enough of these across the threshold that the rule ' +
+        'fires on fewer than ' + PURITY_MIN_FIRES + ' artifacts, or that it starts catching the other population too.');
     }
   }
 
@@ -1654,8 +2087,12 @@ function renderStoppingStandard(rows) {
   lines.push('| 8 | idiom balance | (x) | ' + verdict(!has(/idiom/)) + ' |');
   lines.push('| 9 | sentence floor (≥ ' + MIN_SENTENCE_WORDS + ' words) | (xii)(a) | ' + verdict(!has(/-word sentence/)) + ' |');
   lines.push('| 10 | shortest-sentence mean parity (≤ ' + SHORTEST_SENTENCE_MEAN_TOLERANCE + ' words) | (xii)(a) | ' + verdict(!has(/mean SHORTEST SENTENCE/)) + ' |');
+  lines.push('| 10b | shortest-sentence RANGE parity (floor ≤ ' + SHORTEST_SENTENCE_FLOOR_TOLERANCE + ', ceiling ≤ ' +
+    SHORTEST_SENTENCE_CEILING_TOLERANCE + ') | (xiii) | ' + verdict(!has(/SHORTEST-SENTENCE (FLOORS|CEILINGS)/)) + ' |');
   lines.push('| 11 | unigram exclusivity (df ≥ ' + UNIGRAM_MIN_FILES + ') | (xii)(b) | ' + verdict(report.unigrams.length === 0) + ' |');
   lines.push('| 12 | no sha in any brief | VARIANTS v3 | ' + verdict(true) + ' (enforced by `hexLint` at generation) |');
+  lines.push('| 13 | single-threshold purity (no rule pure on ≥ ' + PURITY_MIN_FIRES + ') | (xiii) | ' +
+    verdict(!((report.purity && report.purity.failures) || []).length) + ' |');
   lines.push('');
   lines.push('**Reported but not gated** (evidence for the disclosures above, not failures): ' +
     report.ngramsReported.length + ' 3-gram(s) exclusive at ' + NGRAM_REPORT_MIN_FILES + '–' + (NGRAM_MIN_FILES - 1) +
@@ -1692,13 +2129,33 @@ function renderTopicAsymmetry(rows) {
   lines.push('**The consequence, stated plainly.** A classifier with access to the WHOLE corpus can separate the two');
   lines.push('populations by topic. That is real and it is not fixed.');
   lines.push('');
-  lines.push('**Why it does not compromise the trial.** §2.4 gives every lane ONE packet in fresh context. A reviewer');
-  lines.push('holding a single brief about a records commit learns nothing about whether THAT packet is seeded: it cannot');
-  lines.push('see the other 83, and the corpus-level frequency that makes the signal exploitable is exactly what a');
-  lines.push('per-packet reviewer does not have. The sanitized run clone (see the section above) puts `wo12/` — key,');
-  lines.push('patches and this record included — out of every lane\'s reach, so the distribution cannot be recovered from');
-  lines.push('inside a review either. The exposure is to an adjudicator, a scorer, or anyone with repository access; it');
-  lines.push('is disclosed here so those readers know to discount it.');
+  lines.push('**Why the corpus-level form does not compromise the trial.** §2.4 gives every lane ONE packet in fresh');
+  lines.push('context. A reviewer holding a single brief about a records commit cannot see the other 83, and the');
+  lines.push('corpus-level FREQUENCY that makes the signal exploitable is exactly what a per-packet reviewer does not');
+  lines.push('have. The sanitized run clone (see the section above) puts `wo12/` — key, patches and this record included');
+  lines.push('— out of every lane\'s reach, so the distribution cannot be recovered from inside a review either.');
+  lines.push('');
+  lines.push('**The PER-PACKET exposure, corrected and stated in full (round-8 MAJOR 5(b)).** The paragraph above was');
+  lines.push('the whole of this disclosure until round 8, and it is not sufficient, because the argument it makes —');
+  lines.push('"corpus-level frequency is what a per-packet reviewer lacks" — does not hold for an ABSOLUTE rule.');
+  lines.push('Measured inside the 84 sanitized run clones themselves:');
+  lines.push('');
+  lines.push('| in-clone observation | n | population | precision |');
+  lines.push('|---|---|---|---|');
+  lines.push('| the diff touches ZERO `.js` files | 33 | control 32/33 | 97.0% |');
+  lines.push('| the diff touches ZERO code files at all | 30 | control 29/30 | 96.7% |');
+  lines.push('| history depth ≤ 12 | 7 | control | 100% |');
+  lines.push('| insertions ≥ 661 | 4 | control | 100% |');
+  lines.push('| ≥ 8 `.md` files touched | 4 | control | 100% |');
+  lines.push('');
+  lines.push('`git diff --numstat HEAD~1 HEAD` is the first thing any reviewer runs, and *"this change touches only');
+  lines.push('Markdown and records"* is a PER-PACKET observation, not a corpus-level frequency. What the rule still');
+  lines.push('needs from outside is its DIRECTION — that "docs-only" means control rather than seeded — and that is the');
+  lines.push('honest limit of the exposure. So the disclosure is: **the exposure is to a reviewer who has read this');
+  lines.push('construction record, not only to an adjudicator or a scorer.** A lane in fresh context has not read it,');
+  lines.push('and cannot reach it from inside its clone; a reviewer who has read it can classify a docs-only packet from');
+  lines.push('one `git diff --numstat` at 97% precision. It is disclosed here so both readers know exactly which');
+  lines.push('observations to discount.');
   lines.push('');
   lines.push('**Evidence.** The strongest topic-exclusive 3-grams in the sealed content, with the number of artifacts of');
   lines.push('one population carrying each and zero of the other:');
@@ -1832,14 +2289,26 @@ function renderDistributionReport(rows) {
       lines.push('');
       lines.push('Δmean ' + short.delta.toFixed(2) + ' (limit ' + SHORTEST_SENTENCE_MEAN_TOLERANCE + ') — ' +
         (short.delta <= SHORTEST_SENTENCE_MEAN_TOLERANCE ? 'pass' : '**FAIL**'));
+      {
+        const dFloor = Math.abs(short.seeded.min - short.control.min);
+        const dCeil = Math.abs(short.seeded.max - short.control.max);
+        lines.push('');
+        lines.push('Δfloor ' + dFloor + ' (limit ' + SHORTEST_SENTENCE_FLOOR_TOLERANCE + ') — ' +
+          (dFloor <= SHORTEST_SENTENCE_FLOOR_TOLERANCE ? 'pass' : '**FAIL**') +
+          ' · Δceiling ' + dCeil + ' (limit ' + SHORTEST_SENTENCE_CEILING_TOLERANCE + ') — ' +
+          (dCeil <= SHORTEST_SENTENCE_CEILING_TOLERANCE ? 'pass' : '**FAIL**'));
+      }
       lines.push('');
       lines.push(under.length
         ? '**FAIL** — ' + under.length + ' sentence(s) below the ' + MIN_SENTENCE_WORDS + '-word floor: ' + under.slice(0, 12).join(', ') + (under.length > 12 ? ', …' : '')
         : 'pass — no sentence is below the ' + MIN_SENTENCE_WORDS + '-word floor.');
     }
     lines.push('');
-    lines.push('**(7) Unigram exclusivity** — amendment (xii)(b): a lowercase content word of ≥' + UNIGRAM_MIN_LENGTH + ' characters present in');
-    lines.push('≥' + UNIGRAM_MIN_FILES + ' artifacts of one population and 0 of the other.');
+    lines.push('**(7) Unigram exclusivity** — amendment (xii)(b), widened by (xiii): ANY lowercase token of ≥' +
+      UNIGRAM_MIN_LENGTH + ' characters —');
+    lines.push('stopwords and bare numbers INCLUDED — present in ≥' + UNIGRAM_MIN_FILES + ' artifacts of one population and 0 of the other.');
+    lines.push('Round 7 exempted words under 4 characters, stopwords and numbers, and the separating vocabulary moved');
+    lines.push('straight under all three: `we` 0S/13C, `md` 0S/8C, `135` 7S/0C.');
     lines.push('');
     lines.push(report.unigrams.length
       ? '**FAIL** — ' + report.unigrams.length + ' exclusive word(s): ' +
@@ -1894,11 +2363,144 @@ function renderDistributionReport(rows) {
       lines.push('| "' + e.label + '" | ' + e.seeded + ' / ' + e.seededRate.toFixed(3) + ' | ' + e.control + ' / ' +
         e.controlRate.toFixed(3) + ' | ' + (e.ratio === null ? 'n/a' : e.ratio.toFixed(2)) + ' | ' + verdict + ' |');
     }
+    lines.push('');
+    lines.push(renderPuritySection(report));
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Arm (8), rendered — round-8 MAJOR 1. This section is the SPECIFICATION for
+ * the content round that follows it, so it prints two things the other gates
+ * do not: the best rule per feature whether it fails or not (so an author can
+ * see how much headroom a feature has), and, for every failing rule, the
+ * artifact ids it fires on.
+ */
+function renderPuritySection(report) {
+  const lines = [];
+  const purity = report.purity || { features: [], failures: [], scanned: 0 };
+  lines.push('**(8) Single-threshold purity** — amendment (xiii): over a family of ' + purity.features.length +
+    ' derived features, scanned exhaustively at every observed value in both directions, no rule');
+  lines.push('`feature <= t` or `feature >= t` may fire on ≥' + PURITY_MIN_FIRES + ' artifacts of one population and 0 of the other.');
+  lines.push('');
+  if (!purity.scanned) {
+    lines.push('(no derived features available — arm (8) did not run)');
+    return lines.join('\n');
+  }
+  lines.push(purity.failures.length
+    ? '**FAIL** — ' + purity.failures.length + ' rule(s) reach 100% precision on ≥' + PURITY_MIN_FIRES + ' artifacts.'
+    : 'pass — no single-threshold rule reaches 100% precision on ≥' + PURITY_MIN_FIRES + ' artifacts.');
+  lines.push('');
+  lines.push('| feature | best rule | seeded | control | precision |');
+  lines.push('|---|---|---|---|---|');
+  for (const f of purity.features) {
+    if (!f.best) { lines.push('| ' + f.feature + ' | (no values) | | | |'); continue; }
+    const b = f.best;
+    const failed = f.failures.length > 0;
+    lines.push('| ' + f.feature + ' | `' + f.feature + ' ' + b.dir + ' ' + fmtThreshold(b.threshold) + '` | ' +
+      b.nSeed + ' | ' + b.nControl + ' | ' + (b.precision * 100).toFixed(1) + '%' + (failed ? ' **FAIL**' : '') + ' |');
+  }
+  if (!purity.failures.length) return lines.join('\n');
+  lines.push('');
+  lines.push('**Content targets.** Each failing rule below is a complete, absolute classifier for the artifacts it names.');
+  lines.push('Re-author enough of them that the rule fires on fewer than ' + PURITY_MIN_FIRES + ' artifacts, or that it starts');
+  lines.push('catching the other population too — moving a feature\'s MEAN does not help if the tail stays disjoint.');
+  lines.push('');
+  for (const rule of purity.failures) {
+    lines.push('- `' + rule.feature + ' ' + rule.dir + ' ' + fmtThreshold(rule.threshold) + '` → **' + rule.only +
+      '**, ' + rule.n + ' artifact(s), 0 of the other population.');
+    lines.push('  - fires on: ' + rule.ids.join(', '));
   }
   return lines.join('\n');
 }
 
 // --------------------------------------------------------- 7. CONSTRUCTION.md
+
+/**
+ * Amendment (vi)'s section, rendered from `corpus/blind-read.json` and scored
+ * HERE against the key. Its own function so the round-8 schema can be pinned
+ * directly (round-8 MAJOR 6).
+ */
+function renderBlindReadSection(key, corpusDir) {
+  const lines = [];
+  lines.push('### Amendment (vi) — blind-classification record');
+  lines.push('');
+  lines.push('(vi) requires a fresh-evaluator blind classification over 12+12 briefs, re-run after every content change');
+  lines.push('and reported HERE (target: at or near chance; anything above ' + Math.round(BLIND_READ_CEILING * 100) +
+    '% reopens the pass). ROUND-8 MAJOR 6 made this');
+  lines.push('section the ONLY place the evidence lives: the round-7 read was recorded as hand-written Markdown beside');
+  lines.push('this file, its draw did not reproduce from the seed it named, and this section still read "NOT RECORDED"');
+  lines.push('three rounds running. From round 8 the pipeline is mechanical end to end:');
+  lines.push('');
+  lines.push('1. `node blind-draw.js --seed <s> --size 12 --round <n> --json --out corpus/blind-draw-round<n>.json`');
+  lines.push('   stores the draw record VERBATIM. That file, not a sentence in a review, is the draw\'s provenance.');
+  lines.push('2. The evaluator\'s calls are written to `corpus/blind-read.json`, and THIS SECTION scores them against');
+  lines.push('   `key.json`. The scoring is done here, by this tool, so a mis-stated accuracy cannot be recorded.');
+  lines.push('');
+  lines.push('`corpus/blind-read.json` schema:');
+  lines.push('');
+  lines.push('```json');
+  lines.push('{');
+  lines.push('  "round": 8,');
+  lines.push('  "evaluator": "a fresh-context agent, no corpus access",');
+  lines.push('  "date": "2026-09-01",');
+  lines.push('  "draw": ["sdc-004", "sdc-014", "..."],');
+  lines.push('  "calls": { "sdc-004": "SEEDED", "sdc-014": "CONTROL" },');
+  lines.push('  "contentHash": "<sha256 printed by assemble-key.js --check-only>",');
+  lines.push('  "note": "free text"');
+  lines.push('}');
+  lines.push('```');
+  lines.push('');
+  lines.push('`draw` is the sorted union the evaluator was handed; `calls` is its verdict per id. Precision, recall and');
+  lines.push('accuracy are COMPUTED below from `calls` against `key.json` — they are not fields anyone writes.');
+  lines.push('`contentHash` pins the read to the content it was taken on, so a stale read cannot certify a new corpus.');
+  lines.push('');
+  {
+    const blindPath = corpusDir ? path.join(corpusDir, 'blind-read.json') : null;
+    let blind = null;
+    try { if (blindPath && fs.existsSync(blindPath)) blind = JSON.parse(fs.readFileSync(blindPath, 'utf8')); } catch (e) { blind = null; }
+    if (!blind) {
+      lines.push('**NOT RECORDED.** No `corpus/blind-read.json` is present, so amendment (vi)\'s acceptance evidence is');
+      lines.push('missing from this record, and `assemble-key.js --check-only` refuses the seal. Run the blind');
+      lines.push('classification and write the result in the schema above; until then this corpus carries no in-artifact');
+      lines.push('evidence that it is blind, whatever the lints say.');
+    } else {
+      const scoredBlind = scoreBlindRead(blind, key);
+      for (const [label, k] of [['round', 'round'], ['date', 'date'], ['evaluator', 'evaluator'], ['note', 'note']]) {
+        if (blind[k] !== undefined) lines.push('**' + label + ':** ' + String(blind[k]) + '  ');
+      }
+      lines.push('');
+      if (scoredBlind.error) {
+        lines.push('**UNSCORABLE — ' + scoredBlind.error + '**');
+      } else {
+        lines.push('| measure | value | over |');
+        lines.push('|---|---|---|');
+        lines.push('| calls scored | ' + scoredBlind.n + ' | of ' + scoredBlind.drawn + ' drawn |');
+        lines.push('| precision (of the SEEDED calls, how many were seeded) | ' + fmtPct(scoredBlind.precision) + ' | ' +
+          scoredBlind.truePositives + ' / ' + scoredBlind.calledSeeded + ' |');
+        lines.push('| recall (of the seeded artifacts drawn, how many were called) | ' + fmtPct(scoredBlind.recall) + ' | ' +
+          scoredBlind.truePositives + ' / ' + scoredBlind.actualSeeded + ' |');
+        lines.push('| accuracy (every call, either way) | ' + fmtPct(scoredBlind.accuracy) + ' | ' +
+          scoredBlind.correct + ' / ' + scoredBlind.n + ' |');
+        lines.push('');
+        lines.push(scoredBlind.overCeiling
+          ? '**ABOVE (vi)\'s ' + Math.round(BLIND_READ_CEILING * 100) + '% ceiling — the content pass is REOPENED.**'
+          : 'Within (vi)\'s ' + Math.round(BLIND_READ_CEILING * 100) + '% ceiling.');
+      }
+      const wantHash = corpusDir ? contentHashFor(corpusDir) : null;
+      if (wantHash) {
+        const got = blind.contentHash ? String(blind.contentHash) : null;
+        lines.push('');
+        lines.push(got === wantHash
+          ? '**Content hash matches** (`' + wantHash.slice(0, 16) + '…`) — this read was taken on the content sealed here.'
+          : '**STALE — the recorded contentHash ' + (got ? '(`' + got.slice(0, 16) + '…`) ' : 'is absent and ') +
+            'does not match this corpus (`' + wantHash.slice(0, 16) + '…`).** The read does not certify this content.');
+      }
+    }
+  }
+  lines.push('');
+  return lines.join('\n');
+}
 
 function renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary, corpusDir) {
   const lines = [];
@@ -1961,11 +2563,24 @@ function renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary,
   lines.push('## Cross-artifact base/subject collisions (disclosure, non-gating)');
   lines.push('');
   lines.push('§2.1\'s pool-ran-short allowance lets a base commit serve one seeded variant AND one control. Where that');
-  lines.push('happened, the two briefs necessarily carry an identical `Base (its parent)` sha and an identical');
-  lines.push('`Commit subject:` line with different heads — a cross-artifact tell for anyone who reads BOTH packets');
-  lines.push('(round-1 R0 MINOR). Nothing here can remove it: the reuse is a property of the committed base-pool');
-  lines.push('allocation, not of brief generation. It is listed so the reuse is visible where the briefs are, and so an');
-  lines.push('adjudicator reading two packets side by side knows which pairs to discount.');
+  lines.push('happened, the two artifacts share a base commit, a head commit and a subject line.');
+  lines.push('');
+  lines.push('**What survives of this channel, stated exactly (round-8 MAJOR 4).** Nothing in the packet. The channel had');
+  lines.push('two halves and both are now closed in the brief text:');
+  lines.push('');
+  lines.push('- The **sha** half — `Change under review: commit <HEAD>` and `Base (its parent):   <BASE>` — was removed in');
+  lines.push('  VARIANTS v3 (round 6) and is kept out by `hexLint`, which refuses any 6–40-hex token in any brief.');
+  lines.push('- The **subject** half — a byte-identical `Commit subject:` line under two different heads, in all ten');
+  lines.push('  pairs, with the seeded member the lower id in every one — was removed in VARIANTS v4 (round 8). A');
+  lines.push('  many-packet reader who sorted on that line found ten exact duplicates and knew each pair held exactly');
+  lines.push('  one seeded artifact: 20 of 84 artifacts reduced to ten forced binary choices from a header field, with');
+  lines.push('  no prose and no statistics. The reviewer loses nothing — it has `git log -1` inside its own clone.');
+  lines.push('');
+  lines.push('**What remains, and to whom.** The reuse itself is a property of the committed base-pool allocation, not of');
+  lines.push('brief generation, so it cannot be removed. It is visible to whoever holds `key.json` — an adjudicator, a');
+  lines.push('scorer, anyone with repository access — and to nobody else. `blind-draw.js` never draws two artifacts that');
+  lines.push('share a base or a commit, so the blind test cannot see it either. The pairs are listed below so an');
+  lines.push('adjudicator reading two packets side by side knows which ones to discount.');
   lines.push('');
   {
     const byPair = new Map();
@@ -2011,37 +2626,7 @@ function renderConstructionMd(key, tallies, heads, rows, notes, skeletonSummary,
   lines.push('');
   lines.push(renderTopicAsymmetry(rows));
   lines.push('');
-  lines.push('### Amendment (vi) — blind-classification record');
-  lines.push('');
-  lines.push('(vi) requires a fresh-evaluator blind classification over 12+12 briefs, re-run after every content change');
-  lines.push('and reported HERE (target: precision at or near chance; anything above 65% reopens the pass). This section');
-  lines.push('is generated from `corpus/blind-read.json` when that file exists, so the evidence lives in the artifact');
-  lines.push('that exists to carry it rather than only in a review record.');
-  lines.push('');
-  {
-    const blindPath = corpusDir ? path.join(corpusDir, 'blind-read.json') : null;
-    let blind = null;
-    try { if (blindPath && fs.existsSync(blindPath)) blind = JSON.parse(fs.readFileSync(blindPath, 'utf8')); } catch (e) { blind = null; }
-    if (!blind) {
-      lines.push('**NOT RECORDED.** No `corpus/blind-read.json` is present, so amendment (vi)\'s acceptance evidence is');
-      lines.push('missing from this record. Run the blind classification and write the result there as');
-      lines.push('`{"date","evaluator","n","precision","recall","accuracy","note"}`; until then this corpus carries no');
-      lines.push('in-artifact evidence that it is blind, whatever the lints say.');
-    } else {
-      lines.push('| field | value |');
-      lines.push('|---|---|');
-      for (const k of ['date', 'evaluator', 'n', 'precision', 'recall', 'accuracy', 'note']) {
-        if (blind[k] !== undefined) lines.push('| ' + k + ' | ' + String(blind[k]) + ' |');
-      }
-      const p = Number(blind.precision);
-      if (Number.isFinite(p)) {
-        lines.push('');
-        lines.push(p > 0.65 || p > 65
-          ? '**ABOVE (vi)\'s 65% ceiling — the content pass is reopened.**'
-          : 'Within (vi)\'s 65% ceiling.');
-      }
-    }
-  }
+  lines.push(renderBlindReadSection(key, corpusDir));
   lines.push('');
   lines.push('## Seeded artifacts');
   lines.push('');
@@ -2384,6 +2969,8 @@ function generateAndLint(key, heads, pool, paths) {
         const parts = [shortestSentenceWords(content.order), shortestSentenceWords(content.claims)].filter((n) => n > 0);
         return parts.length ? Math.min.apply(null, parts) : 0;
       })(),
+      // Round-8 amendment (xiii): the derived-feature family arm (8) scans.
+      purity: purityFeaturesOf(content.order, content.claims),
       wo: briefs.wo, er: briefs.er,
       woSkeleton: skeletonize(briefs.wo, a, head),
       erSkeleton: skeletonize(briefs.er, a, head),
@@ -2490,12 +3077,39 @@ function main() {
     process.stdout.write(drifted.length
       ? '  ' + drifted.length + ' brief file(s) DIFFER from generation and will be overwritten: ' + drifted.join(', ') + '\n'
       : '  every brief on disk matches generation exactly.\n');
+    // ROUND-8 MINOR 1. The usage text said `--check-only` "exits 1 if anything
+    // is MISSING", and it did exactly that: 168 briefs converted to CRLF were
+    // listed as drift and the command still exited 0, so a CI seal check or a
+    // pre-run gate keying on the exit code could not tell a sealed corpus from
+    // a hand-edited one. Drift is not a warning; a hand-edited brief is not an
+    // input.
+    if (drifted.length) process.exitCode = 1;
     if (findings.length) {
       process.stdout.write('  ' + findings.length + ' lint finding(s) — assembly WOULD FAIL:\n');
       for (const f of findings) process.stdout.write('    ' + f + '\n');
       process.exitCode = 1;
     } else {
       process.stdout.write('  every lint passes.\n');
+    }
+
+    // The distribution report, printed in full. This IS the specification for
+    // the content round that follows a REVISE: arm (8) names, per failing rule,
+    // the artifact ids it fires on, and an author cannot act on a rule they
+    // cannot see. (Round 8: the report used to be reachable only by assembling
+    // the corpus, which a failing lint refuses to do — so the only way to read
+    // the gate's own evidence was to make the gate pass first.)
+    process.stdout.write('\n' + renderDistributionReport(rows) + '\n');
+
+    // ROUND-8, OpenAI lane MAJOR (B). Amendment (xii)'s stopping standard was
+    // written down and never enforced by anything. The SEAL line states, in one
+    // place with one exit code, whether this corpus is currently acceptable.
+    if (!args.noSeal) {
+      const seal = evaluateSeal(key, rows, findings, drifted, paths.corpusDir);
+      process.stdout.write('\nSEAL: ' + seal.status + ' — ' + seal.reasons.join(' | ') + '\n');
+      if (!seal.ok) process.exitCode = 1;
+    } else {
+      process.stdout.write('\nSEAL: SKIPPED (--no-seal) — interim content work; the seal is not evaluated and the exit ' +
+        'code says nothing about amendment (vi).\n');
     }
     assertContentDirPreserved(paths.contentDir, contentBefore, [], '--check-only');
     return;
@@ -2563,8 +3177,11 @@ module.exports = {
   leakageLint, vendorLint, hazardLint, hexLint, HEX_IN_BRIEF_RE, wordBandLint, structuralTellLint, lintKindSymmetry,
   populationBalanceLint, hardnessScore, hardnessScoreStrict,
   distributionLint, renderDistributionReport, renderTopicAsymmetry, renderStoppingStandard, isContentWord,
+  purityFeaturesOf, purityScan, scanFeaturePurity, renderPuritySection, PURITY_MIN_FIRES, PURITY_FEATURE_NAMES,
+  scoreBlindRead, contentHashFor, BLIND_READ_CEILING, renderBlindReadSection, evaluateSeal, fmtPct,
   splitIntoSentences, sentenceWordCounts, shortestSentenceWords, unigramsOf,
-  MIN_SENTENCE_WORDS, SHORTEST_SENTENCE_MEAN_TOLERANCE, UNIGRAM_MIN_FILES, UNIGRAM_REPORT_MIN_FILES, UNIGRAM_MIN_LENGTH, backtickCount, digitDensity, trigramsOf, idiomCounts, statsOf,
+  MIN_SENTENCE_WORDS, SHORTEST_SENTENCE_MEAN_TOLERANCE, SHORTEST_SENTENCE_FLOOR_TOLERANCE, SHORTEST_SENTENCE_CEILING_TOLERANCE,
+  SENTENCE_ABBREVIATIONS, UNIGRAM_MIN_FILES, UNIGRAM_REPORT_MIN_FILES, UNIGRAM_MIN_LENGTH, backtickCount, digitDensity, trigramsOf, idiomCounts, statsOf,
   RANGE_TOLERANCE_WORDS, SD_RATIO_MIN, SD_RATIO_MAX, DIGIT_DENSITY_TOLERANCE, NGRAM_MIN_FILES,
   IDIOM_RATIO_MIN, IDIOM_RATIO_MAX, IDIOMS, NGRAM_STOPWORDS, NGRAM_FINDINGS_SHOWN,
   NGRAM_MIN_CONTENT_WORDS, NGRAM_REPORT_MIN_FILES,

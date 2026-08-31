@@ -169,7 +169,34 @@ classifier-facing measure: the corpus is accepted when every gated feature passe
 the delta reviewer's best *ungated* style classifier no longer reaches 80% precision
 over 84 artifacts. Any residual is disclosed with its features in CONSTRUCTION.md. The
 human-facing standard (a fresh reader at or below 65%) has been met in every round
-since round 3.
+since round 3. (xiii) *Round-8 amendment, after the rounds-6–7 delta review met every
+gated feature and still reached 85.7% style-only precision under leave-one-out CV, with
+a nine-rule list of single absolute thresholds labelling 58 of 84 artifacts at zero
+errors:* the gates stop naming statistics. **Single-threshold purity** replaces them —
+over a family of derived features (word totals, ORDER/CLAIMS sentence counts,
+mean/min/max/sd sentence length, commas, semicolons, colons, dashes, `and` and the other
+connectives per 100 words, and digits per 100 words *including the zero bin*), scanned
+exhaustively at every observed value in both directions, **no rule may fire on ≥5
+artifacts of one population and 0 of the other**; the report names, per failing rule, the
+artifact ids it fires on, and that report is the specification for the content round.
+Four scope corrections travel with it: **unigram exclusivity** now covers any token of ≥2
+characters with no stopword or bare-number exemption (`we` was 0/13 and `md` 0/8 under
+the old exclusions); the **sentence splitter** breaks at `[.!?]` + whitespace
+unconditionally, with a closed abbreviation list, so the 8-word floor cannot be evaded by
+starting the next sentence with a lowercase filename, and the shortest-sentence **range**
+is gated (floor Δ ≤1, ceiling Δ ≤3) as well as its mean; the work order carries **no
+`Commit subject:` line** (VARIANTS v4 — the surviving half of the reused-base pair
+oracle; the reviewer has `git log -1` in its clone); and run clones are named by an
+**opaque per-run token**, with the id↔token map written beside the results file, so a
+lane's own working directory no longer announces its artifact id. Acceptance evidence
+becomes mechanical: the draw's `--json` record is stored verbatim as
+`corpus/blind-draw-round<n>.json`, the evaluator's **calls** are recorded in
+`corpus/blind-read.json` and scored against `key.json` by `assemble-key.js` — nobody
+transcribes a precision figure — and `--check-only` prints a `SEAL:` line that refuses,
+by exit code, a corpus whose blind read is absent, stale against the sealed content, or
+above (vi)'s 65% ceiling. Gate 5's `served_model` is honoured only from a runner-emitted
+header block delimited from the engine's output, so the identity gate is no longer
+writable by its own subject.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

@@ -138,12 +138,21 @@ const LANES = {
 };
 
 const DEFAULT_TIMEOUT_MS = 600000; // matches orchestra-review.js's own default
-// NOTE (round-2 nit): these two mirror `orchestra-review.js`'s OWN internal
-// defaults in a second file, so a change there silently desynchronizes the
-// outer timeout computed in runOneAttempt(). They are deliberately generous —
-// the outer kill exists only to stop a wedged process, never to cut a review
-// short — but if orchestra-review.js's retry count or default timeout ever
-// moves, these move with it.
+// DELIBERATE DUPLICATION — WONTFIX, ruled round 8, raised in rounds 2 through 7.
+//
+// These three restate values that `orchestra-review.js` also defines. The
+// obvious "fix" is to import them, and that would be wrong: this file is the
+// TRIAL HARNESS, and the trial's parameters have to be pinned independently of
+// the thing under test. If run-lane.js read the runner's constants, a change to
+// the runner would silently change how long a lane is given and how many
+// retries the trial grants — moving the measurement without moving the record
+// of what was measured, and doing it invisibly, mid-pass.
+//
+// So they MIRROR AND PIN rather than reuse. The cost is real and is accepted:
+// if the runner's retry count or default timeout moves, these must be moved by
+// hand, in a commit that says so — which is exactly the review the coupling is
+// there to force. They are deliberately generous either way; the outer kill
+// exists only to stop a wedged process, never to cut a review short.
 const RUNNER_OWN_RETRIES = 1;
 const OUTER_MARGIN_MS = 180000;
 
@@ -253,7 +262,7 @@ function usage() {
     '      [--dry-run] [--yes] [--timeout-ms <n>] [--override-p0 "<reason>"]',
     '      [--draw-per-review <fraction>]',
     '      [--key <path>] [--briefs-dir <dir>] [--patches-dir <dir>]',
-    '      [--source-repo <dir>] [--clone-root <dir>] [--run-clone-root <dir>]',
+    '      [--source-repo <dir>] [--clone-root <dir>] [--run-clone-root <dir>] [--run-seed <s>]',
     '      [--results-dir <dir>] [--runner <path>]',
     '',
     'lanes: ' + Object.keys(LANES).join(' | '),
@@ -278,7 +287,7 @@ function parseArgs(argv) {
     lane: null, phase: null, dryRun: false, yes: false, timeoutMs: null,
     overrideP0: null, drawPerReview: null, key: null, briefsDir: null, patchesDir: null,
     sourceRepo: null, cloneRoot: null, runCloneRoot: null, resultsDir: null, runner: null,
-    overrideLog: null,
+    overrideLog: null, runSeed: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -304,6 +313,7 @@ function parseArgs(argv) {
     else if (a === '--run-clone-root') out.runCloneRoot = argv[++i];
     else if (a === '--results-dir') out.resultsDir = argv[++i];
     else if (a === '--override-log') out.overrideLog = argv[++i];
+    else if (a === '--run-seed') out.runSeed = argv[++i];
     else if (a === '--runner') out.runner = argv[++i];
     else if (a === '--help' || a === '-h') { process.stdout.write(usage() + '\n'); process.exit(0); }
     else fail('unknown argument: ' + a + '\n\n' + usage());
@@ -774,31 +784,202 @@ function isUnavailableAttempt(attempt) {
   return attempt.status === 'UNAVAILABLE' || isDeadStatus(attempt.status);
 }
 
+// ------------------------------------------------- the runner header contract
+//
+// ROUND-8 CRITICAL 1. Round 7 made `served_model` load-bearing: gate 5 reads
+// PASS only when `identityEvidence` returns `independent`, and `independent`
+// requires a parsed `served_model:` field equal to the lane's model. But the
+// field was searched for across the runner's WHOLE captured stdout, and stdout
+// contains the reviewed model's own verdict. So the only satisfying assignment
+// for gate 5's PASS was text the model under test wrote about itself:
+//
+//     an ordinary verdict whose NITS section carries the line
+//     `served_model: gpt-5.6-terra`   ->  evidence=independent  ->  gate 5 PASS
+//
+// and the reverse — a reviewer that writes `served_model: claude-opus-5`
+// anywhere makes its own lane read MISMATCHED, which round 7 rules a FAIL.
+// Both directions of the trial's identity gate were writable by its subject.
+//
+// The contract, fixed here so the runner and the scorer cannot drift apart:
+//
+//   1. The runner prints its OWN header block first — `REVIEW ENGINE:`, an
+//      `ENGINE BIN:` line (resolved path + sha256), and, ONLY when the codex
+//      CLI actually reports one, a `served_model:` line.
+//   2. It then prints the literal delimiter line ENGINE_OUTPUT_DELIMITER.
+//   3. Everything after that line is the engine's own output.
+//
+// `extractEngineHeader` honours `served_model` from the pre-delimiter block and
+// from NOWHERE else. If the delimiter is absent — which is every lane today,
+// because `orchestra-review.js` emits no header block yet — NO served model is
+// honoured at all and gate 5 reads LIMITED, which is the honest, fail-safe
+// reading. A `served_model` claim in engine output is not discarded silently:
+// it is NEUTRALIZED (renamed) so it appears in the record without being read as
+// evidence, and the `REVIEW ENGINE:` echo it rides on still classifies.
+const ENGINE_OUTPUT_DELIMITER = '=== ENGINE OUTPUT ===';
+
+// Renaming, not deleting: the operator reading a record should still SEE that
+// the model claimed a served identity. The replacement is chosen so that
+// neither score.js's `SERVED_MODEL_FIELD_RE` (`\bserved[_ ]model\s*:`) nor its
+// `REQUESTED_MODEL_FIELD_RE` (`(?:^|[^_\w])model\s*:`) can match it: `-` is not
+// `[_ ]`, and `model` is followed by `-claim`, never by a colon.
+const SERVED_MODEL_CLAIM_MARK = 'served-model-claim-from-engine-output';
+
+function neutralizeServedModelClaim(line) {
+  return String(line).replace(/served[_ ]model/gi, SERVED_MODEL_CLAIM_MARK);
+}
+
+/**
+ * Splits a captured stdout into the runner's own header block and the engine's
+ * output. `header` is null when the delimiter is absent — the caller must then
+ * treat the WHOLE text as engine output, i.e. as untrusted.
+ */
+function splitRunnerHeader(text) {
+  const s = String(text || '');
+  const lines = s.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === ENGINE_OUTPUT_DELIMITER) {
+      return { header: lines.slice(0, i).join('\n'), body: lines.slice(i + 1).join('\n') };
+    }
+  }
+  return { header: null, body: s };
+}
+
 /**
  * Extracts the served-engine header. Round-2, R0 MAJOR 1: the round-1 fallback
  * was /^.*\bmodel:\s*\S.*$/im, which matched ANY line containing "model:"
  * anywhere — including reviewer prose about the diff — and so fabricated an
  * identity that score.js then counted as "identity known". The fallback is now
  * anchored: a line that IS a `model:` / `served_model:` field, nothing else.
+ *
+ * Round-8 CRITICAL 1: `served_model` and `ENGINE BIN` are read ONLY from the
+ * runner's pre-delimiter header block (see the contract above).
  */
 function extractEngineHeader(text) {
+  const { header, body } = splitRunnerHeader(text);
   const parts = [];
-  const engineLine = /^REVIEW ENGINE:.*$/m.exec(text);
-  if (engineLine) parts.push(engineLine[0].trim());
-  // Round-7 CRITICAL 1: a SEPARATE `served_model:` line is carried too, not
-  // discarded. Amendment (viii) registers exactly one remedy for the identity
-  // gate — "orchestra-review.js … surface a vendor-reported served model" — and
-  // the obvious implementation is its own line. The round-5 code returned the
-  // `REVIEW ENGINE:` line and stopped whenever one existed, so that remedy
-  // could never reach score.js and gate 5 would have read LIMITED for ever.
-  const servedLine = /^[ \t]*served[_ ]model[ \t]*:[ \t]*\S[^\n]*$/im.exec(text);
-  if (servedLine) {
-    const t = servedLine[0].trim();
-    if (parts.indexOf(t) === -1) parts.push(t);
+  const push = (t) => { if (t && parts.indexOf(t) === -1) parts.push(t); };
+
+  if (header !== null) {
+    const he = /^REVIEW ENGINE:.*$/m.exec(header);
+    if (he) push(he[0].trim());
+    const bin = /^[ \t]*ENGINE BIN[ \t]*:[ \t]*\S[^\n]*$/im.exec(header);
+    if (bin) push(bin[0].trim());
+    // The ONLY place a served_model is honoured.
+    const sm = /^[ \t]*served[_ ]model[ \t]*:[ \t]*\S[^\n]*$/im.exec(header);
+    if (sm) push(sm[0].trim());
   }
+
+  const be = /^REVIEW ENGINE:.*$/m.exec(body);
+  if (be) push(neutralizeServedModelClaim(be[0].trim()));
   if (parts.length) return parts.join('\n');
-  const fieldLine = /^[ \t]*model[ \t]*:[ \t]*\S[^\n]*$/im.exec(text);
-  return fieldLine ? fieldLine[0].trim() : null;
+  const fieldLine = /^[ \t]*model[ \t]*:[ \t]*\S[^\n]*$/im.exec(body);
+  return fieldLine ? neutralizeServedModelClaim(fieldLine[0].trim()) : null;
+}
+
+// ------------------------------------------- opaque run-clone names (round 8)
+//
+// ROUND-8 MAJOR 5(a). The lane's working directory was `path.join(runCloneRoot,
+// a.id)`, so a reviewer's own `basename "$PWD"` read `sdc-013`. On its own that
+// is only an index — but `CONSTRUCTION.md` discloses, in one sentence quoted
+// verbatim in four public review records, that *"the seeded ids occupy
+// contiguous blocks (001-006, 013-020, 037-044, 061-068)"*. The clone is
+// scrubbed of that sentence (verified: no clone's HEAD tree carries a `wo12`
+// path, a `roster/wo12` record or any literal `sdc-NNN`), so a lane cannot
+// derive the map in situ. It does not have to: the map is one line, in a public
+// repository, about the corpus the lane is sitting inside.
+//
+// The clone is therefore named by an opaque per-run token, and the id<->token
+// map is written beside the results file where the scorer — and nobody in a
+// lane — can read it.
+const CLONE_MAP_BASENAME = 'clone-map.json';
+const CLONE_TOKEN_HEX = 12;
+
+/** The lane-visible name of one artifact's run clone. */
+function cloneToken(runSeed, id) {
+  return crypto.createHash('sha256').update(String(runSeed) + ':' + String(id)).digest('hex').slice(0, CLONE_TOKEN_HEX);
+}
+
+function cloneMapPath(resultsFile) {
+  return path.join(path.dirname(resultsFile), CLONE_MAP_BASENAME);
+}
+
+function readCloneMap(resultsFile) {
+  const p = cloneMapPath(resultsFile);
+  if (!fs.existsSync(p)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return parsed && typeof parsed.runSeed === 'string' ? parsed : null;
+  } catch (e) { return null; }
+}
+
+/**
+ * The run seed is PERSISTED, not regenerated: §2.6 lets a phase be resumed
+ * across invocations, and a resumed artifact has to land in the same directory
+ * it was going to land in. An explicit `--run-seed` wins (a re-run of a
+ * recorded pass is then byte-reproducible); otherwise the seed already on disk
+ * is reused, and only a genuinely new run mints one.
+ */
+function resolveRunSeed(resultsFile, explicit) {
+  if (explicit) return String(explicit);
+  const existing = readCloneMap(resultsFile);
+  if (existing) return existing.runSeed;
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function writeCloneMap(resultsFile, runSeed, lane, phase, ids) {
+  const map = {};
+  const byToken = {};
+  for (const id of ids) {
+    const t = cloneToken(runSeed, id);
+    map[id] = t;
+    byToken[t] = id;
+  }
+  const payload = { version: 1, runSeed, lane, phase, tokenHexLength: CLONE_TOKEN_HEX, map, byToken };
+  const p = cloneMapPath(resultsFile);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+  return p;
+}
+
+/**
+ * ROUND-8, OpenAI lane, CRITICAL. `--run-clone-root` was taken unchecked, so a
+ * root inside the repository (or inside any of its worktrees) put every lane's
+ * cwd where `../../..` reaches the live `corpus/key.json` — the answer key for
+ * the trial the lane is a subject of. `sanitizeClone()` guarantees the CLONE
+ * carries no corpus; it cannot guarantee anything about what sits beside it.
+ *
+ * Resolution reuses `build-corpus.js`'s nested-clone logic exactly (nearest
+ * existing ancestor realpath, segment-wise relative test, case-folded on a
+ * case-insensitive filesystem) so the two guards cannot disagree about what
+ * "inside" means. Exit 2, distinct from a plain usage error, because this is a
+ * containment refusal and a CI wrapper should be able to tell them apart.
+ */
+function assertRunCloneRootOutside(runCloneRoot, repoRoot) {
+  const resolvedRoot = buildCorpus.realResolve(runCloneRoot);
+  const roots = [buildCorpus.realResolve(repoRoot)].concat(gitWorktreeRoots(repoRoot));
+  for (const r of roots) {
+    if (buildCorpus.isInside(r, resolvedRoot) || buildCorpus.samePath(r, resolvedRoot)) {
+      process.stderr.write('run-lane: refusing --run-clone-root ' + resolvedRoot + ' — it is INSIDE ' + r +
+        '.\n  A lane runs with its cwd in that directory, so a root nested in the repository (or in any of its\n' +
+        '  worktrees) puts the live corpus/key.json — the answer key for the trial the lane is a subject of —\n' +
+        '  within reach by relative path. sanitizeClone() strips the CLONE; it cannot strip what sits beside it.\n' +
+        '  Pass a scratch directory outside the repository.\n');
+      process.exit(2);
+    }
+  }
+  return resolvedRoot;
+}
+
+/** Every worktree root git knows about for this repository, resolved. */
+function gitWorktreeRoots(repoRoot) {
+  const out = [];
+  const r = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
+  if (r.status !== 0 || !r.stdout) return out;
+  for (const line of r.stdout.split(/\r?\n/)) {
+    const m = /^worktree\s+(.+)$/.exec(line.trim());
+    if (m) out.push(buildCorpus.realResolve(m[1]));
+  }
+  return out;
 }
 
 function runOneAttempt(runner, wo, er, base, head, cwd, timeoutMs, laneCfg) {
@@ -1050,9 +1231,21 @@ function main() {
   const cloneTarget = args.cloneRoot ? path.resolve(args.cloneRoot) : cloneParent;
   const { cloneDir } = buildCorpus.ensureClone(repoRoot, cloneTarget);
   const runCloneRoot = args.runCloneRoot
-    ? path.resolve(args.runCloneRoot)
+    ? assertRunCloneRootOutside(args.runCloneRoot, repoRoot)
     : fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-wo12-run-'));
   const keyBlobSha = buildCorpus.keyBlobShaFor(repoRoot);
+
+  // Round-8 MAJOR 5(a): the lane's cwd basename is an opaque token, and the
+  // id<->token map is written beside the results file — where the scorer reads
+  // it and no lane can.
+  // Round-8: `runIndex` is the artifact's ABSOLUTE position in this phase's
+  // deterministic run order, so a resumed invocation records the same number
+  // the interrupted one would have.
+  const runOrderIndex = new Map(artifacts.map((a, idx) => [a.id, idx]));
+
+  const runSeed = resolveRunSeed(resultsFile, args.runSeed);
+  const cloneMapFile = writeCloneMap(resultsFile, runSeed, args.lane, args.phase, artifacts.map((a) => a.id));
+  process.stdout.write('  run clones are named by an opaque token; id<->token map: ' + cloneMapFile + '\n\n');
 
   // §2.6 RESUME (round-3): skip what is already recorded rather than re-billing
   // it. Computed AFTER the P0 gate so a resumed phase still passes the gate,
@@ -1076,7 +1269,7 @@ function main() {
     const wo = readBrief(path.join(briefsDir, a.id + '.wo.txt'), 'work order', a.id);
     const er = readBrief(path.join(briefsDir, a.id + '.er.txt'), 'executor report', a.id);
     const mat = buildCorpus.materializeArtifact(a, cloneDir, patchesDir, {
-      keyBlobSha, runCloneDir: path.join(runCloneRoot, a.id),
+      keyBlobSha, runCloneDir: path.join(runCloneRoot, cloneToken(runSeed, a.id)),
     });
     if (!mat.runCloneDir) fail(a.id + ': build-corpus produced no sanitized run clone — refusing to hand a lane the build clone.');
 
@@ -1101,7 +1294,17 @@ function main() {
       // nothing is lost by dispatching out of corpus order. `runIndex` is the
       // sequence actually executed — what §3.1 item 6's UNAVAILABLE streak has
       // to be measured over.
-      runIndex: i, attempts,
+      //
+      // ROUND-8, OpenAI lane MAJOR: it is the ABSOLUTE position in the phase's
+      // deterministic run order, NOT a counter over this invocation's todo
+      // list. §2.6 lets a phase be resumed, and the round-7 code restarted the
+      // counter at 0 on every invocation — so a resumed record carried
+      // runIndex 0 while an earlier one carried 12, `stabilityForLane`'s sort
+      // interleaved them, and a genuine UNAVAILABLE streak that spanned the
+      // crash was broken up. The streak rule has to see the true sequence, and
+      // the phase's run order is deterministic (`phaseRunOrder`), so the
+      // absolute position is well defined whether or not this invocation ran it.
+      runIndex: runOrderIndex.get(a.id), attempts,
     };
     if (overrideStamp) record.p0Override = overrideStamp;
     const total = appendResult(resultsFile, record);
@@ -1146,6 +1349,9 @@ module.exports = {
   LANES, PHASE0_MAX_UNAVAILABLE, OVERRIDE_LOG_BASENAME,
   parseArgs, phaseRunOrder, checkQuartermaster, checkProjectedDraw, checkPhaseOrder, readRequiredReserve, loadLadder, toolingRepoRoot,
   resolveQmCommand, resolveRunner, runOneAttempt, classifyVerdict, extractEngineHeader,
+  ENGINE_OUTPUT_DELIMITER, SERVED_MODEL_CLAIM_MARK, splitRunnerHeader, neutralizeServedModelClaim,
+  cloneToken, cloneMapPath, readCloneMap, writeCloneMap, resolveRunSeed, assertRunCloneRootOutside,
+  CLONE_MAP_BASENAME, CLONE_TOKEN_HEX,
   appendResult, appendOverrideLog, readResults, planResume, countUnavailableOnDisk,
   isDeadStatus, isUnavailableAttempt, DEAD_STATUS_RE,
 };

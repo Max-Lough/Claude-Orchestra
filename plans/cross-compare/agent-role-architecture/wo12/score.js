@@ -140,25 +140,122 @@ const FINDINGS_END_HEADERS = /^#*\s*(CLAIMS CHECKED|NITS)\s*:?\s*$/i;
 // So the window ends at the next header OF ANY KIND: a markdown heading, or a
 // bare ALL-CAPS/heading-shaped line. Runner delimiters end it too — nothing
 // after `--- ATTEMPT LOG` or `FINALITY:` is verdict text.
-const SECTION_HEADER_RE = /^(?:#{1,6}\s+\S.*|[A-Z][A-Z0-9 /-]{2,}:?)$/;
-const RUNNER_DELIMITER_RE = /^(?:-{2,}\s*\S|FINALITY:)/;
+//
+// ROUND-8 CRITICAL 2. That predicate closed both round-7 reproducers and then
+// destroyed legitimate findings in three shapes, two of them with NO diagnostic
+// (`emptyFindingsSection` warns only on an EMPTY section, and these are not
+// empty). Measured on `sdc-013`'s CRITICAL seed with a correctly cited,
+// correctly graded finding in every case:
+//
+//     house markdown + ### CRITICAL subhead      blocks=0  HIT=false
+//     bare ALL-CAPS CRITICAL subhead             blocks=0  HIT=false
+//     hr --- before the real finding             blocks=1  HIT=false
+//     --flag continuation before the finding     blocks=1  HIT=false
+//
+// `### MAJOR` / `### MINOR` under a `## …FINDINGS` heading is this repository's
+// OWN house format — the format `## FINDINGS` was accepted in order to support.
+// `---` between findings matched `-{2,}\s*\S` (the branch backtracks onto the
+// third dash), and a wrapped `--override-log …` continuation matched it too.
+//
+// The round-8 rule, from the Conductor's ruling:
+//
+//   A heading terminates the window only when its level is at or ABOVE the
+//   level of the heading that OPENED it (a `###` under a `##` is a subsection,
+//   not the next section); a bare ALL-CAPS section name counts as a level-2
+//   heading; a heading whose text is a SEVERITY or BUCKET word is never a
+//   terminator at any level. The named next sections always terminate, and so
+//   do the two LITERAL runner delimiters. `---` rules and `--flag`
+//   continuations are inside the window.
+const BARE_CAPS_HEADER_RE = /^[A-Z][A-Z0-9 /-]{2,}:?$/;
+const MD_HEADER_RE = /^(#{1,6})\s+\S/;
 
-function isFindingsTerminator(line) {
-  const t = line.trim();
+// ROUND-8 OpenAI-lane MAJOR (C), reconciled with CRITICAL 2 above. The
+// level rule alone re-opens the round-7 hole for a header written in ordinary
+// Title case: `Verification rerun:` on its own line at column 0 is the next
+// SECTION of a hand-written record, not prose, and everything under it —
+// including a bullet citing a seed's locator — would be scored as a finding the
+// reviewer never filed. A bare LABEL is therefore a level-2 heading:
+//
+//   * it starts at column 0 (a wrapped continuation is indented, or is not a
+//     label at all),
+//   * it is a capitalized word or short phrase,
+//   * and it ENDS at the colon — `NOTE: the diff also renames one test.` has
+//     prose after the colon and is not a header.
+//
+// The severity/bucket exemption applies here exactly as it does to `###
+// CRITICAL`: `Critical:` opens a findings subsection.
+const BARE_LABEL_HEADER_RE = /^[A-Z][A-Za-z0-9 -]{0,60}:$/;
+
+// The next sections by name. These end the window whatever their level and
+// whatever precedes them — `NITS` is a section even when it is written as a
+// bare word under a `# FINDINGS`.
+const NAMED_NEXT_SECTION_RE = /^#{0,6}\s*(?:CLAIMS CHECKED|NITS|VERDICT|VERIFICATION RE-RUN|ATTEMPT LOG)\b\s*:?/i;
+
+// Severity and bucket words. A reviewer writing `### CRITICAL` (or a bare
+// `CRITICAL`) is opening a SUBSECTION OF THE FINDINGS, not the next section,
+// and treating it as a terminator scores every finding under it as a MISS.
+// `NIT` singular is a bucket word; `NITS` is the section name above.
+const SEVERITY_HEADING_RE = /^(?:CRITICAL|MAJOR|MINOR|NIT|BREACH|GAP|CONFIRMED|PLAUSIBLE)S?$/i;
+
+// LITERAL, as the round-7 comment's own text named them. `-{2,}\s*\S` was the
+// generalization that ate the horizontal rules and the flag continuations.
+const RUNNER_DELIMITER_RE = /^(?:-{2,}\s*ATTEMPT LOG\b|FINALITY:)/i;
+
+/** The heading level of a line, or null if it is not heading-shaped. */
+function headingLevelOf(line) {
+  const raw = String(line);
+  const t = raw.trim();
+  const md = MD_HEADER_RE.exec(t);
+  if (md) return md[1].length;
+  // A bare ALL-CAPS section name is the runner template's own header style;
+  // it sits at the same level as `## FINDINGS` in the house markdown format.
+  if (BARE_CAPS_HEADER_RE.test(t)) return 2;
+  // A Title-case bare label AT COLUMN 0 is the same thing in a hand-written
+  // record (round-8, OpenAI lane). Indentation disqualifies it: an indented
+  // `Foo:` is a wrapped continuation inside a finding, not a section.
+  if (!/^\s/.test(raw) && BARE_LABEL_HEADER_RE.test(t)) return 2;
+  return null;
+}
+
+/** A heading line with its `#`-run and trailing colon removed. */
+function headingTextOf(line) {
+  return String(line).trim().replace(/^#{1,6}\s+/, '').replace(/\s*:\s*$/, '').trim();
+}
+
+const DEFAULT_FINDINGS_LEVEL = 2;
+
+function isFindingsTerminator(line, openLevel) {
+  const t = String(line).trim();
   if (!t) return false;
-  return FINDINGS_END_HEADERS.test(t) || SECTION_HEADER_RE.test(t) || RUNNER_DELIMITER_RE.test(t);
+  const level = openLevel === undefined || openLevel === null ? DEFAULT_FINDINGS_LEVEL : openLevel;
+  if (RUNNER_DELIMITER_RE.test(t)) return true;
+  if (NAMED_NEXT_SECTION_RE.test(t)) return true;
+  if (FINDINGS_END_HEADERS.test(t)) return true;
+  // The RAW line, not the trimmed one: `headingLevelOf` uses indentation to
+  // tell a column-0 section label from a wrapped continuation.
+  const lvl = headingLevelOf(line);
+  if (lvl === null) return false;                       // `---`, `--flag …`, prose
+  if (SEVERITY_HEADING_RE.test(headingTextOf(t))) return false; // a findings SUBHEAD
+  return lvl <= level;
 }
 
 function extractFindingsSection(text) {
   const lines = String(text || '').split(/\r?\n/);
   let start = -1;
+  let openLevel = DEFAULT_FINDINGS_LEVEL;
   for (let i = 0; i < lines.length; i++) {
-    if (FINDINGS_START.test(lines[i].trim())) { start = i + 1; break; }
+    const t = lines[i].trim();
+    if (FINDINGS_START.test(t)) {
+      start = i + 1;
+      const hashes = /^(#+)/.exec(t);
+      openLevel = hashes ? hashes[1].length : DEFAULT_FINDINGS_LEVEL;
+      break;
+    }
   }
   if (start === -1) return '';
   let end = lines.length;
   for (let j = start; j < lines.length; j++) {
-    if (isFindingsTerminator(lines[j])) { end = j; break; }
+    if (isFindingsTerminator(lines[j], openLevel)) { end = j; break; }
   }
   return lines.slice(start, end).join('\n');
 }
@@ -589,6 +686,22 @@ function classifyIdentity(engineHeader, expectedModel) {
  * vendor-reported `served_model`, which is a change to
  * `packs/codex/hooks/orchestra-review.js`, outside this file.
  */
+// ROUND-8 CRITICAL 1 — THE PROVENANCE OF `served_model`.
+//
+// This function cannot see where its argument came from, so the guarantee it
+// depends on is enforced upstream, in `run-lane.js`'s `extractEngineHeader`:
+// a `served_model:` field is carried into the header ONLY from the runner's own
+// pre-delimiter header block (`ENGINE_OUTPUT_DELIMITER`), and a `served_model`
+// written by the ENGINE is renamed (`SERVED_MODEL_CLAIM_MARK`) so it can never
+// match `SERVED_MODEL_FIELD_RE` here. Round 7 read the field out of the whole
+// captured stdout, which is the reviewed model's own transcript — so the ONLY
+// satisfying assignment for gate 5's PASS was a line the subject wrote about
+// itself, and a subject that wrote a DIFFERENT model failed its own lane.
+//
+// Until `orchestra-review.js` emits the header block, no lane produces a
+// pre-delimiter `served_model` and gate 5 reads LIMITED everywhere. That is the
+// intended, fail-safe reading: a gate whose only PASS is attacker-controlled is
+// worse than a gate that never passes.
 function identityEvidence(engineHeader, expectedModel) {
   if (!engineHeader) return 'none';
   // Round-7 CRITICAL 1: `independent` requires a PARSED served_model FIELD whose
@@ -1125,7 +1238,17 @@ function gate12f(scored, key, adjudication, exclusions) {
       }
       const needsAdjudication = Array.from(new Set(unadjudicatedFindings.map((s) => s.split(':')[0])));
       const laneHasNoEntries = terraAdj.length === 0;
-      const ready = complete && terraControls.length > 0 && !laneHasNoEntries && unadjudicatedFindings.length === 0;
+      // ROUND-8 MINOR 4: `!anyDead` belongs on this item too. `terraControls`
+      // counts every control RECORDED on the lane, including runs that produced
+      // no verdict at all, and the rate is falseBlockers/terraControls — so a
+      // dead run dilutes the denominator of a gate it contributed nothing to.
+      // §2.6 caps final UNAVAILABLE at 2 per lane, so the dilution is bounded
+      // at 2 of 54: enough to move the 10% threshold from 5.2 findings to 5.4,
+      // which matters exactly once, at 6 vs 5 — and that is precisely the case
+      // a qualification gate must not get wrong. Items 1 and 6 already gate on
+      // it (round-3 MAJOR 3); this one now does as well.
+      const ready = complete && terraControls.length > 0 && !laneHasNoEntries &&
+        unadjudicatedFindings.length === 0 && !anyDead;
       const rate = terraControls.length ? falseBlockers.length / terraControls.length : null;
       let detail;
       if (laneHasNoEntries) {
@@ -1141,7 +1264,10 @@ function gate12f(scored, key, adjudication, exclusions) {
           ' control(s) reviewed = ' + pct(rate) +
           ' (of ' + noiseBoth.length + ' NOISE/NOISE adjudication(s) on this lane, ' + onControls.length + ' were on controls' +
           (unscorable.length ? '; ' + unscorable.length + ' had no establishable severity and were NOT counted' : '') + ')' +
-          (complete ? '' : ' (corpus not complete)');
+          (complete ? '' : ' (corpus not complete)') +
+          // Round-8 MINOR 4: say WHY the item is INCOMPLETE when a dead run is
+          // the only thing holding it there.
+          deadNote(terraDead, 'X-Terra') + deadNote(solDead, 'X-Sol');
       }
       items.push({
         n: 3, name: 'false-blocker rate(X-Terra) ≤ 10%',
@@ -1719,6 +1845,7 @@ function main() {
 
 module.exports = {
   wilson, extractFindingsSection, splitFindingBlocks, parseSeverity, parseCitations,
+  isFindingsTerminator, headingLevelOf, headingTextOf,
   fileMatches, classifyFileMatch, overlapsWithTolerance, mentionsSymbol, evaluateSeedHit, scoreRecords,
   extractServedModel, extractRequestedModel, sameModel, classifyIdentity, identityEvidence, identityExclusions,
   applyAdjudicatedPromotions, dedupeScored, citesLocatorFile, normalizeWhitespace,

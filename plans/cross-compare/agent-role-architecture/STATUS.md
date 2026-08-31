@@ -624,9 +624,18 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   digit density, 3-gram exclusivity, watched idioms), and the adjacent-path closures;
   content passes on all 84 files complete (final means: ORDER 150.3 vs 147.5, CLAIMS
   79.9 vs 78.0, ranges 136–159 vs 135–160 and 66–90 vs 66–93, backticks 0, watched
-  idioms balanced or absent); the tooling closures and distribution lint, the round-5
-  assembly/verification, the second blind test on a disjoint draw, and the round-5
-  delta review follow.
+  idioms balanced or absent). Round-5 tooling committed (`5379751`, 642 checks):
+  every round-3 delta finding closed on its adjacent path; the distribution lint's
+  3-gram rule was re-scoped to content-word 3-grams in ≥6 documents after the first
+  cut flagged 133 connective phrases, and what survived (53) was not topic but one
+  author's boilerplate repeated across consecutive control files — being varied;
+  the genuine topic asymmetry (docs/records commits exist only among controls; every
+  seeded base is a code commit) is disclosed in CONSTRUCTION.md as a corpus-level
+  property that gives a per-packet reviewer nothing. The stray `p0-overrides.log` was
+  the tooling suite's own SIGTERM-interrupted run — the ledger now lives beside the
+  results file and a guard test asserts the repo stays clean. Round-5 assembly/
+  verification, the second blind test on a disjoint draw, and the round-5 delta
+  review follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

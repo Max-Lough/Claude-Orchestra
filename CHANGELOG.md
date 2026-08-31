@@ -116,6 +116,24 @@ saw it.
   label-plus-colon inside ORDER or CLAIMS prose, enforced by a lint that refuses
   assembly — and the 21 affected files were rewritten as plain prose with every
   fact, number and constraint preserved. Suite: 561 checks.
+- **Round 5 (pre-run): what a reader cannot see, a classifier still could.** The
+  round-3 delta reviews (Anthropic 0 CRITICAL / 5 MAJOR; cross-vendor pending)
+  put a fresh reader at exactly chance (50%) and then showed, with corpus-level
+  statistics, that the populations were still separable at 100% precision on
+  25 artifacts: the controls had been authored into tight bands while the seeds
+  kept their wider spread, so the tails were seed-only; backticks appeared in 10
+  seeded orders and no control; two idioms in 15 controls and no seed. The fix is
+  symmetric authoring plus measurement: both populations now sit in the same
+  bands (ORDER 135–160, CLAIMS 65–95 — final means 150/148 and 80/78), backticks
+  are forbidden in content prose, watched idioms are balanced or absent, and a
+  **distribution lint** refuses assembly on range floors or ceilings more than 8
+  words apart, sd ratios outside 0.6–1.6, digit density more than 1.5/100 words
+  apart, any content 3-gram exclusive to one population in 4+ artifacts, or a
+  watched idiom outside a 0.5–2.0 frequency ratio. Also closed: the identity gate
+  reports `LIMITED` (never PASS) on echoed evidence; the substring fallback that
+  re-admitted the suffix tier is gone and hits are minted only from the FINDINGS
+  section; per-finding adjudication coverage needs an exact, length-bounded match;
+  a truncated sibling results file refuses instead of disarming the phase-0 halt.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

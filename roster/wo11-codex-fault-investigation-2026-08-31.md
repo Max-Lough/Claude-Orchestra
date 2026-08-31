@@ -353,3 +353,34 @@ environment fault rather than a competency signal.
   `C:\Users\maxtl\AppData\Local\Temp\claude\C--Users-maxtl-Projects-Claude-Orchestra\8a1084ac-23e5-4029-97e1-455d7a8970ee\scratchpad\fault-probe\`
   (`order.md`, `order2.md`, and the six probe outputs).
 - This file is the only file I created.
+
+---
+
+## Addendum (2026-08-31, later the same day) — the helper-swap repair TESTED and REFUTED
+
+The owner ran the staged repair: both stale `3a70491d…` helper copies (the
+releases\0.151.0 bin and the .sandbox-bin -0.151.0 name) were replaced with
+the 8.1 MB `8e47f597…` runner, backups written beside each (`*.bak-0147era`).
+A controlled re-probe (orchestra-exec, gpt-5.6-luna low, --cd to a fresh
+scratch git dir, one forced read-only shell command — condition B of §5)
+then:
+
+- validated and REUSED the swapped binary (sandbox log, 09:38:00 local:
+  `helper copy: reused` against the swapped source, `helper launch
+  resolution` naming the swapped .sandbox-bin copy), and
+- **faulted identically**: `runner failed during ReadSpawnRequest:
+  unsupported protocol version 6`. Honest BLOCKED, tree audit clean.
+
+Root of the misdiagnosis: §4 inferred the 8.1 MB runner was "genuinely
+newer" from its size. A concurrently live codex session (cwd E:\Godot
+Projects\PiratePartyPals) was observed sourcing that same-hash runner from
+`C:\Users\maxtl\AppData\Local\OpenAI\Codex\bin\d5f4c71927a04589\` into the
+`.sandbox-bin\codex-command-runner-0.150.0-alpha.8.exe` name — i.e.
+`8e47f597…` IS the 0.150.0-alpha.8 helper, OLDER than 0.151.0, and it does
+not speak spawn protocol v6 either. **No runner on this disk speaks v6.**
+
+Revised owner action: `codex update` (the CLI offers it; verified present on
+0.151.0) or a full reinstall, run when no other codex session is live — one
+was live during this addendum. The swapped files are left in place (both
+candidate helpers fault identically; a reinstall overwrites this directory
+anyway); the `.bak-0147era` backups preserve the original state.

@@ -638,9 +638,13 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   5.39 vs seeds 3.40 per 100 words, from stacked suite counts and short shas one
   author had added), one more shared control phrase ("the status file", 6 files), and
   the last "leave … alone" — all being cleared by per-file caps (≤3 numerals, no
-  shas) and phrase variation. CI on the sealed-content push `f992947`: 9/9 green.
-  Round-5 assembly/verification, the second blind test on a disjoint draw, and the
-  round-5 delta review follow.
+  shas) and phrase variation — the digit fix first over-corrected (controls 1.11 vs
+  seeds 3.40, the seed mean carried by one order at 30 digits/100 words) and was
+  rebalanced from both sides (three seed outliers capped; every zero-numeral control
+  given one genuine figure): final 2.10 vs 1.25. CI on `f992947`: 9/9 green. **Content
+  sealed at `88b5cec`; `assemble-key.js --check-only` passes every lint.** Round-5
+  assembly/verification, the second blind test on a disjoint draw, and the round-5
+  delta review follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

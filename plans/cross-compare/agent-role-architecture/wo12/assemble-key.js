@@ -879,7 +879,7 @@ function hazardLint(label, text, kind, variant, findings) {
   for (const g of got) {
     if (!HAZARD_ALL.has(g)) findings.push(label + ': hazard line ' + JSON.stringify(g) + ' is OUTSIDE VARIANTS.md v2\'s closed vocabulary');
   }
-  if (got.join('') !== expected.join('')) {
+  if (got.join(' | ') !== expected.join(' | ')) {
     findings.push(label + ': hazard list is not the KIND=' + kind + ' list, verbatim and in order (expected ' + JSON.stringify(expected) + ', got ' + JSON.stringify(got) + ')');
   }
 }
@@ -1045,6 +1045,23 @@ const DIGIT_DENSITY_TOLERANCE = 1.5; // (3) digits per 100 words
 // document frequency of 6+ in one population and 0 in the other. The 4-5 band
 // is still computed and PUBLISHED — it is evidence for the topic-asymmetry
 // disclosure — but it does not fail the assembly.
+// (6) UNIGRAM exclusivity — amendment (xii). The 3-gram gate passes with zero
+// violations while single WORDS separate the populations far more sharply:
+// `deletions` 0 seeds / 13 controls, `confirm` 0/12, `else` 0/12, `insertions`
+// 0/11, `touching` 0/10, `protocol` 8/0. A habit that varies its phrasing
+// ("50 insertions and 31 deletions" / "a substantial batch of insertions and far
+// fewer deletions") never produces a shared 3-gram and always produces a shared
+// unigram, so the 3-gram window was looking past the strongest evidence.
+//
+// `else` is the specific proof that the round-5 idiom fix was a string edit
+// rather than a habit fix: the literal `and nothing else` is 0/0 in both
+// populations and passes, while `with nothing else touched`, `nowhere else`,
+// `anything else`, `anywhere else` are 12 controls and 0 seeds.
+const UNIGRAM_MIN_LENGTH = 4;      // (6) shorter words are function words
+const UNIGRAM_MIN_FILES = 8;       // (6) document frequency that FAILS
+const UNIGRAM_REPORT_MIN_FILES = 5; // (6) document frequency that is REPORTED
+const UNIGRAM_FINDINGS_SHOWN = 25;
+
 const NGRAM_MIN_CONTENT_WORDS = 2; // (4) stopwords and bare numbers do not count
 const NGRAM_MIN_FILES = 6;         // (4) document frequency that FAILS
 const NGRAM_REPORT_MIN_FILES = 4;  // (4) document frequency that is merely REPORTED
@@ -1074,6 +1091,56 @@ const NGRAM_STOPWORDS = new Set([
   'while', 'where', 'which', 'who', 'what', 'how', 'why', 'one', 'two', 'more', 'most', 'other',
 ]);
 
+// ------------------------------------------------- sentence shape (round 7)
+//
+// Protocol amendment (xii). Rounds 3 and 5 gated the word TOTALS — floors,
+// ceilings, sd — and the separation moved one level down, into how those words
+// are divided into sentences. Nothing measured that, and it was the strongest
+// signal in the corpus: the shortest sentence in a packet separated the
+// populations at Cohen's d = -1.80, `minSent >= 14` was 26 artifacts and all 26
+// controls, and a style-only classifier using no topic word and no digit
+// reached 90% precision / 90% recall under leave-one-out CV.
+//
+// The mechanism was legible without arithmetic: seeded packets land a short
+// emphatic sentence ("Done." appeared in 4 seeded packets and 0 controls; of the
+// 26 artifacts whose shortest sentence is <= 6 words, 22 were seeded) while
+// control packets are written in long measured ones.
+//
+// Two gates follow. A FLOOR on every sentence removes the punchy register
+// outright; a comparison of the per-population shortest-sentence MEANS catches
+// the same asymmetry arriving in a subtler form.
+const MIN_SENTENCE_WORDS = 8;
+const SHORTEST_SENTENCE_MEAN_TOLERANCE = 3;
+
+// Sentence splitting has to survive this corpus's own prose, which is full of
+// dotted tokens: `install.js`, `tests/quartermaster.test.js`, `.cmd`,
+// `orchestra.json`, version numbers. So a split happens only at `[.!?]`
+// followed by whitespace-then-an-uppercase-letter (or a quote/bracket then an
+// uppercase letter), or at end of text. `install.js runs` never splits, because
+// `r` is lowercase; `…refusing. The next` does.
+const SENTENCE_SPLIT_RE = /([.!?]["'’”)\]]?)\s+(?=["'“(\[]?[A-Z])/g;
+
+// Named `splitIntoSentences`, not `splitSentences`: the legacy-brief importer
+// further down already owns that name, and a second definition would silently
+// replace it, breaking --import-legacy-briefs.
+function splitIntoSentences(text) {
+  const t = normalizeWs(text);
+  if (!t) return [];
+  const SEP = String.fromCharCode(1); // a separator no brief can contain
+  return t.replace(SENTENCE_SPLIT_RE, '$1' + SEP).split(SEP)
+    .map((x) => x.trim()).filter(Boolean);
+}
+
+function sentenceWordCounts(text) {
+  return splitIntoSentences(text).map((x) => wordCount(x)).filter((n) => n > 0);
+}
+
+/** The shortest sentence in a piece of content prose, in words (0 if none). */
+function shortestSentenceWords(text) {
+  const counts = sentenceWordCounts(text);
+  return counts.length ? Math.min.apply(null, counts) : 0;
+}
+
 function countMatches(text, re) {
   const m = String(text || '').match(re);
   return m ? m.length : 0;
@@ -1084,6 +1151,18 @@ function digitDensity(text) {
   if (!words) return 0;
   return (countMatches(text, /[0-9]/g) / words) * 100;
 }
+/** Lowercase content unigrams of a piece of prose, as a Set (document freq). */
+function unigramsOf(text) {
+  const words = normalizeWs(String(text || '')).toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(Boolean);
+  const out = new Set();
+  for (const w of words) {
+    if (w.length < UNIGRAM_MIN_LENGTH) continue;
+    if (!isContentWord(w)) continue;
+    out.add(w);
+  }
+  return out;
+}
+
 /** A word that carries meaning: not a stopword, not a bare number. */
 function isContentWord(w) {
   if (!w) return false;
@@ -1134,7 +1213,8 @@ function statsOf(values) {
 function distributionLint(rows, findings) {
   const seeded = rows.filter((r) => r.kind === 'seeded');
   const controls = rows.filter((r) => r.kind === 'control');
-  const report = { fields: {}, backticks: null, digits: null, ngrams: [], ngramsReported: [], idioms: [] };
+  const report = { fields: {}, backticks: null, digits: null, ngrams: [], ngramsReported: [], idioms: [],
+    sentences: null, unigrams: [], unigramsReported: [] };
   if (!seeded.length || !controls.length) return report;
 
   // (1) RANGE floors/ceilings and dispersion parity, per field. The round-3
@@ -1256,6 +1336,70 @@ function distributionLint(rows, findings) {
           ' (seeded ' + sRate.toFixed(3) + '/artifact, control ' + cRate.toFixed(3) + '/artifact), outside [' +
           IDIOM_RATIO_MIN + ', ' + IDIOM_RATIO_MAX + '].');
       }
+    }
+  }
+
+  // (6) SENTENCE FLOOR and shortest-sentence parity — amendment (xii)(a).
+  {
+    for (const r of rows) {
+      for (const field of ['order', 'claims']) {
+        for (const s of (r.sentences && r.sentences[field]) || []) {
+          if (s.words < MIN_SENTENCE_WORDS) {
+            findings.push('distribution: content/' + r.id + '.json (' + r.kind + ') `' + field + '` contains a ' +
+              s.words + '-word sentence: ' + JSON.stringify(s.text) + '. Every sentence must carry at least ' +
+              MIN_SENTENCE_WORDS + ' words. A short emphatic sentence is the single strongest tell the corpus has had — ' +
+              '"Done." appeared in 4 seeded packets and 0 controls, and of the 26 artifacts whose shortest sentence was ' +
+              '6 words or fewer, 22 were seeded. Fold it into the sentence beside it.');
+          }
+        }
+      }
+    }
+    const sShort = statsOf(seeded.map((r) => r.shortestSentence || 0));
+    const cShort = statsOf(controls.map((r) => r.shortestSentence || 0));
+    report.sentences = { seeded: sShort, control: cShort, delta: Math.abs(sShort.mean - cShort.mean) };
+    if (Math.abs(sShort.mean - cShort.mean) > SHORTEST_SENTENCE_MEAN_TOLERANCE) {
+      findings.push('distribution: the mean SHORTEST SENTENCE differs by ' + Math.abs(sShort.mean - cShort.mean).toFixed(2) +
+        ' words (seeded ' + sShort.mean.toFixed(2) + ', control ' + cShort.mean.toFixed(2) + '), above the ' +
+        SHORTEST_SENTENCE_MEAN_TOLERANCE + '-word tolerance. This was a d = -1.80 separation in round 5 — the word budgets ' +
+        'were balanced to a single word at both ends while the SENTENCE budgets were not balanced at all.');
+    }
+  }
+
+  // (7) UNIGRAM exclusivity — amendment (xii)(b).
+  {
+    const df = new Map();
+    for (const r of rows) {
+      for (const w of (r.unigrams || [])) {
+        if (!df.has(w)) df.set(w, { seeded: [], control: [] });
+        const bucket = df.get(w)[r.kind];
+        if (bucket) bucket.push(r.id);
+      }
+    }
+    for (const w of Array.from(df.keys()).sort()) {
+      const use = df.get(w);
+      const seededOnly = use.control.length === 0 && use.seeded.length >= UNIGRAM_REPORT_MIN_FILES;
+      const controlOnly = use.seeded.length === 0 && use.control.length >= UNIGRAM_REPORT_MIN_FILES;
+      if (!seededOnly && !controlOnly) continue;
+      const only = seededOnly ? 'seeded' : 'control';
+      const ids = seededOnly ? use.seeded : use.control;
+      const entry = { word: w, only, ids };
+      if (ids.length >= UNIGRAM_MIN_FILES) report.unigrams.push(entry);
+      else report.unigramsReported.push(entry);
+    }
+    const byFreq = (a, b) => b.ids.length - a.ids.length || (a.word < b.word ? -1 : 1);
+    report.unigrams.sort(byFreq);
+    report.unigramsReported.sort(byFreq);
+    const shownU = report.unigrams.slice(0, UNIGRAM_FINDINGS_SHOWN);
+    for (const u of shownU) {
+      findings.push('distribution: the word ' + JSON.stringify(u.word) + ' occurs in ' + u.ids.length + ' ' + u.only +
+        ' artifact(s) and 0 of the other population (' + u.ids.slice(0, 8).join(', ') + (u.ids.length > 8 ? ', …' : '') +
+        '). A single-brief-visible lexical rule at 100% precision is exactly what the exclusivity gate exists to catch — ' +
+        'and a habit that varies its phrasing never shows up as a shared 3-gram but always as a shared word. Use the word ' +
+        'in both populations, or in neither.');
+    }
+    if (report.unigrams.length > shownU.length) {
+      findings.push('distribution: ' + report.unigrams.length + ' word(s) are exclusive to one population at a document ' +
+        'frequency of ' + UNIGRAM_MIN_FILES + '+; the ' + shownU.length + ' strongest are listed above.');
     }
   }
 
@@ -1460,6 +1604,68 @@ function renderLengthReport(rows) {
   }
   lines.push('');
   lines.push(renderDistributionReport(rows));
+  lines.push('');
+  lines.push(renderStoppingStandard(rows));
+  return lines.join('\n');
+}
+
+/**
+ * The stopping standard — amendment (xii). Five rounds ran the same loop: gate a
+ * statistic, watch the separation move one level down, gate that. This section
+ * states the standard that ends it and lists EVERY gated feature with its
+ * verdict, so a reader can see at a glance what is actually being enforced
+ * rather than inferring it from prose.
+ */
+function renderStoppingStandard(rows) {
+  const lines = [];
+  lines.push('## Stopping standard (protocol amendment (xii))');
+  lines.push('');
+  lines.push('> The corpus is blind enough to run when every feature below is gated and passing, the blind-read');
+  lines.push('> precision is at or below the amendment (vi) ceiling, and each remaining separation is DISCLOSED in this');
+  lines.push('> record rather than removed. Rounds 3, 5 and 6 each gated the statistic a review named and found the');
+  lines.push('> separation one level down — means, then ranges, then sentence shape, then vocabulary. The standard is not');
+  lines.push('> "no reader has noticed yet"; it is "every feature family a reader could key on is measured, and the ones');
+  lines.push('> that cannot be removed are written down."');
+  lines.push('');
+  const seeded = rows.filter((r) => r.kind === 'seeded');
+  const controls = rows.filter((r) => r.kind === 'control');
+  if (!seeded.length || !controls.length) {
+    lines.push('Only one population present — nothing to compare.');
+    return lines.join('\n');
+  }
+  const findings = [];
+  const report = distributionLint(rows, findings);
+  const balance = [];
+  populationBalanceLint(rows, balance);
+  const labels = [];
+  labelTellLint(rows, labels);
+
+  const has = (re) => findings.some((f) => re.test(f));
+  const verdict = (ok) => (ok ? 'pass' : '**FAIL**');
+  lines.push('| # | gated feature | amendment | verdict |');
+  lines.push('|---|---|---|---|');
+  lines.push('| 1 | ORDER / CLAIMS mean word count | (x) | ' + verdict(!balance.some((f) => /mean (ORDER|CLAIMS) words/.test(f))) + ' |');
+  lines.push('| 2 | ORDER hardness ratio, and the `only`-free ratio | (x) | ' + verdict(!balance.some((f) => /hardness/.test(f))) + ' |');
+  lines.push('| 3 | inline colon labels | (ix) | ' + verdict(labels.length === 0) + ' |');
+  lines.push('| 4 | word-count ranges (floor, ceiling) and sd ratio | (x) | ' + verdict(!has(/word-count (FLOORS|CEILINGS)|SD ratio/)) + ' |');
+  lines.push('| 5 | backticks | (x) | ' + verdict(!has(/backtick/)) + ' |');
+  lines.push('| 6 | digit density | (x) | ' + verdict(!has(/digit density/)) + ' |');
+  lines.push('| 7 | 3-gram exclusivity (df ≥ ' + NGRAM_MIN_FILES + ') | (x) | ' + verdict(report.ngrams.length === 0) + ' |');
+  lines.push('| 8 | idiom balance | (x) | ' + verdict(!has(/idiom/)) + ' |');
+  lines.push('| 9 | sentence floor (≥ ' + MIN_SENTENCE_WORDS + ' words) | (xii)(a) | ' + verdict(!has(/-word sentence/)) + ' |');
+  lines.push('| 10 | shortest-sentence mean parity (≤ ' + SHORTEST_SENTENCE_MEAN_TOLERANCE + ' words) | (xii)(a) | ' + verdict(!has(/mean SHORTEST SENTENCE/)) + ' |');
+  lines.push('| 11 | unigram exclusivity (df ≥ ' + UNIGRAM_MIN_FILES + ') | (xii)(b) | ' + verdict(report.unigrams.length === 0) + ' |');
+  lines.push('| 12 | no sha in any brief | VARIANTS v3 | ' + verdict(true) + ' (enforced by `hexLint` at generation) |');
+  lines.push('');
+  lines.push('**Reported but not gated** (evidence for the disclosures above, not failures): ' +
+    report.ngramsReported.length + ' 3-gram(s) exclusive at ' + NGRAM_REPORT_MIN_FILES + '–' + (NGRAM_MIN_FILES - 1) +
+    ' documents, ' + report.unigramsReported.length + ' word(s) exclusive at ' + UNIGRAM_REPORT_MIN_FILES + '–' +
+    (UNIGRAM_MIN_FILES - 1) + ' documents.');
+  lines.push('');
+  lines.push('**Disclosed rather than removed:** the topic asymmetry (the control pool carries docs/records commits the');
+  lines.push('seeded pool cannot), the corpus-directory oracle (`.patch` / `.seed.json` for exactly the 30 seeded ids),');
+  lines.push('and the base/subject collisions of the 10 reused-base pairs. Each is a corpus-level property, each is');
+  lines.push('unreachable from a sanitized run clone, and each has its own section above.');
   return lines.join('\n');
 }
 
@@ -1604,6 +1810,53 @@ function renderDistributionReport(rows) {
         lines.push('| `' + n.ngram + '` | ' + n.only + ' | ' + n.ids.length + ' |');
       }
       if (report.ngramsReported.length > 15) lines.push('| …' + (report.ngramsReported.length - 15) + ' more | | |');
+    }
+    lines.push('');
+    lines.push('**(6) Sentence shape** — amendment (xii)(a): every sentence in `order` and `claims` carries ≥' + MIN_SENTENCE_WORDS + ' words,');
+    lines.push('and the two populations\' mean SHORTEST sentence agree within ' + SHORTEST_SENTENCE_MEAN_TOLERANCE + ' words.');
+    lines.push('');
+    {
+      const short = report.sentences || { seeded: statsOf([]), control: statsOf([]), delta: 0 };
+      const under = [];
+      for (const r of rows) {
+        for (const field of ['order', 'claims']) {
+          for (const s of (r.sentences && r.sentences[field]) || []) {
+            if (s.words < MIN_SENTENCE_WORDS) under.push(r.id + ' (' + r.kind + ', ' + field + ', ' + s.words + 'w)');
+          }
+        }
+      }
+      lines.push('| population | shortest sentence (mean ± sd) | min | max |');
+      lines.push('|---|---|---|---|');
+      lines.push('| seeded | ' + short.seeded.mean.toFixed(2) + ' ± ' + short.seeded.sd.toFixed(2) + ' | ' + short.seeded.min + ' | ' + short.seeded.max + ' |');
+      lines.push('| control | ' + short.control.mean.toFixed(2) + ' ± ' + short.control.sd.toFixed(2) + ' | ' + short.control.min + ' | ' + short.control.max + ' |');
+      lines.push('');
+      lines.push('Δmean ' + short.delta.toFixed(2) + ' (limit ' + SHORTEST_SENTENCE_MEAN_TOLERANCE + ') — ' +
+        (short.delta <= SHORTEST_SENTENCE_MEAN_TOLERANCE ? 'pass' : '**FAIL**'));
+      lines.push('');
+      lines.push(under.length
+        ? '**FAIL** — ' + under.length + ' sentence(s) below the ' + MIN_SENTENCE_WORDS + '-word floor: ' + under.slice(0, 12).join(', ') + (under.length > 12 ? ', …' : '')
+        : 'pass — no sentence is below the ' + MIN_SENTENCE_WORDS + '-word floor.');
+    }
+    lines.push('');
+    lines.push('**(7) Unigram exclusivity** — amendment (xii)(b): a lowercase content word of ≥' + UNIGRAM_MIN_LENGTH + ' characters present in');
+    lines.push('≥' + UNIGRAM_MIN_FILES + ' artifacts of one population and 0 of the other.');
+    lines.push('');
+    lines.push(report.unigrams.length
+      ? '**FAIL** — ' + report.unigrams.length + ' exclusive word(s): ' +
+        report.unigrams.slice(0, 12).map((u) => '`' + u.word + '` (' + u.only + ' ×' + u.ids.length + ')').join(', ') +
+        (report.unigrams.length > 12 ? ', …' : '')
+      : 'pass — no word is exclusive to one population at ≥' + UNIGRAM_MIN_FILES + ' documents.');
+    lines.push('');
+    lines.push('*Reported, not gated:* ' + report.unigramsReported.length + ' word(s) exclusive at ' +
+      UNIGRAM_REPORT_MIN_FILES + '–' + (UNIGRAM_MIN_FILES - 1) + ' documents.');
+    if (report.unigramsReported.length) {
+      lines.push('');
+      lines.push('| word | population | documents |');
+      lines.push('|---|---|---|');
+      for (const u of report.unigramsReported.slice(0, 15)) {
+        lines.push('| `' + u.word + '` | ' + u.only + ' | ' + u.ids.length + ' |');
+      }
+      if (report.unigramsReported.length > 15) lines.push('| …' + (report.unigramsReported.length - 15) + ' more | | |');
     }
     lines.push('');
     lines.push('**(5) Idiom balance** — per-artifact frequency ratio within ' + IDIOM_RATIO_MIN + '–' + IDIOM_RATIO_MAX + ', or absent from both');
@@ -2098,6 +2351,16 @@ function generateAndLint(key, heads, pool, paths) {
       digitsPer100: digitDensity(content.order + ' ' + content.claims),
       trigrams: Array.from(trigramsOf(content.order + ' ' + content.claims)),
       idioms: idiomCounts(content.order + ' ' + content.claims),
+      // Round-7 amendment (xii): sentence shape and unigram vocabulary.
+      unigrams: Array.from(unigramsOf(content.order + ' ' + content.claims)),
+      sentences: {
+        order: splitIntoSentences(content.order).map((t) => ({ text: t, words: wordCount(t) })),
+        claims: splitIntoSentences(content.claims).map((t) => ({ text: t, words: wordCount(t) })),
+      },
+      shortestSentence: (() => {
+        const parts = [shortestSentenceWords(content.order), shortestSentenceWords(content.claims)].filter((n) => n > 0);
+        return parts.length ? Math.min.apply(null, parts) : 0;
+      })(),
       wo: briefs.wo, er: briefs.er,
       woSkeleton: skeletonize(briefs.wo, a, head),
       erSkeleton: skeletonize(briefs.er, a, head),
@@ -2276,7 +2539,9 @@ module.exports = {
   guardedWriteContentFile, snapshotContentDir, assertContentDirPreserved, CONTENT_IMPORT_REPORT_BASENAME,
   leakageLint, vendorLint, hazardLint, hexLint, HEX_IN_BRIEF_RE, wordBandLint, structuralTellLint, lintKindSymmetry,
   populationBalanceLint, hardnessScore, hardnessScoreStrict,
-  distributionLint, renderDistributionReport, renderTopicAsymmetry, isContentWord, backtickCount, digitDensity, trigramsOf, idiomCounts, statsOf,
+  distributionLint, renderDistributionReport, renderTopicAsymmetry, renderStoppingStandard, isContentWord,
+  splitIntoSentences, sentenceWordCounts, shortestSentenceWords, unigramsOf,
+  MIN_SENTENCE_WORDS, SHORTEST_SENTENCE_MEAN_TOLERANCE, UNIGRAM_MIN_FILES, UNIGRAM_REPORT_MIN_FILES, UNIGRAM_MIN_LENGTH, backtickCount, digitDensity, trigramsOf, idiomCounts, statsOf,
   RANGE_TOLERANCE_WORDS, SD_RATIO_MIN, SD_RATIO_MAX, DIGIT_DENSITY_TOLERANCE, NGRAM_MIN_FILES,
   IDIOM_RATIO_MIN, IDIOM_RATIO_MAX, IDIOMS, NGRAM_STOPWORDS, NGRAM_FINDINGS_SHOWN,
   NGRAM_MIN_CONTENT_WORDS, NGRAM_REPORT_MIN_FILES,

@@ -782,9 +782,22 @@ function isUnavailableAttempt(attempt) {
  * anchored: a line that IS a `model:` / `served_model:` field, nothing else.
  */
 function extractEngineHeader(text) {
+  const parts = [];
   const engineLine = /^REVIEW ENGINE:.*$/m.exec(text);
-  if (engineLine) return engineLine[0].trim();
-  const fieldLine = /^[ \t]*(?:served[_ ]model|model)[ \t]*:[ \t]*\S[^\n]*$/im.exec(text);
+  if (engineLine) parts.push(engineLine[0].trim());
+  // Round-7 CRITICAL 1: a SEPARATE `served_model:` line is carried too, not
+  // discarded. Amendment (viii) registers exactly one remedy for the identity
+  // gate — "orchestra-review.js … surface a vendor-reported served model" — and
+  // the obvious implementation is its own line. The round-5 code returned the
+  // `REVIEW ENGINE:` line and stopped whenever one existed, so that remedy
+  // could never reach score.js and gate 5 would have read LIMITED for ever.
+  const servedLine = /^[ \t]*served[_ ]model[ \t]*:[ \t]*\S[^\n]*$/im.exec(text);
+  if (servedLine) {
+    const t = servedLine[0].trim();
+    if (parts.indexOf(t) === -1) parts.push(t);
+  }
+  if (parts.length) return parts.join('\n');
+  const fieldLine = /^[ \t]*model[ \t]*:[ \t]*\S[^\n]*$/im.exec(text);
   return fieldLine ? fieldLine[0].trim() : null;
 }
 
@@ -1005,7 +1018,27 @@ function main() {
     // `wo12/p0-overrides.log` behind in the repository. An override belongs to
     // one lane × phase, and so does its ledger: it now follows `--results-dir`,
     // and `--override-log` names it outright.
-    const logFile = args.overrideLog ? path.resolve(args.overrideLog) : path.join(resultsDir, OVERRIDE_LOG_BASENAME);
+    // Round-7 MINOR 3: `--override-log` took ANY path, unvalidated, and
+    // `appendOverrideLog` mkdir -p'd its parents — so `--override-log
+    // ../../../evil.log` re-created exactly the escape the round-5 relocation
+    // existed to close. The ledger belongs with the results it describes: the
+    // path must be absolute and must resolve INSIDE the results directory.
+    let logFile;
+    if (args.overrideLog) {
+      if (!path.isAbsolute(args.overrideLog)) {
+        fail('--override-log must be an ABSOLUTE path (got ' + JSON.stringify(args.overrideLog) + '). ' +
+          'A relative ledger path resolves against the working directory, which is not where the results live.');
+      }
+      logFile = path.resolve(args.overrideLog);
+      if (!buildCorpus.isInside(buildCorpus.realResolve(resultsDir), buildCorpus.realResolve(logFile))) {
+        fail('--override-log must resolve INSIDE the results directory (' + resultsDir + '), and ' + logFile +
+          ' does not. The override ledger is evidence about one lane x phase and belongs beside that phase\'s results ' +
+          'file; a path that escapes the results directory is how an untracked ledger ended up in the repository in ' +
+          'round 5. To put results and ledger somewhere else, move both with --results-dir.');
+      }
+    } else {
+      logFile = path.join(resultsDir, OVERRIDE_LOG_BASENAME);
+    }
     appendOverrideLog(logFile, overrideStamp);
     process.stdout.write('  ledgered in ' + logFile + '\n\n');
   } else if (args.overrideP0) {
@@ -1081,10 +1114,19 @@ function main() {
     // lane at all.
     if (args.phase === 0) {
       const perLane = countUnavailableOnDisk(resultsDir, args.phase, Object.keys(LANES));
-      const breached = Object.keys(perLane).filter((l) => perLane[l].count > PHASE0_MAX_UNAVAILABLE);
+      // Round-7 MINOR 2: `pending` used to be computed, named, printed — and
+      // unable to halt anything, because the breach test read `count` alone.
+      // 84 single-attempt final-UNAVAILABLE records on the sibling lane scored
+      // `count 0, pending 84, breach false`. run-lane always dispatches §2.5's
+      // retry inline so it cannot itself write such a file, but a hand-repaired
+      // one, an externally-produced one, or a future runner that honours its
+      // own FINALITY: and skips the retry would be invisible to the §2.6 halt.
+      // The breach is now on count + pending, both reported separately.
+      const breached = Object.keys(perLane).filter((l) => perLane[l].count + perLane[l].pending > PHASE0_MAX_UNAVAILABLE);
       if (breached.length) {
-        const detail = breached.map((l) => l + ': ' + perLane[l].count + ' final (' + perLane[l].ids.join(', ') + ')' +
-          (perLane[l].pending ? ' plus ' + perLane[l].pending + ' awaiting their retry (' + perLane[l].pendingIds.join(', ') + ')' : '')).join('; ');
+        const detail = breached.map((l) => l + ': ' + perLane[l].count + ' final (' + (perLane[l].ids.join(', ') || 'none') + ')' +
+          (perLane[l].pending ? ' plus ' + perLane[l].pending + ' awaiting their retry (' + perLane[l].pendingIds.join(', ') + ')' : '') +
+          ' = ' + (perLane[l].count + perLane[l].pending) + ' total').join('; ');
         fail(
           'HALTING phase 0 (§2.6 stop condition): more than ' + PHASE0_MAX_UNAVAILABLE + ' final UNAVAILABLE result(s) — ' + detail +
           '. The rule is ">2 in EITHER lane", counted across every invocation from the results files on disk, so this halts ' +

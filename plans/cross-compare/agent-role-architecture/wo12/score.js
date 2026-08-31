@@ -79,6 +79,9 @@ const fs = require('fs');
 const path = require('path');
 
 const HERE = __dirname;
+// One definition of a valid artifact id across the pack (round-7 MINOR 4).
+// build-corpus.js is required only for that constant; nothing here spawns git.
+const buildCorpus = require(path.join(HERE, 'build-corpus.js'));
 
 // ---------------------------------------------------------------- Wilson
 
@@ -119,6 +122,33 @@ function fmtWilson(w) {
 const FINDINGS_START = /^#*\s*FINDINGS\s*:?\s*$/i;
 const FINDINGS_END_HEADERS = /^#*\s*(CLAIMS CHECKED|NITS)\s*:?\s*$/i;
 
+// Round-7 MAJOR 4. The window used to end ONLY at `CLAIMS CHECKED` or `NITS`,
+// so every other section header was swallowed and, with no terminator at all,
+// the "findings section" ran to end of transcript. Two live consequences, both
+// reaching MECHANICAL hits and not merely promotions:
+//
+//   - An intervening header. A verdict whose FINDINGS reads `- none.` and which
+//     later carries `VERIFICATION RE-RUN` with a bullet citing a seed's locator
+//     minted a hit on that seed. The reviewer filed NOTHING and was credited.
+//     `VERIFICATION`, `EVIDENCE`, `CLOSURE TABLE`, `SUMMARY` are all ordinary in
+//     real R0 records.
+//   - No terminator. A crashed run's transcript ends in the runner's own
+//     `--- ATTEMPT LOG ---` block, which embeds a codex stderr tail of SOURCE
+//     CODE WITH LINE NUMBERS (`749: * anywhere - including reviewer prose...`).
+//     That parses as citations.
+//
+// So the window ends at the next header OF ANY KIND: a markdown heading, or a
+// bare ALL-CAPS/heading-shaped line. Runner delimiters end it too — nothing
+// after `--- ATTEMPT LOG` or `FINALITY:` is verdict text.
+const SECTION_HEADER_RE = /^(?:#{1,6}\s+\S.*|[A-Z][A-Z0-9 /-]{2,}:?)$/;
+const RUNNER_DELIMITER_RE = /^(?:-{2,}\s*\S|FINALITY:)/;
+
+function isFindingsTerminator(line) {
+  const t = line.trim();
+  if (!t) return false;
+  return FINDINGS_END_HEADERS.test(t) || SECTION_HEADER_RE.test(t) || RUNNER_DELIMITER_RE.test(t);
+}
+
 function extractFindingsSection(text) {
   const lines = String(text || '').split(/\r?\n/);
   let start = -1;
@@ -128,7 +158,7 @@ function extractFindingsSection(text) {
   if (start === -1) return '';
   let end = lines.length;
   for (let j = start; j < lines.length; j++) {
-    if (FINDINGS_END_HEADERS.test(lines[j].trim())) { end = j; break; }
+    if (isFindingsTerminator(lines[j])) { end = j; break; }
   }
   return lines.slice(start, end).join('\n');
 }
@@ -364,6 +394,17 @@ function loadKey(keyPath) {
   try { key = JSON.parse(fs.readFileSync(keyPath, 'utf8')); }
   catch (e) { fail('key.json at ' + keyPath + ' is not valid JSON: ' + e.message); }
   if (!key || !Array.isArray(key.artifacts)) fail('key.json at ' + keyPath + ' has no `artifacts` array');
+  // Round-7 MINOR 4: validate every artifact id, the same way build-corpus.js's
+  // own loadKey does. `score.js` joins no id into a path, so nothing here is
+  // exploitable — but this pack's whole argument is that its loaders fail
+  // closed, and two loaders in one pack disagreeing about what a valid key is
+  // is the kind of gap a later change grows a bug in. One rule, both loaders.
+  key.artifacts.forEach((a, i) => {
+    if (!a || typeof a.id !== 'string' || !buildCorpus.ARTIFACT_ID_RE.test(a.id)) {
+      fail('key.json at ' + keyPath + ': artifacts[' + i + '] has an invalid id ' + JSON.stringify(a && a.id) +
+        ' — an artifact id must match ' + buildCorpus.ARTIFACT_ID_RE + ' (sdc-001 … sdc-084).');
+    }
+  });
   return key;
 }
 
@@ -413,14 +454,59 @@ const LANE_EXPECTED_MODEL = {
   'S-Opus': 'claude-opus-5',
 };
 
-/** Pulls the served model id out of an engine header line, or null. */
+// Round-7 CRITICAL 1. The served model is read from a PARSED FIELD — the token
+// `served_model` (or `served model`) followed by a colon and a value — and from
+// nowhere else. Two shapes are accepted, because amendment (viii)'s remedy could
+// land as either:
+//
+//     REVIEW ENGINE: gpt-5.6-terra (served_model: gpt-5.6-terra)
+//     served_model: gpt-5.6-terra                      (its own line)
+//
+// The round-5 code tested for the WORD (`/\bserved[_ ]model\b/`), so the
+// disclaimer `(served_model not reported)` — a header that exists precisely to
+// DENY independent evidence — was classified `independent` and lifted gate 5 to
+// PASS. A field with no value is not evidence of anything.
+const SERVED_MODEL_FIELD_RE = /\bserved[_ ]model\s*:\s*([A-Za-z0-9][\w./-]*)/i;
+
+// Values that are a way of saying "no value". `served_model: not reported`
+// parses as a field syntactically; it reports nothing. Enumerated explicitly
+// rather than guessed at, so this can never swallow a real model id.
+const SERVED_MODEL_ABSENT_VALUES = new Set(['not', 'none', 'unknown', 'unreported', 'unavailable', 'n', 'na', 'null', 'absent']);
+
+/**
+ * The vendor-reported served model, or null. Never a guess: no bare
+ * `REVIEW ENGINE: <x>` fallback, and no `model:` fallback — `model:` is the
+ * REQUESTED model (`orchestra-review.js` builds it from `CONFIG.model`), which
+ * is the very thing that must not be mistaken for evidence of service.
+ */
 function extractServedModel(header) {
   if (!header) return null;
-  if (/REVIEW ENGINE:\s*NONE\b/i.test(header)) return null;
-  const m = /\b(?:served[_ ]model|model)\s*:\s*([A-Za-z0-9][\w.\/-]*)/i.exec(header);
-  if (m) return m[1];
-  const bare = /^REVIEW ENGINE:\s*(\S.*?)\s*$/i.exec(header);
-  return bare ? bare[1].trim() : null;
+  const m = SERVED_MODEL_FIELD_RE.exec(header);
+  if (!m) return null;
+  const value = m[1];
+  if (SERVED_MODEL_ABSENT_VALUES.has(String(value).toLowerCase())) return null;
+  return value;
+}
+
+// The REQUESTED model — `orchestra-review.js` builds this from `CONFIG.model`.
+// It is evidence of CONFIGURATION, never of service, and is only consulted
+// after `served_model` has been looked for and not found. `\bmodel` does not
+// match inside `served_model` (an underscore is a word character, so there is
+// no boundary before `model` there), so the two fields cannot be confused.
+const REQUESTED_MODEL_FIELD_RE = /(?:^|[^_\w])model\s*:\s*([A-Za-z0-9][\w./-]*)/i;
+
+function extractRequestedModel(header) {
+  if (!header) return null;
+  const m = REQUESTED_MODEL_FIELD_RE.exec(header);
+  if (!m) return null;
+  const value = m[1];
+  if (SERVED_MODEL_ABSENT_VALUES.has(String(value).toLowerCase())) return null;
+  return value;
+}
+
+/** Exact, case-insensitive model equality. No substrings. */
+function sameModel(a, b) {
+  return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase();
 }
 
 /**
@@ -456,11 +542,26 @@ function classifyIdentity(engineHeader, expectedModel) {
   // identity, not a wrong one.
   if (/REVIEW ENGINE:\s*NONE\b/i.test(engineHeader)) return 'UNKNOWN';
   if (!expectedModel) return 'UNKNOWN';
-  if (namesModel(engineHeader, expectedModel)) return 'MATCHED';
+
+  // Round-7 CRITICAL 1: THE SERVED VALUE IS READ FIRST. The round-5 order
+  // returned MATCHED on the echoed `REVIEW ENGINE:` half of the string before
+  // ever asking what served the request, so
+  // `REVIEW ENGINE: gpt-5.6-terra (served_model: claude-opus-5)` — a Terra lane
+  // answered by the flagship, with the runner saying so plainly — certified
+  // gate 5 as PASS. That is the one configuration §3.1 item 5 exists to catch.
   const served = extractServedModel(engineHeader);
-  if (served) return 'MISMATCHED';
-  // The header names no model token of its own, but if it names some OTHER
-  // known family the lane did not ask for, that is still a mismatch.
+  if (served) return sameModel(served, expectedModel) ? 'MATCHED' : 'MISMATCHED';
+
+  // No served_model field at all: whatever the header says is an echo of the
+  // request. It can still be WRONG — and a wrong REQUEST is a mismatch worth
+  // failing on, which is round-5's ruling ("a header naming a model that is
+  // neither the lane's expected model nor a known family must be MISMATCHED,
+  // not unknown-then-excluded"). A `model:` field naming something other than
+  // the lane's model means the lane was configured for the wrong engine, even
+  // though it is not evidence of what actually served.
+  const requested = extractRequestedModel(engineHeader);
+  if (requested) return sameModel(requested, expectedModel) ? 'MATCHED' : 'MISMATCHED';
+  if (namesModel(engineHeader, expectedModel)) return 'MATCHED';
   if (KNOWN_MODEL_FAMILIES.some((m) => m !== expectedModel && namesModel(engineHeader, m))) return 'MISMATCHED';
   return 'UNKNOWN';
 }
@@ -490,7 +591,12 @@ function classifyIdentity(engineHeader, expectedModel) {
  */
 function identityEvidence(engineHeader, expectedModel) {
   if (!engineHeader) return 'none';
-  if (/\bserved[_ ]model\b/i.test(engineHeader)) return 'independent';
+  // Round-7 CRITICAL 1: `independent` requires a PARSED served_model FIELD whose
+  // value equals the lane's expected model — not the presence of the word.
+  // `(served_model not reported)` now reads `echoed-request`, which is what it
+  // is: a header that explicitly declines to report the served model.
+  const served = extractServedModel(engineHeader);
+  if (served) return sameModel(served, expectedModel) ? 'independent' : 'contradicted';
   if (expectedModel && namesModel(engineHeader, expectedModel)) return 'echoed-request';
   return 'header-only';
 }
@@ -999,10 +1105,22 @@ function gate12f(scored, key, adjudication, exclusions) {
           const f = normalizeWhitespace(text);
           const covered = entries.some((e) => {
             const t = normalizeWhitespace(String(e.finding || e.quote || ''));
-            if (t.length < MIN_ADJUDICATION_QUOTE_CHARS) return false;
+            if (!t) return false;
+            // Round-7 MINOR 1: EQUALITY is the whole guard, and the 20-character
+            // floor is dropped here. The floor exists to stop a SHORT entry
+            // matching a LONG finding by accident — a risk that only exists for
+            // a substring test. Under equality a short entry can only match an
+            // equally short finding, and then it IS the whole finding, which is
+            // unambiguous however short. Keeping the floor made a blocker under
+            // 20 normalized characters impossible to adjudicate, so gate 3 was
+            // permanently INCOMPLETE with no satisfying assignment — a liveness
+            // defect in a hard qualification gate. (The floor still governs
+            // PROMOTIONS, where the quote IS searched for as a substring.)
             return t === f;
           });
-          if (!covered) unadjudicatedFindings.push(r.id + ': ' + f.slice(0, 70));
+          // The operator has to be able to COPY this string, so it is printed
+          // in full rather than truncated to 70 characters as round 5 did.
+          if (!covered) unadjudicatedFindings.push(r.id + ': ' + f);
         }
       }
       const needsAdjudication = Array.from(new Set(unadjudicatedFindings.map((s) => s.split(':')[0])));
@@ -1602,7 +1720,7 @@ function main() {
 module.exports = {
   wilson, extractFindingsSection, splitFindingBlocks, parseSeverity, parseCitations,
   fileMatches, classifyFileMatch, overlapsWithTolerance, mentionsSymbol, evaluateSeedHit, scoreRecords,
-  extractServedModel, classifyIdentity, identityEvidence, identityExclusions,
+  extractServedModel, extractRequestedModel, sameModel, classifyIdentity, identityEvidence, identityExclusions,
   applyAdjudicatedPromotions, dedupeScored, citesLocatorFile, normalizeWhitespace,
   LANE_EXPECTED_MODEL, KNOWN_MODEL_FAMILIES,
   gate12f, gate12d, loadKey, loadResultRecords, findResultsFiles, parseArgs,

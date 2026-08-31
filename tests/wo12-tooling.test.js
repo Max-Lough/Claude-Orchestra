@@ -779,8 +779,8 @@ section('8. run-lane.js — --override-p0 is loud, ledgered, and stamped (MINOR 
 
   // --override-log names the ledger outright.
   {
-    const explicit = path.join(tmpDir('wo12-ovlog-'), 'nested', 'ledger.log');
     const corpus2 = miniLaneCorpus(repo);
+    const explicit = path.join(corpus2.dir, 'nested', 'ledger.log');
     const r2 = runLane([
       '--lane', 'X-Terra', '--phase', '0', '--yes', '--override-p0', 'owner: explicit ledger path',
       '--key', corpus2.keyPath, '--briefs-dir', corpus2.briefs, '--patches-dir', corpus2.dir,
@@ -1046,8 +1046,13 @@ section('18. score.js — identity gate compares the SERVED model to the lane\'s
     scoreLib.classifyIdentity('REVIEW ENGINE: codex model: gpt-5.6-terra', 'gpt-5.6-terra') === 'MATCHED');
   check('REVIEW ENGINE: NONE is UNKNOWN', scoreLib.classifyIdentity('REVIEW ENGINE: NONE', 'gpt-5.6-terra') === 'UNKNOWN');
   check('no header at all is UNKNOWN', scoreLib.classifyIdentity(null, 'gpt-5.6-terra') === 'UNKNOWN');
-  check('extractServedModel pulls the model id out of the header',
-    scoreLib.extractServedModel('REVIEW ENGINE: codex model: gpt-5.6-sol') === 'gpt-5.6-sol');
+  // Round 7 CRITICAL 1: `model:` is the REQUESTED model, not the served one, so
+  // it is deliberately NOT read as served evidence any more. Only a parsed
+  // `served_model:` field counts.
+  check('round 7: `model:` is NOT read as a served model',
+    scoreLib.extractServedModel('REVIEW ENGINE: codex model: gpt-5.6-sol') === null);
+  check('round 7: a `served_model:` field IS read',
+    scoreLib.extractServedModel('REVIEW ENGINE: codex (served_model: gpt-5.6-sol)') === 'gpt-5.6-sol');
   check('§2.4\'s lane table is available as the expected-model fallback',
     scoreLib.LANE_EXPECTED_MODEL['X-Terra'] === 'gpt-5.6-terra' && scoreLib.LANE_EXPECTED_MODEL['X-Sol'] === 'gpt-5.6-sol');
 
@@ -1145,9 +1150,9 @@ section('21. score.js — end-to-end CLI over a synthetic corpus');
 {
   const dir = tmpDir('wo12-score-cli-');
   const artifacts = [
-    { id: 'e-001', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'CRITICAL', locator: { file: 'quartermaster/quartermaster.js', lines: [100, 110], symbol: 'analyze' }, consequence: '', rationale: '', hazard_terms: [] } },
-    { id: 'e-002', kind: 'seeded', phase: 0, variant: 'V2', base: 'b', commit: 'c', subject: 's', seed: { type: 'RC', severity: 'MAJOR', locator: { file: 'router/router.js', lines: [10, 12], symbol: 'route' }, consequence: '', rationale: '', hazard_terms: [] } },
-    { id: 'e-003', kind: 'control', phase: 0, variant: 'V3', base: 'b', commit: 'c', subject: 's', seed: null },
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'CRITICAL', locator: { file: 'quartermaster/quartermaster.js', lines: [100, 110], symbol: 'analyze' }, consequence: '', rationale: '', hazard_terms: [] } },
+    { id: 'sdc-002', kind: 'seeded', phase: 0, variant: 'V2', base: 'b', commit: 'c', subject: 's', seed: { type: 'RC', severity: 'MAJOR', locator: { file: 'router/router.js', lines: [10, 12], symbol: 'route' }, consequence: '', rationale: '', hazard_terms: [] } },
+    { id: 'sdc-003', kind: 'control', phase: 0, variant: 'V3', base: 'b', commit: 'c', subject: 's', seed: null },
   ];
   const keyPath = writeKey(dir, artifacts);
   function rec(id, lane, stdout, extra) {
@@ -1159,10 +1164,10 @@ section('21. score.js — end-to-end CLI over a synthetic corpus');
   const hitOut = 'REVIEW ENGINE: codex model: gpt-5.6-terra\nVERDICT: REVISE\n\nFINDINGS\n- [CRITICAL] quartermaster/quartermaster.js:105 — analyze() is wrong\n\nCLAIMS CHECKED\n- none\n';
   const missOut = 'REVIEW ENGINE: codex model: gpt-5.6-terra\nVERDICT: APPROVE\n\nFINDINGS\n- none\n\nCLAIMS CHECKED\n- none\n';
   fs.writeFileSync(path.join(dir, 'results-X-Terra-phase0.json'), JSON.stringify([
-    rec('e-001', 'X-Terra', hitOut), rec('e-002', 'X-Terra', missOut), rec('e-003', 'X-Terra', missOut),
+    rec('sdc-001', 'X-Terra', hitOut), rec('sdc-002', 'X-Terra', missOut), rec('sdc-003', 'X-Terra', missOut),
   ], null, 2), 'utf8');
   fs.writeFileSync(path.join(dir, 'results-X-Sol-phase0.json'), JSON.stringify([
-    rec('e-001', 'X-Sol', hitOut.replace(/terra/g, 'sol')), rec('e-002', 'X-Sol', missOut.replace(/terra/g, 'sol')), rec('e-003', 'X-Sol', missOut.replace(/terra/g, 'sol')),
+    rec('sdc-001', 'X-Sol', hitOut.replace(/terra/g, 'sol')), rec('sdc-002', 'X-Sol', missOut.replace(/terra/g, 'sol')), rec('sdc-003', 'X-Sol', missOut.replace(/terra/g, 'sol')),
   ], null, 2), 'utf8');
 
   const r = spawnSync(process.execPath, [SCORE, '--key', keyPath, '--results-dir', dir, '--out', path.join(dir, 'score-output.json')], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
@@ -3508,24 +3513,400 @@ section('65. blind-draw.js — deterministic, and never both members of a linked
   }
 }
 
-section('66. the suite itself writes NOTHING into the repository (round-5 incident guard)');
+// ============================================================ ROUND 7
+// roster/wo12-r0-review-anthropic-4.md
+
+section('67. score.js — identity reads the SERVED model first (round-7 CRITICAL 1)');
+{
+  const T = 'gpt-5.6-terra';
+  // The record's own table, row for row.
+  const table = [
+    ['REVIEW ENGINE: gpt-5.6-terra', null, 'MATCHED', 'echoed-request', 'plain echo'],
+    ['REVIEW ENGINE: gpt-5.6-terra (served_model not reported)', null, 'MATCHED', 'echoed-request', 'the disclaimer'],
+    ['REVIEW ENGINE: gpt-5.6-terra (served_model: claude-opus-5)', 'claude-opus-5', 'MISMATCHED', 'contradicted', 'inline contradiction'],
+    ['REVIEW ENGINE: gpt-5.6-terra\nserved_model: claude-opus-5', 'claude-opus-5', 'MISMATCHED', 'contradicted', 'separate-line contradiction'],
+    ['REVIEW ENGINE: gpt-5.6-terra (served_model: gpt-5.6-terra)', T, 'MATCHED', 'independent', 'inline agreement'],
+    ['REVIEW ENGINE: gpt-5.6-terra\nserved_model: gpt-5.6-terra', T, 'MATCHED', 'independent', 'separate-line agreement'],
+    ['REVIEW ENGINE: gpt-5.6-terra (served_model: not reported)', null, 'MATCHED', 'echoed-request', 'a field with a non-value'],
+    ['REVIEW ENGINE: NONE — no cross-vendor review was produced.', null, 'UNKNOWN', 'header-only', 'REVIEW ENGINE: NONE'],
+  ];
+  for (const [header, served, identity, evidence, label] of table) {
+    check('identity: ' + label + ' → served ' + JSON.stringify(served),
+      scoreLib.extractServedModel(header) === served, JSON.stringify(scoreLib.extractServedModel(header)));
+    check('identity: ' + label + ' → ' + identity,
+      scoreLib.classifyIdentity(header, T) === identity, scoreLib.classifyIdentity(header, T));
+    check('identity: ' + label + ' → evidence ' + evidence,
+      scoreLib.identityEvidence(header, T) === evidence, scoreLib.identityEvidence(header, T));
+  }
+  check('CRITICAL 1: no substring heuristic — `model:` is NOT read as a served model',
+    scoreLib.extractServedModel('REVIEW ENGINE: codex model: gpt-5.6-terra') === null);
+  check('CRITICAL 1: a bare `REVIEW ENGINE: <x>` is not a served model either',
+    scoreLib.extractServedModel('REVIEW ENGINE: gpt-5.6-terra') === null);
+  check('served-model comparison is exact, not a substring',
+    scoreLib.classifyIdentity('served_model: gpt-5.6-terra-preview', T) === 'MISMATCHED');
+
+  // run-lane must carry BOTH lines so amendment (viii)'s remedy can land.
+  check('CRITICAL 1: extractEngineHeader keeps the REVIEW ENGINE line AND a separate served_model line',
+    runLaneLib.extractEngineHeader('REVIEW ENGINE: gpt-5.6-terra\nsome prose\nserved_model: claude-opus-5\n')
+      === 'REVIEW ENGINE: gpt-5.6-terra\nserved_model: claude-opus-5');
+  check('…a served_model line alone is still captured',
+    runLaneLib.extractEngineHeader('served_model: gpt-5.6-terra\n') === 'served_model: gpt-5.6-terra');
+  check('…and a plain header is unchanged',
+    runLaneLib.extractEngineHeader('REVIEW ENGINE: gpt-5.6-terra\n') === 'REVIEW ENGINE: gpt-5.6-terra');
+
+  // Gate 5 end to end on the three headers that matter.
+  const artifacts = [];
+  for (let i = 1; i <= 30; i++) artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } });
+  for (let i = 31; i <= 84; i++) artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null });
+  const key = { version: 1, artifacts };
+  const ADJ = [{ id: 'sdc-031', lane: 'X-Terra', severity: 'MINOR', finding: 'a MINOR nit, not a blocker finding at all', verdict: 'DEBATABLE', second: 'DEBATABLE' }];
+  const gateFor = (header) => {
+    const recs = [];
+    for (const lane of ['X-Sol', 'X-Terra']) {
+      for (const a of artifacts) {
+        const seeded = a.kind === 'seeded';
+        recs.push({
+          id: a.id, lane, phase: 0, variant: 'V1', expectedModel: scoreLib.LANE_EXPECTED_MODEL[lane], runIndex: 0,
+          attempts: [{ wallMs: 1, verdict: seeded ? 'REVISE' : 'APPROVE', status: 'COMPLETED', unavailable: false,
+            engineHeader: header(lane), integrityWarning: false,
+            stdout: seeded ? 'VERDICT: REVISE\n\nFINDINGS\n- [MAJOR] a.js:1 — found it\n\nCLAIMS CHECKED\n- none\n'
+              : 'VERDICT: APPROVE\n\nFINDINGS\n- none\n\nCLAIMS CHECKED\n- none\n' }],
+        });
+      }
+    }
+    const { scored } = scoreLib.scoreRecords(recs, key, {});
+    return scoreLib.gate12f(scored, key, ADJ, scoreLib.identityExclusions(scored));
+  };
+  const gEcho = gateFor((l) => 'REVIEW ENGINE: ' + scoreLib.LANE_EXPECTED_MODEL[l]);
+  check('gate 5 on a plain echo is LIMITED', gEcho.items.find((i) => i.n === 5).status === 'LIMITED', gEcho.items.find((i) => i.n === 5).status);
+  const gDisclaim = gateFor((l) => 'REVIEW ENGINE: ' + scoreLib.LANE_EXPECTED_MODEL[l] + ' (served_model not reported)');
+  check('CRITICAL 1: the disclaimer header no longer lifts gate 5 to PASS — it is LIMITED',
+    gDisclaim.items.find((i) => i.n === 5).status === 'LIMITED', gDisclaim.items.find((i) => i.n === 5).status);
+  const gWrong = gateFor((l) => 'REVIEW ENGINE: ' + scoreLib.LANE_EXPECTED_MODEL[l] + ' (served_model: claude-opus-5)');
+  check('CRITICAL 1: a lane SERVED BY THE FLAGSHIP now FAILS gate 5 (it used to PASS)',
+    gWrong.items.find((i) => i.n === 5).status === 'FAIL', gWrong.items.find((i) => i.n === 5).detail.slice(0, 180));
+  check('…and `overall` is FAIL, not PASS-eligible', gWrong.overall === 'FAIL', gWrong.overall);
+  const gGood = gateFor((l) => 'REVIEW ENGINE: ' + scoreLib.LANE_EXPECTED_MODEL[l] + '\nserved_model: ' + scoreLib.LANE_EXPECTED_MODEL[l]);
+  check('a genuine served_model agreeing with the request PASSES gate 5',
+    gGood.items.find((i) => i.n === 5).status === 'PASS', gGood.items.find((i) => i.n === 5).detail.slice(0, 180));
+}
+
+section('68. score.js — the FINDINGS window ends at the next header of ANY kind (round-7 MAJOR 4)');
+{
+  const seed = { locator: { file: 'hooks/orchestra-guard.js', lines: [339, 345], symbol: 'guard' } };
+
+  // The record's first reproducer: a bullet under VERIFICATION RE-RUN.
+  const verification = [
+    'VERDICT: APPROVE', '', 'FINDINGS', '- none.', '',
+    'VERIFICATION RE-RUN',
+    '- [MINOR] hooks/orchestra-guard.js:339 — I looked at the marker block while re-running and it seemed fine.',
+    '', 'CLAIMS CHECKED', '- none',
+  ].join('\n');
+  const sec1 = scoreLib.extractFindingsSection(verification);
+  check('MAJOR 4: a VERIFICATION RE-RUN block is OUTSIDE the findings section',
+    sec1.indexOf('orchestra-guard.js') === -1, JSON.stringify(sec1));
+  check('MAJOR 4: and it mints no mechanical hit',
+    scoreLib.evaluateSeedHit(seed, scoreLib.splitFindingBlocks(sec1), {}).hit === false);
+
+  // The second: no terminator at all, transcript ends in the runner's ATTEMPT LOG.
+  const attemptLog = [
+    'VERDICT: REVIEW_UNAVAILABLE', '', 'FINDINGS', '- none.', '',
+    'FINALITY: this runner made 1 engine attempt and will make no more.',
+    '--- ATTEMPT LOG (diagnostics for the attempt(s) that produced nothing) ---',
+    'ATTEMPT 1 of 2 — review timed out after 1800000ms',
+    '  codex stderr (last 25 lines):',
+    '    749: * hooks/orchestra-guard.js:339 anywhere – including reviewer prose about the diff',
+  ].join('\n');
+  const sec2 = scoreLib.extractFindingsSection(attemptLog);
+  check('MAJOR 4: an ATTEMPT LOG tail is OUTSIDE the findings section',
+    sec2.indexOf('orchestra-guard.js') === -1, JSON.stringify(sec2));
+  check('MAJOR 4: and the embedded source-code tail mints no hit',
+    scoreLib.evaluateSeedHit(seed, scoreLib.splitFindingBlocks(sec2), {}).hit === false);
+
+  // Terminators of every shape.
+  for (const [term, label] of [['CLAIMS CHECKED', 'the classic terminator'], ['NITS', 'NITS'],
+    ['VERIFICATION RE-RUN', 'an ALL-CAPS header with a hyphen'], ['EVIDENCE', 'a one-word ALL-CAPS header'],
+    ['## Summary', 'a markdown header'], ['SUMMARY:', 'an ALL-CAPS header with a colon'],
+    ['--- ATTEMPT LOG ---', 'a runner delimiter'], ['FINALITY: no more attempts', 'the FINALITY line']]) {
+    const text = 'FINDINGS\n- [MAJOR] a.js:1 — real finding\n' + term + '\n- [MAJOR] hooks/orchestra-guard.js:340 — planted\n';
+    const sec = scoreLib.extractFindingsSection(text);
+    check('MAJOR 4: ' + label + ' ends the section', sec.indexOf('planted') === -1 && sec.indexOf('real finding') !== -1,
+      JSON.stringify(sec));
+  }
+  // A real finding is still found.
+  const good = 'FINDINGS\n- [MAJOR] hooks/orchestra-guard.js:340 — the seeded fault\n\nCLAIMS CHECKED\n- none\n';
+  check('a genuine finding inside the section still hits',
+    scoreLib.evaluateSeedHit(seed, scoreLib.splitFindingBlocks(scoreLib.extractFindingsSection(good)), {}).hit === true);
+  check('a multi-line wrapped finding is still folded into one block',
+    scoreLib.splitFindingBlocks(scoreLib.extractFindingsSection(
+      'FINDINGS\n- [MAJOR] hooks/orchestra-guard.js:340 — the fault\n  continues on this line\n\nNITS\n- x\n')).length === 1);
+}
+
+section('69. score.js / run-lane.js — the round-7 MINORs');
+{
+  // MINOR 1: a short blocker must be adjudicable.
+  const artifacts = [{ id: 'sdc-001', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null }];
+  for (let i = 2; i <= 84; i++) artifacts.push({ id: 'sdc-' + String(i).padStart(3, '0'), kind: i <= 31 ? 'seeded' : 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: i <= 31 ? { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } : null });
+  const key = { version: 1, artifacts };
+  const SHORT = '[MAJOR] a.js:1 — b'; // 18 normalized characters
+  check('the short blocker really is below the promotion floor', scoreLib.normalizeWhitespace(SHORT).length < 20, String(scoreLib.normalizeWhitespace(SHORT).length));
+  const scored = [];
+  for (const lane of ['X-Sol', 'X-Terra']) {
+    artifacts.forEach((a, idx) => scored.push({
+      id: a.id, lane, phase: 0, variant: 'V1', order: idx, kind: a.kind, type: a.seed ? 'CV' : null,
+      severity: a.seed ? 'MAJOR' : null, hit: false, nearMisses: [], adjudicatedPromotion: false,
+      blockerFindings: a.id === 'sdc-001' ? 1 : 0, blockerFindingTexts: a.id === 'sdc-001' ? [SHORT] : [],
+      unavailableFinal: false, noVerdict: false, integrityWarning: false,
+      expectedModel: scoreLib.LANE_EXPECTED_MODEL[lane], servedModel: scoreLib.LANE_EXPECTED_MODEL[lane],
+      identity: 'MATCHED', identityKnown: true, identityMismatch: false, identityUnknown: false,
+      identityEvidence: 'independent', emptyFindingsSection: false, finalStatus: 'COMPLETED', attemptCount: 1, sourceFile: 'x',
+    }));
+  }
+  const g = (adj) => scoreLib.gate12f(scored, key, adj, scoreLib.identityExclusions(scored)).items.find((i) => i.n === 3);
+  check('MINOR 1: a blocker shorter than the 20-char floor IS adjudicable by an exact entry',
+    g([{ id: 'sdc-001', lane: 'X-Terra', severity: 'MAJOR', finding: SHORT, verdict: 'REAL', second: 'REAL' }]).status === 'PASS',
+    g([{ id: 'sdc-001', lane: 'X-Terra', severity: 'MAJOR', finding: SHORT, verdict: 'REAL', second: 'REAL' }]).detail.slice(0, 160));
+  check('…and a non-matching entry still leaves it INCOMPLETE',
+    g([{ id: 'sdc-001', lane: 'X-Terra', severity: 'MAJOR', finding: '[MAJOR] a.js:1 — something else entirely', verdict: 'REAL', second: 'REAL' }]).status === 'INCOMPLETE');
+  check('MINOR 1: the uncovered-finding list prints the FULL text the entry must match, not a truncation',
+    g([]).detail.indexOf(SHORT) !== -1 || g([{ id: 'sdc-002', lane: 'X-Terra', finding: 'x', verdict: 'REAL', second: 'REAL' }]).detail.indexOf(SHORT) !== -1,
+    g([{ id: 'sdc-002', lane: 'X-Terra', finding: 'x', verdict: 'REAL', second: 'REAL' }]).detail.slice(0, 200));
+
+  // MINOR 4: score.js validates artifact ids like build-corpus does.
+  {
+    const dir = tmpDir('wo12-scorekey-');
+    const bad = path.join(dir, 'key.json');
+    fs.writeFileSync(bad, JSON.stringify({ version: 1, artifacts: [{ id: '../victim', kind: 'control' }] }), 'utf8');
+    const r = spawnSync(process.execPath, [SCORE, '--key', bad, '--results-dir', dir], { encoding: 'utf8' });
+    check('MINOR 4: score.js loadKey refuses an invalid artifact id', r.status !== 0 && /invalid id/.test(r.stderr || ''), r.stderr);
+    const good = path.join(dir, 'good.json');
+    fs.writeFileSync(good, JSON.stringify({ version: 1, artifacts: [{ id: 'sdc-001', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null }] }), 'utf8');
+    const r2 = spawnSync(process.execPath, [SCORE, '--key', good, '--results-dir', dir, '--out', path.join(dir, 'out.json')], { encoding: 'utf8' });
+    check('…and accepts a well-formed one', r2.status === 0, r2.stderr);
+  }
+
+  // MINOR 2: pending can halt.
+  {
+    const dir = tmpDir('wo12-pending-');
+    const recs = [];
+    for (let i = 1; i <= 4; i++) recs.push({ id: 'sdc-00' + i, attempts: [{ status: 'UNAVAILABLE', unavailable: true }] });
+    fs.writeFileSync(path.join(dir, 'results-X-Sol-phase0.json'), JSON.stringify(recs, null, 2), 'utf8');
+    const c = runLaneLib.countUnavailableOnDisk(dir, 0, ['X-Sol'])['X-Sol'];
+    check('MINOR 2: single-attempt records count as `pending`, not `final`', c.count === 0 && c.pending === 4, JSON.stringify(c));
+    check('MINOR 2: count + pending breaches the §2.6 threshold',
+      c.count + c.pending > runLaneLib.PHASE0_MAX_UNAVAILABLE);
+  }
+
+  // MINOR 3: --override-log validation.
+  {
+    const repo = makeSourceRepo();
+    const corpus = miniLaneCorpus(repo);
+    const stubs = tmpDir('wo12-ovl-');
+    const refused = writeStub(stubs, 'refused.js', 'process.stderr.write("REFUSED for OU: none.\\n");\nprocess.exit(1);\n');
+    const base = ['--lane', 'X-Terra', '--phase', '0', '--yes', '--override-p0', 'owner probe',
+      '--key', corpus.keyPath, '--briefs-dir', corpus.briefs, '--patches-dir', corpus.dir,
+      '--source-repo', repo.dir, '--results-dir', corpus.dir,
+      '--clone-root', path.join(corpus.dir, 'clone'), '--run-clone-root', path.join(corpus.dir, 'run'),
+      '--runner', path.join(stubs, 'never.js')];
+    const env = { WO12_QM_CMD: q(process.execPath) + ' ' + q(refused) };
+    const rel = runLane(base.concat(['--override-log', '../../../evil.log']), env);
+    check('MINOR 3: a RELATIVE --override-log is refused', rel.status !== 0 && /must be an ABSOLUTE path/.test(rel.stderr || ''), rel.stderr);
+    const outside = runLane(base.concat(['--override-log', path.join(tmpDir('wo12-ovl-out-'), 'evil.log')]), env);
+    check('MINOR 3: an absolute path OUTSIDE the results dir is refused',
+      outside.status !== 0 && /must resolve INSIDE the results directory/.test(outside.stderr || ''), outside.stderr);
+    check('…and no ledger was created outside the results dir',
+      !fs.existsSync(path.join(WO12, 'p0-overrides.log')));
+  }
+}
+
+section('70. assemble-key.js — sentence shape and unigram exclusivity (round-7 amendment (xii))');
+{
+  // (a) The tokenizer, on the shapes that must NOT split.
+  const S = assembleKeyLib.splitIntoSentences;
+  const tok = [
+    ['Run install.js first. Then check the output.', 2, 'a path with a dot'],
+    ['The suite tests/quartermaster.test.js is green. It passed.', 2, 'a dotted test path'],
+    ['Use the .cmd shim on Windows. It works.', 2, 'a leading-dot extension'],
+    ['He said "it is done." The next step follows.', 2, 'a sentence ending in a quoted period'],
+    ['The guard — which was widened — must never move. Keep it.', 2, 'an em-dash clause'],
+    ['Version 2.3.0 shipped. Nothing else changed.', 2, 'a version number'],
+    ['One sentence with no terminator', 1, 'no terminator at all'],
+    ['', 0, 'empty text'],
+  ];
+  for (const [text, n, label] of tok) {
+    check('tokenizer: ' + label + ' → ' + n + ' sentence(s)', S(text).length === n, JSON.stringify(S(text)));
+  }
+  check('shortestSentenceWords finds the short one', assembleKeyLib.shortestSentenceWords('Done. A much longer sentence here indeed.') === 1);
+  check('shortestSentenceWords on empty text is 0', assembleKeyLib.shortestSentenceWords('') === 0);
+
+  const mkRow = (id, kind, o) => Object.assign({
+    id, kind, variant: 'V1', baseKind: 'code', orderWords: 145, claimsWords: 76, orderHardness: 2,
+    orderHardnessStrict: 1, labels: [], backticks: 0, digitsPer100: 1.0, trigrams: [], idioms: {},
+    unigrams: [], sentences: { order: [{ text: 'x', words: 20 }], claims: [{ text: 'y', words: 20 }] }, shortestSentence: 20,
+  }, o || {});
+  const balanced = () => {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('sdc-' + String(i + 1).padStart(3, '0'), 'seeded'));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('sdc-' + String(i + 31).padStart(3, '0'), 'control'));
+    return rows;
+  };
+  { const f = []; assembleKeyLib.distributionLint(balanced(), f); check('(xii) a balanced corpus passes both new gates', f.length === 0, JSON.stringify(f)); }
+
+  // (a) the sentence floor.
+  {
+    const rows = balanced();
+    rows[0].sentences = { order: [{ text: 'Done.', words: 1 }, { text: 'a long one here indeed truly', words: 20 }], claims: [{ text: 'y', words: 20 }] };
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(a) a 1-word sentence is a hard failure naming file, field and sentence',
+      f.some((x) => /content\/sdc-001\.json \(seeded\) `order` contains a 1-word sentence: "Done\."/.test(x)), JSON.stringify(f.slice(0, 2)));
+  }
+  {
+    const rows = balanced();
+    rows[40].sentences = { order: [{ text: 'x', words: 20 }], claims: [{ text: 'All green.', words: 2 }, { text: 'z', words: 20 }] };
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(a) the floor applies to CONTROLS and to `claims` too',
+      f.some((x) => /\(control\) `claims` contains a 2-word sentence/.test(x)), JSON.stringify(f.slice(0, 2)));
+  }
+  {
+    const rows = balanced();
+    for (const r of rows) r.sentences = { order: [{ text: 'x', words: assembleKeyLib.MIN_SENTENCE_WORDS }], claims: [{ text: 'y', words: 30 }] };
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(a) exactly the floor passes', !f.some((x) => /-word sentence/.test(x)), JSON.stringify(f));
+  }
+  // (a) shortest-sentence mean parity.
+  {
+    const rows = balanced();
+    for (const r of rows) r.shortestSentence = r.kind === 'seeded' ? 6 : 13;
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(a) a 7-word shortest-sentence mean gap is a hard failure',
+      f.some((x) => /mean SHORTEST SENTENCE differs by 7\.00/.test(x)), JSON.stringify(f.filter((x) => /SHORTEST/.test(x))));
+    check('…and the report carries both populations\' stats', rep.sentences.seeded.mean === 6 && rep.sentences.control.mean === 13);
+  }
+  {
+    const rows = balanced();
+    for (const r of rows) r.shortestSentence = r.kind === 'seeded' ? 11 : 13;
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(a) a 2-word gap is inside the tolerance', !f.some((x) => /SHORTEST/.test(x)), JSON.stringify(f));
+  }
+
+  // (b) unigram exclusivity.
+  check('unigramsOf keeps content words of ≥4 chars only',
+    Array.from(assembleKeyLib.unigramsOf('the deletions and insertions on 42 a big')).sort().join(',') === 'deletions,insertions');
+  {
+    const rows = balanced();
+    for (let i = 30; i < 43; i++) rows[i].unigrams = ['deletions'];
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(b) a word in 13 controls and 0 seeds is a hard failure naming it',
+      f.some((x) => /the word "deletions" occurs in 13 control artifact\(s\)/.test(x)), JSON.stringify(f.filter((x) => /deletions/.test(x))));
+    check('…and the report names the files', rep.unigrams.length === 1 && rep.unigrams[0].ids.length === 13);
+  }
+  for (const n of [5, 6, 7]) {
+    const rows = balanced();
+    for (let i = 0; i < n; i++) rows[i].unigrams = ['protocol'];
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(b) ' + n + ' documents is REPORTED, not failed', f.length === 0 && rep.unigramsReported.length === 1, JSON.stringify(f));
+  }
+  {
+    const rows = balanced();
+    for (let i = 0; i < 4; i++) rows[i].unigrams = ['protocol'];
+    const f = [];
+    const rep = assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(b) 4 documents is below the reporting band', f.length === 0 && rep.unigramsReported.length === 0);
+  }
+  {
+    const rows = balanced();
+    for (let i = 0; i < 10; i++) rows[i].unigrams = ['protocol'];
+    rows[40].unigrams = ['protocol'];
+    const f = [];
+    assembleKeyLib.distributionLint(rows, f);
+    check('(xii)(b) a word used by BOTH populations passes at any frequency', f.length === 0, JSON.stringify(f));
+  }
+
+  // (c) the rendered sections.
+  {
+    const rows = balanced();
+    rows[0].unigrams = [];
+    const md = assembleKeyLib.renderDistributionReport(rows);
+    check('(c) the report has the sentence-shape section', /\(6\) Sentence shape/.test(md), md.slice(0, 400));
+    check('(c) …with both populations\' shortest-sentence mean ± sd', /\| seeded \| 20\.00 ± 0\.00 \|/.test(md), md.slice(md.indexOf('(6) Sentence'), md.indexOf('(6) Sentence') + 700));
+    check('(c) the report has the unigram section', /\(7\) Unigram exclusivity/.test(md));
+    const std = assembleKeyLib.renderStoppingStandard(rows);
+    check('(c) the Stopping standard section exists', /## Stopping standard \(protocol amendment \(xii\)\)/.test(std), std.slice(0, 300));
+    check('(c) …it quotes the standard', /every feature family a reader could key on is measured/.test(std.replace(/\s+/g, ' ')), std.slice(0, 1200));
+    check('(c) …and lists every gated feature with a verdict',
+      /sentence floor/.test(std) && /unigram exclusivity/i.test(std) && /3-gram exclusivity/.test(std) && /no sha in any brief/.test(std),
+      std.slice(std.indexOf('| # |'), std.indexOf('| # |') + 1400));
+    check('(c) …with the disclosed-not-removed list', /Disclosed rather than removed/.test(std));
+  }
+}
+
+section('71. round-6 MAJOR 3 — no brief in the sealed corpus contains a resolvable sha');
+{
+  // The round-4 record's MAJOR 3: 54/54 control heads resolved in the repository
+  // and 0/30 seeded heads did, so one `git cat-file -t` labelled the corpus at
+  // 100%/100%. Round 6 removed every sha from every brief (VARIANTS v3 +
+  // hexLint), which kills the oracle at its source: there is no sha to resolve.
+  const briefsDir = path.join(WO12, 'corpus', 'briefs');
+  if (!fs.existsSync(briefsDir)) {
+    check('the sealed briefs directory is present', false, briefsDir);
+  } else {
+    const files = fs.readdirSync(briefsDir).filter((f) => /\.(wo|er)\.txt$/.test(f));
+    check('the sealed corpus has 168 brief files', files.length === 168, String(files.length));
+    const HEX = /\b[0-9a-f]{7,40}\b/i;
+    const offenders = [];
+    for (const f of files) {
+      const text = fs.readFileSync(path.join(briefsDir, f), 'utf8');
+      const m = text.match(HEX);
+      if (m) offenders.push(f + ': ' + m[0]);
+    }
+    check('round-6: NO brief contains a token that could be a sha (7-40 hex chars)',
+      offenders.length === 0, offenders.slice(0, 8).join(' | '));
+    check('round-6: no brief names "Change under review: commit <sha>"',
+      !files.some((f) => /Change under review: commit [0-9a-f]/i.test(fs.readFileSync(path.join(briefsDir, f), 'utf8'))));
+    check('round-6: no brief carries a "Base (its parent)" line',
+      !files.some((f) => /Base \(its parent\)/.test(fs.readFileSync(path.join(briefsDir, f), 'utf8'))));
+    // And the lint that keeps it that way is wired into generation.
+    const f2 = [];
+    assembleKeyLib.hexLint('t', 'Change under review: commit ' + 'a'.repeat(40), f2);
+    check('round-6: hexLint still refuses a sha', f2.length === 1);
+  }
+}
+
+section('72. the suite itself writes NOTHING into the repository (round-5 incident guard)');
 {
   if (WO12_STATUS_AT_START === null) {
     check('working-tree guard: not a git checkout, so the guard cannot run (reported, not silently skipped)', false,
       'git status --porcelain failed in ' + MASTER);
   } else {
     const now = wo12PorcelainStatus();
-    check('`git status --porcelain` under wo12/ is UNCHANGED by this suite', now === WO12_STATUS_AT_START, (() => {
-      const before = new Set(WO12_STATUS_AT_START.split('\n').filter(Boolean));
-      const after = (now || '').split('\n').filter(Boolean);
-      const added = after.filter((l) => !before.has(l));
-      const gone = Array.from(before).filter((l) => after.indexOf(l) === -1);
-      return 'NEW: ' + (added.join(' | ') || '(none)') + '\nGONE: ' + (gone.join(' | ') || '(none)');
-    })());
+    const before = new Set(WO12_STATUS_AT_START.split('\n').filter(Boolean));
+    const after = (now || '').split('\n').filter(Boolean);
+    // Only ADDITIONS can be this suite's doing. Entries that DISAPPEAR mean a
+    // concurrently-running agent committed or reverted its own work — that is
+    // activity in the same tree, not a side effect of these checks, and failing
+    // on it makes the guard fire on other people's commits. (Observed: a content
+    // agent committed sdc-060/071/073.json mid-run; a verification agent
+    // reverted run-lane.js.) The guard's question is "did the SUITE write
+    // anything", and only new dirt answers that.
+    const added = after.filter((l) => !before.has(l));
+    const gone = Array.from(before).filter((l) => after.indexOf(l) === -1);
+    check('`git status --porcelain` under wo12/ gained NOTHING from this suite',
+      added.length === 0, 'NEW: ' + (added.join(' | ') || '(none)'));
+    if (gone.length) {
+      check('note: ' + gone.length + ' pre-existing entr(y/ies) disappeared during the run — concurrent agent activity, not this suite',
+        true);
+    }
     check('specifically: no p0-overrides.log was created in the repository',
       !/p0-overrides\.log/.test(now || ''), now || '');
-    check('specifically: no key.json / CONSTRUCTION.md / brief was rewritten by this suite',
-      (now || '') === WO12_STATUS_AT_START, 'see the previous check for the delta');
+    check('specifically: this suite rewrote no key.json, CONSTRUCTION.md or brief',
+      !added.some((l) => /key\.json|CONSTRUCTION\.md|briefs\//.test(l)), added.join(' | '));
   }
 
   // The ledger path is derived, not fixed — the property that makes the above

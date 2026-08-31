@@ -23,7 +23,7 @@ Carry the orders that genuinely resist splitting — algorithmically hard cores,
 
 ## Rationale
 
-Frontier-Bench v0.1 SOTA (Opus 43.3–44.4) on the hardest published agentic measurement; CursorBench within 0.5% of Fable's peak at half the per-task cost; the Fable ceiling exists because the measured repo-scale ceiling is Fable's (SWE-bench Pro sign, CursorBench peak, Senior SWE-bench #1) and the current harness cannot reach it directly.
+Frontier-Bench v0.1 SOTA (Opus 43.3–44.4) on the hardest published agentic measurement; CursorBench within 0.5% of Fable's peak at half the per-task cost; the Fable ceiling exists because the measured repo-scale ceiling is Fable's (SWE-bench Pro sign, CursorBench peak, Senior SWE-bench #1) and the current harness cannot reach it.
 
 ## Tools
 

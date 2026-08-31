@@ -37,7 +37,7 @@ Confident description of behavior that does not exist (drift no test catches); l
 
 ## Owns / must not receive
 
-Owns D0 — documentation of content that is settled at intake: named events, decisions, and outcomes to record, however summary-shaped the container. Must not receive: code (→ E2, Builder); design decisions dressed as docs — an ADR that decides is planning (→ A0); content that must be recovered by reading and reconciling a body of material to learn what the document must say (→ N2, LC Analyst, disc. V); legal acceptance (→ human); unverified current facts (→ N1, Researcher, first).
+Owns D0 — documentation of content that is settled at intake: named events, decisions, and outcomes to record, however summary-shaped the container. Must not receive: code (→ E2, Builder); design decisions dressed as docs — an ADR that decides is planning (→ A0); content that must be recovered by reading and reconciling a body of material to learn what the document must say (→ N2, LC Analyst, disc. V); legal acceptance (→ human); unverified current facts (→ N1, Researcher, first); **an order classifying this seat's work `verification_tier: inert`** — the registry schema field (`final-plan.md:1125`; inert defined `:1099` as provably-inert changes like formatting/comments, verified from the diff, review not required). "Documentation is substantive — the inert tier never applies to it" (`final-plan.md:834-836`): the seat must refuse or escalate such an order rather than accept the lighter tier.
 
 ## Escalation
 

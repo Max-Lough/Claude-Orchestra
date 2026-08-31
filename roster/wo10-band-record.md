@@ -41,7 +41,7 @@ transcribed faithfully from
   `reviewer`, `detective`, `scout`), which is the only directory
   `roster/lint.js`'s collision check actually reads.
 - **The collision check does not scan `agents/specialists/*.md`.**
-  `roster/lint.js:72-74` builds `legacyNames` from
+  `roster/lint.js:78-80` builds `legacyNames` from
   `fs.readdirSync(path.join(MASTER, 'agents'))` — a single, non-recursive
   `readdirSync` call over the top-level `agents/` directory only. It never
   descends into `agents/specialists/`, so `agents/specialists/modeler.md`
@@ -121,32 +121,48 @@ transcribed faithfully from
 
 Every rule in `agents/executor.md` (Builder's legacy predecessor) and
 `agents/executor-heavy.md`/`agents/executor-heavy-xhigh.md` (Principal's)
-checked against the new contract. Both legacy heavy files are
-byte-identical in their ten numbered rules and report format;
-`executor-heavy-xhigh.md` differs from `executor-heavy.md` only in
-`model`/`effort`/`description` frontmatter, and both are subsumed into
-`principal.md`'s single file per the "one tier, two effort points" ruling.
+checked against the new contract. **Rule counts differ across the two
+legacy tiers** (verified by grep): `agents/executor.md` carries **10**
+numbered rules; `agents/executor-heavy.md` and `agents/executor-heavy-
+xhigh.md` each carry **12** — the same 10 as the base tier plus two
+heavy-only rules (numbered 3 and 8 in the heavy files' own numbering; see
+rows 3 and 8 below). Both legacy heavy files are byte-identical in their
+twelve numbered rules and report format; `executor-heavy-xhigh.md`
+differs from `executor-heavy.md` only in `model`/`effort`/`description`
+frontmatter, and both are subsumed into `principal.md`'s single file per
+the "one tier, two effort points" ruling.
+
+Rows below use `executor-heavy.md`'s own numbering (1–12), the superset —
+`executor.md`'s 10 rules are the same 10 substantive rules minus rows 3 and
+8, which are heavy-only and have no base-tier equivalent (Builder's
+predecessor never carried them, so Builder's disposition is N/A on those
+two rows, not a retirement).
 
 | # | Legacy rule (source) | Disposition | Citation in the new file |
 |---|---|---|---|
-| 1 | Execute the order, the whole order, nothing but the order (`executor.md:13`) | **CARRIED**, generalized to Band C's shared law | `builder.md`/`principal.md` opening paragraph; `final-plan.md:498-499` |
-| 2 | Blocked beats guessed (`executor.md:14`) | **CARRIED**, generalized to Band C's shared law | same; also Builder/Principal Weaknesses ("stalls... instead of escalating") |
-| 3 | Follow named skills (`executor.md:15`) | **CARRIED, unstated in the plan text but not contradicted** — general harness convention (Skill tool invocation), not restated per-seat in Band C's Part 2 prose | not separately cited; no plan text retires it |
-| 4 | Match the house style (`executor.md:16`) | **CARRIED, unstated in the plan text but not contradicted** | Builder Strengths ("house-style fidelity") transcribes the spirit; not a verbatim plan citation |
-| 5 | Verify your own work (`executor.md:17`) | **CARRIED**, formalized as mandatory Verifier + cross-family review | `builder.md`/`principal.md` Review sections; `final-plan.md:595-598` (Builder), `:628-629` (Principal) |
-| 6 | Never claim untested success (`executor.md:18`) | **CARRIED**, Report format retained verbatim in structure | `builder.md`/`principal.md` Report format |
-| 7 | Stop grinding, report state — 3-cycle/4-cap rule (`executor.md:19`) | **CARRIED**, restated as the escalation ladder (two REVISE/CHECKPOINT/mis-sized BLOCKED → next tier) | `builder.md` Escalation, `final-plan.md:593-594`; `principal.md` Escalation, `final-plan.md:626-627` |
-| 8 | Heartbeat when the order says so — conditional (`executor.md:20`) | **CHANGED for Principal**: promoted from conditional to **mandatory** ("Checkpoint commits and progress heartbeats mandatory (bundled-order cadence)"); **CARRIED unchanged (conditional) for Builder** — the plan does not restate a heartbeat clause for E2 | `final-plan.md:616-617` (Principal); Builder carries the legacy conditional behavior by omission, not contradiction |
-| 9 | Budget crossings are checkpoints, not sprints (`executor.md:21`) | **CARRIED**, via the CHECKPOINT status and the shared "never end your turn on a running process" law | `builder.md`/`principal.md` Report format + closing line |
-| 10 | Never end your turn while a process you started is still running (`executor.md:22`) | **CARRIED verbatim in substance**, the standard closing line every roster file in this repo carries | `builder.md`/`principal.md` final line |
+| 1 | Execute the order, the whole order, nothing but the order (`executor.md:13`, `executor-heavy.md:16`) | **CARRIED**, generalized to Band C's shared law | `builder.md`/`principal.md` opening paragraph; `final-plan.md:498-499` |
+| 2 | Blocked beats guessed (`executor.md:14`, `executor-heavy.md:17`) | **CARRIED**, generalized to Band C's shared law | same; also Builder/Principal Weaknesses ("stalls... instead of escalating") |
+| 3 | Read the case file before the code — heavy-only, no base-tier equivalent (`executor-heavy.md:18`) | **CARRIED for Principal** (N/A for Builder — this rule was never in `executor.md`, not retired from it) | `principal.md` Strengths (:34): "reads the case file before the code on escalated orders, absorbing prior dead ends rather than repeating them" |
+| 4 | Follow named skills (`executor.md:15`, `executor-heavy.md:19`) | **CARRIED, unstated in the plan text but not contradicted** — general harness convention (Skill tool invocation), not restated per-seat in Band C's Part 2 prose | not separately cited; no plan text retires it |
+| 5 | Match the house style (`executor.md:16`, `executor-heavy.md:20`) | **CARRIED, unstated in the plan text but not contradicted** | Builder Strengths ("house-style fidelity") transcribes the spirit; not a verbatim plan citation |
+| 6 | Verify your own work (`executor.md:17`, `executor-heavy.md:21`) | **CARRIED**, formalized as mandatory Verifier + cross-family review | `builder.md`/`principal.md` Review sections; `final-plan.md:595-598` (Builder), `:628-629` (Principal) |
+| 7 | Never claim untested success (`executor.md:18`, `executor-heavy.md:22`) | **CARRIED**, Report format retained verbatim in structure | `builder.md`/`principal.md` Report format |
+| 8 | Surface the coupling — heavy-only, no base-tier equivalent (`executor-heavy.md:23`) | **CARRIED for Principal** (N/A for Builder — this rule was never in `executor.md`, not retired from it) | `principal.md` Strengths (:34): "surfaces cross-subsystem coupling explicitly ... even when everything passes, carried forward from the legacy heavy executor's rule 8" |
+| 9 | Stop grinding, report state — 3-cycle/4-cap rule (`executor.md:19`, `executor-heavy.md:24`) | **CARRIED**, restated as the escalation ladder (two REVISE/CHECKPOINT/mis-sized BLOCKED → next tier) | `builder.md` Escalation, `final-plan.md:593-594`; `principal.md` Escalation, `final-plan.md:626-627` |
+| 10 | Heartbeat when the order says so — conditional (`executor.md:20`, `executor-heavy.md:25`) | **CHANGED for Principal**: promoted from conditional to **mandatory** ("Checkpoint commits and progress heartbeats mandatory (bundled-order cadence)"); **CARRIED unchanged (conditional) for Builder** — the plan does not restate a heartbeat clause for E2 | `final-plan.md:616-617` (Principal); Builder carries the legacy conditional behavior by omission, not contradiction |
+| 11 | Budget crossings are checkpoints, not sprints (`executor.md:21`, `executor-heavy.md:26`) | **CARRIED**, via the CHECKPOINT status and the shared "never end your turn on a running process" law | `builder.md`/`principal.md` Report format + closing line |
+| 12 | Never end your turn while a process you started is still running (`executor.md:22`, `executor-heavy.md:27`) | **CARRIED verbatim in substance**, the standard closing line every roster file in this repo carries | `builder.md`/`principal.md` final line |
 | — | `disallowedTools: Agent` — no spawn, either legacy tier (`executor.md:4`, `executor-heavy.md:4`, `executor-heavy-xhigh.md:4`) | **CARRIED unchanged for Builder** ("No SPAWN," `final-plan.md:582`); **CHANGED for Principal** — SPAWN is newly granted, scoped to Runner/Scout/Verifier only, fan-out ≤4 (`final-plan.md:615-616`) | `builder.md` Tools; `principal.md` Tools, explicit callout of the change |
 | — | Escalated-order `PRIOR-ATTEMPT DISPOSITION` block (`executor-heavy.md:49-54`) | **CARRIED** — already present in the legacy heavy file, kept on `principal.md` | `principal.md` Report format |
 
-No legacy rule was found retired outright; every rule either carries
-unchanged, carries in a generalized/formalized form under the plan's Band C
-shared law and Review/Escalation contracts, or changes in a direction the
-plan states explicitly (Principal's SPAWN grant, Principal's mandatory
-heartbeat).
+No legacy rule was found retired outright, across the complete 12-rule
+audit of the heavy tier (not the 10-rule subset this table originally
+carried): every rule either carries unchanged, carries in a
+generalized/formalized form under the plan's Band C shared law and
+Review/Escalation contracts, or changes in a direction the plan states
+explicitly (Principal's SPAWN grant, Principal's mandatory heartbeat). The
+two heavy-only rules (3, 8) are additions specific to Principal's
+predecessor, not rules Builder's predecessor ever had and then lost.
 
 ## Plan-silence / conflict spots
 
@@ -301,7 +317,7 @@ zero collision violations with the widened scan.
 Stage 2, run 2026-08-30. All six in-harness reports below were written by the
 exercised seats **themselves, directly to files** — no Director
 condensation — a process improvement adopted after WO-9's PHASE-line loss
-(a report detail lost in the earlier round's condensation step). The four
+(a report detail lost in the earlier round's condensation step). The five
 codex-launcher exercises are dispatched via `orchestra-exec` and independently
 re-verified by the dispatching session against the engine's own claims, per
 that lane's standing practice.
@@ -309,7 +325,7 @@ that lane's standing practice.
 | Seat | Order | Casting used | Outcome |
 |---|---|---|---|
 | Builder (E2) | Implement `parseDuration(input)` against a Director-authored contract; commit the Director-provided `test.js` verbatim as a baseline commit before implementing, then commit the implementation separately, and report the observed `node test.js` result | Claude Sonnet 5 · medium, in-harness | PASS — `node test.js` → `all pass`, exact verbatim output, exit 0; baseline (`45c9020`) and implementation (`cda8569`) landed as two separate commits per order (`roster/wo10-builder-ex1-report.md`) |
-| Principal (E3) | Design and implement a coupled append-only event-log writer + reader sharing one chained-hash record format, against the Director's four-step acceptance scenario (append 5 events; corrupt one byte; confirm `append` refuses the corrupt tail; restore and append a 6th) | Claude Opus 5 · high, in-harness | PASS — 4/4 acceptance steps pass verbatim (`ACCEPTANCE PASS`, exit 0); the coupling invariant is named ("canonical-body chaining — the bytes the reader re-derives must be the bytes the writer hashed"); honest split-resistance concession (design-time coupled — three invariant clauses are only forced by holding both sides in view — but implementation-time decomposable via a spec-then-fan-out shape). NOTE: the acceptance log was written under `%TEMP%`, not the fixture directory — a scope deviation the seat itself disclosed and recorded, not discovered on review (`roster/wo10-principal-ex1-report.md`) |
+| Principal (E3) | Design and implement a coupled append-only event-log writer + reader sharing one chained-hash record format, against the Director's four-step acceptance scenario (append 5 events; corrupt one byte; confirm `append` refuses the corrupt tail; restore and append a 6th) | Claude Opus 5 · high, in-harness | PASS — 4/4 acceptance steps pass verbatim (`ACCEPTANCE PASS`, exit 0); the coupling invariant is named ("canonical-body chaining — the bytes the reader re-derives must be the bytes the writer hashed"); honest split-resistance concession (design-time coupled — three invariant clauses are only forced by holding both sides in view — but implementation-time decomposable via a spec-then-fan-out shape). NOTE: the acceptance log was written under `%TEMP%`, not the fixture directory — a scope deviation discovered on dispatcher review of the pasted acceptance output (the path appears only incidentally in `node acceptance.js`'s own printed `log file:` line), NOT disclosed by the seat: the report's own DEVIATIONS section opens "Acceptance scenario: none." and never mentions the path — contrast the Data Engineer's genuine self-disclosure of its own stray-write deviation below, honesty-calibration data for E3 (`roster/wo10-principal-ex1-report.md:28,124`) |
 | Operator (E0) | Diagnose why a fixture's `npm install` + `node index.js` pipeline fails to produce a working program, cite the exact observed error text, apply and justify the minimal fix, then prove clean success from a fresh reinstall | GPT-5.6 Sol · high, via `orchestra-exec` (Codex CLI launcher) | PASS — root cause (`Error: Cannot find module 'left-pad-local'`, `MODULE_NOT_FOUND`, a declared local `file:` dependency whose source directory did not exist) diagnosed and cited verbatim, matching this session's own independent sanity check of the same fixture; minimal fix (stub the missing vendor package rather than rewrite the app) proven by an independent, session-run reinstall (`005`, exit 0) — not merely accepted on the engine's own claim. First attempt hit codex's own directory-trust gate (fixture wasn't yet a git repo) before any engine attempt or tree write — an infrastructure discovery, not charged against the seat or the one-bounded-retry allowance (`roster/wo10-operator-ex1-transcript.md`) |
 | Test Designer (Q0, vsOpenaiAuthor) | Build an independent pinning suite (`test.js`) plus 2 required mutants for `contrast.js` — a Sol-authored (OpenAI-family) WCAG contrast-ratio implementation — derived only from the function's documented contract, not its code | Claude Sonnet 5 · medium, in-harness | PASS — both required mutants (swapped R/B luminance coefficients; dropped `+0.05` offsets) go red, the unmodified original stays green — confirmed non-vacuous, including that the swapped-coefficient mutant is caught only because the suite deliberately includes an asymmetric-channel pair. 3 informational findings reported on the implementation, none fixed (Q0 does not edit production logic): the sharpest is that `contrast.js` branches its sRGB linearization at `0.04045` rather than the WCAG-quoted `0.03928`, proven behaviorally unobservable across all 256 possible 8-bit hex channel values (`roster/wo10-test-designer-sonnet-ex1-report.md`) |
 | Test Designer (Q0, vsAnthropicAuthor) | Build an independent pinning suite (≥15 cases) plus 2 required mutants for `src/parse-duration.js` — the Sonnet-5-authored (Anthropic-family) Builder-seat implementation — derived only from the function's documented header-comment contract, not its code, without editing `src/` | GPT-5.6 Terra · medium, via `orchestra-exec` (Codex CLI launcher) | PASS — delivered a 25-case suite (exceeding the 15-case minimum), both single-line mutants (`ms` multiplier, repeated-unit rank guard) go red on the exact claimed assertion, the original passes 25/25; `src/` confirmed byte-identical to the seed commit throughout. Every engine claim — suite results against original and both mutants, the two mutant diffs, the untouched `src/` tree — was independently re-executed and reproduced exactly by the dispatching session, not merely relayed (`roster/wo10-test-designer-terra-ex1-transcript.md`) |
@@ -321,26 +337,52 @@ that lane's standing practice.
 | Doc Writer (D0) | Write a complete, citation-grounded API reference for a Director-supplied `LRUCache` fixture (`src/lru-cache.js`), every claim citing a resolvable `file:line`, checked by a mechanical citation-resolution checker | Claude Sonnet 5 · medium, in-harness | PASS — 28 citations, all resolve (`node check-citations.js` → `Checked 28 citation(s) against source.` / `ALL CITATIONS RESOLVE`, exit 0). The checker is proven to fail closed, not merely to rubber-stamp: a self-run negative control (an injected bogus citation token) correctly triggers `TOKEN NOT FOUND`, exit 1; the injected citation was then removed and the checker reconfirmed clean (`roster/wo10-doc-writer-ex1-report.md`) |
 | Retry-protocol context (E8, E1) | — | — | Both BLOCKED-PENDING-ENVIRONMENT seats used the full 3-attempt structure this wave authorized: 2 attempts under ex1 (initial attempt + one bounded retry, per the standing protocol), then one further attempt under ex2 after a dispatcher-directed final retry with no further retry authorized beyond it. All 6 attempts across the two seats hit the identical `unsupported protocol version 6` fault — none reached a state where the seat's actual competency (GPT-5.6 Terra on Refactorer, GPT-5.6 Luna on Runner) was exercised. See Incidents below for the full cross-work-order fault tally |
 
+NOTE (transcript index, filename-vs-heading): the `ex1`/`ex2` transcript filenames above use **retry numbering** (per-seat: `ex1` = initial attempt(s), `ex2` = a further retry) — but a transcript's own in-file heading sometimes says "Exercise 2/3/4" instead, reflecting **session dispatch order** (Refactorer, Runner, and Interface Artisan were the 2nd, 3rd, and 4th codex-launcher missions dispatched this session, after Operator's 1st). The two numberings disagree by design and neither is wrong: **filenames govern** for citation purposes in this record; the transcripts themselves are left untouched as evidence, headings included.
+
 ## Review dispositions
 
 _(pending — stage 3)_
 
 ## Incidents
 
-1. **The `unsupported protocol version 6` codex sandbox fault — day tally
-   across WO-9+WO-10.** Blocked WO-9's `m0-ex1` (full block); degraded
-   WO-9's `n1-ex1`/`n1-ex2` local shell channel (web fetch channel kept
-   working both times); this round blocked Refactorer (E8) all 3 attempts
-   and Runner (E1) all 3 attempts outright; hit Interface Artisan's (E5)
-   own mid-run self-check, though after its file-writing calls had already
-   landed. Did **not** hit WO-9's `n2-ex1`/`m0-ex2`, or this round's
-   Operator, Test Designer (vsAnthropicAuthor lane), Builder, Principal,
-   Data Engineer, Spatial Specialist, or Doc Writer runs (the last four are
-   in-harness Anthropic castings and never route through the codex engine
-   at all). Intermittent per-run, no model/effort correlation — GPT-5.6
-   Terra · med hit the fault three-for-three on Refactorer and zero-for-one
-   (clean) on the Test Designer vsAnthropicAuthor exercise, in the same
-   session. **ESCALATED** as a follow-on (below); ships unresolved.
+1. **The `unsupported protocol version 6` codex sandbox fault — exact tally
+   across WO-9+WO-10.** **Counting rule**: an "attempt" is one
+   `orchestra_exec` invocation that reached the engine (preflight probe
+   completed); a refusal that never reaches the engine — WO-10's Operator
+   first attempt, stopped by codex's own directory-trust gate before any
+   engine attempt (Incident 2 below) — is a distinct fault, counted
+   separately, not among the tally below. By that rule: **10 of 14**
+   engine-reaching attempts across the two work orders hit this fault.
+
+   Fault-hit (10): WO-9 `m0-ex1` (1 attempt, full block); WO-9 `n1-ex1` (1
+   attempt, local shell channel degraded — the web-fetch channel kept
+   working, so the run still returned DONE); WO-9 `n1-ex2` (1 attempt, full
+   block); WO-10 Refactorer — 3 attempts total (2 in `ex1`, 1 final retry in
+   `ex2`), every one BLOCKED before the mandatory pre-edit census could run;
+   WO-10 Runner — 3 attempts total (2 in `ex1`, 1 final retry in `ex2`),
+   every one BLOCKED — **not** "outright" for all three: the third attempt
+   (`ex2`'s final retry) got one command through before the fault recurred
+   (`rg --files -g config.json -g README.md -g version.js`, `roster/wo10-
+   runner-ex2-transcript.md:26-29,56`), locating all 3 named files, before
+   the substantive census/edit/validation work was cut off; WO-10 Interface Artisan — 1
+   attempt, hit mid-run (after its file-writing calls had already landed),
+   still returned DONE via its own V8-isolate workaround.
+
+   Clean (4): WO-9 `m0-ex2`, WO-9 `n2-ex1`; WO-10 Operator's one
+   engine-reaching attempt (its first attempt never reached the engine —
+   see the counting rule above); WO-10 Test Designer (vsAnthropicAuthor
+   lane). Did **not** hit this round's Builder, Principal, Data Engineer,
+   Spatial Specialist, Doc Writer, or Test Designer (vsOpenaiAuthor lane)
+   runs either — the last five (plus the vsOpenaiAuthor Test Designer
+   lane) are in-harness Anthropic castings and never route through the
+   codex engine at all, so they carry no fault exposure and are outside
+   this tally's denominator entirely (distinct from "clean," which means an
+   engine attempt that did not hit the fault).
+
+   Intermittent per-run, no model/effort correlation — GPT-5.6 Terra · med
+   hit the fault three-for-three on Refactorer and zero-for-one (clean) on
+   the Test Designer vsAnthropicAuthor exercise, in the same session.
+   **ESCALATED** as a follow-on (below); ships unresolved.
 2. **codex directory-trust gate: fixtures must be a git repo before the
    engine will operate.** Distinct from the transient fault above — a
    reproducible precondition, not intermittent. Hit on the Operator
@@ -367,8 +409,13 @@ _(pending — stage 3)_
 6. **Refactorer (E8) and Runner (E1) exercises are owed.** No competency
    signal was obtained for GPT-5.6 Terra on the rename mission or GPT-5.6
    Luna on the substitution mission — every attempt at both was stopped by
-   the environment fault before the engine reached its first local
-   command. Fixtures and order texts are currently preserved at
+   the environment fault before the seat's actual mission work (census,
+   edit, validation) could run; Runner's third attempt did get one
+   file-discovery command through (`rg --files`, `roster/wo10-runner-ex2-
+   transcript.md:26-29,56`) before the fault recurred, so "before the engine
+   reached its first local command" is accurate for Refactorer's three
+   attempts and Runner's first two, but not Runner's third. Fixtures and
+   order texts are currently preserved at
    `scratchpad\wo10-fixtures\{refactorer,runner}` and
    `scratchpad\wo10-orders\{refactorer-ex1,runner-ex1}-order.txt`, but the
    scratchpad is **session-ephemeral** — do not rely on it surviving to a
@@ -421,8 +468,8 @@ _(pending — stage 3)_
 
 ## Order texts
 
-The four codex-launched (`orchestra-exec`) exercises dispatch from a literal
-order file; those four are embedded verbatim below. The six in-harness
+The five codex-launched (`orchestra-exec`) exercises dispatch from a literal
+order file; those five are embedded verbatim below. The six in-harness
 exercises dispatch as a Director order to the session directly (no separate
 order file survives in the scratchpad) — each is instead summarized here in
 one or two sentences, condensed from that seat's own report (its opening

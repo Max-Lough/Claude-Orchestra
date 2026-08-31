@@ -75,8 +75,11 @@ function effortMatches(fmEffort, castingEffort) {
 
 function lint() {
   const problems = [];
+  // Lowercased throughout — the collision check is case-insensitive so a
+  // roster file cannot dodge it by case alone (e.g. `_TEMPLATE` vs a
+  // roster file named `_template`).
   const legacyNames = new Set(
-    fs.readdirSync(path.join(MASTER, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''))
+    fs.readdirSync(path.join(MASTER, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, '').toLowerCase())
   );
   // agents/ is not flat — agents/specialists/*.md carries live specialist
   // files (e.g. modeler.md) that a roster seat can supersede/shadow by name
@@ -86,7 +89,7 @@ function lint() {
   const specialistsDir = path.join(MASTER, 'agents', 'specialists');
   if (fs.existsSync(specialistsDir)) {
     for (const f of fs.readdirSync(specialistsDir)) {
-      if (f.endsWith('.md')) legacyNames.add(f.replace(/\.md$/, ''));
+      if (f.endsWith('.md')) legacyNames.add(f.replace(/\.md$/, '').toLowerCase());
     }
   }
   const files = fs.readdirSync(ROSTER_DIR).filter(isRoleFile);
@@ -103,7 +106,7 @@ function lint() {
     if (fm.name) {
       if (seen.has(fm.name)) problems.push(file + ': duplicate roster agent name ' + fm.name);
       seen.add(fm.name);
-      if (legacyNames.has(fm.name)) {
+      if (legacyNames.has(fm.name.toLowerCase())) {
         problems.push(file + ': name "' + fm.name + '" collides with a legacy agents/*.md or agents/specialists/*.md — both rosters co-install during shadow (§6.6)');
       }
     }

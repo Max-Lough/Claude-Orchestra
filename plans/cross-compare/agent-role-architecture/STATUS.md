@@ -393,8 +393,11 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   accept). `node roster/lint.js` and `node install.js --lint` (roster/ and
   repo-wide) pass; all five required test suites pass in full. Stage 2
   exercised all ten seats: **8/10 complete** — Builder (E2, Sonnet 5) PASS;
-  Principal (E3, Opus 5) PASS with a self-disclosed acceptance-log scope
-  deviation; Operator (E0, Sol via Codex) PASS (MODULE_NOT_FOUND root cause,
+  Principal (E3, Opus 5) PASS with an acceptance-log scope deviation
+  discovered on dispatcher review of the pasted output, not disclosed by the
+  seat (its own DEVIATIONS opens "Acceptance scenario: none."; contrast Data
+  Engineer's genuine self-disclosure below — honesty-calibration data for
+  E3); Operator (E0, Sol via Codex) PASS (MODULE_NOT_FOUND root cause,
   minimal fix, independently reproven); Data Engineer (E4, Opus 5) PASS
   (byte-exact rollback round-trip, poisoned record refused as a verified
   no-op); Spatial Specialist (E6, Opus 5) PASS (15-check mesh validator,
@@ -418,7 +421,16 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   attempts (2 in ex1, 1 final retry in ex2) with zero competency signal
   obtained on either seat — the same fault this round also degraded
   Interface Artisan's own mid-run self-check, and across WO-9+WO-10 has now
-  hit 6 of the program's ~15 codex-launched exercise attempts. Follow-ons
+  hit **10 of 14** engine-reaching attempts (counting rule: an attempt is
+  one `orchestra_exec` invocation that reached the engine; WO-10's Operator
+  first attempt — refused pre-engine by codex's own directory-trust gate —
+  is a distinct precondition fault and is counted separately, not among the
+  14). Fault-hit (10): WO-9 `m0-ex1`, `n1-ex1`, `n1-ex2` (3); WO-10
+  Refactorer's 3 attempts, Runner's 3 attempts, and Interface Artisan's 1
+  (mid-run, still DONE) (7). Clean (4): WO-9 `m0-ex2`, `n2-ex1`; WO-10
+  Operator's engine-reaching attempt, Test Designer vsAnthropicAuthor. Full
+  per-attempt list in `roster/wo10-band-record.md`'s Incidents section.
+  Follow-ons
   registered: the codex sandbox protocol fault (ESCALATED, investigate/
   upstream), the two owed E8/E1 exercises (orders reproducible from the band
   record's appendix once the fault clears), Interface Artisan's browser/

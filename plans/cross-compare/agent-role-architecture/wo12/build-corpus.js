@@ -172,19 +172,76 @@ function detectRepoRoot() {
 
 // -------------------------------------------------------------------- clone
 
-// realpath where the path exists, plain resolve where it does not — a
-// junction or symlink into the repository must not be able to walk past the
-// nesting guard below (round-2 MINOR: `path.relative` alone compares the
-// spelling, not the identity).
-function realResolve(p) {
-  const abs = path.resolve(p);
-  try { return fs.realpathSync.native ? fs.realpathSync.native(abs) : fs.realpathSync(abs); }
-  catch (e) { return abs; }
+// Filesystems that compare paths case-insensitively. Windows and macOS both
+// do by default, and on those two the same directory can be spelled
+// `C:\Users\...` or `c:\users\...` — a case-sensitive string compare would
+// call those different places.
+const CASE_INSENSITIVE_FS = process.platform === 'win32' || process.platform === 'darwin';
+
+function realpathOrNull(p) {
+  try { if (fs.realpathSync.native) return fs.realpathSync.native(p); } catch (e) { /* fall through */ }
+  try { return fs.realpathSync(p); } catch (e) { /* fall through */ }
+  return null;
 }
 
+/**
+ * The path's true identity, resolvable even when the path does not exist yet.
+ *
+ * `fs.realpathSync` THROWS on a path that is not on disk, and the round-1/2
+ * version simply caught that and returned the unresolved `path.resolve(p)`.
+ * That made the comparison ONE-SIDED whenever the destination did not exist —
+ * which, for a clone destination, is always. The source repository resolved
+ * through its symlinks; the destination did not; and the two ended up
+ * expressed in different namespaces:
+ *
+ *   macOS CI      source `/var/folders/../src`  ->  `/private/var/folders/../src`
+ *                 child  `/var/folders/../src/inner` (unresolved)
+ *                 path.relative(...) = `../../../var/folders/../src/inner`
+ *
+ *   Windows CI    source `C:\Users\RUNNER~1\..\src` -> `C:\Users\runneradmin\..\src`
+ *                 child  `C:\Users\RUNNER~1\..\src\inner` (unresolved)
+ *
+ * Both look like "outside", so the nesting guard did not fire. Ubuntu passed
+ * only because `/tmp` is a real directory with nothing to resolve.
+ *
+ * The fix: walk up to the nearest ancestor that DOES exist, resolve that, and
+ * re-append the components that do not exist yet — so both sides of every
+ * comparison are always in the resolved namespace.
+ */
+function realResolve(p) {
+  let abs = path.resolve(p);
+  const missing = [];
+  for (;;) {
+    const real = realpathOrNull(abs);
+    if (real !== null) return missing.length ? path.join(real, ...missing.reverse()) : real;
+    const parent = path.dirname(abs);
+    if (parent === abs) return path.resolve(p); // reached the root, nothing resolvable
+    missing.push(path.basename(abs));
+    abs = parent;
+  }
+}
+
+// Comparison key: identical paths must compare equal on a case-insensitive
+// filesystem.
+function pathKey(p) { return CASE_INSENSITIVE_FS ? String(p).toLowerCase() : String(p); }
+
+function samePath(a, b) { return pathKey(a) === pathKey(b); }
+
+/**
+ * Is `child` strictly inside `parent`? Decided from `path.relative()`'s own
+ * result — never from a `child.startsWith(parent)` string test, which reports
+ * `/repo-backup` as being inside `/repo`. A relative path whose FIRST SEGMENT
+ * is `..` walks out of the parent; an absolute result means the two are on
+ * different roots (separate Windows drives); an empty result means they are
+ * the same directory, which is handled separately by the caller.
+ *
+ * Segment-wise rather than `startsWith('..')` so a sibling directory honestly
+ * named `..config` is not mistaken for an escape.
+ */
 function isInside(parent, child) {
-  const rel = path.relative(parent, child);
-  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+  const rel = path.relative(pathKey(parent), pathKey(child));
+  if (rel === '' || path.isAbsolute(rel)) return false;
+  return rel.split(/[\\/]/)[0] !== '..';
 }
 
 // Creates (or, if --clone-root already looks like a clone OF THIS SOURCE,
@@ -193,7 +250,7 @@ function isInside(parent, child) {
 function ensureClone(sourceRepo, cloneDir) {
   const resolvedSource = realResolve(sourceRepo);
   const resolvedClone = realResolve(cloneDir);
-  if (isInside(resolvedSource, resolvedClone) || resolvedSource === resolvedClone) {
+  if (isInside(resolvedSource, resolvedClone) || samePath(resolvedSource, resolvedClone)) {
     fail('refusing to clone into ' + resolvedClone + ' — it is INSIDE the source repository ' + resolvedSource +
       '. The scratch clone must never be nested in the tree under review.');
   }
@@ -206,7 +263,7 @@ function ensureClone(sourceRepo, cloneDir) {
     // refresh it instead.
     const originR = git(resolvedClone, ['remote', 'get-url', 'origin']);
     const origin = originR.status === 0 ? realResolve((originR.stdout || '').trim()) : null;
-    if (!origin || origin !== resolvedSource) {
+    if (!origin || !samePath(origin, resolvedSource)) {
       fail('refusing to reuse the existing clone at ' + resolvedClone + ': its `origin` is ' +
         (origin ? origin : '(none/unreadable)') + ', not the source repository ' + resolvedSource +
         '. Point --clone-root at a fresh directory, or delete that one.');
@@ -573,6 +630,10 @@ function main() {
 module.exports = {
   GIT_PINS,
   KEY_REL_PATH,
+  CASE_INSENSITIVE_FS,
+  realResolve,
+  isInside,
+  samePath,
   detectRepoRoot,
   ensureClone,
   readCommitMetadata,

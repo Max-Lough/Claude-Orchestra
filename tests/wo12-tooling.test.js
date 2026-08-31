@@ -379,9 +379,89 @@ section('5. build-corpus.js — clone reuse is verified, and a stale materialize
   try { buildCorpusLib.ensureClone(repoB.dir, clone); } catch (e) { threw = e; }
   check('MINOR: reusing a --clone-root whose origin is a DIFFERENT repository is refused',
     !!threw && /its `origin` is/.test(threw.message), threw && threw.message);
-  let nested = null;
-  try { buildCorpusLib.ensureClone(repoA.dir, path.join(repoA.dir, 'inner')); } catch (e) { nested = e; }
-  check('a clone nested INSIDE the source repository is refused', !!nested && /INSIDE the source repository/.test(nested.message), nested && nested.message);
+  // The nesting guard must hold however the SAME directory is spelled. This
+  // failed on every macOS and Windows CI runner while passing on Ubuntu and
+  // locally, because the destination does not exist yet: `fs.realpathSync`
+  // threw on it and the old code fell back to the unresolved path, so the
+  // source was compared in the resolved namespace and the child in the
+  // unresolved one. macOS reaches os.tmpdir() through `/var -> /private/var`;
+  // the Windows runner's TEMP is the 8.3 short name `C:\Users\RUNNER~1\...`.
+  // Ubuntu's `/tmp` has nothing to resolve, which is why it never showed.
+  //
+  // `spellings` collects every alias of repoA.dir this platform can produce,
+  // and the guard is asserted for every (source spelling x destination
+  // spelling) pair — including the mixed pairs, which are the exact CI shape.
+  const spellings = [{ label: 'as given', p: repoA.dir }];
+  {
+    const realA = fs.realpathSync.native ? fs.realpathSync.native(repoA.dir) : fs.realpathSync(repoA.dir);
+    if (realA.toLowerCase() !== repoA.dir.toLowerCase()) spellings.push({ label: 'realpath', p: realA });
+  }
+  // A symlink/junction alias — the macOS `/var` shape, creatable everywhere.
+  {
+    const linkDir = tmpDir('wo12-alias-');
+    const link = path.join(linkDir, 'aliased-src');
+    let made = false;
+    try { fs.symlinkSync(repoA.dir, link, 'junction'); made = true; }
+    catch (e) {
+      try { fs.symlinkSync(repoA.dir, link, 'dir'); made = true; } catch (e2) { made = false; }
+    }
+    if (made && fs.existsSync(link)) spellings.push({ label: 'symlink/junction alias', p: link });
+    check('a symlink/junction alias of the source repo could be created for this check', made, 'links unavailable on this platform/permissions');
+  }
+  // The Windows 8.3 short name — the `RUNNER~1` shape.
+  if (process.platform === 'win32') {
+    const r = spawnSync('cmd.exe', ['/d', '/c', 'for %I in ("' + repoA.dir + '") do @echo %~sI'],
+      { encoding: 'utf8', windowsVerbatimArguments: true });
+    const short = ((r.stdout || '').trim().split(/\r?\n/).pop() || '').trim();
+    if (r.status === 0 && short && short.toLowerCase() !== repoA.dir.toLowerCase() && fs.existsSync(short)) {
+      spellings.push({ label: '8.3 short name', p: short });
+    }
+  }
+  check('more than one spelling of the source repo is under test on this platform',
+    spellings.length >= 2, spellings.map((s) => s.label).join(', '));
+
+  for (const src of spellings) {
+    for (const dst of spellings) {
+      let nested = null;
+      try { buildCorpusLib.ensureClone(src.p, path.join(dst.p, 'inner')); } catch (e) { nested = e; }
+      check('a clone nested INSIDE the source repository is refused (source ' + src.label + ' -> destination ' + dst.label + ')',
+        !!nested && /INSIDE the source repository/.test(nested.message),
+        'src=' + src.p + '\ndst=' + path.join(dst.p, 'inner') + '\n' + (nested ? nested.message : '(NOT REFUSED — a nested clone would have been created)'));
+      check('…and no nested clone was created (source ' + src.label + ' -> destination ' + dst.label + ')',
+        !fs.existsSync(path.join(dst.p, 'inner')), path.join(dst.p, 'inner'));
+    }
+  }
+
+  // The same directory, spelled two ways, is not "inside" itself.
+  for (const s of spellings) {
+    let same = null;
+    try { buildCorpusLib.ensureClone(repoA.dir, s.p); } catch (e) { same = e; }
+    check('cloning INTO the source repository itself is refused (' + s.label + ')',
+      !!same && /INSIDE the source repository/.test(same.message), same && same.message);
+  }
+
+  // The helpers, directly: both sides resolve even when the child is absent.
+  {
+    const absent = path.join(repoA.dir, 'does', 'not', 'exist', 'yet');
+    const resolvedParent = buildCorpusLib.realResolve(repoA.dir);
+    const resolvedAbsent = buildCorpusLib.realResolve(absent);
+    check('realResolve resolves a path that does not exist yet, via its nearest existing ancestor',
+      buildCorpusLib.isInside(resolvedParent, resolvedAbsent), resolvedParent + ' vs ' + resolvedAbsent);
+    check('realResolve keeps the non-existent remainder intact',
+      resolvedAbsent.endsWith(path.join('does', 'not', 'exist', 'yet')), resolvedAbsent);
+    check('isInside is false for a sibling whose name merely shares a prefix',
+      buildCorpusLib.isInside('/a/repo', '/a/repo-backup') === false);
+    check('isInside is false for the same directory', buildCorpusLib.isInside('/a/repo', '/a/repo') === false);
+    check('isInside is true for a real child', buildCorpusLib.isInside('/a/repo', '/a/repo/child') === true);
+    check('isInside does not mistake a directory named "..config" for an escape',
+      buildCorpusLib.isInside('/a/repo', '/a/repo/..config') === true);
+    if (buildCorpusLib.CASE_INSENSITIVE_FS) {
+      check('on a case-insensitive filesystem, case alone does not make a path "outside"',
+        buildCorpusLib.isInside('C:\\A\\Repo', 'c:\\a\\repo\\child') === true);
+      check('on a case-insensitive filesystem, samePath ignores case',
+        buildCorpusLib.samePath('C:\\A\\Repo', 'c:\\a\\repo') === true);
+    }
+  }
 
   // --all: a stale materialized.json must not outlive a failing run.
   const work2 = tmpDir('wo12-all-');

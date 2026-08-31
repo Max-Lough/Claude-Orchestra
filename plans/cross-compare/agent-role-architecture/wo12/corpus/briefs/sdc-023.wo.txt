@@ -4,6 +4,18 @@ Change under review: commit ed6643587eca22bfa2cdc0638dc89699aae79938
 Base (its parent):   00076a270f46759c81d3b4481b4b35e7365248e4
 Commit subject:      Genericize README paths, add MIT LICENSE
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Genericize the README's install instructions so they no longer assume the
+maintainer's own local paths. Replace the hardcoded local path in the
+install example with a placeholder environment variable, and add a POSIX
+clone-and-install snippet alongside it so non-maintainer users have a
+copy-pasteable path. Rename the internal project-name labels used in a
+couple of places to a neutral harness name, without breaking the
+uninstaller's existing loose-prefix fallback, which still needs to match the
+old markers for anything installed under the old name. Add a permissive
+open-source license file at the repository root and a corresponding license
+section in the README so the project's licensing terms are stated rather
+than implied.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

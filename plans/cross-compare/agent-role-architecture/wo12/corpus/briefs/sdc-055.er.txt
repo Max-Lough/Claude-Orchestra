@@ -1,8 +1,17 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 3d545b94e89cdfc8d026e0457e11225820453745. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 3d545b94e89cdfc8d026e0457e11225820453745. An executor produced this change.
+
+CLAIMS:
+We produced the order and executor report as new files under roster/,
+pinning the delta review to the two commits between the round-3 and round-4
+checkpoints and enumerating each one individually, per the precision finding
+carried forward from the prior delta round. The two files add 103 lines with
+no deletions. The order records that a clean verdict on this pin clears the
+pending work orders out of revise status.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
-- check claims against the code they describe
-- check for stale cross-references
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

@@ -1,4 +1,12 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e7545f60a6e55718179afd07c70ed6d420de3069. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit e7545f60a6e55718179afd07c70ed6d420de3069. An executor produced this change.
+
+CLAIMS:
+The guard now requires positive evidence of a director model before
+enforcing; sessions without one — including a fresh session's first turn —
+never see a denial. A genuine director session absorbs one unenforced
+opening turn before hard enforcement engages as soon as the model reaches
+the transcript, which the existing delegation instructions already cover.
+Docs on mode detection and troubleshooting were updated to match.
+
+Verify the diff on its own merits.

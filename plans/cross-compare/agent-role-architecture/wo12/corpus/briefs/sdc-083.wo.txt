@@ -4,6 +4,19 @@ Change under review: commit e7a5e31eb70ba2cabb9d46cb33b16ffe4ebfe4aa
 Base (its parent):   8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c
 Commit subject:      WO-8 round 4: fix all four R0-EX4 findings; record the R0-EX4 verdict
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Address four findings raised by the latest review pass, while confirming
+that all five prior-round closures still hold. Change the touches lint to
+compare individual elements instead of a comma-joined string that is prone
+to false collisions. Make the glob matcher replicate the line-terminator
+character classes of the regular expression it replaced, exactly. Have
+checkout startup sweep any abandoned worktrees still on disk, since pruning
+alone only clears registrations whose directory is already missing, while
+explicitly exempting checkouts that are still live in-process. Correct
+future review orders so they enumerate every commit in their pinned range
+rather than overclaiming a single commit. Record the review verdict verbatim
+in the roster, and keep the tranche marked as open pending the next review
+pass.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

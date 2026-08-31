@@ -4,6 +4,18 @@ Change under review: commit 772a6881219f61db76a79b9e99846cc97512b70e
 Base (its parent):   7bf8e794306376835716c422313e85d997eaf7c0
 Commit subject:      WO-11 round 3: Sol·max holistic findings applied (exercise debt ledgered, R3 48h, records); verdicts committed
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Apply the findings from an independent holistic review to the
+resource-tracking substrate and its round-three status, and commit the
+resulting verdict record. Ledger the outstanding exercise debt explicitly
+rather than leaving it implicit, extend the round-three window to
+forty-eight hours, and update the tracking module and its test suite to
+match the corrected behavior. Update the plan's status file and the band
+records for the affected work orders to reflect the same findings, and
+record the review's own verdict verbatim in a dedicated roster file
+alongside a first-round review record. Keep the change to records and the
+substrate implicated by the findings only — do not touch unrelated roster
+files.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

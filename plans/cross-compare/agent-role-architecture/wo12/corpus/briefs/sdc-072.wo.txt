@@ -4,6 +4,17 @@ Change under review: commit 67d5c98a82640d731ebb75391ec4867237457f8b
 Base (its parent):   410537818dcc663e020fe84b8b5f800ac945d473
 Commit subject:      Score WO-7a-bis blind: 17/20 (85%) FAIL; record the disagreement ledger
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Score a blind validation pass against the pre-registered follow-on corpus
+and record every disagreement in a ledger. Complete and save the independent
+pass before the sealed corpus file is opened, then compare it item by item
+against the reference scoring and report the match rate against the
+pre-registered threshold. For each disagreement, name the two candidate
+classes and state whether it reflects a genuine ambiguity in the boundary
+rule or a flaw found in the corpus item itself; do not silently drop or
+reclassify a disagreement. If the match rate falls short of the threshold,
+trigger the pre-registered next step — a further boundary redraw — before
+the taxonomy is treated as validated for encoding downstream.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

@@ -4,6 +4,18 @@ Change under review: commit e3b730da0f823c04c378df380d55518e0ad9a035
 Base (its parent):   8dce7590cb91aa27dced1f695b0631a7f23cf65b
 Commit subject:      executor: add stop-grinding rule (bounded implement-verify cycles, PARTIAL over degraded DONE)
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Add a stop-grinding rule to the executor role and its specialist template so
+an agent does not loop indefinitely trying to force a task to a finished
+state. Scope is limited to agents/executor.md and
+agents/specialists/_TEMPLATE.md — a single guidance line in each, not a
+rewrite of either file's structure. State the rule as a bounded number of
+implement-verify cycles: once that bound is reached without a clean pass,
+the agent must stop and report a partial result rather than push out a
+degraded status dressed up as done. Keep the wording short enough to sit
+inline with the surrounding role text, and make sure both files carry the
+same rule so behavior stays consistent whether an agent works from the base
+executor definition or from the specialist template it inherits.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

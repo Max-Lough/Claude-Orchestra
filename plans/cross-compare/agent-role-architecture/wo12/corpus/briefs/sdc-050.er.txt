@@ -1,4 +1,12 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 3900142ff195c91ae38de27f45abc58707b63eae. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 3900142ff195c91ae38de27f45abc58707b63eae. An executor produced this change.
+
+CLAIMS:
+We produced the order and executor report as new files under roster/,
+pinning the delta review to the two commits between the round-5d and
+round-5e checkpoints and enumerating each one individually as required.
+Together the two files add 118 lines with no deletions. The order records
+that a clean verdict on this pin is what clears the pending work orders out
+of revise status.
+
+Verify the diff on its own merits.

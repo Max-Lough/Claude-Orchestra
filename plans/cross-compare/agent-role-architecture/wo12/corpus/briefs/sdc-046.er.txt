@@ -1,8 +1,19 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 316759a5fcadd7d5fe05859e40a94f55ae7660d8. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 316759a5fcadd7d5fe05859e40a94f55ae7660d8. An executor produced this change.
+
+CLAIMS:
+All five seats were exercised and the results recorded in the band record
+and status file — 454 lines added across nine files, only 3 removed. Scout
+and Investigator ran in-harness and both passed. The first run of the
+Researcher seat fabricated citations while its own verification admitted the
+command runner was down, so that run was discarded; the retry under a
+stricter check correctly returned a blocked result instead of a false pass.
+Two runs also hit the same transient tooling fault, logged as a follow-on
+rather than ignored.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
-- check claims against the code they describe
-- check for stale cross-references
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

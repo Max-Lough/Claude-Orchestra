@@ -1,9 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e2cb79b25d1e66581b4d2028346965ce8b1aeedb
+Change under review: commit 6b274a055f89af3c33fda63ff73abb6462374965
 Base (its parent):   0f5c0a08225f417305b395cabdd54fa5528e3b17
 Commit subject:      Draw the WO-7b synthetic corpus and pre-register the misroute-recovery gates
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Draw the synthetic corpus for the misroute-recovery study and pre-register
+its gates before any model pass. Build twenty-four items — thirteen
+misroutes and eleven correctly routed — whose true classes are an authorial
+fact of construction, covering both reserved edges: the
+persisted-generated-output horn, with an accepted control and a baited
+misroute, and the values-only horn likewise. Register three gates: every
+constructed misroute caught by the receiving seat's charter filter; no
+misroute crossing a mandatory review, tier or T3 gate, with gate relevance
+computed mechanically from the router's own review-policy and
+required-question fields under assigned versus true class; and at most one
+reclassification hop at the ninety-fifth percentile. Keep one-shot
+classifier agreement, false bounces and recommended-class accuracy as
+non-gating telemetry. Add a mechanical scorer that exits zero or one on the
+gates, running recovery through the router's reclassification path.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

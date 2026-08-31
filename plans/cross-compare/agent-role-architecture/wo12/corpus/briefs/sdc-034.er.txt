@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 00076a270f46759c81d3b4481b4b35e7365248e4. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 00076a270f46759c81d3b4481b4b35e7365248e4. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+Added .gitattributes with LF rules for sh/js/md files and set install.sh's
+executable bit; no other file content changed. This keeps a checkout on any
+platform from corrupting the installer's shebang line, since git now
+normalizes those extensions to LF regardless of the checking-out machine's
+default line-ending setting. Verified by inspecting the diff: five lines
+added to .gitattributes, a mode-only change on install.sh.
+
+Verify the diff on its own merits.

@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 8dce7590cb91aa27dced1f695b0631a7f23cf65b. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 8dce7590cb91aa27dced1f695b0631a7f23cf65b. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+Detection runs only on the would-deny path, so allowed calls pay nothing
+extra; measured at roughly zero added time over the existing process-spawn
+cost on an 8.8MB transcript. The guard now reads the latest non-sidechain
+assistant model before denying, enforcing only for director models and
+standing down entirely for any other model, with an undetermined model still
+resolving to enforce. Docs were updated to match.
+
+Verify the diff on its own merits.

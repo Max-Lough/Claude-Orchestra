@@ -4,6 +4,20 @@ Change under review: commit f98316fb13836c5f64576b8e13170c9264896a5d
 Base (its parent):   e37a25da1d964afc30d66773e4ce26ae7fb98847
 Commit subject:      WO-10 round 2: fix all R0 review findings (stale conflict text, inert-tier rule, 12-rule audit, honest tallies)
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Close out every finding from the prior review round. Rewrite the
+test-authoring seat's mirror-substitution conflict text to match the
+exception now declared for that seat, closed by the cross-family exception
+recorded elsewhere. Restore the documentation seat's dropped rule that the
+inert verification tier never applies to documentation. Correct the
+legacy-validation rule-count table for the base and heavy executors, adding
+the two heavy-only rules it omitted. Fix the write-up so the
+environment-variable deviation is described as caught on review, not
+self-disclosed. Derive the exact cross-vendor engine fault tally with an
+explicit counting rule and a full per-attempt list, replacing the earlier
+rough figure. Clear the remaining minor findings — a partial search-tool
+hit, an exercise count, a missing prohibition clause, an invented trigger,
+an unexercisable grant, a stale line citation — and every outstanding nit.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

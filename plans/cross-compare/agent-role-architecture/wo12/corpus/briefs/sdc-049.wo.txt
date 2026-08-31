@@ -4,6 +4,15 @@ Change under review: commit 5f62be6c7b811fe7f1d6e94f9e346d3712df6607
 Base (its parent):   e04005bb8a0b751bb26fbdd4755ee437af2cb240
 Commit subject:      Draw up R0-EX11: delta re-review order for the round-5f fix
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Write the delta re-review order for the fix applied in the latest round,
+pinning the exact two-commit range it covers so the reviewer works against a
+fixed, enumerated diff rather than a moving branch tip. State plainly that
+the point of this round is to get an explicit ruling on the one strand still
+open, not to reopen everything already settled. Make clear in the order text
+that a clean verdict here is what clears the two blocked tracks out of their
+needs-revision state — so the reviewer understands the stakes of the ruling
+they are about to make, not just the mechanics of what to check.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

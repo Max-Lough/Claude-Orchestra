@@ -4,6 +4,19 @@ Change under review: commit 9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86
 Base (its parent):   acbf8f2cf6f98bb642a23df3734a0edd35c29e5f
 Commit subject:      WO-11 exercises: Conductor audited (1 violation, dispositions ruled); P0 live-exercised; Architect env-blocked
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Run the WO-11 Band A exercises and audit their outputs. Audit the
+Conductor's session against the role's guardrails and rule on any violations
+found, producing a full written audit with dispositions rather than a
+summary. Live-exercise the P0 substrate end to end and produce a written
+report of the run. Attempt to live-exercise the Architect role; if the
+sandbox or environment blocks the attempt, keep the blocked attempt as its
+own transcript rather than silently dropping it, and record a second
+transcript if a first attempt has to be redone. Update the band record and
+status summary with the real per-seat outcomes so the top-line summary
+matches what was actually exercised rather than a placeholder. Extend the
+substrate's test suite only as far as needed to support the exercise runs;
+do not change the production behavior of the substrate itself.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

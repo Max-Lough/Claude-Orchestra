@@ -4,6 +4,19 @@ Change under review: commit d9af01673efd2e098b5647d4d609398822bc031b
 Base (its parent):   998b97830ac54d121c6e1b4903eb86e2068a5c9b
 Commit subject:      Record the Sol cross-vendor REVISE on PR #27 and apply its dispositions
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Record the outcome of an independent cross-vendor review of the open pull
+request and apply its findings to the plan. Run the review fresh, scoped to
+the diff between the base and the prior scoring commit, and expect it to
+confirm every prior score, gate, and commit-order claim while returning a
+small number of significant findings. Apply all of them: amend one
+discriminator so that displayed values are treated as data rather than
+presentation, codify the merge/redraw trigger to count scored cross-pass
+disagreements, scope the prior redraw's validation claim precisely, and
+correct the related-pull-request index. Adopt a process change going
+forward: the owner's blind pass must be committed and pushed before the
+sealed corpus file is opened. Preserve the verdict verbatim, together with
+its dispositions, in a dedicated review record file.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

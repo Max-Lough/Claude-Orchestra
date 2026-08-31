@@ -1,10 +1,17 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e2cb79b25d1e66581b4d2028346965ce8b1aeedb. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 6b274a055f89af3c33fda63ff73abb6462374965. An executor produced this change.
+
+CLAIMS:
+The corpus and the mechanical scorer are in place and the gates were
+registered ahead of any model pass. The scorer reports all three passing:
+thirteen of thirteen constructed misroutes caught; four gate-relevant
+misroutes with none crossed, and tier-borne gates identical under both
+dispatches for every item; and a ninety-fifth-percentile hop count of one
+with no escalations. The run exits zero.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check error paths and Windows path handling
-- check write atomicity and read-after-write ordering
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

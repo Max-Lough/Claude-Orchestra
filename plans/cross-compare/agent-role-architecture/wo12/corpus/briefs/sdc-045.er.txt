@@ -1,4 +1,15 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit ee5aec43e474f211aa237ddf4224e592e2f2dcd5. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit ee5aec43e474f211aa237ddf4224e592e2f2dcd5. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+All three MAJOR and three MINOR findings from the delta review are fixed,
+plus the noted nits, across the status file, researcher.md,
+wo9-band-record.md, wo9-i0-ex1-report.md, and wo9-n0-ex2-report.md — 81
+lines added, 36 removed over five files. Sandbox and working-tree language
+in researcher.md now matches the other role files; discard grounds are
+rewritten onto the two facts that hold up; source-count and omission
+language corrected to the precise figures. Verified by re-checking each
+corrected line against the source facts it now cites.
+
+Verify the diff on its own merits.

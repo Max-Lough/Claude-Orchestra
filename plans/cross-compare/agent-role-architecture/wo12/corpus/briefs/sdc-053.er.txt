@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 4e509b581a65caee8540ccde895c752823d8c9aa. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 4e509b581a65caee8540ccde895c752823d8c9aa. An executor produced this change.
+
+CLAIMS:
+We recorded that the prior CRITICAL finding was closed and separately found
+the live-set comparison used lexical rather than real-path matching, the
+same issue continuous integration had already caught and fixed at an earlier
+commit before this verdict landed. We pinned the follow-on order to the two
+commits between the current and next checkpoints, enumerated individually,
+and updated the review-dispositions record: four files change, 152 lines
+added and 3 removed.
+
+Verify the diff on its own merits.

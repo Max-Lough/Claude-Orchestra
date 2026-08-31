@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit da967bbfd6e32916ae39afa60295ab8cd544374d. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit bd5c5169c5193c059668ee776cf7d433d3887330. An executor produced this change.
+
+CLAIMS:
+All three are fixed in the runner: Windows engine launches go through the
+command interpreter with each argument quoted, every path comparison
+resolves both sides including paths that do not yet exist, and a configured
+scratch root is validated before anything is created in it. The probe now
+separates a launch failure from a failed echo. A regression test reproduces
+the symlink shape on every platform and asserts nothing was written into the
+repository; 96 checks.
+
+Verify the diff on its own merits.

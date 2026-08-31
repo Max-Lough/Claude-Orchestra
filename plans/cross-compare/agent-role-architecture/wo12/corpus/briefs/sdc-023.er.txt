@@ -1,9 +1,17 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit ed6643587eca22bfa2cdc0638dc89699aae79938. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit ed6643587eca22bfa2cdc0638dc89699aae79938. An executor produced this change.
+
+CLAIMS:
+The install example now points at a placeholder environment variable instead
+of a hardcoded local path, with a POSIX clone-and-install snippet added
+beside it. Internal labels were renamed to a neutral name while the
+uninstaller's loose-prefix fallback was left in place so it still matches
+markers from installs under the old name. A permissive license file and a
+matching README section were added.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check error paths and Windows path handling
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

@@ -1,10 +1,18 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 73629f78d18b84e14c8e6acf082e32089ae7b3ac. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 73629f78d18b84e14c8e6acf082e32089ae7b3ac. An executor produced this change.
+
+CLAIMS:
+We recorded the four cross-platform runner faults that the first hour of
+continuous integration surfaced and this release fixed, noted the one
+negative control that reports inconclusive under one platform's shell, and
+added a field-validation line for the shim case that integration testing can
+prove but not stage on a real PATH. Documentation only: three files, 54
+insertions, 10 deletions. Check counts were synced from 94 to 96 to match
+the suite's current total.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check claims against the code they describe
-- check for stale cross-references
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

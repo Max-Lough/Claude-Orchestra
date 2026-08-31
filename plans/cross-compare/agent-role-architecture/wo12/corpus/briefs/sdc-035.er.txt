@@ -1,8 +1,18 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit d3080957c86695a85ac59207b2e6a07988ef82fd. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit d3080957c86695a85ac59207b2e6a07988ef82fd. An executor produced this change.
+
+CLAIMS:
+Shipped all five files and updated the band record and README to match.
+Full-roster lint fails only on the two previously known gaps (one seat now
+joined by a second missing a mirror declaration in the casting table) — no
+new violations; both install-script lint modes pass clean. All five required
+test suites pass in full, 420 passed and 0 failed combined. One seat's
+browser loop has no headless exercise path from this harness; logged as a
+gap rather than hidden.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
-- check claims against the code they describe
-- check for stale cross-references
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

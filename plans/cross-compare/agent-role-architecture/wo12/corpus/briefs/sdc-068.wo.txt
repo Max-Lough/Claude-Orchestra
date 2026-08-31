@@ -1,9 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit da967bbfd6e32916ae39afa60295ab8cd544374d
+Change under review: commit bd5c5169c5193c059668ee776cf7d433d3887330
 Base (its parent):   84da4ad73f402ea78ea4e9b1917eed778bf3527c
 Commit subject:      Fix three cross-platform defects CI found in its first run
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Fix three cross-platform faults the first integration run found in the
+runner that ships to projects; none are test artifacts. First, restore the
+documented install on Windows: the runtime refuses to spawn .cmd and .bat
+files directly, and a package-manager install of the engine command resolves
+to a .cmd shim first, so route engine launches through the command
+interpreter with every argument quoted — not a bare shell option, which does
+not quote and would split the first path containing a space. Second, make
+the scratch-outside-the-repository guarantee hold where the repository path
+contains a symlink: resolve both sides of every path comparison, including
+paths that do not exist yet, by resolving the deepest existing ancestor and
+re-attaching the rest. Third, validate a configured scratch root before
+anything is created inside it, keeping the post-creation check as the
+backstop for roots the runner picks itself. Also have the probe distinguish
+a launch failure from a failed echo.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

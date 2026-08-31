@@ -1,9 +1,23 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 84e6bfe0f8836814afa3f60c971e4b39eb8ee88c
+Change under review: commit 54a5dc05836cd3022a198ad38c96c8b6fe161aac
 Base (its parent):   4e509b581a65caee8540ccde895c752823d8c9aa
 Commit subject:      WO-8 round 5c: creation-time canonical identity for live checkouts; review-lane flake diagnosed and guarded
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Close the remaining live-checkout sweep hazard. When the alias a live
+checkout was created through is later removed, sweep-time re-resolution
+falls back to the lexical alias spelling while the listed path stays
+canonical, and the sweep deletes a live checkout. Capture each entry's
+canonical directory at creation, when every component is guaranteed
+resolvable, and have the live set compare that captured identity — never a
+sweep-time re-resolution. Pin the alias-removal probe as a regression.
+Separately, diagnose and guard the review-lane reclamation flake, which is
+test-only: a newly created worktree is held locked for the whole checkout
+while its entry is already list-visible, and one forced remove cannot remove
+a locked worktree, so the termination branch must wait out the registration
+window exactly as the kill branch already does. Record the round's verdict
+verbatim.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

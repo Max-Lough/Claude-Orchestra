@@ -4,6 +4,20 @@ Change under review: commit 73629f78d18b84e14c8e6acf082e32089ae7b3ac
 Base (its parent):   928e00c46109cb457932a1a7d02755d8df1bea3a
 Commit subject:      Record what CI found, and sync the check counts
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Update the release changelog to record what the first hour of cross-platform
+continuous integration actually found. Name the four runner faults that
+surfaced and were fixed in this release: the shell-launch fault, the
+path-comparison guarantee that failed to hold under symlinks and short file
+names, the refusal path that wrote before it objected, and the sweep step
+that under-reported its own scope. Note the one negative-control check that
+reports itself inconclusive under one platform's shell, so a future reader
+does not mistake it for a passing proof. Add a field-validation line
+documenting the shim case that continuous integration can prove but cannot
+stage against a real user's PATH. Bring the changelog's stated check count
+into sync with the suite's actual current total. Keep the change confined to
+documentation — the changelog, the readme, and the field-validation notes —
+with no source or test-code edits.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

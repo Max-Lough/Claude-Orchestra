@@ -4,6 +4,19 @@ Change under review: commit c51a8f60b8b12253e7287d0ca6ac92deefb43739
 Base (its parent):   79ce13aaa7d80ca614dcd1f3db2193872e904bcb
 Commit subject:      installer: grant executor git add/commit/push via settings permissions
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Grant the agents that carry out work the git permissions they need to
+complete orders that call for committing and pushing. Subagents cannot
+accept authorization relayed through a work order the way a native prompt
+can, so without an explicit settings-level grant they are denied git commit
+and git push even when the user has ordered the work. Update the installer
+to merge the three relevant git command patterns into the allow list in the
+project's settings file, merging idempotently so re-running the installer
+does not duplicate entries or clobber anything already present. Update the
+uninstaller to remove exactly those three grants and nothing else the user
+may have added since. Keep the existing guard-hook restriction that bars the
+Director itself from running shell commands intact, so the new grants extend
+only to the agents doing the work, not to the Director.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

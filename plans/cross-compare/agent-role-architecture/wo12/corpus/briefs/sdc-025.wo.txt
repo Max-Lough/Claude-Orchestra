@@ -4,6 +4,16 @@ Change under review: commit 4680027af8e12008d546e5ad3be63e7b005805df
 Base (its parent):   f98316fb13836c5f64576b8e13170c9264896a5d
 Commit subject:      WO-10 round 3: post-APPROVE residual cleanup; review-round ledger
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Once the round reaches approval, finish it with a residual cleanup pass:
+close out anything left over in the review lint script and bring the status
+file and band record in line with the approved state. Update the lint
+script's checks so they reflect the ruleset the round actually settled on,
+not an intermediate draft. Rewrite the band record's round ledger so every
+round's disposition and the final tally are stated exactly, not
+approximately. Keep the status file's phase summary consistent with the
+ledger's own numbers. Do not introduce new checks beyond tidying the ones
+already in place; this is a closing pass, not a new review round.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

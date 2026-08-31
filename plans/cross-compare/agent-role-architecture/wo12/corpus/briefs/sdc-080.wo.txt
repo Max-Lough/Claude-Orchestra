@@ -4,6 +4,20 @@ Change under review: commit 3a9cc7347787a52f53fffe2211f3c0d939cef61f
 Base (its parent):   4e509b581a65caee8540ccde895c752823d8c9aa
 Commit subject:      WO-8 round 5c: creation-time canonical identity for live checkouts; review-lane flake diagnosed and guarded
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Fix a sharper edge on the stable-alias fix: when the alias a live checkout
+was created through is later removed, sweep-time path re-lookup falls back
+to the lexical alias spelling while git's own listed path stays canonical,
+causing the sweep to delete the live canonical checkout. Capture the
+canonical identity once at creation time, when every path component is
+guaranteed to exist, and have the live-set comparison always use that
+captured identity rather than a sweep-time re-lookup. Pin a regression for
+the alias-removal case. Separately, diagnose and fix an intermittent
+review-lane test failure: git holds a newly created worktree locked for the
+whole checkout while it is already visible in the list, so a kill during
+that window leaves it locked forever, and a single removal command cannot
+clear a locked worktree; make the terminate-signal branch wait out the
+registration window the same way the kill-signal branch already does.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

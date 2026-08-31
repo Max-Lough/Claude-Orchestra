@@ -4,6 +4,22 @@ Change under review: commit 7bf8e794306376835716c422313e85d997eaf7c0
 Base (its parent):   9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86
 Commit subject:      WO-11 round 2: confirmation validity re-anchored to live evidence; boundary validation; D1 re-ruled in full
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Re-open the WO-11 quartermaster review for a second round. Re-anchor every
+recorded Amber-arm confirmation so analyze() checks it against live evidence
+at each call — evidence timestamp match, live predicate, no fresh throttle,
+no exhausted bucket, no malformed-latest reading — instead of trusting any
+confirmation that falls inside the freshness window. Make confirm() refuse
+outright, appending nothing, when the bucket is freshly throttled,
+exhausted, or its latest raw line is malformed. Add strict validation to
+every public entry point so caller-supplied forecast, maxFreshMs, and
+maxStaleMs are rejected unless they are finite numbers — do not let string
+inputs silently coerce. Re-rule finding D1 in full against the reviewer's
+verbatim round-2 text, keeping the round-1 text struck through rather than
+deleted, and restore F-1's dropped substance as its own line. Correct the
+status summary's quick-start line and the incident-2 record to match the
+actual exercise outcomes, and reconcile the remaining count and attribution
+nits across the band record and role docs.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

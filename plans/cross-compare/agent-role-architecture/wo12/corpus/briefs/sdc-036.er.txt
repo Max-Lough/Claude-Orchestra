@@ -1,4 +1,12 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 357c96dbd56f9ac75af765d7dcb728261826487a. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 357c96dbd56f9ac75af765d7dcb728261826487a. An executor produced this change.
+
+CLAIMS:
+Closed the residual items across the four listed files and added a
+review-round ledger section to the band record. Changes are small: 30 lines
+added, 19 removed across the status file, researcher.md, wo9-band-record.md,
+and wo9-n0-ex2-report.md. Verified by re-reading each touched file end to
+end to confirm the residual items referenced in the prior round are actually
+closed, not just noted.
+
+Verify the diff on its own merits.

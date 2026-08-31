@@ -1,37 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 25501a67067aeb2961f9a1a0f616153bd4f5037b
+Change under review: commit e09bbc44cbd4b69af3b5d1e52c186205f6686376
 Base (its parent):   5758a2d2b6146b613ea062946f7013e1b9dfa3c2
 Commit subject:      WO-8 round 5b: the sweep's live-set exemption compares REAL paths
 
-Intent: the order below is the work order this change claims to implement.
-Audit the diff between base and head against that stated intent:
-correctness, unexplained changes, and concrete failure scenarios.
-
 ORDER:
+The disposable-checkout sweep deleted a LIVE checkout mid-verification: git
+records RESOLVED worktree paths, while a live checkout's own handle may be
+spelled through a symlink (macOS /var -> /private/var) or an 8.3 short path
+(RUNNER~1), so the lexical live-set compare missed. Make the live-set
+exemption compare path IDENTITY, not string identity — resolve real paths
+when the path is on disk, and keep the existing lexical form as the fallback
+for registrations whose directory is already gone. Pin the regression with a
+reproducer that stands a live checkout up under an aliased tmp root
+(junction on Windows, symlink elsewhere); it must fail on every platform
+without the fix and skip cleanly where links cannot be created. Leave the
+sweep's structural ownership guard byte-unchanged: a registration is ours
+only when its own basename is `checkout` AND the parent directory's OWN
+BASENAME carries the `orchestra-verifier-` prefix, and that test must never
+become a substring match anywhere in the path.
 
-The disposable-checkout sweep deleted a LIVE checkout mid-verification on
-the macOS and Windows CI runners. git records RESOLVED worktree paths,
-while a live checkout's own handle may be spelled through a symlink
-(macOS /var -> /private/var) or an 8.3 short path (the RUNNER~1 tmpdir),
-so the sweep's lexical live-set compare missed and the checkout it was
-supposed to exempt was swept out from under the run.
-
-Make the live-set exemption compare path IDENTITY rather than string
-identity: resolve real paths when the path is on disk, and fall back to
-the existing lexical form for paths that are already gone (the sweep must
-still be able to reason about registrations whose directory no longer
-exists). Pin the regression with a reproducer that stands a live checkout
-up under an aliased tmp root (junction on Windows, symlink elsewhere) and
-proves the sweep leaves it alone — it must fail on every platform without
-the fix, and skip cleanly where links cannot be created.
-
-Constraint: the sweep's structural ownership guard is not part of this
-change and must come out of it byte-unchanged in behaviour. A registered
-worktree counts as one of ours only when its own basename is `checkout`
-AND the parent directory's OWN BASENAME carries the `orchestra-verifier-`
-mkdtemp prefix. That test is structural on purpose and must never become
-a substring match anywhere in the path: the substring form shipped once,
-classified a user's own repository as a leftover, and rm -rf'd the OS temp
-root. Do not loosen it, widen it, or re-express it. The real-path work
-applies to the live-set comparison only.
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

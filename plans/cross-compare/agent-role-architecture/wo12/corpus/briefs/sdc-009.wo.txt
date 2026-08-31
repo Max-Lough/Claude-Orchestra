@@ -4,6 +4,22 @@ Change under review: commit b8a1957838da66600f5320d13c83e54c43d59130
 Base (its parent):   3c2fb763e1a8c51fc7b54d0e2ee0ba4e5dfe9a30
 Commit subject:      WO-11: P0 Quartermaster substrate — readings-based pool state, fail-closed, router-interop proven
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Build the deterministic P0 substrate: recorded allowance readings in, the
+router's bucket-state shape out. Implement it with zero dependencies in
+CommonJS, mirroring the shape of the existing verifier and router
+substrates. Cover reading and throttle recording with hard input validation,
+a state function that produces exactly the router's expected input, the
+Amber-arm confirmation protocol, throttle prediction, reporting, and a CLI,
+plus a publish step. Do not fabricate denominators — derive state only from
+real readings, across vendors; ledger attribution stays out of scope and is
+registered as a follow-on. Record every design ruling — reserve source,
+staleness windows, confirmation semantics, throttle-prediction shape, the
+exhausted-evidence rule — in the module's own README, marking anything the
+plan leaves silent as an estimate or unstated. Prove interop against the
+router across green, below-reserve, unconfirmed-arm, hard-throttled,
+zero-reading, and exhausted cases. Gitignore the new runtime data files and
+wire the suite into CI after the router suite.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

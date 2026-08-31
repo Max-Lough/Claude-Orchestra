@@ -1,9 +1,21 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 2f97477cf6ef30ece6b0f1be305384d8fc72f76d
+Change under review: commit 1c6144e7330e70fe07b6ba7d22062ef7f929fd33
 Base (its parent):   f5646829776a5dba4c021f4a887dd730bce04b6c
 Commit subject:      Add executor-heavy-xhigh: the xhigh effort point of the heavy tier
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Complete the heavy execution tier by adding its second reasoning point, so
+the menu the governing document describes is fully populated. Author the new
+agent with law byte-identical to its existing sibling: only the name, the
+description, the frontmatter reasoning setting, and the opening identity
+sentence may differ, and that identity must be verified against the sibling
+by diff. Update the company table to name both points, add a sibling
+sentence to the two-tier paragraph, and rewrite the routing clause so it
+names both pins. Keep the installer's agent roster, the README tree and mode
+table, and the status skill's rosters in sync with the new name. Reasoning
+depth stays a routing decision made when the plan is written, never
+something an order asks for in prose.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

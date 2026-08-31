@@ -1,4 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 70a8a6626d77d42db066049a7a911035407f2150. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 46c5a4cb9c0970af3f7523be045c3fe1c8ce0d2f. An executor produced this change.
+
+CLAIMS:
+Every finding now carries a [BREACH] or [GAP] bucket beside its severity,
+and the verdict rule keys on the bucket: a CRITICAL or MAJOR BREACH forces
+REVISE, while GAPs and MINOR BREACHes permit APPROVE with the findings
+listed as dispatcher backlog. The never-end-a-turn-on-a-running-process rule
+was added to all five command-running roles, phrased for each one's failure
+shape; no other line in those files was touched. Changelog entry and version
+stamp recorded. Verified: frontmatter lint 37 passed, 0 failed; the
+installer's lint checked 19 files with 0 errors and 0 warnings.
+
+Verify the diff on its own merits.

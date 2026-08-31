@@ -1,32 +1,22 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 030580ca47dbb8f10e0afc6f790e15ad290ddc13
+Change under review: commit 1c651fb18903e8d968624247858564dc9233a134
 Base (its parent):   e5d3d9bb8209c6a3ecedf85bd1da206138e035bc
 Commit subject:      WO-8 round 5d: fail-closed identity capture; lock-condition kill guards; CI records corrected
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Close out the two majors and the records item from the R0-EX8 verdict.
+First, make creation-time identity capture fail closed: have
+`createCheckout` resolve the canonical path itself and refuse the checkout,
+cleaning up the registration it just made, when that resolution fails, so
+the lexical fallback serves only already-gone swept paths; pin the
+poisoned-realpath case with a regression test. Second, replace the fixed
+sleeps in both review-lane kill branches, the SIGTERM branch and the SIGKILL
+branch, with a poll of git's actual registration lock, because a slow
+checkout stays locked past any fixed delay. Third, correct the records: the
+nine-of-nine green claim must name the PR-head run and state the superseded
+run's true outcome, including the flake that fired. Fourth, record the
+verdict verbatim; the tranche stays REVISE pending the next round.
 
-The order, item by item:
-
-1. Make creation-time identity capture fail CLOSED. `createCheckout` must
-   resolve the checkout's canonical path itself at creation and, when that
-   resolution fails, refuse the checkout and clean up the registration it
-   just made — never store a lexical guess as the checkout's identity. The
-   lexical fallback serves only already-gone swept paths. Pin the
-   poisoned-realpath case with a regression test.
-
-2. Replace the fixed sleeps in BOTH review-lane kill branches — the
-   SIGTERM branch and the SIGKILL branch — with a poll of git's actual
-   worktree registration lock, so each kill happens only once the checkout
-   has finished registering. A slow checkout stays locked past any fixed
-   delay, and a kill landing mid-registration leaves a locked worktree a
-   single `--force` cannot reclaim.
-
-3. Correct the CI records: the 9/9-green claim must name the PR-head run
-   and state the superseded 09a824e run's true outcome, including the
-   flake that fired in CI.
-
-4. Record the R0-EX8 verdict verbatim. The tranche stays REVISE pending
-   R0-EX9.
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

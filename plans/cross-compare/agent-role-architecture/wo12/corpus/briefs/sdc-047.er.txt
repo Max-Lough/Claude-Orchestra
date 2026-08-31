@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 16484c959bf4315cdc1db02e71ab6569784cfb63. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 16484c959bf4315cdc1db02e71ab6569784cfb63. An executor produced this change.
+
+CLAIMS:
+Shipped six role files — scout, researcher, lc-analyst, investigator,
+archivist-documents, and archivist-images — plus updates to the roster
+README and the band record, 527 lines added across eight files with 1 line
+removed. The scout file is named to avoid a collision with the existing
+top-level file; investigator carries the read-only tool pin from its source
+alias; researcher and lc-analyst ship primary-only, with the missing mirror
+rung recorded as a gap in the band record rather than left undocumented.
+
+Verify the diff on its own merits.

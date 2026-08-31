@@ -1,4 +1,11 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e3b730da0f823c04c378df380d55518e0ad9a035. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit e3b730da0f823c04c378df380d55518e0ad9a035. An executor produced this change.
+
+CLAIMS:
+Both files now state the same stop-grinding rule inline: bounded
+implement-verify cycles, then stop and report a partial result rather than
+force a degraded done. The diff is a single added line in agents/executor.md
+and one in agents/specialists/_TEMPLATE.md, no other text touched. Checked
+by reading both files side by side to confirm the wording matches.
+
+Verify the diff on its own merits.

@@ -1,4 +1,15 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e04005bb8a0b751bb26fbdd4755ee437af2cb240. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit e04005bb8a0b751bb26fbdd4755ee437af2cb240. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The pre-add porcelain read now refuses before registering anything, a
+post-add read failure is retried, and the residual
+opportunistic-registration path's stranding is proven self-healing: an
+alias-created, never-active registration is reclaimed by the standing sweep
+at the next checkout creation, pinned as a regression showing both the
+directory and the registration gone. The review verdict was recorded
+verbatim; the tranche remains open pending further review. Suites: verifier
+101, router 135, registry 31, review-lane 116, full CI-equivalent run green.
+
+Verify the diff on its own merits.

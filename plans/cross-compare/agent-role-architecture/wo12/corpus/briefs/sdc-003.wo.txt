@@ -1,9 +1,22 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit e5fd1bda1d7447a98a6ecc58ac52a4bf5240e836
+Change under review: commit 3523e234256fd3aee90e16c5393be3867eb13e21
 Base (its parent):   3900142ff195c91ae38de27f45abc58707b63eae
 Commit subject:      WO-8 round 5f: pre-add records as a hard prerequisite; residual strand self-healing pinned
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Close the outstanding MAJOR finding in the verifier's throwaway-checkout
+path: a failed pre-add snapshot of git's worktree records, combined with an
+aliased add whose alias later vanishes, can strand a canonical registration
+nobody can name. Make the pre-add records read a hard prerequisite so the
+routine refuses before anything is registered, retry a transient post-add
+read failure instead of giving up on it, and show that the residual cleanup
+path heals itself: an alias-created registration that never went active is
+reclaimed by the standing sweep on the next checkout. Pin that self-healing
+with a regression test rather than asserting it in prose. Record the round's
+review verdict verbatim alongside the fix, keep the tranche's standing
+disposition at REVISE pending the next pass, and leave the suite battery
+green.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

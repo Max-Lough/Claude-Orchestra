@@ -1,9 +1,25 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 70a8a6626d77d42db066049a7a911035407f2150
+Change under review: commit 46c5a4cb9c0970af3f7523be045c3fe1c8ce0d2f
 Base (its parent):   6f27ea2249a91dc647b8f2ccbbd324a30511f938
 Commit subject:      Bucket review findings by provenance (BREACH/GAP); close the running-process rule gap (v2.1.0)
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Bucket review findings by provenance and close the running-process rule gap.
+A calibration audit found the cross-vendor reviewer accurate but
+miscalibrated: severity did double duty, so hardening shortfalls drew MAJOR
+beside contract violations and REVISE became near-universal. Require every
+finding to carry a [BREACH] or [GAP] bucket alongside severity, and key the
+verdict rule on the bucket — a CRITICAL or MAJOR BREACH forces REVISE; GAPs
+of any severity, and MINOR BREACHes, permit APPROVE with the findings as
+dispatcher backlog. The same probe also refuted the protocol document's
+claim that every command-running role carries the
+never-end-a-turn-on-a-running-process rule: two top-level roles and the
+three architect launchers lack it. Give all five that rule, phrased for
+their failure shape. IN SCOPE: the reviewer brief's finding format and
+verdict rule; one added rule paragraph per role file; the changelog entry
+and version stamp. Constraint: in the role files, add the new paragraph and
+leave every other line as it stands.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

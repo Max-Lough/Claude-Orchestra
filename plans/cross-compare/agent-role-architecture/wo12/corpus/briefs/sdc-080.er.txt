@@ -1,4 +1,16 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 3a9cc7347787a52f53fffe2211f3c0d939cef61f. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 3a9cc7347787a52f53fffe2211f3c0d939cef61f. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The canonical identity is now captured once at creation, when every path
+component is guaranteed to exist, and the live-set comparison always uses
+that captured value rather than a sweep-time re-lookup; the alias-removal
+case is pinned as a regression. The intermittent review-lane failure was
+traced to a locked-worktree window during checkout; the terminate-signal
+branch now waits out the registration window as the kill-signal branch
+already did, confirmed across three baseline and two post-fix runs at 114 of
+114. Suites: verifier 98, router 135, registry 31, full CI-equivalent run
+green.
+
+Verify the diff on its own merits.

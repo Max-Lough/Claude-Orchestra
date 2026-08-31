@@ -1,39 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 591cbc5fc6e34284fd080d510cb6a008618c2149
+Change under review: commit dfc217060a2023b64c73730391146fc2a1ca9272
 Base (its parent):   b8a1957838da66600f5320d13c83e54c43d59130
 Commit subject:      WO-11: P0 R4 default forecast corrected to WO-2 measured draw; floor governs
 
-Intent — the order this change was produced against:
+ORDER:
+Correct the P0 Quartermaster's DEFAULT review-draw forecast (ruling R4). The
+prior derivation sustained the PEAK arrival rate across a full 168h week to
+reach mandatoryReviewDraw = 0.504, pushing the default requiredReserve to
+~0.6552, so the P15 gate fired on nearly any bucket. That fabricates load.
+Replace the default with the directly MEASURED weekly draw (0.03); leave
+incidentDraw at 0 as a disclosed under-estimate; preserve the rejected
+peak-derived arithmetic in the comments as the cautionary alternative. 0.03
+x 1.3 = 0.039 sits below the plan's own 8% floor, so the floor governs. IN
+SCOPE, nothing else: defaultForecast() and its ruling-R4 comment block; the
+README's R4 section; the pinned R4 test values plus a check that the floor
+governs. Constraint: every other behaviour of the seat — the override path,
+the freshness rules, the fail-closed refusals, the confirmation protocol,
+the throttle-prediction method and the report output — must be left exactly
+as it is.
 
-  Correct the P0 Quartermaster's DEFAULT review-draw forecast (ruling R4).
-  The prior derivation sustained the PEAK review arrival rate across a full
-  168h week to reach mandatoryReviewDraw = 0.504, which pushed the default
-  requiredReserve to ~0.6552 — above the ladder's 40% Green threshold, so the
-  P15 gate fired on nearly any bucket. That derivation fabricates load: no
-  week runs entirely at burst rate.
-
-  Replace the default with WO-2's directly MEASURED weekly draw
-  (mandatoryReviewDraw = 0.03 — the same throughput probe that
-  castings.reserve.twoGateClassReviewsCostSource cites). Leave incidentDraw
-  at 0 as a disclosed under-estimate. Preserve the rejected peak-derived
-  arithmetic (0.504, ~0.6552) in the comments as the cautionary alternative,
-  computed but unused. requiredReserve(default) = 0.03 x 1.3 = 0.039 sits
-  below the plan's own 8% floor, so the floor governs the default.
-
-  IN SCOPE — these files, these behaviours, and nothing else:
-    - quartermaster/quartermaster.js: defaultForecast() and the ruling-R4
-      comment block that documents its derivation.
-    - quartermaster/README.md: the R4 section — record both derivations, the
-      adopted measured-based one and the rejected peak-based one.
-    - tests/quartermaster.test.js: the pinned R4 values, plus an explicit
-      check that the 8% floor (not the 0.039 dynamic term) governs.
-
-  OUT OF SCOPE: every other behaviour of the Quartermaster seat. The
-  explicit forecast-override path, the freshness/staleness rules, the
-  fail-closed refusals, the malformed-line accounting, the confirmation
-  protocol, the throttle-prediction method and the report/snapshot output
-  are to be left exactly as they are.
-
-Audit the diff between base and head against that stated intent:
-correctness, unexplained changes, and concrete failure scenarios.
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

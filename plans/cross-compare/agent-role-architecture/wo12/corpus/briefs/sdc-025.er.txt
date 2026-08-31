@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 4680027af8e12008d546e5ad3be63e7b005805df. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 4680027af8e12008d546e5ad3be63e7b005805df. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+We closed out the round with a residual cleanup: the lint script picked up
+15 lines of check adjustments, the band record's round ledger was rewritten
+(53 lines touched) to state each round's disposition precisely, and the
+status file was brought into line, for 50 insertions and 31 deletions across
+three files. The status file's phase summary was checked against the
+rewritten ledger for consistency.
+
+Verify the diff on its own merits.

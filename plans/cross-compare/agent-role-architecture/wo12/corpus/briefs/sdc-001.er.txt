@@ -1,8 +1,12 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 15ff0b69997c02fd791b79c790168fbaa06eb172.
-An executor produced this change. The staleness window is now 48h, the
-disclosure keys were added additively, and the published state object's
-routing-relevant fields are unchanged — no bucket's routed pool state moves
-because a reading is stale. router/router.js was not touched. Beyond that,
-no fresh executor claims exist beyond the commit message. Verify the diff on
-its own merits.
+STATUS: DONE. The change is commit a14280eaabc8f0e61f01ddaeaf4ffa68123ede21. An executor produced this change.
+
+CLAIMS:
+The window is now 48h with the 24h fresh band untouched, and the disclosure
+keys were added additively. The published state object's routing-relevant
+fields are computed exactly as before — no bucket's routed pool state moves
+because a reading is stale — and `router/router.js` was not touched. `node
+tests/quartermaster.test.js` reports 191 passed; `node tests/router.test.js`
+reports 135 passed.
+
+Verify the diff on its own merits.

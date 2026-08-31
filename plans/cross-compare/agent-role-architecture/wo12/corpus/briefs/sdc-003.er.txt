@@ -1,10 +1,17 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e5fd1bda1d7447a98a6ecc58ac52a4bf5240e836. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 3523e234256fd3aee90e16c5393be3867eb13e21. An executor produced this change.
+
+CLAIMS:
+Done. The pre-add records read now refuses before any registration exists, a
+post-add read failure is retried before the ambiguous-records path is taken,
+and the residual strand is proven self-healing by a new regression test that
+asserts both the directory and the registration are gone. The round's
+verdict is recorded verbatim. Full battery green: verifier 101, router 135,
+registry 31, review lane 116.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check error paths and Windows path handling
-- check that callers outside the diff still satisfy any changed contract
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

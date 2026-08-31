@@ -1,4 +1,15 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 998b97830ac54d121c6e1b4903eb86e2068a5c9b. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 998b97830ac54d121c6e1b4903eb86e2068a5c9b. An executor produced this change.
+
+CLAIMS:
+The independent pass agreed with the primary scored pass on 16 of 20 items
+with zero ambiguity flags, missing the eighteen-of-twenty full-gate
+threshold, so the downstream work order stays blocked. The sealed subset
+drawn for the second boundary redraw scored 9 of 10, passing its own gate
+and validating that redraw. The misses outside the subset drove a narrow
+third redraw: one discriminator's evidence object was sharpened, the
+diagnosis corollary's threshold was defined, and one new discriminator was
+added; the rest were left unchanged. The corpus was marked burned, and a
+fresh blinded validation was scheduled before proceeding.
+
+Verify the diff on its own merits.

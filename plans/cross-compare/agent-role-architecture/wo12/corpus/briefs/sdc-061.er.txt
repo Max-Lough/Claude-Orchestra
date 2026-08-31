@@ -1,14 +1,15 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 6099bdca8bc1a3fbec5158e54bebdc379d8073a2.
-Claude Sonnet 5 · medium (Anthropic) produced this change; no fresh executor
-claims exist beyond the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 55b22b39891aa221d0ae95c19e72b14feb570f96. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
 
-CONSTRAINT COMPLIANCE (executor's hand-off summary):
-- The memory exception covers only CLAUDE.md / CLAUDE.local.md in the project,
-  config-dir memory (its CLAUDE.md and markdown under memory/memories), and
-  directorMemoryPatterns matches; every other path still falls to default law.
-- The managed Orchestra block rides through every permitted memory write
-  byte-for-byte: the write is simulated and the result is denied unless the
-  block survives unchanged, so markers alone cannot buy an edit through.
-- The denial is model-aware like the rest; dormant sessions never see it.
-- Version format unchanged (X.Y.Z), read from the VERSION file only.
+CLAIMS:
+The exception covers only the project memory files, config-directory memory,
+and `directorMemoryPatterns` matches; every other path still falls to
+default law. The managed block rides through every permitted memory write
+byte-for-byte — the write is simulated and the result denied unless the
+block survives unchanged, so markers alone cannot buy an edit through. The
+denial is model-aware; dormant sessions never see it. Version format
+unchanged (X.Y.Z), read from the VERSION file only. Verified against the
+22-case hook matrix plus an install/re-install/uninstall round-trip.
+
+Verify the diff on its own merits.

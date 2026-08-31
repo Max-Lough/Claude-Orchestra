@@ -4,6 +4,22 @@ Change under review: commit 9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5
 Base (its parent):   5d649d86ee6c68640a6435630e20766361cb69f6
 Commit subject:      WO-6: router, casting tables, review matrix, degradation machine, Q0 triggers
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Build the dispatch layer over the existing registry as a router module at
+the repo root. Transcribe the plan's casting tables — rungs, roles, hard
+never-rules, the computed review matrix and mandatory-review set, the
+pool-state degradation ladder, the automatic-trigger rules, and the measured
+liveness and reserve numbers — into a data file the router reads rather than
+hardcodes. Implement a route function that resolves a role, alias-aware,
+failing closed on any ownership-invariant violation; implement casting
+through a degradation machine so degraded pool states recast, suspend,
+defer, or restrict dispatch; implement reviewer selection with
+no-self-family logic computed from the full co-author set, failing closed on
+unattributed or mixed-family authorship; implement the pre-dispatch reserve
+gate and its confirmation-arming step; implement automatic companion-task
+creation so a missing required companion blocks dispatch. Assemble it into a
+single pipeline and wire the new suite into CI. Mark any default the plan
+leaves silent as an explicit unstated choice.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

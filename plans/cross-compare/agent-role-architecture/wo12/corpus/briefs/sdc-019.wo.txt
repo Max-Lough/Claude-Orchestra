@@ -1,40 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 322c51885c29234c88a5759faff96cac7e3f872c
+Change under review: commit e3e8ea9c66a33415e69b9601ccffde7e176a1853
 Base (its parent):   8bef840fd971fc792fd85fd41fa623990f1b5420
 Commit subject:      Carry pre-existing deep-plan rename work from working tree
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Carry the in-progress rename of the plan roundabout from its old name to
+`deep-plan` out of the working tree into this commit, complete and
+self-consistent across the harness. Rename the roundabout hook file and
+convert everything it carries: header and usage text, its
+environment-variable names, the engine header line, the UNAVAILABLE verdict
+token, the saved-response temp-directory prefix, and every prose mention.
+Rename the skill directory and update its frontmatter name and description,
+headings, runner path, verdict token, and log heading. Point `install.js` at
+the new runner filename in the runner constant, the install-time copy, and
+the uninstall list. Update the planner agent file, `ORCHESTRA.md`, and
+`README.md` end to end. Update the bundled-skill roster in
+`skills/orchestra-status/SKILL.md` so the status report names `deep-plan`.
+Change nothing else: this is a rename plus its documentation sync, kept as
+its own commit so it can be split out later.
 
-ORDER AS ISSUED (the intent, spelled out)
-Carry the in-progress rename of the plan roundabout from "ultra-plan" to
-"deep-plan" out of the working tree into this commit, complete and
-self-consistent across the harness:
-- Rename `hooks/orchestra-ultraplan.js` to `hooks/orchestra-deepplan.js` and
-  convert everything it carries: the file header and usage text, the
-  `ORCHESTRA_ULTRAPLAN_*` environment-variable names (MODEL, EFFORT,
-  TIMEOUT_MS, MAX_TOKENS), the `ULTRA-PLAN ENGINE` header line, the
-  `ULTRAPLAN_UNAVAILABLE` verdict token, the saved-response temp-directory
-  prefix, and every prose mention.
-- Rename `skills/ultra-plan/` to `skills/deep-plan/` and update the skill's
-  frontmatter `name` and `description`, its headings, the runner path it
-  names for dormant/paused sessions, its env-var references, its UNAVAILABLE
-  verdict token, and the plan-file log heading it appends.
-- Point `install.js` at the new runner filename: the runner constant, the
-  install-time copy and its progress line, and the uninstall removal list.
-- Update `agents/planner-gpt.md`: the frontmatter description, the prose, the
-  `node ...` invocation, the UNAVAILABLE token it relays, and the
-  configuration list.
-- Update `ORCHESTRA.md`: the `planner-gpt` roster row and the bundled-skills
-  paragraph.
-- Update `README.md` end to end: the repository tree, the installer step list,
-  the slash-command paragraph, the bundled-skills table row, the
-  stamped-wholesale note, the roundabout section and its heading, the env-var
-  table, the cost section, and the troubleshooting row.
-- Update the bundled-skill roster in `skills/orchestra-status/SKILL.md` so the
-  `/orchestra-status` report names `deep-plan` as a bundled skill rather than
-  the old name.
-Leave all other behavior unchanged — this is a rename plus its documentation
-sync, nothing else.
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

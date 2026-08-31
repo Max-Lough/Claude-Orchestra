@@ -1,9 +1,19 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 2c24df7342edc8c96a9ce455ccb5431eee7f98f9. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 2c24df7342edc8c96a9ce455ccb5431eee7f98f9. An executor produced this change.
+
+CLAIMS:
+The linked-worktree porcelain list is snapshotted across the add so the new
+entry is the identity and the working handle; real-path lookup is removed
+from the identity path, and creation, sweep, and teardown all address git's
+own spelling, with ambiguous records refusing fail-closed and teardown
+clearing both parent spellings behind a prefix guard. The timed-out lock
+guard now force-kills the child and skips kill-dependent sub-checks. The
+review verdict was recorded verbatim; suites: verifier 100, router 135,
+registry 31, review-lane 116 (twice), full CI-equivalent run green.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check error paths and Windows path handling
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

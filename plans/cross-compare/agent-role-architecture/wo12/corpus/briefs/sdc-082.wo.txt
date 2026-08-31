@@ -4,6 +4,20 @@ Change under review: commit ceeaabc6872eef5d5b35252f4179ed55159f83b5
 Base (its parent):   3d545b94e89cdfc8d026e0457e11225820453745
 Commit subject:      WO-8 round 5: structural sweep guard — the CRITICAL both CI and R0-EX5 caught
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Fix a critical finding in the abandoned-worktree sweep. Its prefix guard
+currently classifies any worktree path merely containing the checkout prefix
+as a leftover and removes its parent directory outright; on macOS and
+Windows continuous-integration runners that parent turns out to be the
+operating system's own temporary root when the fixture repository's own
+temp-directory name happens to match, and the same class reproduces
+independently for a legitimate worktree nested under a prefix-matching
+ancestor directory. Replace the substring classification with a structural
+check: only remove a parent whose name is actually the prefix pattern, skip
+the main worktree outright in every case, and only ever remove that literal
+prefix-named parent. Pin both reproducer shapes as regressions. Record the
+review verdict verbatim in the roster, and keep the tranche marked open
+pending the next review pass.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

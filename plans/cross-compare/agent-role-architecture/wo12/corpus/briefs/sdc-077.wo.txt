@@ -4,6 +4,18 @@ Change under review: commit e04005bb8a0b751bb26fbdd4755ee437af2cb240
 Base (its parent):   3900142ff195c91ae38de27f45abc58707b63eae
 Commit subject:      WO-8 round 5f: pre-add records as a hard prerequisite; residual strand self-healing pinned
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Fix a finding where a pre-add snapshot failure, combined with an alias being
+added and then removed, leaves a stranded canonical registration. Make the
+pre-add read a hard prerequisite that refuses the operation before
+registering anything. Retry a post-add read failure instead of failing
+outright. Prove that the residual opportunistic-registration path
+self-heals: an alias-created registration that never reaches active state
+must be reclaimed by the standing sweep on the next checkout creation. Add a
+regression test that pins this behavior, verifying that both the directory
+and the registration end up gone. Record the review verdict verbatim in the
+roster, and keep the tranche status accurately reflecting that further
+review remains outstanding.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

@@ -1,4 +1,15 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5. An executor produced this change.
+
+CLAIMS:
+74 checks went green, covering no-self-family behavior for every
+author-family combination, a 9,375-call sweep across all 625 bucket-state
+combinations confirming no mandatory-class dispatch ever produces a
+same-family closing verdict, context-shape rejection at dispatch, and an
+independent bidirectional transcription check against the plan's casting
+tables. Fail-closed loading was tamper-tested against registry corruption,
+never-rule violations, vendor/family mismatches, and off-ladder inputs. CI
+runs the suite; three defaults the plan leaves silent are marked as explicit
+unstated choices.
+
+Verify the diff on its own merits.

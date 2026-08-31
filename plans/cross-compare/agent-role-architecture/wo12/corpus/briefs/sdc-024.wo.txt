@@ -4,6 +4,17 @@ Change under review: commit 2c93004e7bed040128ef1f5e8036621612255c2c
 Base (its parent):   ff638b7d3b5a024730d9cc72baeb99367693f37a
 Commit subject:      WO-11 round 5: records-only post-APPROVE cleanup; round-4 delta verdict committed
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+After the round-4 delta review reaches approval, commit its verdict into the
+permanent record and close out round 5 as a records-only pass: no source or
+router changes, only documentation and status updates. Update the phase
+status file and the quartermaster README to reflect the closed round. Extend
+the band record with the round-5 disposition and append the newly reviewed
+round-3 findings write-up. Correct the existing round-2 review note where it
+has gone stale. Add the outstanding early-exercise report entry so the
+exercise ledger matches what actually ran. Keep every edit confined to
+records and status prose — do not touch any executable or configuration
+file, and do not reopen findings that round 4 already closed.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

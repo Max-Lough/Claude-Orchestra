@@ -1,37 +1,19 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 322c51885c29234c88a5759faff96cac7e3f872c.
-An executor produced this change; its own account of the work is recorded
-below. Verify the diff on its own merits.
+STATUS: DONE. The change is commit e3e8ea9c66a33415e69b9601ccffde7e176a1853. An executor produced this change.
 
-WHAT WAS DONE (executor's account):
-- Renamed `hooks/orchestra-ultraplan.js` -> `hooks/orchestra-deepplan.js` and
-  converted every identifier it carried: `ORCHESTRA_ULTRAPLAN_MODEL`,
-  `_EFFORT`, `_TIMEOUT_MS`, `_MAX_TOKENS`, the `ULTRA-PLAN ENGINE` header, the
-  `ULTRAPLAN_UNAVAILABLE` verdict token, the temp-directory prefix, and the
-  usage/help text.
-- Renamed `skills/ultra-plan/` -> `skills/deep-plan/` and updated frontmatter,
-  headings, runner path, env-var references, verdict token, and the
-  `## Deep-plan log` heading.
-- Updated `install.js` so the installer copies and uninstalls the new runner
-  filename.
-- Updated `agents/planner-gpt.md`, `ORCHESTRA.md`, and `README.md` end to end
-  — roster row, bundled-skills paragraph, repository tree, installer steps,
-  slash-command list, skills table, roundabout section, env-var table, cost
-  section, troubleshooting row.
-- Updated the bundled-skill roster in `skills/orchestra-status/SKILL.md`, so a
-  `/orchestra-status` run now names `deep-plan` as the bundled skill instead of
-  the old name.
+CLAIMS:
+The rename landed across the harness: the roundabout hook file and its
+identifiers, the skill directory with its frontmatter, headings, runner path
+and verdict token, the installer's runner constant, copy step and uninstall
+list, the planner agent file, `ORCHESTRA.md`, and `README.md` end to end.
+The bundled-skill roster in `skills/orchestra-status/SKILL.md` now names
+`deep-plan`. Verification: a case-insensitive repository-wide grep for the
+old name returns 0 matches, and an installer run into a scratch project
+reports the four bundled skills with `/deep-plan` among them.
 
-VERIFICATION: ran a case-insensitive repository-wide grep for
-`ultraplan|ultra-plan|ultra plan` at head — 0 matches, no file still carries
-the old name anywhere. Also ran the installer into a scratch project: it
-copies `.claude/hooks/orchestra-deepplan.js` and reports
-"Bundled skills installed: /deep-plan, /orchestra-plan, /orchestra-review,
-/orchestra-status".
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check claims against the code they describe
-- check for stale cross-references
-- check each claimed verification against the diff
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

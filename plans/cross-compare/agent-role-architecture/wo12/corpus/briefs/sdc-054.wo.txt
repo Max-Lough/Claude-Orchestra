@@ -4,6 +4,16 @@ Change under review: commit 5758a2d2b6146b613ea062946f7013e1b9dfa3c2
 Base (its parent):   ceeaabc6872eef5d5b35252f4179ed55159f83b5
 Commit subject:      Draw up R0-EX6: delta re-review order for the round-5 sweep fix
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Draw up the delta re-review order and its executor report for the round-5
+sweep fix. Pin the review to the two commits spanning the round-4 and
+round-5 checkpoints, enumerating each one individually rather than citing
+the range as a whole. Scope the audit to only what changed in that
+structural sweep guard fix, not a restatement of the earlier round's
+findings. Write both the order and the executor report as new files under
+roster/, matching the shape used for the other delta rounds. State
+explicitly that a clean verdict on this pin is what clears the pending work
+orders out of revise status.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

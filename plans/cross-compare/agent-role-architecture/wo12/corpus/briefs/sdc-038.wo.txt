@@ -1,9 +1,23 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit b723b041390a9442d456a40b24b00f1f506696c0
+Change under review: commit 10badb8ebee166e195dd79ee3eef18856eb5d2fc
 Base (its parent):   597a4bae65d867e020eff47f0183e87d623dee72
 Commit subject:      Restrict the review warmup to pinned checkouts; sync docs
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Restrict the review warmup to pinned checkouts and sync the docs. A warmup
+command writes — an engine import is not a read — so running it against a
+live tree means the review process modifying the user's working tree,
+exactly what a review must never do. The warmup exists because a fresh
+checkout lacks the generated artifacts a long-lived tree has, so pinned mode
+is also the only mode that needs it. Make a live-tree review say so in the
+preflight instead of silently writing, and name the flag that gets the
+warmup back. Cover it with two tests: the refusal is reported, and the file
+the warmup would have created does not appear in the project. IN SCOPE: the
+warmup's mode gate and its preflight line, those two tests, and the
+changelog, readme and field-validation wording. Constraint: leave the
+reviewer's tree-integrity check — its allowlist, its defaults and its
+reported wording — exactly as it is.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

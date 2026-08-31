@@ -1,4 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 5fb5142599200a217bef6e31cadad06675fef69c. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 5fb5142599200a217bef6e31cadad06675fef69c. An executor produced this change.
+
+CLAIMS:
+Creation-time identity capture no longer degrades to a lexical guess:
+checkout creation determines the canonical path itself and refuses the
+checkout, with registration cleaned up, when that lookup fails, and a
+poisoned-real-path regression is pinned. Both review-lane kill branches now
+poll the actual registration lock instead of sleeping a fixed duration. The
+records were corrected to name the true pull-request-head run and the
+superseded run's real outcome. Suites: verifier 99, router 135, registry 31,
+review-lane 116 (twice), full CI-equivalent run green.
+
+Verify the diff on its own merits.

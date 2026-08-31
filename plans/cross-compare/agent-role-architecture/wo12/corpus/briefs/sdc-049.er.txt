@@ -1,8 +1,16 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 5f62be6c7b811fe7f1d6e94f9e346d3712df6607. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 5f62be6c7b811fe7f1d6e94f9e346d3712df6607. An executor produced this change.
+
+CLAIMS:
+Wrote the re-review order and its accompanying executor report, 98 lines
+added across two new files, pinning the two-commit range under review by
+full sha so the diff being reviewed cannot drift. The order states the one
+residual strand awaiting a ruling and what a clean verdict would settle. No
+prior file was modified — both files are new.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
-- check claims against the code they describe
-- check for stale cross-references
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 340281a590f24063eeaaa25652d7d2a90d36c3f6. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit d5c41b9bf7e736a6b16482d11dda69148d7485d6. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The protocol section, the law and review-phase extensions, the executor and
+specialist rules, and the tiered runner are all in place, with the tier
+stamped into the engine header and the optional verification manifest
+carried into the reviewer's brief. Syntax checks pass on the installer and
+both hooks, and the runner's usage output shows the new tier option. The
+repository carries no test suite at this point.
+
+Verify the diff on its own merits.

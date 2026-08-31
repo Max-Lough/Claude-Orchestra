@@ -1,27 +1,16 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 9e207c9004bb4b430d4b530e70cef5dbdfe4144e. Claude Sonnet 5 · medium
-(Anthropic) produced this change. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 51663fc30a5dc432a79dcf0ffde4051d27cbcd21. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
 
-Every item of the order is delivered. router/aliases.json declares all 16
-retired names with their new (role, rung) pair, the legacy identity each
-keeps, and its ledger deprecation line; router.resolveSeat() reads the
-roster flag per order and falls back to the declarative rosterDefault
-('legacy'), so rollback is a flag flip on a live router with no reload.
-The map is loaded under the same fail-closed discipline as castings.json
-and charters.json: an unknown role, a rung the named role does not have,
-a missing or unknown-model legacy identity, and a bad rosterDefault each
-refuse construction.
+CLAIMS:
+All items delivered. `router/aliases.json` declares all 16 retired names
+with their (role, rung) pair, legacy identity and deprecation line;
+`resolveSeat()` reads the roster flag per order and defaults to 'legacy', so
+rollback is a flag flip. Old-name orders dispatch correctly under both
+flags, flipped mid-session, each emitting its deprecation line. The map
+loads fail-closed on an unknown role, a rung the named role does not have, a
+missing legacy identity, or a bad default. Verification: section 12 hands
+`createRouter` a tampered map whose alias names a rung its role lacks and
+asserts the "does not have" refusal; 93 passed.
 
-Verification: tests/router.test.js section 12 covers the order item by
-item, and the suite is green at 93 passed / 0 failed. The section's
-closing check writes a tampered copy of aliases.json to a temp dir with
-executor.new.rung set to a rung Builder does not have, hands it to
-createRouter({ aliasesFile }), and asserts construction throws with the
-"does not have" refusal — the tampered map fails the load closed. The
-flip is exercised mid-session on a single router instance (alternating
-roster values across successive resolveSeat calls); executor-heavy-xhigh
-lands on Principal's routed xhigh effort point rather than a second seat;
-detective carries the read-only pin onto the merged Investigator;
-reviewer and reviewer-codex both come back as the computed Reviewer, not
-a static casting; and all 16 retired names emit their deprecation line
-under both flag values.
+Verify the diff on its own merits.

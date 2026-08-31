@@ -4,6 +4,19 @@ Change under review: commit d3080957c86695a85ac59207b2e6a07988ef82fd
 Base (its parent):   7b0d9d0e4ce9cd81c18e4ebeda41a0e5d4b6d662
 Commit subject:      WO-10 construction band, part 2: Runner, Data Engineer, Interface Artisan, Spatial Specialist, Doc Writer
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Ship the remaining five construction-band domain seats — Runner, Data
+Engineer, Interface Artisan, Spatial Specialist, and Doc Writer — completing
+the ten-seat band already partly staffed. Build each file to match the final
+plan's seat list, cross-checked against the router's casting and charter
+tables. Spatial Specialist replaces the legacy modeler file per the router's
+alias entry; Data Engineer must carry its declared no-mirror exception for
+irreversible actions verbatim, not paraphrased. All five files ship under
+plain names with no collision against the top-level agent files. Do not edit
+the router's own files as part of this work; record any casting or lint gaps
+you find as follow-ons instead of papering over them. Run the full roster
+lint and both install-script lint modes, and run every required test suite,
+before calling the band done.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

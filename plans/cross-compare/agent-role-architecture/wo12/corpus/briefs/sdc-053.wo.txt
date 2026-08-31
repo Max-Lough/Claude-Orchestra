@@ -4,6 +4,16 @@ Change under review: commit 4e509b581a65caee8540ccde895c752823d8c9aa
 Base (its parent):   09a824e1f153fa656f6903b22fc8de2c9592edce
 Commit subject:      Record the R0-EX6 verdict; draw up R0-EX7 for the round-5b fix
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Record the verdict on the round-5 sweep re-review and draw up the next delta
+re-review order in the same pass. Confirm whether the earlier CRITICAL
+finding is closed, and separately assess whether the live-set comparison the
+sweep guard relies on is lexical rather than real-path, treating that as its
+own finding if so. Pin the follow-on order to the two commits spanning the
+current and next checkpoints, enumerated individually. Update the standing
+review-dispositions record to reflect both the confirmed closure and the
+newly identified issue, and note whether the issue was already fixed by the
+time the verdict lands, since that changes how urgently it needs tracking.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

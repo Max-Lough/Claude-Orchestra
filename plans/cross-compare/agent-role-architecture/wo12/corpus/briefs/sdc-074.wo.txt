@@ -4,6 +4,20 @@ Change under review: commit 6f0436051ea91bce53fd55e8f6383e383b8cee95
 Base (its parent):   dab5fe54f07ea9d54850dd796a7fb811a3fc58ed
 Commit subject:      Make the review engine hot-swappable via reviewEngine in orchestra.json
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Make the review engine selectable through a single configuration key in the
+project settings file, so the choice of which engine judges a review lives
+in one place rather than being hardcoded. Support at minimum a default
+engine, an alternate cross-vendor engine with a fallback to the default when
+the alternate is unavailable, and a dual mode where both engines review
+substantively and a coordinating role arbitrates between them. Keep both
+engines installed under one contract regardless of which is selected, so
+switching changes only who judges, never what gets checked. Grant the
+coordinating role a narrow read carve-out for the settings file itself, so
+it can check the active engine without spending a research step, and make
+clear this is a permission grant, not a change to any existing guard. Update
+the review-routing logic to honor the setting and document the key and the
+swap flow in the project's top-level documentation.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

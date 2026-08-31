@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 17a24d44150ee5f7baea2bb7787f03cac916d763. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 17a24d44150ee5f7baea2bb7787f03cac916d763. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+Verified with a 19-case smoke harness: the default carve-out for nested and
+relative paths and for each write operation, denial of non-markdown and
+traversal attempts, presence and absence of the deny hint, the pause file
+left unaffected, model stand-down behavior, allow/deny/outside-project
+handling for the pattern config, and fail-safe behavior on a broken config.
+Docs and installer notes were updated to match.
+
+Verify the diff on its own merits.

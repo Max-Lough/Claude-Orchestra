@@ -4,6 +4,19 @@ Change under review: commit 16484c959bf4315cdc1db02e71ab6569784cfb63
 Base (its parent):   1ab4a19ea73054b565e2fb890517ce0a286d720e
 Commit subject:      WO-9 evidence band: staff seats 4-8 (Scout, Researcher, LC Analyst, Investigator, Archivist)
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Staff the five remaining evidence-band seats: Scout, Researcher, LC Analyst,
+Investigator, and Archivist. Ship six role files total, since Archivist
+splits into two lane files (documents and images) rather than one file with
+two variants, because each lane is its own single casting with no mirror
+rung. Rename the Scout file to avoid colliding with the existing top-level
+scout file already in the repository. Carry the Investigator's read-only
+tool restriction over from the alias it is built from. For Researcher and LC
+Analyst, ship only the primary launcher file for now and leave the mirror
+rung unshipped, but record that gap explicitly rather than silently skipping
+it. Update the roster README and the band record to capture every naming and
+rung decision made here, and leave exercising and reviewing these seats for
+a later stage.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

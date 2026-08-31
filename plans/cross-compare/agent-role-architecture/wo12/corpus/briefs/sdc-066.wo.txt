@@ -1,50 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit f448a841e99f690eff9fb40af4e23a3dd980ff7c
+Change under review: commit 4ecfe5becd31a4100640f95142908e40fd47da31
 Base (its parent):   f95818329e8d54bd00d7590c140f06a78bd5ae15
 Commit subject:      Ask git, not the path strings, whether scratch is inside the repo
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Stop answering "is this scratch directory inside the repository?" by
+comparing path strings: short names, `/private/var`, separators and case
+each made a directory plainly inside the repository compare as outside,
+voiding the guarantee that a review must not write into the tree it is
+reviewing. Ask git instead: run `rev-parse --show-toplevel` from both the
+project and the candidate and compare git's two answers. Keep string
+comparison only as the backstop for a candidate git cannot see, and make it
+tolerate separators and case. Route every place that asks the question
+through the new check, both the pre-creation validation of a configured
+scratch root and the post-creation check on the runner's own directory,
+answering a candidate that does not exist yet from its deepest existing
+ancestor. Make the orphan sweep count a directory when it was deregistered
+or removed, naming any it could not delete. Have the isolation negative
+control report itself INCONCLUSIVE by name where it does not reproduce.
 
-ORDER — the sub-items this change was asked to deliver:
-
-1. Stop answering "is this scratch directory inside the repository?" by
-   comparing path strings. Windows reports `C:\Users\RUNNER~1\...` (an 8.3
-   short name) where realpath gives `C:\Users\runneradmin\...`; macOS reports
-   `/private/var/...` where the caller holds `/var/...`; separators and case
-   differ on both. Each of those made a directory plainly inside the
-   repository compare as outside, which silently voids the guarantee that a
-   review must not write into the tree it is reviewing. Ask git instead: run
-   `rev-parse --show-toplevel` from BOTH the project and the candidate scratch
-   location and compare git's two answers, which are in the same form by
-   construction. The same work tree means inside it, whatever the strings look
-   like; a different repository is genuinely outside, which is a legitimate
-   place to keep scratch. Keep string comparison only as the backstop for a
-   candidate git cannot see, and make that backstop tolerate separators and
-   case where the filesystem does.
-
-2. Route EVERY place that asks that question through the new git-backed check
-   — both the pre-creation validation of a configured scratch root (the one
-   that must refuse before anything is created, because "a review must not
-   write into the tree it is reviewing" is broken by the `mkdir` itself, not
-   only by the worktree that lands in it) and the post-creation check on the
-   scratch directory the runner picks for itself. A candidate that does not
-   exist yet must still be answered, by running git from the deepest ancestor
-   of it that does exist.
-
-3. Make the orphan-scratch sweep report the work it actually did. It counted
-   only successful directory removals, so it reported "reclaimed 0" after
-   reconciling git's records: on Windows the killed runner's engine child
-   outlives it and holds the directory open, so the removal fails while the
-   deregistration succeeds — the normal case there, not the exception. Count a
-   directory when it was deregistered OR removed, and name any directory that
-   could not be deleted as the harmless leftover it is.
-
-4. The git-isolation negative control — with isolation off, git should
-   complain about an unreadable global config path — does not reproduce under
-   Git for Windows, which resolves HOME/XDG differently. Rather than fail the
-   runner for its platform's diagnostics, or let a silent pass imply a proof
-   that did not happen, have that control report itself INCONCLUSIVE by name
-   where it does not reproduce, while it still reproduces on Linux and macOS.
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

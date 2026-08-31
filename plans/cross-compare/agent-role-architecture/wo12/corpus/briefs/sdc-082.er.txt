@@ -1,4 +1,12 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit ceeaabc6872eef5d5b35252f4179ed55159f83b5. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit ceeaabc6872eef5d5b35252f4179ed55159f83b5. An executor produced this change.
+
+CLAIMS:
+Identification of abandoned worktrees is now structural rather than
+substring-based: the main worktree is skipped outright, and only the
+prefix-named parent directory is ever removed. Both reproducer shapes, the
+operating-system temp-root collision and the legitimate nested worktree, are
+pinned as regressions. The review verdict was recorded verbatim. Suites:
+verifier 96, router 135, registry 31, full CI-equivalent run green.
+
+Verify the diff on its own merits.

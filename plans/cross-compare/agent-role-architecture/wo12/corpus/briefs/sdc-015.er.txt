@@ -1,29 +1,20 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit b43db95a64d8889bcf35f72451562577efe49853. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 77254e801d95ea6a56b8aaea720f261e88ec5f80. An executor produced this change.
 
-Changes made, per the order:
+CLAIMS:
+Leftover identification is now structural rather than a substring test: a
+candidate qualifies only when its own basename is `checkout` and its
+immediate parent's basename carries the module's temporary-directory prefix,
+and only that parent is ever removed. The main worktree is skipped outright
+as a second belt, and the live-checkout exemption is unchanged. Both
+reproducer shapes are pinned as regressions, and the re-review verdict and
+its dispositions are recorded. Nothing outside the sweep's identification
+and removal rule was altered. Suites green: verifier 96, router 135,
+registry 31.
 
-- The sweep's leftover identification is now structural instead of a
-  substring test: a candidate qualifies only when its own basename is
-  `checkout` and its immediate parent's basename carries the module's
-  mkdtemp prefix, and only that immediate parent is ever removed.
-- The main worktree — the first `git worktree list --porcelain` entry —
-  is skipped outright as a second belt.
-- The live-checkout exemption is unchanged: worktrees this process owns
-  are still skipped.
-- Two regression cases added, one per reproducer shape: a repository
-  whose own path carries the prefix as a substring is left alone, and a
-  legitimate worktree under a prefix-substring ancestor survives with its
-  untracked contents, an unrelated sibling file, and its registration
-  intact.
-- The delta re-review verdict is recorded verbatim as a roster document
-  and its dispositions folded into the round's disposition ledger.
-
-Nothing outside the sweep's identification and removal rule was altered.
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check error paths and Windows path handling
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

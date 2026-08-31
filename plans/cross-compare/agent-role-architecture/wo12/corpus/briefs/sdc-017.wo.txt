@@ -1,9 +1,22 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit b3cbbc4fad45ab4abbcf7e79440b7e3ff9136b14
+Change under review: commit cbd426483d775b4422a90551ea09150f3cdb033a
 Base (its parent):   09d7935626c35679efdee24324f3571bc82a8023
 Commit subject:      Bundle skills with the harness: orchestra-* skills stamped by the installer
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Ship the harness's own skills with the master and have the installer place
+them. Add three orchestra-namespaced skills: a live harness state report, a
+plan-file author sized to the plan section's rules, and an on-demand
+adversarial review of arbitrary changes, plus an authoring template that
+stays underscore-prefixed and is never installed. Stamp each skill directory
+into the project's skills folder wholesale on every install so stale files
+cannot linger. On uninstall, remove exactly the names the master knows,
+leave any skill the user authored under another name untouched, and prune
+the skills directory once it is empty. State in the governing document that
+these skills are orchestration-class and safe for the Director to invoke in
+its own context, and document the lifecycle, the namespace, and how to
+bundle a new one in the README.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

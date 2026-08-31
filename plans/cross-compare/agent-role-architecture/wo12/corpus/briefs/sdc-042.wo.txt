@@ -1,9 +1,22 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 9483fbdf5926f9ae2c0c17e7e199a8d152b29517
+Change under review: commit e24b7aef6e8ab8de8aa43ede574da998858d9da4
 Base (its parent):   c2c8060068f922d2b658d4f65481f58ef0fbb6de
 Commit subject:      Stamp .claude/hooks/package.json so hooks survive a "type": "module" target (v1.9.1)
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Stamp a package.json declaring commonjs type into the installed hooks
+directory on every install, so every hook script keeps CommonJS semantics
+inside a target whose own root package.json declares module type. Write it
+right after the core guard is copied and before any pack hooks land, with no
+hook renames and no reference updates, and remove it on uninstall alongside
+the other hook files. Keep the write idempotent: unchanged content stays
+silent, drifted content is overwritten with a single notice line, and the
+comparison is CRLF-tolerant so a byte-equivalent stamp from an autocrlf
+checkout triggers no notice and is not rewritten. Widen the stamped
+gitattributes file to pin JSON to eol=lf, and turn the uninstall-time
+gitattributes removal into a shape match rather than a byte-exact compare.
+Add regression coverage pinning each of those behaviors.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

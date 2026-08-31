@@ -1,8 +1,20 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 0b0148471f91dce49a8ea919349032fb41189626. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit 0b0148471f91dce49a8ea919349032fb41189626. An executor produced this change.
+
+CLAIMS:
+We ran the probe against the pinned corpus and gates: the catch-rate gate
+went 13/13 on the constructed misroutes under fresh-context, charter-only
+classification; the mandatory-gate-crossing check found zero crossings among
+the four gate-relevant misroutes across all 24 items; the hop-count gate
+held P95 at one hop with zero escalations. Telemetry showed 0/11 false
+bounces on the control set and 24/24 classifier agreement against the
+construction key, reported as a separability number rather than a
+live-intake accuracy claim. Both reserved edge cases recovered clean, and
+the routing gate is validated on this corpus.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
-- check claims against the code they describe
-- check for stale cross-references
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

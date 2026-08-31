@@ -4,6 +4,17 @@ Change under review: commit 1ab4a19ea73054b565e2fb890517ce0a286d720e
 Base (its parent):   5f62be6c7b811fe7f1d6e94f9e346d3712df6607
 Commit subject:      GATE PASSED: R0-EX11 returns APPROVE with zero findings — WO-5/WO-6 clear REVISE
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Record the final gate verdict for the delta-review track once it returns a
+clean approve with zero findings, and update the review dispositions file to
+reflect that the review it was blocking is now clear. The verdict file
+should show, in a compact form, the trajectory across the nine delta rounds
+that brought this review down from eleven major findings to zero — cite the
+round-by-round history rather than only the final number. Update the older
+dispositions document so the two prior tracks that this review had been
+holding in a needs-revision state are marked closed, and carry forward the
+two items already flagged as non-blocking follow-ons rather than dropping
+them.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

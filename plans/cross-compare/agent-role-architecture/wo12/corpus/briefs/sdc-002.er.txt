@@ -1,4 +1,15 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 591cbc5fc6e34284fd080d510cb6a008618c2149. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit dfc217060a2023b64c73730391146fc2a1ca9272. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+defaultForecast() now returns the measured 0.03 draw, and the rejected
+peak-derived arithmetic (0.504, ~0.6552) is preserved in the comments as the
+cautionary alternative, computed but unused. The README's R4 section records
+both derivations and notes the override path is unaffected. Pinned values
+updated (0.504 -> 0.03, 0.6552 -> the 0.08 floor), with an explicit check
+that the floor, not the 0.039 dynamic term, governs the default. Verified:
+node tests/quartermaster.test.js — 154 passed; node tests/router.test.js —
+135 passed.
+
+Verify the diff on its own merits.

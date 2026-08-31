@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 444eaf3c84b5fa8d370b4df6794fe6c71a84fa73. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 444eaf3c84b5fa8d370b4df6794fe6c71a84fa73. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+We produced the order and executor report for the cross-vendor gate
+re-review, pinning it to the commit range between the initial round and the
+round-2 fixes and routing it through the cross-vendor review lane. The two
+files add 136 lines with no deletions: 65 for the order and 71 for the
+executor report. The order states that this verdict decides whether the
+pending work orders clear revise status.
+
+Verify the diff on its own merits.

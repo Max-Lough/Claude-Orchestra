@@ -1,9 +1,21 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit b2f9dc9ee468de49733dbf2bde63ee241a2f9478
+Change under review: commit f0f578c7b76bb440490c0c2471fbb6e673a5b2a3
 Base (its parent):   8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c
 Commit subject:      WO-8 round 4: fix all four R0-EX4 findings; record the R0-EX4 verdict
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Fix all four findings from the latest cross-vendor review round and record
+its verdict. Make the touches lint compare path elements rather than a
+collision-prone comma join. Have the deep-plan glob matcher reproduce the
+retired regular expression's line-terminator classes exactly. Give the
+checkout module a startup sweep that reclaims abandoned worktrees whose
+directories still exist, since pruning alone only clears registrations whose
+directory is already gone; checkouts this process is actively using must
+stay exempt. Correct the review-order wording so a future order enumerates
+every commit in its pinned range instead of describing the range as a single
+commit. Record the review verdict verbatim in the roster, keep the tranche
+at REVISE pending the next round, and leave the suites green.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

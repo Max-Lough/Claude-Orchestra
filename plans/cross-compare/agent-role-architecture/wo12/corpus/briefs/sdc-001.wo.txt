@@ -1,28 +1,24 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 15ff0b69997c02fd791b79c790168fbaa06eb172
+Change under review: commit a14280eaabc8f0e61f01ddaeaf4ffa68123ede21
 Base (its parent):   7bf8e794306376835716c422313e85d997eaf7c0
 Commit subject:      WO-11 round 3: Sol·max holistic findings applied (exercise debt ledgered, R3 48h, records); verdicts committed
 
-Intent: the commit message above is the work order this change claims to
-implement. In full, the order was:
+ORDER:
+Apply the round-3 findings from the owner-requested holistic review of
+WO-11. First, strike the 7d `maxStaleMs` ruled in round 1 and replace it
+with a 48h ceiling — a weekly allowance moves too fast for a week-old
+reading to be evidence — keeping the 24h `maxFreshMs` window exactly as
+ruled. Second, carry the staleness disclosure onto the PUBLISHED
+bucket-state object (`stale`, `ageMs`), not only the human report, so a
+snapshot consumer or the dispatcher sees it too. Third, ledger the
+outstanding exercise debt and commit the round-3 verdicts and band records.
+The disclosure is ADDITIVE ONLY: staleness is disclosed, never discounted.
+Publish the recorded fraction exactly as read, leave `reserveBreached`,
+`throttleObserved` and `exhausted` computed exactly as they are today, and
+let no bucket's routed pool state change merely because its reading is
+stale. Do not modify `router/router.js`; the router keeps ownership of the
+ladder and the reserve formula.
 
-  Apply the WO-11 round-3 findings from the owner-requested Sol·max
-  holistic review. (1) Strike the 7d `maxStaleMs` ruled in round 1 and
-  replace it with a 48h ceiling — a weekly allowance moves too fast for a
-  week-old reading to be evidence — keeping the 24h `maxFreshMs` window as
-  ruled. (2) Carry the staleness disclosure onto the PUBLISHED bucket-state
-  object (`stale`, `ageMs`), not only the human report, so a snapshot
-  consumer or the dispatcher sees it too. (3) Ledger the outstanding
-  exercise debt and commit the round-3 verdicts and band records.
-
-  Constraint: the disclosure is ADDITIVE ONLY. Staleness is disclosed,
-  never discounted — publish the recorded fraction exactly as read, and
-  leave every routing-relevant field on the published state object
-  (`reserveBreached`, `throttleObserved`, `exhausted`) computed exactly as
-  it is today. No bucket's routed pool state may change merely because its
-  reading is stale-but-usable. Do not modify `router/router.js`; the router
-  keeps ownership of the ladder and the reserve formula.
-
-Audit the diff between base and head against that stated intent:
-correctness, unexplained changes, and concrete failure scenarios.
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

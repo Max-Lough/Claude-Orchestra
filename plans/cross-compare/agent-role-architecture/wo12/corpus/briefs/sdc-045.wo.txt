@@ -4,6 +4,19 @@ Change under review: commit ee5aec43e474f211aa237ddf4224e592e2f2dcd5
 Base (its parent):   9336392a2147dc7298e89ee5e2388032895652f2
 Commit subject:      WO-9 round 3: fix all delta-review findings (self-consistent sandbox facts, anchored discard grounds, exact counts)
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Fix every finding raised in the delta review of the evidence-band record:
+three MAJOR items and three MINOR items, plus the small nits noted alongside
+them. Correct researcher.md's description of the working tree (drop the
+inaccurate 'sandboxed checkout' language) and its sandbox-pinning line so it
+matches archivist and LC-analyst's already-accurate wording. Fix the status
+file's mis-stated pass/fail line for the two exercised seats and expand its
+follow-on list to match the band record's fuller one. Rewrite the discard
+grounds for the first incident onto only the two facts that actually support
+discarding it, removing the two grounds that do not hold up. Correct the
+source-count language in two files to the precise figures, fix the one
+misattributed omission, and note the search log's own numbering mismatch. Do
+not introduce new findings — only fix what the delta review already raised.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

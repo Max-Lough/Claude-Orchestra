@@ -1,8 +1,19 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit d9af01673efd2e098b5647d4d609398822bc031b. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit d9af01673efd2e098b5647d4d609398822bc031b. An executor produced this change.
+
+CLAIMS:
+The independent review confirmed every prior score, gate, and commit-order
+claim and returned three significant findings, all of which were applied:
+one discriminator was amended so displayed values count as data, the
+merge/redraw trigger was codified to count scored cross-pass disagreements,
+the prior redraw's validation claim was scoped precisely, and the
+related-pull-request index was corrected. The verdict and its dispositions
+were recorded verbatim in a dedicated review file, and the probe now
+validates the latest redraw as amended.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
-- check claims against the code they describe
-- check for stale cross-references
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

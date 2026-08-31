@@ -4,6 +4,21 @@ Change under review: commit c15f090444e551d88afabf66d117ac73253b8f2c
 Base (its parent):   901c8fcac7fe9905b1fe3714f1e857d713a74ab7
 Commit subject:      Score WO-7a (31/40 FAIL) and redraw the Part-4 class boundaries
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Score the initial forty-item corpus blind against the sealed reference pass,
+record the result against the pre-registered threshold, and if missed,
+redraw the class boundaries and apply the redraw to the plan. Diagnose the
+root cause of any concentrated disagreement pattern rather than patching
+individual items. Add a precedence rule to the relevant preamble: recall
+signals are hints only, and the requested work product plus the
+discriminator decide from intake text alone; rename the affected column to
+match. Amend the discriminators implicated by the disagreements and add new
+ones only where a genuine gap is found, plus phase-ordering rules for
+diagnosis-before-implementation and composite orders. Record the reference
+pass, the disagreement ledger, the redraw, and a post-redraw resolution of
+the flagged items, explicit that this is a scoring reference, not a
+validation. Gate the downstream order on a fresh blinded mini-corpus at a
+pro-rated threshold, since the original items are burned for blinding.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

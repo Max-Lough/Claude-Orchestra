@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 4ed7a03a48a8b2efb389b00aefcc89c18f5b96fe. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 4ed7a03a48a8b2efb389b00aefcc89c18f5b96fe. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+We traced the silent agent-load failure to a bare colon-space sequence
+inside an unquoted description field, which the harness's frontmatter repair
+pass cannot fix under a Windows-line-ending checkout. A one-word rewording
+in each of the three affected files removes the bare colon and restores
+parseability, for three insertions and three deletions total. We confirmed
+the frontmatter now parses for all three agent definitions.
+
+Verify the diff on its own merits.

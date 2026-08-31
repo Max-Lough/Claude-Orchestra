@@ -1,4 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+We audited the Conductor's transcript and ruled dispositions for the one
+violation found, recorded in a 569-line written audit. The P0 substrate was
+live-exercised end to end and its 340-line report checked in. The Architect
+exercise was attempted twice; the environment blocked it both times, and
+both 30-line transcripts are kept as the record. The status summary and band
+record were updated to the true per-seat outcomes, and the test suite gained
+31 lines of exercise-support changes.
+
+Verify the diff on its own merits.

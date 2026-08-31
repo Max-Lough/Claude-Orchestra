@@ -1,38 +1,23 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 98b83e0d2ab910d2de99251c61f9a9b8e69bdc7f
+Change under review: commit 540c60da758b26a3d1a7d9ad581751bad664d6f5
 Base (its parent):   16871cc06ce7a9569991a23a63fa2f1dfecdf25e
 Commit subject:      Add CI: the review-lane suite on Linux, Windows, and macOS
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Add continuous integration running the review-lane suite (`node
+tests/review-lane.test.js`) on Linux, Windows, and macOS across Node 20, 22
+and 24, for every push and pull request. Windows is the reason this exists:
+every field failure in this lane has happened there, the suite exited 0
+there even with failing cases, and no session on this repo has a Windows
+machine to check by hand. Fix in the same change the two Windows facts the
+matrix forces open: the runner cannot CreateProcess a `.js` file, so the
+tests hand it a `.cmd` shim, and `kill('SIGTERM')` there is
+TerminateProcess, so the Windows expectation is the SIGKILL one. Every leg
+of the matrix must run to completion and report its own result; one red leg
+may never cancel or hide the others, since seeing WHICH platforms disagree
+is the entire point. No build, bundle or publish step, and no linter job or
+new dependency — plain node and git only.
 
-ORDER AS ISSUED
-
-Add continuous integration that runs the review-lane suite
-(`node tests/review-lane.test.js`) on Linux, Windows, and macOS across
-Node 20, 22 and 24, for every push and every pull request. Windows is the
-reason this exists: every field failure in this lane has happened there,
-the suite exited 0 there even with failing cases through two rounds of
-real failures, and no session working on this repo has a Windows machine
-to check by hand. Fix, in the same change, the two Windows facts the
-matrix forces into the open — the runner cannot CreateProcess a `.js`
-file, so the tests hand it a `.cmd` shim; and `kill('SIGTERM')` there is
-TerminateProcess, so the Windows expectation is the SIGKILL one (the
-orphan survives and the next run's sweep reclaims it). Also give
-`helperSiblings` an environment form, `ORCHESTRA_CODEX_HELPER_SIBLINGS`,
-for symmetry with every other codex setting.
-
-Constraints on the CI job:
-
-- Every leg of the matrix must run to completion and report its own
-  result. A failure on one platform or Node version must never cancel or
-  hide the others — the entire point of the matrix is to see WHICH
-  platforms disagree, so a single red leg may not deprive the run of the
-  other legs' answers.
-- No build, no bundle, no publish step: the harness ships by `git pull`
-  plus `node install.js`.
-- No linter or formatter job, and no new dependency: this repository has
-  zero dependencies and no package.json, and the job must need nothing
-  but plain node and plain git.
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

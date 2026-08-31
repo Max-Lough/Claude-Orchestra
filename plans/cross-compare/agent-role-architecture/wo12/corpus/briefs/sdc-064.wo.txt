@@ -1,9 +1,22 @@
 REVIEW PACKET — review a completed, already-merged change.
 
-Change under review: commit 2c8ae11bf488938878b396112160196f09fd7942
+Change under review: commit 3721b6211b5503fa984af5c621a1f9adb1ef2242
 Base (its parent):   fc303481ed98af58433dce80b2ee4e70741a93db
 Commit subject:      Add heavy executor tier: two-tier execution for the Opus 5 era
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Split execution into two tiers, mirroring the recon split between the
+scouting and investigating roles: keep the routine executor for well-scoped
+orders and add a heavy executor for hard-tier orders where capability
+provably cuts review rounds. Preserve the full executor law in the new brief
+and add its heavy-tier rules — read escalation case files first, surface
+cross-subsystem seams, bias toward the minimal coherent change, report dead
+ends at top tier. Document two-tier routing at PLAN, the single-use heavy
+escalation rung, and the REVISE escalation path, and add an
+abstention-over-plausibility rule to the investigating brief: no uncited
+bridging of evidence gaps. Sync the roster everywhere it is listed — the
+installer's copy list, the README, and the status skill's company check,
+which must report the core company complete or name what is missing.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

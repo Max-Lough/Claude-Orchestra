@@ -4,6 +4,22 @@ Change under review: commit 7e90c673184cf492e80abad4b5db9521d56e690c
 Base (its parent):   444eaf3c84b5fa8d370b4df6794fe6c71a84fa73
 Commit subject:      WO-8 round 3: fix all five R0-EX3 findings; record the R0-EX3 verdict
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Address five findings from the latest review pass on the round-two code,
+while confirming that every round-one and round-two closure still holds.
+Make the reserve gate evaluate the requested rung so a degradation recast
+can never silently satisfy a stop condition, and disclose restrictions on
+every turn served through a fallback path. Replace the collapsed
+regular-expression glob matcher with a token-based dynamic-programming
+matcher, since separated wildcard runs broke the collapsed regex. Run output
+redaction before tail truncation so straddling credentials cannot leak a
+partial suffix. Install the trappable signal set on Windows, where one
+termination signal is untrappable, and document that startup pruning is the
+recovery path there. Remove literal NUL bytes left in the router source.
+Also exempt record documents from a lint by filename prefix, and separate a
+review-lane test case from interference by a genuine external tool
+installation already present on the host machine. Record the review verdict
+verbatim in the roster.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

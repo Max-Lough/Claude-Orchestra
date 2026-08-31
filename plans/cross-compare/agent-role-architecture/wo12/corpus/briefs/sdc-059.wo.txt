@@ -4,6 +4,20 @@ Change under review: commit 69127bdbb56e8ffaf6781b4ce27663fc710ca7f0
 Base (its parent):   a338bf5d6f4f2f096a79c2345d21a6ce565dc609
 Commit subject:      Apply the final owner-delegated model-selection ruling: merge I0/I1, add §4.0 total decision procedure, adopt routing-hypothesis error stance
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Close the probe/redraw cycle with a final ruling applied to the plan. Merge
+the two investigator classes into a single class — identical castings at
+every rung, a five-entry ledger, and the boundary treated as undecidable at
+intake — keeping the retired class name only as an alias; make no other
+class merges, holding the taxonomy at twenty-three classes. Add a new
+decision procedure: seven fixed-order steps where the first match decides,
+closing free entry into the later discriminator set. Amend three named
+discriminators and retire one. Reframe classification as a routing
+hypothesis, so safety rides on risk tier plus author family; restate the
+downstream gate as misroute recovery and rewrite the next work order to
+validate through the implemented router instead of a static reference set.
+Unblock the previously gated work order and close the outstanding pair
+ledger with its dispositions recorded.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

@@ -1,4 +1,14 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit 9336392a2147dc7298e89ee5e2388032895652f2. Claude Sonnet 5 · medium
-(Anthropic) produced this change; no fresh executor claims exist beyond
-the commit message. Verify the diff on its own merits.
+STATUS: DONE. The change is commit 9336392a2147dc7298e89ee5e2388032895652f2. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+We resolved all four major findings and the follow-on minors from the prior
+round across ten files (169 insertions, 46 deletions): the runner-semantics
+rewrite, the read-only reconciliation across three briefs, the
+incident-narrative rewrite, and two corrected exercise reports. The tool
+count was fixed to the actual four registered tools, and the casting rule's
+binding target was clarified. Each change was checked against the source
+file it corrects.
+
+Verify the diff on its own merits.

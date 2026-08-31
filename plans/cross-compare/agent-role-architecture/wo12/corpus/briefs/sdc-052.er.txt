@@ -1,8 +1,19 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit e5d3d9bb8209c6a3ecedf85bd1da206138e035bc. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit e5d3d9bb8209c6a3ecedf85bd1da206138e035bc. An executor produced this change.
+
+CLAIMS:
+We produced the order and executor report as new files under roster/,
+pinning the delta review to the two commits between the round-5b and
+round-5c checkpoints and enumerating each one individually. The two files
+add 119 lines with no deletions. We registered the reference runner's
+locked-worktree single-force sweep limitation as a follow-on for its own
+lane rather than treating it as an open finding here, and recorded that a
+clean verdict on this pin clears the pending work orders out of revise
+status.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
-- check claims against the code they describe
-- check for stale cross-references
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

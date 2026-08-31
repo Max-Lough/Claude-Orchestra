@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit acbf8f2cf6f98bb642a23df3734a0edd35c29e5f. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit acbf8f2cf6f98bb642a23df3734a0edd35c29e5f. An executor produced this change.
+
+CLAIMS:
+The default draw was replaced with the measured weekly figure from the
+throughput probe (twenty gate-class reviews drawing about three percent of
+the weekly window); the disclosed incident draw remains zero. The recomputed
+default reserve falls below the plan's floor, so the floor now governs the
+default rather than the dynamic term. Pinned test values were updated
+accordingly; the quartermaster suite (154 passed) and the router suite (135
+passed) both ran green.
+
+Verify the diff on its own merits.

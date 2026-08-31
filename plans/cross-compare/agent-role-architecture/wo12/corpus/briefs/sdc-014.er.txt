@@ -1,12 +1,17 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit b18151cb50c0510c83058c9a0f0b74a4420e004d.
-An executor produced this change; no fresh executor claims exist beyond the
-commit message. Verify the diff on its own merits. Both numbered items of the
-order are implemented, and every constraint stated in the order was observed
-as written.
+STATUS: DONE. The change is commit 43c83abdf1ae029789982b3af63a66189b37ff7a. An executor produced this change.
+
+CLAIMS:
+Both numbered items are in. The charter file loads fail-closed on a missing
+role, a class mismatch or an empty filter, and processReclassify() rejects
+an incomplete report, resolves aliases, counts the hop, feeds the per-pair
+ledger and escalates the second hop. It returns a new order object; the
+caller's order is unchanged after the call. route() and dispatch() are
+untouched and nothing new is required. Eight new checks; 82 green.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check error paths and Windows path handling
-- check every stated constraint in the order against the diff
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

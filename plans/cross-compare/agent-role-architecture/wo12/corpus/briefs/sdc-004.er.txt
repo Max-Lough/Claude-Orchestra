@@ -1,4 +1,12 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit f2c7bd1e271333ee3c3ed7e4e613043554eab6a2. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit b50470d0f9cf1ed6cd16b69d190f811066247d50. An executor produced this change.
+
+CLAIMS:
+Identity now derives from git's own records, fs.realpath is off that path,
+and a timed-out lock guard skips the kill-dependent sub-checks. The
+lock-cleared-before-SIGTERM precondition and the fail-closed teardown are
+pinned by the suite. Full CI-equivalent run is green: verifier 100, router
+135, registry 31, and review-lane 116 passed twice over (node
+tests/review-lane.test.js). The verdict is transcribed verbatim.
+
+Verify the diff on its own merits.

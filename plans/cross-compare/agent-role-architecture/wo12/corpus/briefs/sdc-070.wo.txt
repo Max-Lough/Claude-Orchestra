@@ -4,6 +4,20 @@ Change under review: commit 998b97830ac54d121c6e1b4903eb86e2068a5c9b
 Base (its parent):   632799567f3beab53c8309c7348bbaea938a8e23
 Commit subject:      Score WO-7a-ter blind: 16/20 FAIL, redraw-#2 subset 9/10 PASS; apply redraw #3
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Score a blind validation pass against the pre-registered follow-on corpus
+and record the result. Save and fingerprint the independent pass before the
+sealed corpus file is unsealed, then compare it against the primary scored
+pass and report agreement, disagreement, and ambiguity counts against the
+full-gate threshold of eighteen out of twenty. Separately score the sealed
+subset that was drawn to validate the second boundary redraw against its own
+gate. Where the full pass misses items outside that subset, draw a narrowly
+scoped third redraw limited to those misses: sharpen one discriminator's
+evidence-object definition, define the diagnosis corollary's threshold for
+when a cause counts as stated, and add one new discriminator for the
+affected class pair. Leave the other discriminators unchanged. Mark the
+corpus burned once scored, and require a fresh blinded corpus before the
+downstream work order proceeds.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

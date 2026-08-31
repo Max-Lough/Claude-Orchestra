@@ -4,6 +4,16 @@ Change under review: commit 8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c
 Base (its parent):   7e90c673184cf492e80abad4b5db9521d56e690c
 Commit subject:      Draw up R0-EX4: delta re-review order for the round-3 fixes
 
-Intent: the commit message above is the work order this change claims to
-implement. Audit the diff between base and head against that stated
-intent: correctness, unexplained changes, and concrete failure scenarios.
+ORDER:
+Draw up the delta re-review order and its executor report for the round-3
+fixes. Pin the review to the commit range spanning the round-2 and round-3
+checkpoints. Scope the audit to only what changed in that fix set, not a
+restatement of earlier rounds' findings. Write both the order and the
+executor report as new files under roster/, matching the shape used for the
+other delta rounds. State explicitly that a clean verdict on this pin is
+what clears the pending work orders out of revise status, so the audit's
+pass or fail outcome has a concrete downstream consequence spelled out up
+front.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

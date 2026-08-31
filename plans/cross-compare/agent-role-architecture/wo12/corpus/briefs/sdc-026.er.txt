@@ -1,10 +1,18 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit f98316fb13836c5f64576b8e13170c9264896a5d. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit f98316fb13836c5f64576b8e13170c9264896a5d. An executor produced this change.
+
+CLAIMS:
+We fixed all five major findings and six minor findings from the prior
+round, plus every outstanding nit, across ten files (121 insertions, 61
+deletions). The cross-vendor engine fault tally was recomputed as 10 of 14
+engine-reaching attempts with an explicit counting rule and per-attempt
+list, replacing the earlier approximate count. The rule-count table,
+conflict text, and dropped documentation rule were each checked against
+their source files before closing.
+
+Verify the diff on its own merits.
 
 HAZARD CHECKLIST (class-derived, unattributed):
 - check for unrequested mutation outside the stated scope
-- check test changes still test what they claim
-- check claims against the code they describe
-- check for stale cross-references
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

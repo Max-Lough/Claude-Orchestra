@@ -1,4 +1,13 @@
 EXECUTOR REPORT:
-STATUS: DONE. The change is commit a0e38c048be14a0757428808ccb03299cb55de1d. An executor produced this
-change; no fresh executor claims exist beyond the commit message. Verify
-the diff on its own merits.
+STATUS: DONE. The change is commit a0e38c048be14a0757428808ccb03299cb55de1d. An executor produced this change.
+
+CLAIMS:
+We declared the two exceptions in the casting table with a non-empty reason
+each, extended the lint script to accept a declared
+cross-family-by-construction exception and any no-mirror-for rung key, and
+fixed the name-collision check to also scan the specialists directory it had
+been missing. Three files changed (100 insertions, 7 deletions). The
+router's casting behavior was confirmed to fall through to the generic
+no-mirror path for the affected seat.
+
+Verify the diff on its own merits.

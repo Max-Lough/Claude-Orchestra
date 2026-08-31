@@ -606,8 +606,14 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   round 2; the ≤65% target is met. Residual hook found and opened as round 4: the five
   OO seeds carried literal `IN SCOPE:` / `Constraint:` labels no control had (their
   three highest-confidence hits) — being rewritten as prose, with a label-tell lint
-  added and a second blind test on a different draw. Round-3 delta reviews (both
-  lanes) and CI on `5c65946` in progress.
+  added and a second blind test on a different draw. CI on `5c65946`: 9/9 green
+  including macOS. **Round 4 applied** (`a908c12`): the label tell turned out to be
+  general — 15 distinct sentence-initial labels across 21 content files, every one
+  carried by a single population (e.g. `Verification:` in seeds, `Suites:` in
+  controls) — so the lint forbids inline labels outright and all 21 files were
+  rewritten as prose with every fact preserved (561 checks). Round-4 assembly and
+  verification, the second blind test (a disjoint 24-id draw), the round-3 delta
+  verdicts (both lanes) and a round-4 delta follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

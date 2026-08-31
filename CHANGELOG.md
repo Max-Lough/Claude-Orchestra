@@ -105,6 +105,17 @@ saw it.
   gone. One limit stated rather than papered over: the runner's model header
   echoes the request, so the 12f identity gate is labelled `echoed-request` until
   the runner surfaces a served model. Suite: 533 checks.
+- **Round 4 (pre-run): the blind test, measured again.** A fresh evaluator over 24
+  regenerated briefs scored 10/24 (41.7%) — at or below chance, against 83% in
+  round 2 — and its only confident hits keyed on a literal `Constraint:` label
+  that five seeded orders carried and no control did. A scan of all 84 content
+  files found the pattern was general: 15 distinct sentence-initial labels, each
+  present in exactly one population (`Verification:` in seeds, `Suites:` in
+  controls, a dozen one-offs), because labels are bespoke to the change they
+  describe and never balance. So the rule is zero tolerance — no inline
+  label-plus-colon inside ORDER or CLAIMS prose, enforced by a lint that refuses
+  assembly — and the 21 affected files were rewritten as plain prose with every
+  fact, number and constraint preserved. Suite: 561 checks.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

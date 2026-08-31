@@ -131,7 +131,18 @@ CLAIMS prose outright (a wider scan found such labels scattered in both populati
 different forms — "Verification:" in seeds, "Suites:" in controls — so both-or-neither
 was not a usable rule); every affected sentence in all 84 content files is rewritten as
 plain prose, and a second blind test on a different 24-id draw is recorded before any
-pass.
+pass. (x) *Round-5 amendment, after the round-3 delta review found corpus-level
+distributional tells a reader cannot see but a classifier can* (the controls had been
+authored into 135–160 / 65–95-word bands while the seeds kept 121–159 / 57–99, so the
+tails were seed-only; backticks occurred in 10 seeded orders and no control; two
+idioms occurred in 15 controls and no seed): both populations are authored to the SAME
+bands (ORDER 135–160, CLAIMS 65–95); backticks are forbidden in content prose; a
+**distribution lint** fails assembly on range floors/ceilings more than 8 words apart,
+sd ratios outside 0.6–1.6, digit-density means more than 1.5 per 100 words apart, any
+content 3-gram present in ≥4 artifacts of one population and none of the other, or any
+of five watched idioms with a per-population frequency ratio outside 0.5–2.0. The
+blind reader's result stands as the human-facing measure (chance); the lint is the
+classifier-facing one.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

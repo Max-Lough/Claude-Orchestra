@@ -551,6 +551,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   as pre-registered corpora. **Runs are gated twice:** P0 must show OU usable (owner
   `/status` readings — all four buckets fail closed as of this date) and the codex
   helper must be repaired (above). Phase 0 = 12-artifact pilot, 24 Codex reviews.
+  **Review chain (tooling commit `e14232d`, gate-class):** OpenAI lane attempt 1
+  `REVIEW_UNAVAILABLE` (Sol at capacity, vendor-side — recorded, not entered as a P0
+  throttle: a model-capacity refusal is not an allowance signal); Anthropic fallback
+  lane (disclosed `cross_family=false`) **REVISE — 4 CRITICAL, 12 MAJOR, 8 MINOR**
+  (`roster/wo12-r0-review-anthropic-1.md`): the P0 gate failed OPEN on any
+  quartermaster failure that was not the literal refusal string; the seeded variant's
+  commit metadata identified it at 100%; the answer key was reachable from the
+  reviewer's clone via `.git`; 14/30 seeded briefs were structurally distinguishable
+  from controls. OpenAI lane re-attempt 2 **REVISE — 3 CRITICAL, 10 MAJOR**
+  (`roster/wo12-r0-review-openai-2.md`, suites run), converging on the same lines.
+  Round 2 (pre-run, before any pass): protocol amendments committed at `10f44cb`
+  (real-commit metadata on variants; sanitized review clones with refs/reflogs removed
+  and objects pruned; briefs generated from per-artifact content files under one
+  structure; hazards from a closed kind-vocabulary; strict-path hits), 54 control
+  content files written, tooling fixes in progress — delta review to follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

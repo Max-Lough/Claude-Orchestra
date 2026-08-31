@@ -502,6 +502,55 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   the P15 reserve gate; D1 re-ruled in full (above); STATUS.md's false
   "all four Band A exercises" quick-start line corrected. Next:
   **WO-12**.
+- **WO-13 DISPOSED — no target (2026-08-31):** the metered lane WO-13 was written to
+  migrate (`orchestra-deepplan.js` → `api.openai.com/v1/responses` with
+  `OPENAI_API_KEY`, the `planner-gpt` launcher, `OPENAI_BASE_URL`) was deleted
+  outright in v2.0.0 with the `/deep-plan` retirement (CHANGELOG 2.0.0); a repo-wide
+  scan finds no live code path calling `api.openai.com` — every remaining
+  `OPENAI_API_KEY` mention is Codex-CLI auth documentation, a CLI-transport
+  diagnostic string, or a test of that diagnostic. Every cross-vendor lane already
+  runs on the subscription Codex CLI. The proof clause ("a full planning round
+  completed with `OPENAI_API_KEY` unset") is evidenced only partially: the A0
+  Architect exercise ran with the variable unset (`roster/wo11-a0-exercise-ex3.md`)
+  but did not complete a planning round because of the sandbox fault below; it
+  completes with the A0 exercise. Nothing to migrate; the order closes on that
+  proof.
+- **Codex sandbox fault ROOT-CAUSED (2026-08-31):** the "intermittent
+  `unsupported protocol version 6`" fault carried since WO-9 (now 23 engine-reaching
+  attempts, 18 faults) is a stale helper in the owner's codex install: the
+  `codex-command-runner.exe` inside the 0.151.0 release directory is byte-identical
+  to 0.147.0's and rejects the 0.151.0 CLI's spawn protocol v6 on the unified-exec
+  tool path; the legacy shell path works, so "intermittency" is which exec tool the
+  model picks on a turn. The Conductor's cwd hypothesis was REFUTED by a
+  fresh-context Investigator (historical faults at the repo root; live probes 5/5
+  faults across repo root, `%TEMP%`, `Projects\`), and the per-invocation disable
+  (`-c features.unified_exec=false`) was REFUTED 3/3. Record verbatim:
+  `roster/codex-fault-investigation-2026-08-31.md`. **Owner action: repair the
+  helper (replace with the newer runner already on disk, hash `8e47f597…`) or
+  reinstall codex 0.151.0.** Until then every Codex-side dispatch that must spawn a
+  shell — the owed E8/E1/A0 exercises (re-attempted today: 2 clean engine reaches,
+  6 faults; records `roster/wo10-e8-exercise-ex3.md`, `roster/wo10-e1-exercise-ex3.md`,
+  `roster/wo11-a0-exercise-ex3.md`) and the WO-12 X-Sol/X-Terra review lanes — is
+  blocked; this is the campaign's critical path. Debt rows re-attributed in
+  `roster/wo11-band-record.md` § Exercise debt.
+- **WO-12 IN PROGRESS (2026-08-31) — protocol pre-registered, corpora under
+  construction, NO trial pass run:** `wo12/wo12-protocol.md` (committed `68e2e97`
+  before any pass, WO-7b precedent) fixes decision rules for 12a/12c/12d/12e/12f/12h
+  and defers 12b to WO-15 with its rule stated. The shared **seeded-defect corpus**
+  (12d/12f/12h): 84 artifacts = 30 seeds (6 complementarity types × 5; 6 CRITICAL /
+  18 MAJOR / 6 MAJOR-preferred) + 54 controls drawn from this repository's history;
+  `corpus/base-pool.json` + control briefs committed at `135ea82` before seeding;
+  seeds are produced by fresh-context Opus seeders (one seed each, never shown the
+  key) as `P → C'` patches with a sealed `key.json`. Tooling: `build-corpus.js`
+  (reproducible variant materialization in a throwaway clone), `run-lane.js`
+  (P0-gated lane driver, `--yes`/`--dry-run`, one retry, verbatim results),
+  `score.js` (mechanical hits, Wilson intervals, 12f gate table, 12d union table);
+  `tests/wo12-tooling.test.js` in CI. 12a (8 bounded Builder orders + fixture), 12e
+  (12 hard-environment tasks + fixtures + scope-audited checker), 12c reduced form
+  (6 static-component orders + `check.js` with the WO-10 contrast algorithm) built
+  as pre-registered corpora. **Runs are gated twice:** P0 must show OU usable (owner
+  `/status` readings — all four buckets fail closed as of this date) and the codex
+  helper must be repaired (above). Phase 0 = 12-artifact pilot, 24 Codex reviews.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -521,7 +570,16 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-31, WO-11 executed)
+## Fresh-session quick start (as of 2026-08-31, WO-12 in progress)
+
+0. **Read the three 2026-08-31 entries above first** (WO-13 disposed; codex fault
+   root-caused — owner repairs the helper; WO-12 protocol + corpora built, no pass
+   run). The two owner actions that gate everything downstream: record `/status`
+   readings per bucket (`node quartermaster/quartermaster.js --record …`, once per
+   24h) and repair the codex command-runner helper. Then: WO-12 phase-0 pilot
+   (`node wo12/run-lane.js --lane X-Sol --phase 0 --dry-run` first), the owed
+   E8/E1/A0 exercises (orders in the band-record appendices), and the exercise-debt
+   ledger in `roster/wo11-band-record.md`.
 
 1. **WO-4–WO-8 are DONE. WO-9–WO-11 are STAFFED; exercise contract
    INCOMPLETE** (round 3, applying the owner-requested Sol·max holistic

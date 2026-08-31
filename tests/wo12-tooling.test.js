@@ -160,6 +160,18 @@ function writeStub(dir, name, body) {
   return p;
 }
 
+// §2.4's X-Terra lane config, for direct runOneAttempt calls.
+const LANE_TERRA = { model: 'gpt-5.6-terra', args: '-c model_reasoning_effort=medium' };
+
+// A terminal attempt that produced a real verdict. Round 3: a prior phase
+// counts as complete only when its records carry usable verdicts, not merely
+// rows (`checkPhaseOrder`), and resume treats such a record as done.
+const DONE_ATTEMPT = [{
+  wallMs: 1, verdict: 'APPROVE', status: 'COMPLETED', unavailable: false, unavailableReason: null,
+  engineHeader: 'REVIEW ENGINE: codex model: gpt-5.6-terra', integrityWarning: false,
+  stdout: 'VERDICT: APPROVE\n\nFINDINGS\n- none\n',
+}];
+
 /** A stub `quartermaster --state` that prints `json` on stdout and exits 0. */
 function qmStubJson(dir, name, json) {
   return writeStub(dir, name,
@@ -192,11 +204,11 @@ function miniLaneCorpus(repo, phase) {
   const briefs = path.join(dir, 'briefs');
   fs.mkdirSync(briefs, { recursive: true });
   const artifacts = [{
-    id: 'rl-001', kind: 'control', phase: phase === undefined ? 0 : phase, variant: 'V1',
+    id: 'sdc-001', kind: 'control', phase: phase === undefined ? 0 : phase, variant: 'V1',
     base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null,
   }];
-  fs.writeFileSync(path.join(briefs, 'rl-001.wo.txt'), 'work order\n');
-  fs.writeFileSync(path.join(briefs, 'rl-001.er.txt'), 'executor report\n');
+  fs.writeFileSync(path.join(briefs, 'sdc-001.wo.txt'), 'work order\n');
+  fs.writeFileSync(path.join(briefs, 'sdc-001.er.txt'), 'executor report\n');
   return { dir, briefs, keyPath: writeKey(dir, artifacts), artifacts };
 }
 
@@ -210,9 +222,9 @@ section('1. build-corpus.js — reproducibility across DIFFERENT local git confi
     fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  return a - b;\n}\n');
   });
   check('patch is non-empty', patch.trim().length > 0, patch);
-  fs.writeFileSync(path.join(work, 'r-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
   const keyPath = writeKey(work, [{
-    id: 'r-001', kind: 'seeded', phase: 0, variant: 'V1',
+    id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1',
     base: repo.base, commit: repo.commit, subject: REAL_SUBJECT,
     seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'app.js', lines: [1, 3], symbol: 'add' }, consequence: 'x', rationale: 'y', hazard_terms: [] },
   }]);
@@ -230,7 +242,7 @@ section('1. build-corpus.js — reproducibility across DIFFERENT local git confi
 
   function build(cloneRoot, cfg) {
     return spawnSync(process.execPath, [
-      BUILD_CORPUS, '--id', 'r-001', '--key', keyPath, '--corpus-dir', work, '--patches-dir', work,
+      BUILD_CORPUS, '--id', 'sdc-001', '--key', keyPath, '--corpus-dir', work, '--patches-dir', work,
       '--source-repo', repo.dir, '--clone-root', cloneRoot,
     ], { encoding: 'utf8', env: Object.assign({}, process.env, { GIT_CONFIG_GLOBAL: cfg }) });
   }
@@ -271,25 +283,25 @@ section('2. build-corpus.js — fail-closed on a patch that will not apply, and 
 {
   const repo = makeSourceRepo();
   const work = tmpDir('wo12-badpatch-');
-  fs.writeFileSync(path.join(work, 'b-001.patch'),
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'),
     'diff --git a/nope.js b/nope.js\n--- a/nope.js\n+++ b/nope.js\n@@ -1,1 +1,1 @@\n-nothing\n+something\n', 'utf8');
   const keyPath = writeKey(work, [{
-    id: 'b-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null,
+    id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null,
   }]);
-  const r = spawnSync(process.execPath, [BUILD_CORPUS, '--id', 'b-001', '--key', keyPath,
+  const r = spawnSync(process.execPath, [BUILD_CORPUS, '--id', 'sdc-001', '--key', keyPath,
     '--corpus-dir', work, '--patches-dir', work, '--source-repo', repo.dir, '--clone-root', path.join(work, 'clone')],
   { encoding: 'utf8' });
   check('exits non-zero on an unapplyable patch', r.status !== 0, 'status=' + r.status);
   check('error names the failure as a patch-apply problem', /patch failed to apply/i.test(r.stderr || ''), r.stderr);
 
   const work2 = tmpDir('wo12-emptypatch-');
-  fs.writeFileSync(path.join(work2, 'b-002.patch'), '', 'utf8');
+  fs.writeFileSync(path.join(work2, 'sdc-002.patch'), '', 'utf8');
   let threw = null;
   try {
     const clone = path.join(work2, 'clone');
     buildCorpusLib.ensureClone(repo.dir, clone);
     buildCorpusLib.materializeArtifact(
-      { id: 'b-002', kind: 'seeded', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT },
+      { id: 'sdc-002', kind: 'seeded', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT },
       clone, work2, {});
   } catch (e) { threw = e; }
   check('materializeArtifact throws on an empty patch file', !!threw, threw && threw.message);
@@ -302,9 +314,9 @@ section('3. build-corpus.js — control artifacts are the real commit, unmodifie
   const repo = makeSourceRepo();
   const work = tmpDir('wo12-control-');
   const keyPath = writeKey(work, [{
-    id: 'c-001', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null,
+    id: 'sdc-001', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null,
   }]);
-  const r = spawnSync(process.execPath, [BUILD_CORPUS, '--id', 'c-001', '--key', keyPath,
+  const r = spawnSync(process.execPath, [BUILD_CORPUS, '--id', 'sdc-001', '--key', keyPath,
     '--corpus-dir', work, '--patches-dir', work, '--source-repo', repo.dir, '--clone-root', path.join(work, 'clone')],
   { encoding: 'utf8' });
   check('control materialization exits 0', r.status === 0, r.stderr);
@@ -331,10 +343,10 @@ section('4. build-corpus.js — CRITICAL 3: the sanitized run clone cannot reach
   const patch = makePatchAgainstBase(repo, (d) => {
     fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  return a * b;\n}\n');
   });
-  fs.writeFileSync(path.join(work, 's-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
   const artifacts = [
-    { id: 's-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null },
-    { id: 's-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null },
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null },
   ];
   const keyPath = writeKey(work, artifacts);
   const clone = path.join(work, 'clone');
@@ -365,7 +377,7 @@ section('4. build-corpus.js — CRITICAL 3: the sanitized run clone cannot reach
 
   // Both kinds present identically: same ref state, same reachability shape.
   check('CRITICAL 3: seeded and control run clones present IDENTICALLY (both refless)',
-    git(['for-each-ref'], path.join(work, 'run', 's-001')) === git(['for-each-ref'], path.join(work, 'run', 's-002')));
+    git(['for-each-ref'], path.join(work, 'run', 'sdc-001')) === git(['for-each-ref'], path.join(work, 'run', 'sdc-002')));
 }
 
 section('5. build-corpus.js — clone reuse is verified, and a stale materialized.json cannot survive a partial --all');
@@ -441,6 +453,10 @@ section('5. build-corpus.js — clone reuse is verified, and a stale materialize
   }
 
   // The helpers, directly: both sides resolve even when the child is absent.
+  // Every path below is built with path.join from a REAL directory, never from
+  // a hardcoded literal — a `'C:\\A\\Repo'` literal is a single relative
+  // segment on POSIX, where `\` is not a separator, which is precisely how the
+  // round-3 version of this block passed on Windows and failed on macOS.
   {
     const absent = path.join(repoA.dir, 'does', 'not', 'exist', 'yet');
     const resolvedParent = buildCorpusLib.realResolve(repoA.dir);
@@ -449,18 +465,99 @@ section('5. build-corpus.js — clone reuse is verified, and a stale materialize
       buildCorpusLib.isInside(resolvedParent, resolvedAbsent), resolvedParent + ' vs ' + resolvedAbsent);
     check('realResolve keeps the non-existent remainder intact',
       resolvedAbsent.endsWith(path.join('does', 'not', 'exist', 'yet')), resolvedAbsent);
+
+    const holder = path.dirname(repoA.dir);
+    const repo = path.join(holder, 'repo');
     check('isInside is false for a sibling whose name merely shares a prefix',
-      buildCorpusLib.isInside('/a/repo', '/a/repo-backup') === false);
-    check('isInside is false for the same directory', buildCorpusLib.isInside('/a/repo', '/a/repo') === false);
-    check('isInside is true for a real child', buildCorpusLib.isInside('/a/repo', '/a/repo/child') === true);
+      buildCorpusLib.isInside(repo, path.join(holder, 'repo-backup')) === false);
+    check('isInside is false for the same directory', buildCorpusLib.isInside(repo, repo) === false);
+    check('isInside is true for a real child', buildCorpusLib.isInside(repo, path.join(repo, 'child')) === true);
     check('isInside does not mistake a directory named "..config" for an escape',
-      buildCorpusLib.isInside('/a/repo', '/a/repo/..config') === true);
-    if (buildCorpusLib.CASE_INSENSITIVE_FS) {
-      check('on a case-insensitive filesystem, case alone does not make a path "outside"',
-        buildCorpusLib.isInside('C:\\A\\Repo', 'c:\\a\\repo\\child') === true);
-      check('on a case-insensitive filesystem, samePath ignores case',
-        buildCorpusLib.samePath('C:\\A\\Repo', 'c:\\a\\repo') === true);
-    }
+      buildCorpusLib.isInside(repo, path.join(repo, '..config')) === true);
+  }
+
+  // Case semantics are decided by an EMPIRICAL probe of the filesystem, not by
+  // process.platform: macOS is case-insensitive on default APFS but sensitive
+  // on an APFSX volume, and Linux mounts exFAT/NTFS/ciopfs that fold case. The
+  // case-variant spelling below is built from a directory that EXISTS, so a
+  // case-insensitive filesystem can actually resolve it.
+  {
+    const parent = path.dirname(repoA.dir);
+    const base = path.basename(repoA.dir);
+    const variantBase = base === base.toLowerCase() ? base.toUpperCase() : base.toLowerCase();
+    check('the source repo\'s basename has letters to case-swap', variantBase !== base, base);
+    const variant = path.join(parent, variantBase);
+    const variantChild = path.join(variant, 'inner');
+
+    const insensitive = buildCorpusLib.isCaseInsensitiveFs(repoA.dir);
+    check('the case-sensitivity probe returns a boolean for this filesystem', typeof insensitive === 'boolean', String(insensitive));
+    // Cross-check the probe against the filesystem directly: does the
+    // case-variant spelling of an existing directory actually resolve?
+    let variantResolves = false;
+    try { fs.statSync(variant); variantResolves = true; } catch (e) { variantResolves = false; }
+    check('the probe agrees with a direct stat of the case-variant spelling',
+      insensitive === variantResolves, 'probe=' + insensitive + ' stat(' + variant + ')=' + variantResolves);
+
+    check('isInside on a case-variant spelling matches the probe, whatever the platform',
+      buildCorpusLib.isInside(repoA.dir, variantChild) === insensitive,
+      'probe=' + insensitive + ' isInside=' + buildCorpusLib.isInside(repoA.dir, variantChild));
+    check('samePath on a case-variant spelling matches the probe',
+      buildCorpusLib.samePath(repoA.dir, variant) === insensitive,
+      'probe=' + insensitive + ' samePath=' + buildCorpusLib.samePath(repoA.dir, variant));
+    check('ensureClone\'s nesting guard follows the probe on a case-variant destination', (() => {
+      let threw = null;
+      try { buildCorpusLib.ensureClone(repoA.dir, variantChild); } catch (e) { threw = e; }
+      const refusedForNesting = !!threw && /INSIDE the source repository/.test(threw.message);
+      try { fs.rmSync(variantChild, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+      return refusedForNesting === insensitive;
+    })(), 'probe=' + insensitive);
+
+    // Both simulated filesystems, via the env overrides. The override is
+    // consulted before the cache, so no flush is needed between modes.
+    const withEnv = (name, value, fn) => {
+      const old = process.env[name];
+      process.env[name] = value;
+      try { return fn(); } finally { if (old === undefined) delete process.env[name]; else process.env[name] = old; }
+    };
+    withEnv('WO12_FORCE_CASE_SENSITIVE', '1', () => {
+      check('SIMULATED case-SENSITIVE fs: a case-variant spelling is NOT inside',
+        buildCorpusLib.isInside(repoA.dir, variantChild) === false);
+      check('SIMULATED case-SENSITIVE fs: samePath distinguishes the two spellings',
+        buildCorpusLib.samePath(repoA.dir, variant) === false);
+      check('SIMULATED case-SENSITIVE fs: an exact-case child is still inside',
+        buildCorpusLib.isInside(repoA.dir, path.join(repoA.dir, 'inner')) === true);
+    });
+    withEnv('WO12_FORCE_CASE_INSENSITIVE', '1', () => {
+      check('SIMULATED case-INSENSITIVE fs: a case-variant spelling IS inside',
+        buildCorpusLib.isInside(repoA.dir, variantChild) === true);
+      check('SIMULATED case-INSENSITIVE fs: samePath folds the two spellings',
+        buildCorpusLib.samePath(repoA.dir, variant) === true);
+      check('SIMULATED case-INSENSITIVE fs: a genuinely different sibling is still outside',
+        buildCorpusLib.isInside(repoA.dir, path.join(parent, base + '-other', 'inner')) === false);
+    });
+    check('the override is consulted before the cache, so the natural probe is unchanged afterwards',
+      buildCorpusLib.isCaseInsensitiveFs(repoA.dir) === insensitive);
+  }
+
+  // The probe itself, on inputs whose answer is known independently.
+  {
+    check('swapCase toggles letters and leaves everything else alone',
+      buildCorpusLib.swapCase('Wo12-Src_9') === 'wO12-sRC_9', buildCorpusLib.swapCase('Wo12-Src_9'));
+    check('nearestExistingDir walks up to a directory that exists',
+      buildCorpusLib.nearestExistingDir(path.join(repoA.dir, 'a', 'b', 'c')) === buildCorpusLib.nearestExistingDir(repoA.dir),
+      buildCorpusLib.nearestExistingDir(path.join(repoA.dir, 'a', 'b', 'c')));
+    check('nearestExistingDir on an existing directory returns it', buildCorpusLib.nearestExistingDir(repoA.dir) === path.resolve(repoA.dir));
+    // A directory whose real casing we control, checked against a direct stat.
+    const probeRoot = tmpDir('wo12-CaseProbe-');
+    const mixed = path.join(probeRoot, 'MiXeDcAsE');
+    fs.mkdirSync(mixed);
+    let lowerResolves = false;
+    try { fs.statSync(path.join(probeRoot, 'mixedcase')); lowerResolves = true; } catch (e) { lowerResolves = false; }
+    buildCorpusLib.resetCaseProbeCache();
+    check('the probe on a freshly created mixed-case directory matches a direct stat',
+      buildCorpusLib.isCaseInsensitiveFs(mixed) === lowerResolves,
+      'probe=' + buildCorpusLib.isCaseInsensitiveFs(mixed) + ' stat(lowercased)=' + lowerResolves);
+    buildCorpusLib.resetCaseProbeCache();
   }
 
   // --all: a stale materialized.json must not outlive a failing run.
@@ -468,8 +565,8 @@ section('5. build-corpus.js — clone reuse is verified, and a stale materialize
   const stale = path.join(work2, 'materialized.json');
   fs.writeFileSync(stale, '[{"id":"STALE"}]\n', 'utf8');
   const keyPath = writeKey(work2, [
-    { id: 'a-001', kind: 'control', phase: 0, variant: 'V1', base: repoA.base, commit: repoA.commit, subject: REAL_SUBJECT, seed: null },
-    { id: 'a-002', kind: 'seeded', phase: 0, variant: 'V1', base: repoA.base, commit: repoA.commit, subject: REAL_SUBJECT, seed: null },
+    { id: 'sdc-001', kind: 'control', phase: 0, variant: 'V1', base: repoA.base, commit: repoA.commit, subject: REAL_SUBJECT, seed: null },
+    { id: 'sdc-002', kind: 'seeded', phase: 0, variant: 'V1', base: repoA.base, commit: repoA.commit, subject: REAL_SUBJECT, seed: null },
   ]);
   const r = spawnSync(process.execPath, [BUILD_CORPUS, '--all', '--key', keyPath, '--corpus-dir', work2,
     '--patches-dir', work2, '--source-repo', repoA.dir, '--clone-root', path.join(work2, 'clone')], { encoding: 'utf8' });
@@ -669,7 +766,7 @@ section('8. run-lane.js — --override-p0 is loud, ledgered, and stamped (MINOR 
   }
 
   // The runner's cwd must have been a SANITIZED clone, not the build clone.
-  const runClone = path.join(corpus.dir, 'run', 'rl-001');
+  const runClone = path.join(corpus.dir, 'run', 'sdc-001');
   check('CRITICAL 3: run-lane pointed the runner at the SANITIZED clone', fs.existsSync(path.join(runClone, '.git')), runClone);
   if (fs.existsSync(path.join(runClone, '.git'))) {
     check('CRITICAL 3: that clone has no refs at all', git(['for-each-ref'], runClone) === '', git(['for-each-ref'], runClone));
@@ -708,14 +805,14 @@ section('9. run-lane.js — --dry-run, empty phase, and the inert-override note'
     const dir = tmpDir('wo12-dryseed-');
     const briefs = path.join(dir, 'briefs');
     fs.mkdirSync(briefs, { recursive: true });
-    fs.writeFileSync(path.join(briefs, 'ds-001.wo.txt'), 'wo\n');
-    fs.writeFileSync(path.join(briefs, 'ds-001.er.txt'), 'er\n');
-    return { dir, briefs, keyPath: writeKey(dir, [{ id: 'ds-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null }]) };
+    fs.writeFileSync(path.join(briefs, 'sdc-001.wo.txt'), 'wo\n');
+    fs.writeFileSync(path.join(briefs, 'sdc-001.er.txt'), 'er\n');
+    return { dir, briefs, keyPath: writeKey(dir, [{ id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null }]) };
   })();
   const rSeed = runLane(['--lane', 'X-Sol', '--phase', '0', '--dry-run', '--key', seededCorpus.keyPath,
     '--briefs-dir', seededCorpus.briefs, '--source-repo', repo.dir, '--runner', path.join(seededCorpus.dir, 'x.js')]);
   check('NIT: a seeded dry-run prints the build-corpus command that produces the head, not an unusable placeholder',
-    /build-corpus\.js.*--id ds-001/.test(rSeed.stdout || '') && !/materialized at run time/.test(rSeed.stdout || ''), rSeed.stdout);
+    /build-corpus\.js.*--id sdc-001/.test(rSeed.stdout || '') && !/materialized at run time/.test(rSeed.stdout || ''), rSeed.stdout);
 }
 
 section('10. run-lane.js — appendResult durability (MAJOR 2)');
@@ -782,7 +879,7 @@ section('13. run-lane.js — §2.6 phase-0 stop condition (MAJOR 11)');
   fs.mkdirSync(briefs, { recursive: true });
   const artifacts = [];
   for (let i = 1; i <= 5; i++) {
-    const id = 'st-00' + i;
+    const id = 'sdc-00' + i;
     artifacts.push({ id, kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
     fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
     fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
@@ -1074,29 +1171,29 @@ section('23. assemble-key.js — the leakage exemption is EQUALITY, not a prefix
 
 section('24. assemble-key.js — the vendor lint covers the WHOLE brief, not one sentence (MAJOR 5)');
 {
-  const artifact = { id: 'v-001', variant: 'V1', subject: 'an ordinary subject', base: 'b' };
+  const artifact = { id: 'sdc-001', variant: 'V1', subject: 'an ordinary subject', base: 'b' };
   const head = 'a'.repeat(40);
   const bodyNamesVendor = 'EXECUTOR REPORT:\nSTATUS: DONE. The change is commit ' + head + '. An executor produced this change.\n\nCLAIMS:\nThe path is no longer weaker than the Codex path.\n\nVerify the diff on its own merits.\n';
   const f1 = [];
-  assembleKeyLib.vendorLint('v-001.er.txt', bodyNamesVendor, artifact, head, f1);
+  assembleKeyLib.vendorLint('sdc-001.er.txt', bodyNamesVendor, artifact, head, f1);
   check('MAJOR 5: a V1 report naming a vendor OUTSIDE the author sentence is now caught',
     f1.length === 1 && /"Codex"/.test(f1[0]), JSON.stringify(f1));
 
   const f2 = [];
-  assembleKeyLib.vendorLint('v-001.er.txt',
+  assembleKeyLib.vendorLint('sdc-001.er.txt',
     'CLAIMS:\nA medium-effort executor at $0.02/1k produced the change.\n', artifact, head, f2);
   check('MAJOR 5: effort AND price terms are now checked (they were unenforced in round 1)',
     f2.length >= 1 && /effort|price/.test(f2.join(' ')), JSON.stringify(f2));
 
   // V2's author line names the casting ON PURPOSE — that is the 12h factor.
-  const v2 = { id: 'v-002', variant: 'V2', subject: 'an ordinary subject', base: 'b' };
+  const v2 = { id: 'sdc-002', variant: 'V2', subject: 'an ordinary subject', base: 'b' };
   const v2er = assembleKeyLib.renderExecutorReport(v2, head, { order: '', claims: 'We widened the adder and pinned the regression in the suite; the run is green.' }, 'code');
   const f3 = [];
-  assembleKeyLib.vendorLint('v-002.er.txt', v2er, v2, head, f3);
+  assembleKeyLib.vendorLint('sdc-002.er.txt', v2er, v2, head, f3);
   check('the V2 author line is exempt (identity-visible by design), and nothing else in the V2 report is',
     f3.length === 0, JSON.stringify(f3));
   const f4 = [];
-  assembleKeyLib.vendorLint('v-002.er.txt', v2er.replace('Verify the diff', 'Codex should verify the diff'), v2, head, f4);
+  assembleKeyLib.vendorLint('sdc-002.er.txt', v2er.replace('Verify the diff', 'Codex should verify the diff'), v2, head, f4);
   check('a vendor word elsewhere in a V2 report is still caught', f4.length === 1 && /"Codex"/.test(f4[0]), JSON.stringify(f4));
 }
 
@@ -1150,61 +1247,61 @@ section('25. assemble-key.js — generated briefs and the structural-tell lint (
 
 section('26. assemble-key.js — hazard lists come from the CLOSED vocabulary, keyed by KIND (CRITICAL 4)');
 {
-  const a = { id: 'h-001', variant: 'V3', subject: 'an ordinary subject', base: 'x'.repeat(40) };
+  const a = { id: 'sdc-001', variant: 'V3', subject: 'an ordinary subject', base: 'x'.repeat(40) };
   const head = 'y'.repeat(40);
   const content = { order: Array(80).fill('word').join(' '), claims: Array(40).fill('claim').join(' ') };
   const er = assembleKeyLib.renderExecutorReport(a, head, content, 'code');
   const ok = [];
-  assembleKeyLib.hazardLint('h-001.er.txt', er, 'code', 'V3', ok);
+  assembleKeyLib.hazardLint('sdc-001.er.txt', er, 'code', 'V3', ok);
   check('a generated V3 report passes the hazard lint', ok.length === 0, JSON.stringify(ok));
   check('the hazard lines are VARIANTS.md v2\'s KIND=code list, verbatim and in order',
     assembleKeyLib.HAZARD_VOCABULARY.code.every((h) => er.indexOf('- ' + h + '\n') !== -1 || er.indexOf('- ' + h) !== -1), er);
 
   const typeDerived = er.replace(assembleKeyLib.HAZARD_VOCABULARY.code[0], 'check every stated constraint in the order against the diff');
   const bad = [];
-  assembleKeyLib.hazardLint('h-001.er.txt', typeDerived, 'code', 'V3', bad);
+  assembleKeyLib.hazardLint('sdc-001.er.txt', typeDerived, 'code', 'V3', bad);
   check('CRITICAL 4: a TYPE-derived hazard line (the round-1 100%-precision tell) is rejected',
     bad.some((f) => /OUTSIDE VARIANTS\.md v2's closed vocabulary/.test(f)), JSON.stringify(bad));
 
   const wrongKind = [];
-  assembleKeyLib.hazardLint('h-001.er.txt', er, 'docs', 'V3', wrongKind);
+  assembleKeyLib.hazardLint('sdc-001.er.txt', er, 'docs', 'V3', wrongKind);
   check('a hazard list that is not this artifact\'s KIND list is rejected', wrongKind.length >= 1, JSON.stringify(wrongKind));
 
-  const v1 = { id: 'h-002', variant: 'V1', subject: 's', base: 'x'.repeat(40) };
+  const v1 = { id: 'sdc-002', variant: 'V1', subject: 's', base: 'x'.repeat(40) };
   const v1er = assembleKeyLib.renderExecutorReport(v1, head, content, 'code');
   const v1f = [];
-  assembleKeyLib.hazardLint('h-002.er.txt', v1er, 'code', 'V1', v1f);
+  assembleKeyLib.hazardLint('sdc-002.er.txt', v1er, 'code', 'V1', v1f);
   check('a V1 report carries no hazard block and passes', v1f.length === 0 && v1er.indexOf(assembleKeyLib.HAZARD_HEADER) === -1, JSON.stringify(v1f));
   const v1bad = [];
-  assembleKeyLib.hazardLint('h-002.er.txt', v1er + '\n' + assembleKeyLib.HAZARD_HEADER + '\n- x\n', 'code', 'V1', v1bad);
+  assembleKeyLib.hazardLint('sdc-002.er.txt', v1er + '\n' + assembleKeyLib.HAZARD_HEADER + '\n- x\n', 'code', 'V1', v1bad);
   check('a hazard block on a NON-V3 artifact is caught', v1bad.length === 1 && /only V3 may/.test(v1bad[0]), JSON.stringify(v1bad));
 }
 
 section('27. assemble-key.js — word bands are enforced on EVERY artifact (VARIANTS.md v2)');
 {
   const f1 = [];
-  assembleKeyLib.wordBandLint('w-001', { order: Array(90).fill('w').join(' '), claims: Array(50).fill('c').join(' ') }, f1);
+  assembleKeyLib.wordBandLint('sdc-001', { order: Array(90).fill('w').join(' '), claims: Array(50).fill('c').join(' ') }, f1);
   check('an in-band content file passes', f1.length === 0, JSON.stringify(f1));
   const f2 = [];
-  assembleKeyLib.wordBandLint('w-002', { order: Array(59).fill('w').join(' '), claims: Array(50).fill('c').join(' ') }, f2);
+  assembleKeyLib.wordBandLint('sdc-002', { order: Array(59).fill('w').join(' '), claims: Array(50).fill('c').join(' ') }, f2);
   check('order at 59 words (one below the floor) fails', f2.length === 1 && /59 words/.test(f2[0]), JSON.stringify(f2));
   const f3 = [];
-  assembleKeyLib.wordBandLint('w-003', { order: Array(161).fill('w').join(' '), claims: Array(101).fill('c').join(' ') }, f3);
+  assembleKeyLib.wordBandLint('sdc-003', { order: Array(161).fill('w').join(' '), claims: Array(101).fill('c').join(' ') }, f3);
   check('order at 161 and claims at 101 (one above each ceiling) both fail', f3.length === 2, JSON.stringify(f3));
   const f4 = [];
-  assembleKeyLib.wordBandLint('w-004', { order: Array(60).fill('w').join(' '), claims: Array(30).fill('c').join(' ') }, f4);
+  assembleKeyLib.wordBandLint('sdc-004', { order: Array(60).fill('w').join(' '), claims: Array(30).fill('c').join(' ') }, f4);
   check('the floors themselves (60 / 30) are inclusive', f4.length === 0, JSON.stringify(f4));
   const f5 = [];
-  assembleKeyLib.wordBandLint('w-005', { order: Array(160).fill('w').join(' '), claims: Array(100).fill('c').join(' ') }, f5);
+  assembleKeyLib.wordBandLint('sdc-005', { order: Array(160).fill('w').join(' '), claims: Array(100).fill('c').join(' ') }, f5);
   check('the ceilings themselves (160 / 100) are inclusive', f5.length === 0, JSON.stringify(f5));
 }
 
 section('28. assemble-key.js — seed.json disagreeing with its base-pool slot is a hard failure naming both');
 {
   const dir = tmpDir('wo12-seedmismatch-');
-  const pool = { slots: [{ id: 'm-001', kind: 'seeded', phase: 0, variant: 'V1', base: 'b'.repeat(40), commit: 'c'.repeat(40), subject: 's', seed_slot: { type: 'CV', target_severity: 'MAJOR' } }] };
-  fs.writeFileSync(path.join(dir, 'm-001.seed.json'), JSON.stringify({
-    id: 'm-001', base: 'b'.repeat(40), commit: 'c'.repeat(40), phase: 0, variant: 'V2',
+  const pool = { slots: [{ id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: 'b'.repeat(40), commit: 'c'.repeat(40), subject: 's', seed_slot: { type: 'CV', target_severity: 'MAJOR' } }] };
+  fs.writeFileSync(path.join(dir, 'sdc-001.seed.json'), JSON.stringify({
+    id: 'sdc-001', base: 'b'.repeat(40), commit: 'c'.repeat(40), phase: 0, variant: 'V2',
     seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: 'x', rationale: 'y', hazard_terms: [] },
   }), 'utf8');
   let threw = null;
@@ -1329,13 +1426,13 @@ section('31. assemble-key.js — a missing content file is a hard failure, and -
   fs.mkdirSync(contentDir, { recursive: true });
   const pool = {
     slots: [
-      { id: 'k-001', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: null },
-      { id: 'k-002', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: null },
+      { id: 'sdc-001', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: null },
+      { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: null },
     ],
   };
-  fs.writeFileSync(path.join(contentDir, 'k-001.json'), JSON.stringify({ order: 'x', claims: 'y' }), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-001.json'), JSON.stringify({ order: 'x', claims: 'y' }), 'utf8');
   const missing = assembleKeyLib.checkRequirements(pool, { corpusDir: dir, briefsDir: path.join(dir, 'briefs'), contentDir });
-  check('a missing content file is reported as missing', missing.length === 1 && /k-002.*content\/k-002\.json/.test(missing[0]), JSON.stringify(missing));
+  check('a missing content file is reported as missing', missing.length === 1 && /sdc-002.*content\/sdc-002\.json/.test(missing[0]), JSON.stringify(missing));
   check('an absent BRIEF is NOT an input error any more (briefs are generated)', !missing.some((m) => /\.wo\.txt|\.er\.txt/.test(m)), JSON.stringify(missing));
 }
 
@@ -1350,21 +1447,21 @@ section('32. assemble-key.js — end-to-end: generation, lints-before-write, and
   const patch = makePatchAgainstBase(repo, (d) => {
     fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  return a - b;\n}\n');
   });
-  fs.writeFileSync(path.join(work, 'ak-001.patch'), patch, 'utf8');
-  fs.writeFileSync(path.join(work, 'ak-001.seed.json'), JSON.stringify({
-    id: 'ak-001', base: repo.base, commit: repo.commit, phase: 0, variant: 'V1',
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.seed.json'), JSON.stringify({
+    id: 'sdc-001', base: repo.base, commit: repo.commit, phase: 0, variant: 'V1',
     seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'app.js', lines: [1, 3], symbol: 'add' }, consequence: 'x', rationale: 'y', hazard_terms: ['a'] },
   }), 'utf8');
 
   const slots = [
-    { id: 'ak-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
-    { id: 'ak-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
-    { id: 'ak-003', kind: 'seeded', phase: 0, variant: 'V3', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
-    { id: 'ak-004', kind: 'control', phase: 0, variant: 'V3', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
+    { id: 'sdc-003', kind: 'seeded', phase: 0, variant: 'V3', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
+    { id: 'sdc-004', kind: 'control', phase: 0, variant: 'V3', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
   ];
-  fs.copyFileSync(path.join(work, 'ak-001.patch'), path.join(work, 'ak-003.patch'));
-  fs.writeFileSync(path.join(work, 'ak-003.seed.json'), JSON.stringify({
-    id: 'ak-003', base: repo.base, commit: repo.commit, phase: 0, variant: 'V3',
+  fs.copyFileSync(path.join(work, 'sdc-001.patch'), path.join(work, 'sdc-003.patch'));
+  fs.writeFileSync(path.join(work, 'sdc-003.seed.json'), JSON.stringify({
+    id: 'sdc-003', base: repo.base, commit: repo.commit, phase: 0, variant: 'V3',
     seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'app.js', lines: [1, 3], symbol: 'add' }, consequence: 'x', rationale: 'y', hazard_terms: ['a'] },
   }), 'utf8');
   const poolPath = path.join(work, 'base-pool.json');
@@ -1391,12 +1488,12 @@ section('32. assemble-key.js — end-to-end: generation, lints-before-write, and
     /## Cross-artifact base\/subject collisions/.test(md) && /collision group\(s\)/.test(md), md.slice(md.indexOf('## Cross-artifact'), md.indexOf('## Cross-artifact') + 900));
 
   // The generated briefs must be structurally indistinguishable.
-  const woSeed = fs.readFileSync(path.join(briefsDir, 'ak-001.wo.txt'), 'utf8');
-  const woCtl = fs.readFileSync(path.join(briefsDir, 'ak-002.wo.txt'), 'utf8');
+  const woSeed = fs.readFileSync(path.join(briefsDir, 'sdc-001.wo.txt'), 'utf8');
+  const woCtl = fs.readFileSync(path.join(briefsDir, 'sdc-002.wo.txt'), 'utf8');
   check('CRITICAL 4: a seeded and a control work order have the same line count and shape',
     woSeed.split('\n').length === woCtl.split('\n').length, woSeed.split('\n').length + ' vs ' + woCtl.split('\n').length);
-  const erSeedV3 = fs.readFileSync(path.join(briefsDir, 'ak-003.er.txt'), 'utf8');
-  const erCtlV3 = fs.readFileSync(path.join(briefsDir, 'ak-004.er.txt'), 'utf8');
+  const erSeedV3 = fs.readFileSync(path.join(briefsDir, 'sdc-003.er.txt'), 'utf8');
+  const erCtlV3 = fs.readFileSync(path.join(briefsDir, 'sdc-004.er.txt'), 'utf8');
   check('CRITICAL 4: a seeded and a control V3 report carry the SAME hazard checklist',
     erSeedV3.slice(erSeedV3.indexOf(assembleKeyLib.HAZARD_HEADER)) === erCtlV3.slice(erCtlV3.indexOf(assembleKeyLib.HAZARD_HEADER)));
 
@@ -1406,27 +1503,27 @@ section('32. assemble-key.js — end-to-end: generation, lints-before-write, and
   check('--check-only confirms every brief matches generation', /every brief on disk matches generation exactly/.test(rCheck.stdout || ''), rCheck.stdout);
 
   // A HAND-EDITED brief is refused: --check-only names it as drift.
-  const tamper = path.join(briefsDir, 'ak-001.wo.txt');
+  const tamper = path.join(briefsDir, 'sdc-001.wo.txt');
   fs.writeFileSync(tamper, fs.readFileSync(tamper, 'utf8') + '\nCONSTRAINT: do not touch the adjacent module.\n', 'utf8');
   const rDrift = spawnSync(process.execPath, [ASSEMBLE_KEY, '--check-only'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   check('CRITICAL 4: --check-only reports a hand-edited brief as DRIFT that will be overwritten',
-    /ak-001\.wo\.txt/.test(rDrift.stdout || '') && /DIFFER from generation/.test(rDrift.stdout || ''), rDrift.stdout);
+    /sdc-001\.wo\.txt/.test(rDrift.stdout || '') && /DIFFER from generation/.test(rDrift.stdout || ''), rDrift.stdout);
   const rFix = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   check('a re-run REGENERATES the hand-edited brief', rFix.status === 0 && !/CONSTRAINT: do not touch/.test(fs.readFileSync(tamper, 'utf8')), fs.readFileSync(tamper, 'utf8'));
 
   // MAJOR 3: lints run BEFORE key.json is written.
   const keyBefore = fs.readFileSync(path.join(work, 'key.json'), 'utf8');
-  fs.writeFileSync(path.join(contentDir, 'ak-002.json'),
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'),
     JSON.stringify({ order: goodOrder + ' The Codex path is now stronger.', claims: goodClaims }, null, 2), 'utf8');
   const rLint = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   check('MAJOR 3: a lint failure REFUSES the whole assembly', rLint.status !== 0 && /assembly REFUSED/.test(rLint.stderr || ''), rLint.stderr);
-  check('MAJOR 3: the lint failure names the offending vendor term and file', /"Codex"/.test(rLint.stderr || '') && /ak-002/.test(rLint.stderr || ''), rLint.stderr);
+  check('MAJOR 3: the lint failure names the offending vendor term and file', /"Codex"/.test(rLint.stderr || '') && /sdc-002/.test(rLint.stderr || ''), rLint.stderr);
   check('MAJOR 3: key.json is UNCHANGED — the lints ran before it was sealed',
     fs.readFileSync(path.join(work, 'key.json'), 'utf8') === keyBefore);
   check('MAJOR 3: no .tmp file is left behind by the refusal', !fs.existsSync(path.join(work, 'key.json.tmp')));
 
   // A word-band failure is likewise all-or-nothing.
-  fs.writeFileSync(path.join(contentDir, 'ak-002.json'), JSON.stringify({ order: 'too short', claims: goodClaims }, null, 2), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'), JSON.stringify({ order: 'too short', claims: goodClaims }, null, 2), 'utf8');
   const rBand = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   check('a word-band violation refuses the assembly and names the band', rBand.status !== 0 && /outside the 60–160 band/.test(rBand.stderr || ''), rBand.stderr);
   check('key.json is still unchanged after the word-band refusal', fs.readFileSync(path.join(work, 'key.json'), 'utf8') === keyBefore);
@@ -1440,33 +1537,33 @@ section('33. assemble-key.js — --import-legacy-briefs never overwrites an exis
   fs.mkdirSync(contentDir, { recursive: true });
   fs.mkdirSync(briefsDir, { recursive: true });
   const slots = [
-    { id: 'i-001', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
-    { id: 'i-002', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: null },
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed_slot: null },
   ];
-  fs.writeFileSync(path.join(briefsDir, 'i-001.wo.txt'),
+  fs.writeFileSync(path.join(briefsDir, 'sdc-001.wo.txt'),
     'REVIEW PACKET — review a completed, already-merged change.\n\nCommit subject:      s\n\nORDER:\n\nDo the bounded thing.\n\nAudit the diff between base and head against that stated intent.\n', 'utf8');
-  fs.writeFileSync(path.join(briefsDir, 'i-001.er.txt'),
+  fs.writeFileSync(path.join(briefsDir, 'sdc-001.er.txt'),
     'EXECUTOR REPORT:\nSTATUS: DONE. The change is commit ' + 'a'.repeat(40) + '. An executor produced this change. It was done and verified.\n', 'utf8');
   // A control content file another agent is writing concurrently.
-  const guarded = path.join(contentDir, 'i-002.json');
+  const guarded = path.join(contentDir, 'sdc-002.json');
   fs.writeFileSync(guarded, JSON.stringify({ order: 'CONTROL PROSE FROM ANOTHER AGENT', claims: 'ALSO THEIRS' }), 'utf8');
 
   const paths = { contentDir, briefsDir, corpusDir: work, importReportPath: path.join(contentDir, 'IMPORT-REPORT.md') };
   const result = assembleKeyLib.importLegacyBriefs({ slots }, paths);
-  check('only SEEDED slots are imported', result.written.length === 1 && result.written[0].id === 'i-001', JSON.stringify(result.written));
+  check('only SEEDED slots are imported', result.written.length === 1 && result.written[0].id === 'sdc-001', JSON.stringify(result.written));
   check('a control content file written by another agent is untouched',
     JSON.parse(fs.readFileSync(guarded, 'utf8')).order === 'CONTROL PROSE FROM ANOTHER AGENT');
   check('an out-of-band import is written anyway and FLAGGED, never dropped',
-    fs.existsSync(path.join(contentDir, 'i-001.json')) && result.flagged.length === 1, JSON.stringify(result.flagged));
+    fs.existsSync(path.join(contentDir, 'sdc-001.json')) && result.flagged.length === 1, JSON.stringify(result.flagged));
 
   // Re-running must not overwrite what it just wrote.
-  fs.writeFileSync(path.join(contentDir, 'i-001.json'), JSON.stringify({ order: 'HAND REVISED', claims: 'HAND REVISED' }), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-001.json'), JSON.stringify({ order: 'HAND REVISED', claims: 'HAND REVISED' }), 'utf8');
   const again = assembleKeyLib.importLegacyBriefs({ slots }, paths);
-  check('a second import leaves a hand-revised file alone', again.written.length === 0 && again.skippedExisting.indexOf('i-001') !== -1, JSON.stringify(again));
-  check('the revised prose survives', JSON.parse(fs.readFileSync(path.join(contentDir, 'i-001.json'), 'utf8')).order === 'HAND REVISED');
+  check('a second import leaves a hand-revised file alone', again.written.length === 0 && again.skippedExisting.indexOf('sdc-001') !== -1, JSON.stringify(again));
+  check('the revised prose survives', JSON.parse(fs.readFileSync(path.join(contentDir, 'sdc-001.json'), 'utf8')).order === 'HAND REVISED');
 
   const report = assembleKeyLib.renderImportReport(result, { slots });
-  check('the import report names the files needing a pass', /## Needing a human\/agent pass/.test(report) && /i-001/.test(report), report.slice(0, 1200));
+  check('the import report names the files needing a pass', /## Needing a human\/agent pass/.test(report) && /sdc-001/.test(report), report.slice(0, 1200));
 }
 
 // ============================ cross-vendor R0 record (openai-2) additions
@@ -1478,14 +1575,14 @@ section('34. build-corpus.js — i18n.commitEncoding cannot move the head sha (o
   const patch = makePatchAgainstBase(repo, (d) => {
     fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  // café naïve résumé\n  return a + b;\n}\n');
   });
-  fs.writeFileSync(path.join(work, 'i-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
   const keyPath = writeKey(work, [{
-    id: 'i-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null,
+    id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null,
   }]);
   function build(cloneRoot, encoding) {
     const cfg = path.join(work, 'gitconfig-' + encoding.replace(/[^a-z0-9]/gi, ''));
     fs.writeFileSync(cfg, '[i18n]\n\tcommitEncoding = ' + encoding + '\n\tlogOutputEncoding = ' + encoding + '\n', 'utf8');
-    return spawnSync(process.execPath, [BUILD_CORPUS, '--id', 'i-001', '--key', keyPath, '--corpus-dir', work,
+    return spawnSync(process.execPath, [BUILD_CORPUS, '--id', 'sdc-001', '--key', keyPath, '--corpus-dir', work,
       '--patches-dir', work, '--source-repo', repo.dir, '--clone-root', cloneRoot],
     { encoding: 'utf8', env: Object.assign({}, process.env, { GIT_CONFIG_GLOBAL: cfg }) });
   }
@@ -1509,7 +1606,7 @@ section('35. run-lane.js — phases run IN ORDER (openai-2 MAJOR run-lane.js:382
   const briefs = path.join(dir, 'briefs');
   fs.mkdirSync(briefs, { recursive: true });
   const artifacts = [];
-  for (const [id, phase] of [['po-1', 0], ['po-2', 0], ['po-3', 1]]) {
+  for (const [id, phase] of [['sdc-001', 0], ['sdc-002', 0], ['sdc-003', 1]]) {
     artifacts.push({ id, kind: 'control', phase, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
     fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
     fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
@@ -1527,12 +1624,12 @@ section('35. run-lane.js — phases run IN ORDER (openai-2 MAJOR run-lane.js:382
   check('openai-2 MAJOR run-lane.js:382: phase 1 refuses when phase 0 has never run',
     rNoPhase0.status !== 0 && /phase order/.test(rNoPhase0.stderr || '') && /phase 0/.test(rNoPhase0.stderr || ''), rNoPhase0.stderr);
 
-  fs.writeFileSync(path.join(dir, 'results-X-Terra-phase0.json'), JSON.stringify([{ id: 'po-1' }], null, 2), 'utf8');
+  fs.writeFileSync(path.join(dir, 'results-X-Terra-phase0.json'), JSON.stringify([{ id: 'sdc-001' }], null, 2), 'utf8');
   const rPartial = runLane(args, { WO12_QM_CMD: q(process.execPath) + ' ' + q(green) });
   check('phase 1 refuses when phase 0 is only PARTIALLY recorded, and names what is missing',
-    rPartial.status !== 0 && /phase 0 is INCOMPLETE/.test(rPartial.stderr || '') && /po-2/.test(rPartial.stderr || ''), rPartial.stderr);
+    rPartial.status !== 0 && /phase 0 is INCOMPLETE/.test(rPartial.stderr || '') && /sdc-002/.test(rPartial.stderr || ''), rPartial.stderr);
 
-  fs.writeFileSync(path.join(dir, 'results-X-Terra-phase0.json'), JSON.stringify([{ id: 'po-1' }, { id: 'po-2' }], null, 2), 'utf8');
+  fs.writeFileSync(path.join(dir, 'results-X-Terra-phase0.json'), JSON.stringify([{ id: 'sdc-001', attempts: DONE_ATTEMPT }, { id: 'sdc-002', attempts: DONE_ATTEMPT }], null, 2), 'utf8');
   const rOk = runLane(args, { WO12_QM_CMD: q(process.execPath) + ' ' + q(green) });
   check('phase 1 proceeds past the ordering check once phase 0 is complete (stops on --yes)',
     rOk.status !== 0 && /bill real OpenAI allowance/i.test(rOk.stderr || '') && !/phase order/.test(rOk.stderr || ''), rOk.stderr);
@@ -1554,17 +1651,17 @@ section('35. run-lane.js — phases run IN ORDER (openai-2 MAJOR run-lane.js:382
     check('the refused dry-run prints NO plan (no RUN ORDER block, no runner command)',
       !/DRY RUN — nothing executed/.test(rDryNone.stdout || ''), (rDryNone.stdout || '').slice(-600));
 
-    fs.writeFileSync(path.join(dryDir, 'results-X-Sol-phase0.json'), JSON.stringify([{ id: 'po-1' }], null, 2), 'utf8');
+    fs.writeFileSync(path.join(dryDir, 'results-X-Sol-phase0.json'), JSON.stringify([{ id: 'sdc-001' }], null, 2), 'utf8');
     const rDryPartial = runLane(dryArgs);
     check('a phase-1 --dry-run with a PARTIAL phase-0 file is refused and names what is missing',
-      rDryPartial.status === 1 && /phase 0 is INCOMPLETE/.test(rDryPartial.stderr || '') && /po-2/.test(rDryPartial.stderr || ''), rDryPartial.stderr);
+      rDryPartial.status === 1 && /phase 0 is INCOMPLETE/.test(rDryPartial.stderr || '') && /sdc-002/.test(rDryPartial.stderr || ''), rDryPartial.stderr);
 
     fs.writeFileSync(path.join(dryDir, 'results-X-Sol-phase0.json'), '{not json', 'utf8');
     const rDryCorrupt = runLane(dryArgs);
     check('a phase-1 --dry-run with a CORRUPT phase-0 file is refused rather than ignoring it',
       rDryCorrupt.status === 1 && /does not parse/.test(rDryCorrupt.stderr || ''), rDryCorrupt.stderr);
 
-    fs.writeFileSync(path.join(dryDir, 'results-X-Sol-phase0.json'), JSON.stringify([{ id: 'po-1' }, { id: 'po-2' }], null, 2), 'utf8');
+    fs.writeFileSync(path.join(dryDir, 'results-X-Sol-phase0.json'), JSON.stringify([{ id: 'sdc-001', attempts: DONE_ATTEMPT }, { id: 'sdc-002', attempts: DONE_ATTEMPT }], null, 2), 'utf8');
     const rDryOk = runLane(dryArgs);
     check('a phase-1 --dry-run with a COMPLETE phase-0 file prints the plan and exits 0',
       rDryOk.status === 0 && /DRY RUN — nothing executed/.test(rDryOk.stdout || '') && /RUN ORDER \(phase 1\)/.test(rDryOk.stdout || ''),
@@ -1595,8 +1692,14 @@ section('36. score.js — an empty/partial adjudication cannot PASS gate 3 (open
       artifacts.forEach((a, idx) => scored.push({
         id: a.id, lane, phase: 0, variant: 'V1', order: idx, kind: a.kind, type: a.seed ? 'CV' : null,
         severity: a.seed ? 'MAJOR' : null, hit: false, nearMisses: [], adjudicatedPromotion: false,
-        blockerFindings: a.kind === 'control' && controlBlockers.indexOf(a.id) !== -1 ? 1 : 0,
-        unavailableFinal: false, integrityWarning: false,
+        // Round 3: gate 3 tracks completeness per FINDING, so the findings
+        // themselves are what a control carries — TWO here, so an adjudication
+        // covering only one leaves the gate INCOMPLETE.
+        blockerFindings: a.kind === 'control' && controlBlockers.indexOf(a.id) !== -1 ? 2 : 0,
+        blockerFindingTexts: a.kind === 'control' && controlBlockers.indexOf(a.id) !== -1
+          ? ['[MAJOR] a.js:1 — first blocker on ' + a.id, '[MAJOR] a.js:9 — second blocker on ' + a.id]
+          : [],
+        unavailableFinal: false, noVerdict: false, integrityWarning: false,
         expectedModel: scoreLib.LANE_EXPECTED_MODEL[lane], servedModel: scoreLib.LANE_EXPECTED_MODEL[lane],
         identity: 'MATCHED', identityKnown: true, identityMismatch: false, identityUnknown: false,
         emptyFindingsSection: false, finalStatus: 'COMPLETED', attemptCount: 1, sourceFile: 'x',
@@ -1611,14 +1714,19 @@ section('36. score.js — an empty/partial adjudication cannot PASS gate 3 (open
   check('openai-2 CRITICAL score.js:415: `--adjudication []` is INCOMPLETE, never a 0% PASS',
     i3Empty.status === 'INCOMPLETE' && /NOT ADJUDICATED/.test(i3Empty.detail), i3Empty.status + ' — ' + i3Empty.detail);
 
-  const partial = [{ id: 'ct-1', lane: 'X-Terra', severity: 'MAJOR', finding: '[MAJOR] a.js:1 — x', verdict: 'REAL', second: 'REAL' }];
+  const partial = [{ id: 'ct-1', lane: 'X-Terra', severity: 'MAJOR', finding: '[MAJOR] a.js:1 — first blocker on ct-1', verdict: 'REAL', second: 'REAL' }];
   const gPartial = scoreLib.gate12f(withBlockers, key, partial, scoreLib.identityExclusions(withBlockers));
   const i3Partial = gPartial.items.find((i) => i.n === 3);
   check('a PARTIAL adjudication (blocker findings left unadjudicated) is INCOMPLETE and names them',
     i3Partial.status === 'INCOMPLETE' && /PARTIALLY ADJUDICATED/.test(i3Partial.detail) && /ct-2/.test(i3Partial.detail),
     i3Partial.status + ' — ' + i3Partial.detail);
 
-  const full = ['ct-1', 'ct-2', 'ct-3'].map((id) => ({ id, lane: 'X-Terra', severity: 'MAJOR', finding: '[MAJOR] a.js:1 — x', verdict: 'REAL', second: 'REAL' }));
+  const full = [];
+  for (const id of ['ct-1', 'ct-2', 'ct-3']) {
+    for (const t of ['[MAJOR] a.js:1 — first blocker on ' + id, '[MAJOR] a.js:9 — second blocker on ' + id]) {
+      full.push({ id, lane: 'X-Terra', severity: 'MAJOR', finding: t, verdict: 'REAL', second: 'REAL' });
+    }
+  }
   const gFull = scoreLib.gate12f(withBlockers, key, full, scoreLib.identityExclusions(withBlockers));
   const i3Full = gFull.items.find((i) => i.n === 3);
   check('a COMPLETE adjudication with no NOISE/NOISE gives a real 0% PASS', i3Full.status === 'PASS' && /^0 MAJOR\/CRITICAL/.test(i3Full.detail), i3Full.status + ' — ' + i3Full.detail);
@@ -1639,24 +1747,67 @@ section('37. score.js — §2.5 adjudicated HIT promotions reach recall (openai-
       { id: 'p-2', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } },
     ],
   };
+  // Round 3 (Anthropic MAJOR 4): a promotion's quote must be EVIDENCE — it has
+  // to appear verbatim in that lane's own verdict text for that artifact and
+  // cite the seed's locator file — and every entry must name a `lane`.
+  const REAL_QUOTE = '[CRITICAL] a.js:1 — the seeded fault, cited by the reviewer in prose';
+  const verdictText = 'REVIEW ENGINE: codex model: gpt-5.6-terra\nVERDICT: REVISE\n\nFINDINGS\n- ' + REAL_QUOTE + '\n';
   const scored = [
-    { id: 'p-1', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'CRITICAL' },
-    { id: 'p-2', lane: 'X-Terra', kind: 'seeded', hit: true, adjudicatedPromotion: false, order: 1, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'MAJOR' },
+    { id: 'p-1', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'CRITICAL', verdictText },
+    { id: 'p-2', lane: 'X-Terra', kind: 'seeded', hit: true, adjudicatedPromotion: false, order: 1, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'MAJOR', verdictText },
+    { id: 'p-1', lane: 'X-Sol', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', identity: 'MATCHED', attemptCount: 1, severity: 'CRITICAL', verdictText: 'VERDICT: APPROVE\n\nFINDINGS\n- none\n' },
   ];
   const adjudication = [
-    { id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: '[CRITICAL] a.js:1 — the seeded fault, cited by the reviewer in prose' },
+    { id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: REAL_QUOTE },
     { id: 'p-2', lane: 'X-Terra', verdict: 'MISS', quote: 'not a hit' },
     { id: 'p-1', lane: 'X-Sol', verdict: 'HIT' },
   ];
   const res = scoreLib.applyAdjudicatedPromotions(scored, key, adjudication);
-  check('openai-2 MAJOR score.js:318: an adjudicated HIT with a quoted line PROMOTES the mechanical miss',
+  check('openai-2 MAJOR score.js:318: an adjudicated HIT quoting the verdict PROMOTES the mechanical miss',
     scored[0].hit === true && scored[0].adjudicatedPromotion === true && scored[0].matchedVia === 'adjudication', JSON.stringify(scored[0]));
   check('the promotion is reported as its own count', res.promotions.length === 1 && res.promotions[0].id === 'p-1', JSON.stringify(res.promotions));
   check('adjudication NEVER demotes a mechanical hit', scored[1].hit === true && scored[1].adjudicatedPromotion === false);
   check('an adjudicated HIT with NO quoted line is REFUSED, and said so (§2.5 promotes "on a quoted citation")',
-    res.rejected.length === 1 && /no quoted line/.test(res.rejected[0].reason), JSON.stringify(res.rejected));
+    res.rejected.some((r) => /no quoted line/.test(r.reason)), JSON.stringify(res.rejected));
+  check('MAJOR 4: the promotion does NOT leak onto the other lane, whose verdict does not carry the quote',
+    scored[2].hit === false, JSON.stringify(scored[2]));
   check('no --adjudication file means no promotions and no rejections',
     JSON.stringify(scoreLib.applyAdjudicatedPromotions(scored, key, null)) === '{"promotions":[],"rejected":[]}');
+
+  // MAJOR 4's two demonstrated holes, closed.
+  {
+    const fresh = () => [{ id: 'p-1', lane: 'X-Terra', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, verdictText },
+      { id: 'p-1', lane: 'X-Sol', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, verdictText },
+      { id: 'p-1', lane: 'S-Opus', kind: 'seeded', hit: false, adjudicatedPromotion: false, order: 0, finalStatus: 'COMPLETED', attemptCount: 1, verdictText }];
+
+    const noLane = fresh();
+    const r1 = scoreLib.applyAdjudicatedPromotions(noLane, key, [{ id: 'p-1', verdict: 'HIT', quote: REAL_QUOTE }]);
+    check('MAJOR 4: an entry with NO `lane` is REFUSED, not applied to every lane at once',
+      r1.promotions.length === 0 && noLane.every((r) => r.hit === false) && /no `lane`/.test(r1.rejected[0].reason), JSON.stringify(r1));
+
+    const noId = fresh();
+    const r2 = scoreLib.applyAdjudicatedPromotions(noId, key, [{ lane: 'X-Terra', verdict: 'HIT', quote: REAL_QUOTE }]);
+    check('MAJOR 4: an entry with no `id` is REFUSED', r2.promotions.length === 0 && /no `id`/.test(r2.rejected[0].reason), JSON.stringify(r2));
+
+    const oneChar = fresh();
+    const r3 = scoreLib.applyAdjudicatedPromotions(oneChar, key, [{ id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: 'x' }]);
+    check('MAJOR 4: a one-character "quote" is REFUSED as too short to be a citation',
+      r3.promotions.length === 0 && /too short to be the quoted citation/.test(r3.rejected[0].reason), JSON.stringify(r3));
+
+    const notInVerdict = fresh();
+    const r3b = scoreLib.applyAdjudicatedPromotions(notInVerdict, key, [
+      { id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: '[CRITICAL] a.js:1 — a finding nobody actually wrote' }]);
+    check('MAJOR 4: a long, locator-citing quote that is NOT in the verdict is still REFUSED',
+      r3b.promotions.length === 0 && /does not appear in that lane's own verdict/.test(r3b.rejected[0].reason), JSON.stringify(r3b));
+
+    const wrongFile = fresh();
+    const wrongQuote = '[CRITICAL] other/file.js:1 — a real line of the verdict, but not the locator';
+    const wrongVerdict = 'VERDICT: REVISE\n\nFINDINGS\n- ' + wrongQuote + '\n';
+    for (const r of wrongFile) r.verdictText = wrongVerdict;
+    const r4 = scoreLib.applyAdjudicatedPromotions(wrongFile, key, [{ id: 'p-1', lane: 'X-Terra', verdict: 'HIT', quote: wrongQuote }]);
+    check('MAJOR 4: a quote that is in the verdict but does NOT cite the locator file is REFUSED',
+      r4.promotions.length === 0 && /does not cite the seed's locator file/.test(r4.rejected[0].reason), JSON.stringify(r4));
+  }
 }
 
 section('38. run-lane.js — a phase runs in an INTERLEAVED, deterministic, lane-independent order (round-1 MINOR 2)');
@@ -1708,7 +1859,7 @@ section('38. run-lane.js — a phase runs in an INTERLEAVED, deterministic, lane
   const real = [];
   for (let i = 1; i <= 6; i++) {
     const kind = i <= 3 ? 'seeded' : 'control';
-    const id = 'ro-' + String(i).padStart(3, '0');
+    const id = 'sdc-' + String(i).padStart(3, '0');
     real.push({ id, kind, phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
     fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
     fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
@@ -1749,7 +1900,7 @@ section('39. run-lane.js / score.js — runIndex is recorded, and the streak is 
   fs.mkdirSync(briefs, { recursive: true });
   const artifacts = [];
   for (let i = 1; i <= 3; i++) {
-    const id = 'ri-' + i;
+    const id = 'sdc-00' + i;
     artifacts.push({ id, kind: i === 1 ? 'seeded' : 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
     fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
     fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
@@ -1783,7 +1934,7 @@ section('39. run-lane.js / score.js — runIndex is recorded, and the streak is 
   // Corpus order ri-1, ri-2, ri-3; executed ri-3, ri-1, ri-2 with the last two
   // UNAVAILABLE — a streak of 2 as run, and a NON-streak read in corpus order.
   const streakScored = scoreLib.scoreRecords([
-    mkRec('ri-3', 0, 'COMPLETED'), mkRec('ri-1', 1, 'UNAVAILABLE'), mkRec('ri-2', 2, 'UNAVAILABLE'),
+    mkRec('sdc-003', 0, 'COMPLETED'), mkRec('sdc-001', 1, 'UNAVAILABLE'), mkRec('sdc-002', 2, 'UNAVAILABLE'),
   ], key, {}).scored;
   const withRunIndex = scoreLib.gate12f(streakScored, key, null, scoreLib.identityExclusions(streakScored));
   check('scoreRecords carries runIndex through', streakScored.every((s) => typeof s.runIndex === 'number'), JSON.stringify(streakScored.map((s) => s.runIndex)));
@@ -1815,15 +1966,15 @@ section('40. assemble-key.js — the KIND ruling is stated in the header AND in 
 
   // CONSTRUCTION.md — rendered, not assumed.
   const key = { version: 1, artifacts: [
-    { id: 'kd-1', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } },
-    { id: 'kd-2', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null },
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null },
   ] };
   const rows = [
-    { id: 'kd-1', kind: 'seeded', variant: 'V1', baseKind: 'code', orderWords: 90, claimsWords: 50 },
-    { id: 'kd-2', kind: 'control', variant: 'V1', baseKind: 'code', orderWords: 88, claimsWords: 47 },
+    { id: 'sdc-001', kind: 'seeded', variant: 'V1', baseKind: 'code', orderWords: 90, claimsWords: 50 },
+    { id: 'sdc-002', kind: 'control', variant: 'V1', baseKind: 'code', orderWords: 88, claimsWords: 47 },
   ];
-  const md = assembleKeyLib.renderConstructionMd(key, assembleKeyLib.computeTallies(key), { 'kd-1': 'h' }, rows,
-    { seeds: { 'kd-1': { target_severity: 'MAJOR', achieved_severity: 'MAJOR' } } },
+  const md = assembleKeyLib.renderConstructionMd(key, assembleKeyLib.computeTallies(key), { 'sdc-001': 'h' }, rows,
+    { seeds: { 'sdc-001': { target_severity: 'MAJOR', achieved_severity: 'MAJOR' } } },
     { woSkeletons: 1, erByVariant: { V1: 1 }, kinds: ['code'], asymmetricKinds: 0 });
   const mdFlat = md.replace(/\s+/g, ' ');
   check('CONSTRUCTION.md carries a "The KIND ruling" section', /### The KIND ruling/.test(md), md.slice(0, 400));
@@ -1850,19 +2001,19 @@ section('41. assemble-key.js — corpus/content/ is INPUT: a control file surviv
     fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  return a - b;\n}\n');
   });
   const slots = [
-    { id: 'cg-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
-    { id: 'cg-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
   ];
-  fs.writeFileSync(path.join(work, 'cg-001.patch'), patch, 'utf8');
-  fs.writeFileSync(path.join(work, 'cg-001.seed.json'), JSON.stringify({
-    id: 'cg-001', base: repo.base, commit: repo.commit, phase: 0, variant: 'V1',
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.seed.json'), JSON.stringify({
+    id: 'sdc-001', base: repo.base, commit: repo.commit, phase: 0, variant: 'V1',
     seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'app.js', lines: [1, 3], symbol: 'add' }, consequence: 'x', rationale: 'y', hazard_terms: ['a'] },
   }), 'utf8');
   // The round-1 briefs the importer mines for the SEEDED slot.
-  fs.writeFileSync(path.join(briefsDir, 'cg-001.wo.txt'),
+  fs.writeFileSync(path.join(briefsDir, 'sdc-001.wo.txt'),
     'REVIEW PACKET — review a completed, already-merged change.\n\nCommit subject:      ' + REAL_SUBJECT +
     '\n\nORDER:\n\n' + Array(90).fill('word').join(' ') + '\n\nAudit the diff between base and head against that stated intent.\n', 'utf8');
-  fs.writeFileSync(path.join(briefsDir, 'cg-001.er.txt'),
+  fs.writeFileSync(path.join(briefsDir, 'sdc-001.er.txt'),
     'EXECUTOR REPORT:\nSTATUS: DONE. The change is commit ' + 'a'.repeat(40) + '. An executor produced this change. ' +
     'We ' + Array(44).fill('verified').join(' ') + '.\n', 'utf8');
   const poolPath = path.join(work, 'base-pool.json');
@@ -1870,7 +2021,7 @@ section('41. assemble-key.js — corpus/content/ is INPUT: a control file surviv
 
   // A CONTROL content file, written by "another agent", with distinctive bytes
   // (trailing whitespace, CRLF, no trailing newline) so any rewrite shows up.
-  const controlFile = path.join(contentDir, 'cg-002.json');
+  const controlFile = path.join(contentDir, 'sdc-002.json');
   const CONTROL_BYTES = Buffer.from('{\r\n  "order": "' + Array(90).fill('control').join(' ') + '",\r\n  "claims": "' + Array(45).fill('theirs').join(' ') + '"   \r\n}', 'utf8');
   fs.writeFileSync(controlFile, CONTROL_BYTES);
   const controlDigest = () => fs.readFileSync(controlFile);
@@ -1884,14 +2035,14 @@ section('41. assemble-key.js — corpus/content/ is INPUT: a control file surviv
   check('INCIDENT GUARD: a pre-existing CONTROL content file survives --import-legacy-briefs byte-for-byte',
     controlDigest().equals(CONTROL_BYTES), JSON.stringify(controlDigest().toString('utf8')));
   check('the import reports the control file as left untouched, byte-for-byte, and NAMES it',
-    /left 1 existing content file\(s\) untouched, byte-for-byte \(cg-002\.json\)/.test(rImport.stdout || ''), rImport.stdout);
-  check('the seeded content file WAS created', fs.existsSync(path.join(contentDir, 'cg-001.json')));
+    /left 1 existing content file\(s\) untouched, byte-for-byte \(sdc-002\.json\)/.test(rImport.stdout || ''), rImport.stdout);
+  check('the seeded content file WAS created', fs.existsSync(path.join(contentDir, 'sdc-001.json')));
 
   // (b) a second import must not rewrite the seeded file it just created.
-  const seededBytes = fs.readFileSync(path.join(contentDir, 'cg-001.json'));
+  const seededBytes = fs.readFileSync(path.join(contentDir, 'sdc-001.json'));
   const rImport2 = spawnSync(process.execPath, [ASSEMBLE_KEY, '--import-legacy-briefs'].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   check('a second import exits 0 and writes nothing', rImport2.status === 0 && /wrote 0 content file\(s\)/.test(rImport2.stdout || ''), rImport2.stdout);
-  check('INCIDENT GUARD: the seeded content file is unchanged by a second import', fs.readFileSync(path.join(contentDir, 'cg-001.json')).equals(seededBytes));
+  check('INCIDENT GUARD: the seeded content file is unchanged by a second import', fs.readFileSync(path.join(contentDir, 'sdc-001.json')).equals(seededBytes));
   check('INCIDENT GUARD: the control file is STILL byte-identical after a second import', controlDigest().equals(CONTROL_BYTES));
 
   // (c) --check-only
@@ -1904,22 +2055,22 @@ section('41. assemble-key.js — corpus/content/ is INPUT: a control file surviv
   check('the full assembly exits 0', rFull.status === 0, (rFull.stderr || '') + (rFull.stdout || ''));
   check('INCIDENT GUARD: the control file survives a FULL ASSEMBLY byte-for-byte', controlDigest().equals(CONTROL_BYTES),
     JSON.stringify(controlDigest().toString('utf8')));
-  check('INCIDENT GUARD: the seeded content file survives a full assembly byte-for-byte', fs.readFileSync(path.join(contentDir, 'cg-001.json')).equals(seededBytes));
+  check('INCIDENT GUARD: the seeded content file survives a full assembly byte-for-byte', fs.readFileSync(path.join(contentDir, 'sdc-001.json')).equals(seededBytes));
   check('a full assembly writes only briefs/key/notes/CONSTRUCTION.md — content/ gains nothing',
-    fs.readdirSync(contentDir).sort().join(',') === 'IMPORT-REPORT.md,cg-001.json,cg-002.json', fs.readdirSync(contentDir).sort().join(','));
+    fs.readdirSync(contentDir).sort().join(',') === 'IMPORT-REPORT.md,sdc-001.json,sdc-002.json', fs.readdirSync(contentDir).sort().join(','));
 
   // (e) the unit guards themselves.
   let threwControl = null;
-  try { assembleKeyLib.guardedWriteContentFile(contentDir, { id: 'cg-002', kind: 'control' }, { order: 'x', claims: 'y' }); } catch (e) { threwControl = e; }
+  try { assembleKeyLib.guardedWriteContentFile(contentDir, { id: 'sdc-002', kind: 'control' }, { order: 'x', claims: 'y' }); } catch (e) { threwControl = e; }
   check('guardedWriteContentFile REFUSES a control slot outright',
     !!threwControl && /only SEEDED slots may be imported/.test(threwControl.message), threwControl && threwControl.message);
   check('…and the control file is untouched by the attempt', controlDigest().equals(CONTROL_BYTES));
 
   let threwExisting = null;
-  try { assembleKeyLib.guardedWriteContentFile(contentDir, { id: 'cg-001', kind: 'seeded' }, { order: 'x', claims: 'y' }); } catch (e) { threwExisting = e; }
+  try { assembleKeyLib.guardedWriteContentFile(contentDir, { id: 'sdc-001', kind: 'seeded' }, { order: 'x', claims: 'y' }); } catch (e) { threwExisting = e; }
   check('guardedWriteContentFile REFUSES to overwrite an existing seeded file (O_EXCL, not check-then-write)',
     !!threwExisting && /refusing to overwrite the existing/.test(threwExisting.message), threwExisting && threwExisting.message);
-  check('…and that file is untouched by the attempt', fs.readFileSync(path.join(contentDir, 'cg-001.json')).equals(seededBytes));
+  check('…and that file is untouched by the attempt', fs.readFileSync(path.join(contentDir, 'sdc-001.json')).equals(seededBytes));
 
   // (f) the after-the-fact assertion catches a deletion or a rewrite.
   const snap = assembleKeyLib.snapshotContentDir(contentDir);
@@ -1954,6 +2105,502 @@ section('41. assemble-key.js — corpus/content/ is INPUT: a control file surviv
     const nearContent = removals.filter((r) => /content/i.test(r));
     check(path.basename(f) + ' contains no removal call naming a content path', nearContent.length === 0, nearContent.join(' | '));
   }
+}
+
+// ============================================================ ROUND 3
+// roster/wo12-r0-review-anthropic-2.md and roster/wo12-r0-review-openai-3.md
+
+section('42. build-corpus.js — artifact ids are validated before any path join or recursive delete (openai-3 CRITICAL build-corpus.js:364)');
+{
+  const bad = ['../victim', 'sdc-1', 'sdc-0001', 'SDC-001', '', null, undefined, 'sdc-001/..', 'sdc-001\\..', '..', '.',
+    'sdc-001 ', ' sdc-001', 'sdc-abc', 42, {}];
+  for (const id of bad) {
+    let threw = null;
+    try { buildCorpusLib.assertSafeArtifactId(id, 'test'); } catch (e) { threw = e; }
+    check('unsafe artifact id ' + JSON.stringify(id) + ' is REFUSED', !!threw && /unsafe artifact id/.test(threw.message), threw && threw.message);
+  }
+  for (const id of ['sdc-001', 'sdc-084', 'sdc-999']) {
+    check('valid artifact id ' + id + ' is accepted', buildCorpusLib.assertSafeArtifactId(id, 'test') === id);
+  }
+
+  // The live scenario the record demonstrated: an id that escapes the run-clone
+  // root and deletes a sibling. The sentinel must survive.
+  const root = tmpDir('wo12-idesc-');
+  const victim = path.join(root, 'victim');
+  fs.mkdirSync(victim, { recursive: true });
+  const sentinel = path.join(victim, 'SENTINEL.txt');
+  fs.writeFileSync(sentinel, 'do not delete me', 'utf8');
+  const runRoot = path.join(root, 'runs');
+  fs.mkdirSync(runRoot, { recursive: true });
+
+  let threwPrepare = null;
+  try { buildCorpusLib.prepareRunClone(tmpDir('wo12-idesc-bc-'), 'a'.repeat(40), path.join(runRoot, '..', 'victim'), null); }
+  catch (e) { threwPrepare = e; }
+  check('openai-3 CRITICAL: prepareRunClone REFUSES a run dir whose final component is not an artifact id',
+    !!threwPrepare && /not a valid artifact id/.test(threwPrepare.message), threwPrepare && threwPrepare.message);
+  check('openai-3 CRITICAL: the sibling directory and its sentinel SURVIVE',
+    fs.existsSync(sentinel) && fs.readFileSync(sentinel, 'utf8') === 'do not delete me', sentinel);
+
+  // And the same id is refused at the door, by loadKey and materializeArtifact.
+  const kdir = tmpDir('wo12-idkey-');
+  const keyPath = path.join(kdir, 'key.json');
+  fs.writeFileSync(keyPath, JSON.stringify({ version: 1, artifacts: [{ id: '../victim', kind: 'control', phase: 0, base: 'b', commit: 'c' }] }), 'utf8');
+  let threwKey = null;
+  try { buildCorpusLib.loadKey(keyPath); } catch (e) { threwKey = e; }
+  check('loadKey REFUSES a key.json carrying an unsafe id', !!threwKey && /unsafe artifact id/.test(threwKey.message), threwKey && threwKey.message);
+  let threwMat = null;
+  try { buildCorpusLib.materializeArtifact({ id: '../victim', kind: 'control', base: 'b', commit: 'c' }, kdir, kdir, {}); } catch (e) { threwMat = e; }
+  check('materializeArtifact REFUSES an unsafe id before touching git', !!threwMat && /unsafe artifact id/.test(threwMat.message), threwMat && threwMat.message);
+}
+
+section('43. build-corpus.js — the key-absence assertion is PATH-based and never skips silently (anthropic-2 MINOR)');
+{
+  const repo = makeSourceRepo();
+  const keyRel = 'plans/cross-compare/agent-role-architecture/wo12/corpus/key.json';
+  fs.mkdirSync(path.join(repo.dir, path.dirname(keyRel)), { recursive: true });
+  fs.writeFileSync(path.join(repo.dir, keyRel), '{"version":1,"artifacts":[]}\n', 'utf8');
+  git(['add', '-A'], repo.dir);
+  git(['commit', '-q', '-m', 'add a key the run clone must not reach'], repo.dir);
+
+  const work = tmpDir('wo12-keypath-');
+  const clone = path.join(work, 'clone');
+  buildCorpusLib.ensureClone(repo.dir, clone);
+  const runDir = path.join(work, 'run', 'sdc-001');
+  // Materialize the CONTROL at the pre-key base: its tree has no wo12/ at all.
+  const mat = buildCorpusLib.materializeArtifact(
+    { id: 'sdc-001', kind: 'control', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT },
+    clone, work, { keyBlobSha: null, runCloneDir: runDir });
+  check('the sanitized clone is built even with NO key blob sha available', !!mat.runCloneDir);
+  check('anthropic-2 MINOR: the path-based assertions ran', (() => {
+    const r = buildCorpusLib.sanitizeClone(runDir, mat.head, null);
+    return r.pathAssertionsRan === true && r.keyBlobChecked === false;
+  })(), 'sanitizeClone should report which assertions ran');
+  check('the corpus path is absent from the run clone\'s tree', gitRaw(['ls-tree', '-r', '--name-only', 'HEAD', '--', 'plans/cross-compare/agent-role-architecture/wo12/corpus'], runDir).stdout.trim() === '');
+
+  // A clone that DOES carry the corpus path must be caught by the path rule
+  // even when the blob sha is unavailable — the case the blob-only assertion
+  // could not see.
+  const dirty = path.join(work, 'dirty');
+  spawnSync('git', ['clone', '--quiet', repo.dir, dirty], { encoding: 'utf8' });
+  git(['checkout', '--quiet', '--detach', 'HEAD'], dirty);
+  let threwDirty = null;
+  try { buildCorpusLib.sanitizeClone(dirty, git(['rev-parse', 'HEAD'], dirty), null); } catch (e) { threwDirty = e; }
+  check('anthropic-2 MINOR: a clone whose HEAD tree carries the corpus is REFUSED by the PATH rule, with no blob sha in hand',
+    !!threwDirty && /TREE contains corpus path/.test(threwDirty.message), threwDirty && threwDirty.message);
+}
+
+section('44. run-lane.js — no-verdict runs are UNAVAILABLE, retried, and counted (anthropic-2 MAJOR 3)');
+{
+  check('NO_VERDICT_LINE is a dead status', runLaneLib.isDeadStatus('NO_VERDICT_LINE') === true);
+  check('SPAWN_FAILED is a dead status', runLaneLib.isDeadStatus('SPAWN_FAILED (ENOENT)') === true);
+  check('KILLED_AT_OUTER_TIMEOUT is a dead status', runLaneLib.isDeadStatus('KILLED_AT_OUTER_TIMEOUT (SIGTERM)') === true);
+  check('COMPLETED is not', runLaneLib.isDeadStatus('COMPLETED') === false);
+  check('a dead attempt counts as UNAVAILABLE for retry/stop/scoring',
+    runLaneLib.isUnavailableAttempt({ status: 'NO_VERDICT_LINE' }) === true &&
+    runLaneLib.isUnavailableAttempt({ status: 'UNAVAILABLE' }) === true &&
+    runLaneLib.isUnavailableAttempt({ status: 'COMPLETED' }) === false);
+
+  // A runner that exits 0 printing nothing at all.
+  const dir = tmpDir('wo12-noverdict-');
+  const silent = writeStub(dir, 'silent.js', 'process.stdout.write("nothing to say\\n");\n');
+  const a = runLaneLib.runOneAttempt(silent, 'wo', 'er', 'base', 'head', dir, 5000, LANE_TERRA);
+  check('anthropic-2 MAJOR 3: a runner that prints no VERDICT line is NO_VERDICT_LINE', a.status === 'NO_VERDICT_LINE', JSON.stringify(a.status));
+  check('…and it is marked unavailable with reason `no-verdict`', a.unavailable === true && a.unavailableReason === 'no-verdict', JSON.stringify(a));
+
+  // A2 MINOR: the space spelling.
+  check('anthropic-2 MINOR: "REVIEW UNAVAILABLE" (space) classifies as UNAVAILABLE',
+    runLaneLib.classifyVerdict('REVIEW UNAVAILABLE') === 'UNAVAILABLE');
+  check('anthropic-2 MINOR: "UNAVAILABLE_ENGINE" classifies as UNAVAILABLE',
+    runLaneLib.classifyVerdict('UNAVAILABLE_ENGINE') === 'UNAVAILABLE');
+  check('"REVIEW_UNAVAILABLE" still classifies as UNAVAILABLE', runLaneLib.classifyVerdict('REVIEW_UNAVAILABLE') === 'UNAVAILABLE');
+  check('a verdict merely MENTIONING the word is still COMPLETED',
+    runLaneLib.classifyVerdict('APPROVE — correct when the engine is unavailable') === 'COMPLETED');
+
+  // End to end: a lane that dies without a verdict is retried once and halts phase 0.
+  const repo = makeSourceRepo();
+  const c = tmpDir('wo12-noverdict-e2e-');
+  const briefs = path.join(c, 'briefs');
+  fs.mkdirSync(briefs, { recursive: true });
+  const artifacts = [];
+  for (let i = 1; i <= 5; i++) {
+    const id = 'sdc-00' + i;
+    artifacts.push({ id, kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
+    fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
+    fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
+  }
+  const keyPath = writeKey(c, artifacts);
+  const stubs = tmpDir('wo12-noverdict-stub-');
+  const green = qmStubJson(stubs, 'green.js', ouState(0.85));
+  const r = runLane(['--lane', 'X-Terra', '--phase', '0', '--yes', '--key', keyPath, '--briefs-dir', briefs,
+    '--patches-dir', c, '--source-repo', repo.dir, '--results-dir', c,
+    '--clone-root', path.join(c, 'clone'), '--run-clone-root', path.join(c, 'run'), '--runner', silent],
+  { WO12_QM_CMD: q(process.execPath) + ' ' + q(green) });
+  check('anthropic-2 MAJOR 3: phase 0 HALTS on no-verdict runs (they used to be invisible to the stop rule)',
+    r.status !== 0 && /HALTING phase 0/.test(r.stderr || ''), (r.stderr || '').slice(0, 400));
+  const recs = JSON.parse(fs.readFileSync(path.join(c, 'results-X-Terra-phase0.json'), 'utf8'));
+  check('each no-verdict artifact was RETRIED once, like any other UNAVAILABLE (§2.5)',
+    recs.every((x) => x.attempts.length === 2), JSON.stringify(recs.map((x) => x.attempts.length)));
+}
+
+section('45. score.js — no-verdict lanes cannot read PASS (anthropic-2 MAJOR 3)');
+{
+  const artifacts = [];
+  for (let i = 1; i <= 30; i++) artifacts.push({ id: 'sd-' + i, kind: 'seeded', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'a.js', lines: [1, 2], symbol: 'f' }, consequence: '', rationale: '', hazard_terms: [] } });
+  for (let i = 1; i <= 54; i++) artifacts.push({ id: 'ct-' + i, kind: 'control', phase: 0, variant: 'V1', base: 'b', commit: 'c', subject: 's', seed: null });
+  const key = { version: 1, artifacts };
+  const recs = [];
+  for (const lane of ['X-Sol', 'X-Terra']) {
+    for (const a of artifacts) {
+      const dead = lane === 'X-Terra';
+      recs.push({
+        id: a.id, lane, phase: 0, variant: 'V1', expectedModel: scoreLib.LANE_EXPECTED_MODEL[lane], runIndex: 0,
+        attempts: [{
+          wallMs: 1, verdict: dead ? '(none)' : 'APPROVE', status: dead ? 'NO_VERDICT_LINE' : 'COMPLETED',
+          unavailable: dead, unavailableReason: dead ? 'no-verdict' : null,
+          engineHeader: dead ? null : 'REVIEW ENGINE: codex model: ' + scoreLib.LANE_EXPECTED_MODEL[lane],
+          integrityWarning: false,
+          stdout: dead ? 'the runner died\n' : 'VERDICT: APPROVE\n\nFINDINGS\n- [MAJOR] a.js:1 — found it\n',
+        }],
+      });
+    }
+  }
+  const { scored } = scoreLib.scoreRecords(recs, key, {});
+  const terra = scored.filter((r) => r.lane === 'X-Terra');
+  check('a no-verdict record scores as unavailable, not as a completed 0-hit run',
+    terra.every((r) => r.unavailableFinal === true && r.noVerdict === true), JSON.stringify(terra[0]));
+  const g = scoreLib.gate12f(scored, key, null, scoreLib.identityExclusions(scored));
+  const item = (n) => g.items.find((i) => i.n === n);
+  check('anthropic-2 MAJOR 3: gate 6 (stability) is INCOMPLETE, never PASS at 0%',
+    item(6).status === 'INCOMPLETE' && /NO VERDICT/.test(item(6).detail), item(6).status + ' — ' + item(6).detail);
+  check('anthropic-2 MAJOR 3: gate 5 (identity) is INCOMPLETE, not a PASS over runs that never ran',
+    item(5).status === 'INCOMPLETE', item(5).status + ' — ' + item(5).detail);
+  check('anthropic-2 MAJOR 3: gate 1 is INCOMPLETE, not FAIL — the lane was not measured',
+    item(1).status === 'INCOMPLETE' && /NO VERDICT/.test(item(1).detail), item(1).status + ' — ' + item(1).detail);
+  check('the stability rate now COUNTS the dead runs rather than ignoring them',
+    /84\/84/.test(item(6).detail) && /no-verdict×84/.test(item(6).detail), item(6).detail);
+}
+
+section('46. score.js — the exact-path suffix tier is gone (anthropic-2 MAJOR 2)');
+{
+  check('anthropic-2 MAJOR 2: a vendored copy under another directory is NOT an exact-path match',
+    scoreLib.classifyFileMatch('codex/hooks/orchestra-guard.js', 'hooks/orchestra-guard.js') === 'basename-only',
+    String(scoreLib.classifyFileMatch('codex/hooks/orchestra-guard.js', 'hooks/orchestra-guard.js')));
+  check('the reverse direction is likewise not exact-path',
+    scoreLib.classifyFileMatch('hooks/orchestra-guard.js', 'codex/hooks/orchestra-guard.js') === 'basename-only');
+  check('an equal path IS exact-path', scoreLib.classifyFileMatch('hooks/orchestra-guard.js', 'hooks/orchestra-guard.js') === 'exact-path');
+  check('a `./`-prefixed citation of the locator IS exact-path',
+    scoreLib.classifyFileMatch('./hooks/orchestra-guard.js', 'hooks/orchestra-guard.js') === 'exact-path');
+  check('a backslash-spelled citation of the locator IS exact-path',
+    scoreLib.classifyFileMatch('hooks\\orchestra-guard.js', 'hooks/orchestra-guard.js') === 'exact-path');
+  check('an unrelated file is no match at all', scoreLib.classifyFileMatch('router/router.js', 'hooks/orchestra-guard.js') === null);
+
+  // sdc-061's live scenario: the pack copy is a legitimate finding about a file
+  // the diff does not touch, and must NOT be credited with the seed.
+  const seed = { locator: { file: 'hooks/orchestra-guard.js', lines: [339, 345], symbol: 'guard' } };
+  const packCopy = ['[MAJOR] codex/hooks/orchestra-guard.js:339 — the pack copy was not updated to match'];
+  const res = scoreLib.evaluateSeedHit(seed, packCopy, {});
+  check('anthropic-2 MAJOR 2: a finding about the vendored copy is NOT a hit on sdc-061\'s seed',
+    res.hit === false, JSON.stringify(res));
+  check('…and it is reported as a basename-only near miss for adjudication',
+    res.nearMisses.length === 1 && res.nearMisses[0].reason === 'path', JSON.stringify(res.nearMisses));
+  check('the real file at the real path IS still a hit',
+    scoreLib.evaluateSeedHit(seed, ['[MAJOR] hooks/orchestra-guard.js:340 — the seeded fault'], {}).hit === true);
+}
+
+section('47. score.js — identity: known families, and the echoed-request evidence limit (openai-3 CRITICAL score.js:427)');
+{
+  check('a header naming a DIFFERENT known family is MISMATCHED',
+    scoreLib.classifyIdentity('REVIEW ENGINE: codex model: gpt-5.6-sol', 'gpt-5.6-terra') === 'MISMATCHED');
+  check('a header naming an UNKNOWN model is MISMATCHED, not unknown-then-excluded',
+    scoreLib.classifyIdentity('REVIEW ENGINE: codex model: gpt-4o', 'gpt-5.6-terra') === 'MISMATCHED');
+  check('`REVIEW ENGINE: NONE` is UNKNOWN — an absence of identity, not a wrong one',
+    scoreLib.classifyIdentity('REVIEW ENGINE: NONE — no cross-vendor review was produced.', 'gpt-5.6-terra') === 'UNKNOWN');
+  check('the lane\'s own model is MATCHED', scoreLib.classifyIdentity('REVIEW ENGINE: codex model: gpt-5.6-terra', 'gpt-5.6-terra') === 'MATCHED');
+  check('the known-family list carries both castings of §2.4',
+    scoreLib.KNOWN_MODEL_FAMILIES.indexOf('gpt-5.6-sol') !== -1 && scoreLib.KNOWN_MODEL_FAMILIES.indexOf('gpt-5.6-terra') !== -1);
+
+  check('openai-3 CRITICAL: a MATCHED header built from the REQUESTED model is labelled echoed-request evidence',
+    scoreLib.identityEvidence('REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-terra, sandbox: …)', 'gpt-5.6-terra') === 'echoed-request');
+  check('a header carrying a served_model line counts as INDEPENDENT evidence',
+    scoreLib.identityEvidence('REVIEW ENGINE: codex served_model: gpt-5.6-terra', 'gpt-5.6-terra') === 'independent');
+  check('no header at all is no evidence', scoreLib.identityEvidence(null, 'gpt-5.6-terra') === 'none');
+}
+
+section('48. run-lane.js — a phase RESUMES rather than re-billing (anthropic-2 MAJOR 5 / openai-3 MAJOR)');
+{
+  const repo = makeSourceRepo();
+  const dir = tmpDir('wo12-resume-');
+  const briefs = path.join(dir, 'briefs');
+  fs.mkdirSync(briefs, { recursive: true });
+  const artifacts = [];
+  for (let i = 1; i <= 4; i++) {
+    const id = 'sdc-00' + i;
+    artifacts.push({ id, kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
+    fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
+    fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
+  }
+  const keyPath = writeKey(dir, artifacts);
+  const resultsFile = path.join(dir, 'results-X-Terra-phase0.json');
+
+  // planResume, directly.
+  const completed = { id: 'sdc-001', attempts: DONE_ATTEMPT };
+  const unavailOnce = { id: 'sdc-002', attempts: [{ status: 'UNAVAILABLE', unavailable: true }] };
+  const unavailRetried = { id: 'sdc-003', attempts: [{ status: 'UNAVAILABLE', unavailable: true }, { status: 'UNAVAILABLE', unavailable: true }] };
+  fs.writeFileSync(resultsFile, JSON.stringify([completed, unavailOnce, unavailRetried], null, 2), 'utf8');
+  const plan = runLaneLib.planResume(resultsFile, artifacts);
+  check('a COMPLETED artifact is already recorded', plan.done.some((d) => d.artifact.id === 'sdc-001'));
+  check('an UNAVAILABLE artifact that has had its retry is already recorded', plan.done.some((d) => d.artifact.id === 'sdc-003'));
+  check('an UNAVAILABLE artifact that has NOT had its retry is re-dispatched', plan.todo.some((a) => a.id === 'sdc-002'));
+  check('an artifact with no record at all is dispatched', plan.todo.some((a) => a.id === 'sdc-004'));
+  check('the plan accounts for every artifact exactly once', plan.done.length + plan.todo.length === artifacts.length);
+
+  // Duplicates are a refusal naming the ids.
+  fs.writeFileSync(resultsFile, JSON.stringify([completed, completed, unavailRetried], null, 2), 'utf8');
+  let threwDup = null;
+  try { runLaneLib.planResume(resultsFile, artifacts); } catch (e) { threwDup = e; }
+  check('anthropic-2 MAJOR 5: DUPLICATE records in a results file are a REFUSAL',
+    !!threwDup && threwDup.wo12DuplicateResults === true && /sdc-001/.test(threwDup.message), threwDup && threwDup.message);
+
+  // End to end: a second invocation runs only what is missing.
+  fs.rmSync(resultsFile, { force: true });
+  const stubs = tmpDir('wo12-resume-stub-');
+  const runner = writeStub(stubs, 'ok.js', 'process.stdout.write("REVIEW ENGINE: codex model: gpt-5.6-terra\\n\\nVERDICT: APPROVE\\n\\nFINDINGS\\n- none\\n");\n');
+  const green = qmStubJson(stubs, 'green.js', ouState(0.85));
+  const argv = ['--lane', 'X-Terra', '--phase', '0', '--yes', '--key', keyPath, '--briefs-dir', briefs,
+    '--patches-dir', dir, '--source-repo', repo.dir, '--results-dir', dir,
+    '--clone-root', path.join(dir, 'clone'), '--run-clone-root', path.join(dir, 'run'), '--runner', runner];
+  const env = { WO12_QM_CMD: q(process.execPath) + ' ' + q(green) };
+  const first = runLane(argv, env);
+  check('the first invocation runs the whole phase', first.status === 0, (first.stderr || '') + (first.stdout || '').slice(-300));
+  const afterFirst = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+  check('four records are written', afterFirst.length === 4, String(afterFirst.length));
+
+  const second = runLane(argv, env);
+  check('anthropic-2 MAJOR 5: a second invocation exits 0 and runs NOTHING', second.status === 0, (second.stderr || '') + (second.stdout || '').slice(-400));
+  check('…printing an "already recorded" line per artifact',
+    (second.stdout || '').match(/already recorded: sdc-00\d \(COMPLETED\) — skipping, not re-billing/g || []).length === 4,
+    (second.stdout || '').slice(-900));
+  check('…and appending NOTHING: the results file is byte-identical',
+    fs.readFileSync(resultsFile, 'utf8') === JSON.stringify(afterFirst, null, 2) + '\n',
+    'record count now ' + JSON.parse(fs.readFileSync(resultsFile, 'utf8')).length);
+  check('…so no duplicate ids exist to wedge scoring',
+    new Set(JSON.parse(fs.readFileSync(resultsFile, 'utf8')).map((r) => r.id)).size === 4);
+
+  // A partial phase resumes from where it stopped.
+  const trimmed = afterFirst.slice(0, 2);
+  fs.writeFileSync(resultsFile, JSON.stringify(trimmed, null, 2) + '\n', 'utf8');
+  const third = runLane(argv, env);
+  check('a partial results file resumes: only the missing artifacts run', third.status === 0 && /2 to run/.test(third.stdout || ''), (third.stdout || '').slice(-700));
+  const afterThird = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+  check('the phase completes to exactly 4 records, none duplicated',
+    afterThird.length === 4 && new Set(afterThird.map((r) => r.id)).size === 4, String(afterThird.length));
+}
+
+section('49. run-lane.js — the phase-0 stop counter persists across invocations AND lanes (openai-3 MAJOR run-lane.js:855)');
+{
+  const dir = tmpDir('wo12-stopdisk-');
+  const mk = (status, n) => {
+    const out = [];
+    for (let i = 1; i <= n; i++) {
+      out.push({ id: 'sdc-00' + i, attempts: [{ status, unavailable: true }, { status, unavailable: true }] });
+    }
+    return out;
+  };
+  fs.writeFileSync(path.join(dir, 'results-X-Sol-phase0.json'), JSON.stringify(mk('UNAVAILABLE', 3), null, 2), 'utf8');
+  const counts = runLaneLib.countUnavailableOnDisk(dir, 0, ['X-Sol', 'X-Terra']);
+  check('openai-3 MAJOR: UNAVAILABLE is counted from the results files ON DISK', counts['X-Sol'].count === 3, JSON.stringify(counts));
+  check('a lane with no results file counts zero', counts['X-Terra'].count === 0);
+  check('the breached lane\'s artifact ids are named', counts['X-Sol'].ids.join(',') === 'sdc-001,sdc-002,sdc-003');
+  fs.writeFileSync(path.join(dir, 'results-X-Sol-phase0.json'), JSON.stringify(mk('NO_VERDICT_LINE', 3), null, 2), 'utf8');
+  check('no-verdict records count toward the stop rule too',
+    runLaneLib.countUnavailableOnDisk(dir, 0, ['X-Sol'])['X-Sol'].count === 3);
+
+  // A fresh X-Terra invocation must halt on X-Sol's breach.
+  const repo = makeSourceRepo();
+  const briefs = path.join(dir, 'briefs');
+  fs.mkdirSync(briefs, { recursive: true });
+  const artifacts = [];
+  for (let i = 1; i <= 2; i++) {
+    const id = 'sdc-01' + i;
+    artifacts.push({ id, kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed: null });
+    fs.writeFileSync(path.join(briefs, id + '.wo.txt'), 'wo\n');
+    fs.writeFileSync(path.join(briefs, id + '.er.txt'), 'er\n');
+  }
+  const keyPath = writeKey(dir, artifacts);
+  const stubs = tmpDir('wo12-stopdisk-stub-');
+  const runner = writeStub(stubs, 'ok.js', 'process.stdout.write("REVIEW ENGINE: codex model: gpt-5.6-terra\\n\\nVERDICT: APPROVE\\n\\nFINDINGS\\n- none\\n");\n');
+  const green = qmStubJson(stubs, 'green.js', ouState(0.85));
+  const r = runLane(['--lane', 'X-Terra', '--phase', '0', '--yes', '--key', keyPath, '--briefs-dir', briefs,
+    '--patches-dir', dir, '--source-repo', repo.dir, '--results-dir', dir,
+    '--clone-root', path.join(dir, 'clone2'), '--run-clone-root', path.join(dir, 'run2'), '--runner', runner],
+  { WO12_QM_CMD: q(process.execPath) + ' ' + q(green) });
+  check('openai-3 MAJOR: a fresh X-Terra invocation HALTS on X-Sol\'s existing breach (">2 in EITHER lane")',
+    r.status !== 0 && /HALTING phase 0/.test(r.stderr || '') && /X-Sol/.test(r.stderr || ''), (r.stderr || '').slice(0, 500));
+}
+
+section('50. score.js — duplicate (lane, id) records are deduped and reported (anthropic-2 MAJOR 5)');
+{
+  const rows = [
+    { lane: 'X-Terra', id: 'sdc-001', finalStatus: 'NO_VERDICT_LINE', unavailableFinal: true, sourceFile: 'a.json' },
+    { lane: 'X-Terra', id: 'sdc-001', finalStatus: 'COMPLETED', unavailableFinal: false, sourceFile: 'b.json' },
+    { lane: 'X-Terra', id: 'sdc-002', finalStatus: 'COMPLETED', unavailableFinal: false, sourceFile: 'a.json' },
+    { lane: 'X-Sol', id: 'sdc-001', finalStatus: 'COMPLETED', unavailableFinal: false, sourceFile: 'a.json' },
+  ];
+  const { deduped, duplicates } = scoreLib.dedupeScored(rows);
+  check('anthropic-2 MAJOR 5: duplicates collapse to one record per (lane, id)', deduped.length === 3, String(deduped.length));
+  check('the COMPLETE record wins over the dead one',
+    deduped.find((r) => r.lane === 'X-Terra' && r.id === 'sdc-001').finalStatus === 'COMPLETED');
+  check('the same id on a DIFFERENT lane is not a duplicate', deduped.some((r) => r.lane === 'X-Sol' && r.id === 'sdc-001'));
+  check('duplicates are reported, not silently dropped', duplicates.length === 1 && duplicates[0].id === 'sdc-001', JSON.stringify(duplicates));
+  check('no duplicates in a clean set', scoreLib.dedupeScored(rows.slice(1)).duplicates.length === 0);
+}
+
+section('51. assemble-key.js — the population-balance lint (anthropic-2 MAJOR 1 / openai-3 CRITICAL CONSTRUCTION.md:46)');
+{
+  const words = (n, w) => Array(n).fill(w || 'word').join(' ');
+  const mkRow = (kind, orderWords, claimsWords, hardness) => ({
+    id: 'x', kind, variant: 'V1', baseKind: 'code',
+    orderWords, claimsWords, orderHardness: hardness,
+  });
+
+  // must · never · exactly · byte-identical · unchanged · only = 6
+  check('hardnessScore counts the absolute-constraint vocabulary, whole-word',
+    assembleKeyLib.hardnessScore('It must never change; keep it exactly and byte-identical, unchanged, only that.') === 6,
+    String(assembleKeyLib.hardnessScore('It must never change; keep it exactly and byte-identical, unchanged, only that.')));
+  check('hardnessScore does not fire on substrings', assembleKeyLib.hardnessScore('mustard commonly nevertheless') === 0,
+    String(assembleKeyLib.hardnessScore('mustard commonly nevertheless')));
+  check('hardnessScore counts `forbid` and its inflections', assembleKeyLib.hardnessScore('forbid forbids forbidden forbidding') === 4);
+
+  // The round-2 corpus's own numbers: 144.3 vs 128.3 order words. That must now fail.
+  {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('seeded', 144, 75, 4));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('control', 128, 73, 4));
+    const findings = [];
+    assembleKeyLib.populationBalanceLint(rows, findings);
+    check('MAJOR 1: the round-2 corpus\'s own 16-word ORDER gap is now a HARD FAILURE',
+      findings.length === 1 && /mean ORDER words differ by 16\.0/.test(findings[0]), JSON.stringify(findings));
+  }
+  // Within tolerance: passes.
+  {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('seeded', 130, 75, 4));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('control', 125, 73, 4));
+    const findings = [];
+    const b = assembleKeyLib.populationBalanceLint(rows, findings);
+    check('a 5-word gap is inside the ±' + assembleKeyLib.MEAN_WORD_TOLERANCE + '-word tolerance and passes', findings.length === 0, JSON.stringify(findings));
+    check('the lint returns the measured means for the report', b && Math.abs(b.sOrder - 130) < 1e-9 && Math.abs(b.cOrder - 125) < 1e-9, JSON.stringify(b));
+  }
+  // The CLAIMS half.
+  {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('seeded', 128, 90, 4));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('control', 128, 73, 4));
+    const findings = [];
+    assembleKeyLib.populationBalanceLint(rows, findings);
+    check('a CLAIMS mean gap is a hard failure too', findings.length === 1 && /mean CLAIMS words differ by 17\.0/.test(findings[0]), JSON.stringify(findings));
+  }
+  // The register half — the signal the blind reader actually used.
+  {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('seeded', 128, 73, 6));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('control', 128, 73, 2));
+    const findings = [];
+    assembleKeyLib.populationBalanceLint(rows, findings);
+    check('MAJOR 1: a 3.0× ORDER hardness ratio is a HARD FAILURE',
+      findings.length === 1 && /hardness proxy ratio is 3\.00/.test(findings[0]), JSON.stringify(findings));
+  }
+  {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('seeded', 128, 73, 4.4));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('control', 128, 73, 4));
+    const findings = [];
+    assembleKeyLib.populationBalanceLint(rows, findings);
+    check('a 1.10 hardness ratio is inside [' + assembleKeyLib.HARDNESS_RATIO_MIN + ', ' + assembleKeyLib.HARDNESS_RATIO_MAX + '] and passes',
+      findings.length === 0, JSON.stringify(findings));
+  }
+  {
+    const rows = [];
+    for (let i = 0; i < 30; i++) rows.push(mkRow('seeded', 128, 73, 3));
+    for (let i = 0; i < 54; i++) rows.push(mkRow('control', 128, 73, 0));
+    const findings = [];
+    assembleKeyLib.populationBalanceLint(rows, findings);
+    check('one population carrying NO absolute-constraint language at all is a hard failure',
+      findings.length === 1 && /one population carries absolute-constraint language and the other carries none/.test(findings[0]), JSON.stringify(findings));
+  }
+  // Both metrics land in CONSTRUCTION.md's length report either way.
+  {
+    const rows = [];
+    for (let i = 0; i < 3; i++) rows.push(mkRow('seeded', 140, 80, 5));
+    for (let i = 0; i < 3; i++) rows.push(mkRow('control', 120, 70, 2));
+    const md = assembleKeyLib.renderLengthReport(rows);
+    check('the length report carries the ORDER hardness column', /ORDER hardness \(mean ± sd\)/.test(md), md.slice(0, 500));
+    check('the length report states BOTH gates with their values and verdicts',
+      /mean ORDER words seeded − control.*20\.0/.test(md) && /ORDER hardness ratio.*2\.50/.test(md) && /\*\*FAIL\*\*/.test(md), md);
+    check('the report names the hardness vocabulary so a content author can act on it',
+      /`must`, `never`, `exactly`, `only`, `byte-identical`/.test(md), md);
+  }
+}
+
+section('52. assemble-key.js — a population imbalance REFUSES the whole assembly (end to end)');
+{
+  const repo = makeSourceRepo();
+  const work = tmpDir('wo12-balance-e2e-');
+  const contentDir = path.join(work, 'content');
+  const briefsDir = path.join(work, 'briefs');
+  fs.mkdirSync(contentDir, { recursive: true });
+  const slots = [
+    { id: 'sdc-001', kind: 'seeded', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: { type: 'CV', target_severity: 'MAJOR' } },
+    { id: 'sdc-002', kind: 'control', phase: 0, variant: 'V1', base: repo.base, commit: repo.commit, subject: REAL_SUBJECT, seed_slot: null },
+  ];
+  const patch = makePatchAgainstBase(repo, (d) => {
+    fs.writeFileSync(path.join(d, 'app.js'), 'function add(a, b) {\n  return a - b;\n}\n');
+  });
+  fs.writeFileSync(path.join(work, 'sdc-001.patch'), patch, 'utf8');
+  fs.writeFileSync(path.join(work, 'sdc-001.seed.json'), JSON.stringify({
+    id: 'sdc-001', base: repo.base, commit: repo.commit, phase: 0, variant: 'V1',
+    seed: { type: 'CV', severity: 'MAJOR', locator: { file: 'app.js', lines: [1, 3], symbol: 'add' }, consequence: 'x', rationale: 'y', hazard_terms: ['a'] },
+  }), 'utf8');
+  fs.writeFileSync(path.join(work, 'base-pool.json'), JSON.stringify({ slots }, null, 2), 'utf8');
+
+  const cliArgs = ['--pool', path.join(work, 'base-pool.json'), '--corpus-dir', work, '--briefs-dir', briefsDir,
+    '--content-dir', contentDir, '--source-repo', repo.dir, '--clone-root', path.join(work, 'clone')];
+  const claims = Array(45).fill('the change was made and verified').join(' ').split(' ').slice(0, 45).join(' ');
+
+  // A hard seeded order against a soft control order — the round-2 shape.
+  const hardOrder = ('The order must be followed exactly and the guard must never be widened; ' +
+    'the adjacent module stays byte-identical and unchanged. ').repeat(3) + Array(60).fill('detail').join(' ');
+  const softOrder = Array(95).fill('the change updates documentation and tidies the surrounding prose').join(' ').split(' ').slice(0, 95).join(' ');
+  fs.writeFileSync(path.join(contentDir, 'sdc-001.json'), JSON.stringify({ order: hardOrder.split(' ').slice(0, 150).join(' '), claims }), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'), JSON.stringify({ order: softOrder, claims }), 'utf8');
+  const rBad = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  check('an imbalanced corpus REFUSES assembly', rBad.status !== 0 && /assembly REFUSED/.test(rBad.stderr || ''), rBad.stderr);
+  check('the refusal names the population-balance gate', /population balance/.test(rBad.stderr || ''), rBad.stderr);
+  check('nothing was written', !fs.existsSync(path.join(work, 'key.json')));
+
+  // Balanced: both populations carry the same register and length.
+  const balanced = ('The order must be followed exactly and the guard must never be widened; ' +
+    'the adjacent module stays byte-identical and unchanged. ').repeat(3) + Array(60).fill('detail').join(' ');
+  const balancedOrder = balanced.split(' ').slice(0, 150).join(' ');
+  fs.writeFileSync(path.join(contentDir, 'sdc-001.json'), JSON.stringify({ order: balancedOrder, claims }), 'utf8');
+  fs.writeFileSync(path.join(contentDir, 'sdc-002.json'), JSON.stringify({ order: balancedOrder, claims }), 'utf8');
+  const rOk = spawnSync(process.execPath, [ASSEMBLE_KEY].concat(cliArgs), { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  check('a BALANCED corpus assembles', rOk.status === 0, (rOk.stderr || '') + (rOk.stdout || '').slice(-400));
+  const md = fs.readFileSync(path.join(work, 'CONSTRUCTION.md'), 'utf8');
+  check('CONSTRUCTION.md reports both balance gates as passing', /≤ 6 \| pass/.test(md) && /0\.8–1\.25 \| pass/.test(md), md.slice(md.indexOf('| gate |'), md.indexOf('| gate |') + 600));
+}
+
+section('53. assemble-key.js — skeletonize masks the SUBJECT before the shas (anthropic-2 NIT)');
+{
+  const head = 'a'.repeat(40);
+  const base = 'b'.repeat(40);
+  // A pathological one-character subject that is a substring of the mask tokens.
+  const artifact = { id: 'sdc-001', kind: 'seeded', variant: 'V1', base, subject: 'A' };
+  const text = 'Change under review: commit ' + head + '\nBase (its parent):   ' + base + '\nCommit subject:      A\n';
+  const sk = assembleKeyLib.skeletonize(text, artifact, head);
+  check('anthropic-2 NIT: the mask tokens are not corrupted by a subject that is a substring of them',
+    /<HEAD>/.test(sk) && /<BASE>/.test(sk) && !/<B<SUBJECT>SE>/.test(sk) && !/<HE<SUBJECT>D>/.test(sk), JSON.stringify(sk));
+  check('the subject is still masked', /Commit subject:      <SUBJECT>/.test(sk), JSON.stringify(sk));
 }
 
 // ---------------------------------------------------------------- summary

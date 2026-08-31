@@ -593,6 +593,15 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   (length and hardness) and a fresh-evaluator blind classification re-run after every
   content change; the 10 base-reused controls stay (history pool exhausted) and are
   disclosed. macOS CI: one case-fold check being made empirical (probe, not platform).
+  **Round 3 applied:** every item of both delta verdicts closed with a pinning test
+  (533 checks); all 54 control ORDER/CLAIMS re-authored to the seeds' register and
+  calibrated to the seeds' measured hardness (first drafts overshot 4–16 hits vs the
+  seeds' 2.3 and would have flipped the tell); population-balance lint passes at
+  Δ3.2 / Δ1.8 words and hardness ratio 1.00. Registered limit: the 12f identity gate
+  rests on the runner echoing the requested model (`echoed-request`) until
+  `orchestra-review.js` surfaces a served model — follow-on before 12f is scored.
+  Assembly/verification and the fresh-evaluator blind test on the regenerated
+  briefs, then the round-3 delta review, follow.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

@@ -115,7 +115,14 @@ after every content change and reported in CONSTRUCTION.md (target: precision at
 near chance; anything above 65% reopens the pass). (vii) The 10 controls sharing a
 base commit with a seed (§2.1 pool-shortfall allowance) stay: the history pool has no
 further non-merge commits, and removing them would put the corpus under the 80-artifact
-gate; the collision list is disclosed in CONSTRUCTION.md.
+gate; the collision list is disclosed in CONSTRUCTION.md. (viii) **Identity evidence
+limit, registered follow-on before 12f is scored:** the review runner's header line
+`model: <ORCHESTRA_REVIEW_MODEL>` echoes the *requested* model, so §3.1 item 5 ("exact
+model identity") currently rests on an echo — `score.js` labels every such match
+`echoed-request` and the gate-5 row states the limit. Closing it requires
+`packs/codex/hooks/orchestra-review.js` to surface a vendor-reported served model
+(from the engine's own output or session record); until then gate 5 is evidence of
+configuration, not of service, and the 12f report must say so.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

@@ -212,13 +212,26 @@ function classifyFileMatch(cited, locator) {
   const a = normalizePath(cited);
   const b = normalizePath(locator);
   if (a === b) return 'exact-path';
-  // A genuine path-suffix match requires the SHORTER side to itself carry at
-  // least one path separator — otherwise "one ends with '/' + the other" is
-  // true for ANY citation that names just the bare filename (a single-
-  // segment "path" trivially suffix-matches the tail of any longer one),
-  // which would silently swallow the basename-only tier into this one.
-  if (a.includes('/') && b.endsWith('/' + a)) return 'exact-path';
-  if (b.includes('/') && a.endsWith('/' + b)) return 'exact-path';
+  // Round-3 (Anthropic MAJOR 2 / cross-vendor): the SUFFIX tier is gone.
+  //
+  // It used to read `a.includes('/') && b.endsWith('/' + a)` and call that "a
+  // genuine path suffix … just possibly relative-vs-repo-root-relative". It is
+  // not: this repository vendors a second copy of the guard under the codex
+  // pack, so
+  //
+  //   classifyFileMatch('codex/hooks/orchestra-guard.js', 'hooks/orchestra-guard.js')
+  //
+  // returned 'exact-path' — and a reviewer writing "[MAJOR]
+  // codex/hooks/orchestra-guard.js:339 — the pack copy was not updated to
+  // match", a legitimate finding about a file the diff does not touch, was
+  // credited with finding sdc-061's seed. That inflates recall, every Wilson
+  // interval, and 12f gate 1, whose whole margin is ±1.
+  //
+  // §2.5 says the finding must cite "the seed's locator.file". So a hit now
+  // requires the cited path to EQUAL the locator's repo-relative path after
+  // normalization — the only tolerance being the `./` prefix normalizePath
+  // already strips. Anything else that shares the basename falls to the
+  // basename-only tier and is reported as a NEAR MISS, counted nowhere.
   const abase = a.split('/').pop();
   const bbase = b.split('/').pop();
   if (abase && abase === bbase) return 'basename-only';
@@ -420,13 +433,66 @@ function extractServedModel(header) {
  *
  * Returns 'MATCHED' | 'MISMATCHED' | 'UNKNOWN'.
  */
+// Model families this harness knows about. A header naming a model outside
+// both the lane's expectation and this set is a MISMATCH, not an "unknown" to
+// be quietly excluded (round-3, cross-vendor CRITICAL at score.js:427): being
+// served `gpt-4o` on a Terra lane is a fact about what happened, and the gate
+// exists to catch exactly that.
+const KNOWN_MODEL_FAMILIES = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'claude-opus-5', 'claude-sonnet-5', 'claude-fable-5'];
+
+// The shortest string that can honestly be called "a quoted citation" from a
+// verdict. Round-3: a one-character quote substring-matches nearly any text.
+const MIN_ADJUDICATION_QUOTE_CHARS = 20;
+
+function namesModel(header, model) {
+  const esc = String(model).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|[^A-Za-z0-9_.-])' + esc + '([^A-Za-z0-9_.-]|$)').test(header);
+}
+
 function classifyIdentity(engineHeader, expectedModel) {
   if (!engineHeader) return 'UNKNOWN';
+  // `REVIEW ENGINE: NONE` is the runner's honest statement that no engine
+  // produced the review (orchestra-review.js:2275). That is an absence of
+  // identity, not a wrong one.
+  if (/REVIEW ENGINE:\s*NONE\b/i.test(engineHeader)) return 'UNKNOWN';
   if (!expectedModel) return 'UNKNOWN';
-  const esc = String(expectedModel).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (new RegExp('(^|[^A-Za-z0-9_.-])' + esc + '([^A-Za-z0-9_.-]|$)').test(engineHeader)) return 'MATCHED';
+  if (namesModel(engineHeader, expectedModel)) return 'MATCHED';
   const served = extractServedModel(engineHeader);
-  return served ? 'MISMATCHED' : 'UNKNOWN';
+  if (served) return 'MISMATCHED';
+  // The header names no model token of its own, but if it names some OTHER
+  // known family the lane did not ask for, that is still a mismatch.
+  if (KNOWN_MODEL_FAMILIES.some((m) => m !== expectedModel && namesModel(engineHeader, m))) return 'MISMATCHED';
+  return 'UNKNOWN';
+}
+
+/**
+ * How much the engine header is actually worth as evidence of the SERVED
+ * model. Round-3, cross-vendor CRITICAL at score.js:427 — and the finding is
+ * right in a way no change to this file can fix:
+ *
+ *   `orchestra-review.js:2220` builds its header from
+ *       'model: ' + (CONFIG.model || 'codex default')
+ *   and `CONFIG.model` is `ORCHESTRA_REVIEW_MODEL` — the model run-lane.js
+ *   ASKED for. The header echoes the request; it is not a report from the
+ *   vendor of what actually served.
+ *
+ * So a Terra request silently served by Sol still prints `gpt-5.6-terra`, and
+ * comparing the header to the lane's expected model is tautological: it can
+ * only ever say MATCHED. §3.1 gate 5 would then be a rubber stamp.
+ *
+ * This cannot be repaired downstream — the served identity is simply not in
+ * the record. What CAN be done, and is, is to refuse to launder an echo into
+ * proof: every identity verdict carries the strength of its evidence, and the
+ * gate-5 row states the limitation in the report rather than implying the
+ * served model was verified. Closing it for real needs the runner to surface a
+ * vendor-reported `served_model`, which is a change to
+ * `packs/codex/hooks/orchestra-review.js`, outside this file.
+ */
+function identityEvidence(engineHeader, expectedModel) {
+  if (!engineHeader) return 'none';
+  if (/\bserved[_ ]model\b/i.test(engineHeader)) return 'independent';
+  if (expectedModel && namesModel(engineHeader, expectedModel)) return 'echoed-request';
+  return 'header-only';
 }
 
 function scoreRecords(records, key, opts) {
@@ -445,7 +511,18 @@ function scoreRecords(records, key, opts) {
     let hitInfo = { hit: false, finding: null, severity: null, via: null, pathMatchKind: null, nearMisses: [] };
     if (artifact.kind === 'seeded' && artifact.seed) hitInfo = evaluateSeedHit(artifact.seed, blocks, { lenientPaths: opts.lenientPaths });
 
-    const unavailableFinal = !!(last && last.status === 'UNAVAILABLE');
+    // Round-3, Anthropic MAJOR 3: a run that died without printing a verdict —
+    // NO_VERDICT_LINE, SPAWN_FAILED, KILLED_AT_OUTER_TIMEOUT — is UNAVAILABLE.
+    // The round-2 code counted only the literal 'UNAVAILABLE' status, so §3.1
+    // gate 6 certified a lane that emitted nothing at all as 0% unstable while
+    // gate 1 recorded the infrastructure failure as "X-Terra hits 0/30".
+    // `unavailable` is written by run-lane; the status test is the fallback for
+    // records written before that field existed.
+    const deadStatus = (s) => /^(NO_VERDICT_LINE|SPAWN_FAILED|KILLED_AT_OUTER_TIMEOUT)/.test(String(s || ''));
+    const attemptUnavailable = (att) => !!(att && (att.unavailable === true || att.status === 'UNAVAILABLE' || deadStatus(att.status)));
+    const unavailableFinal = attemptUnavailable(last);
+    const unavailableReason = last ? (last.unavailableReason || (unavailableFinal ? (deadStatus(last.status) ? 'no-verdict' : 'engine-unavailable') : null)) : null;
+    const noVerdict = !!(last && deadStatus(last.status));
     const anyIntegrityWarning = attempts.some((a) => a && a.integrityWarning);
     const engineHeader = last ? last.engineHeader : null;
     const expectedModel = rec.expectedModel || LANE_EXPECTED_MODEL[rec.lane] || null;
@@ -466,11 +543,17 @@ function scoreRecords(records, key, opts) {
     // gate 3 needs to know which CONTROL artifacts produced blocker-grade
     // findings at all — an adjudication file that says nothing about them is
     // an absence of adjudication, not a 0% rate.
-    let blockerFindings = 0;
+    // Round-3 (cross-vendor CRITICAL at score.js:714 / Anthropic MINOR): gate 3
+    // tracks completeness per FINDING, not per artifact, so the individual
+    // blocker findings are kept, not just their count. One adjudication entry
+    // used to satisfy a control carrying three MAJOR/CRITICAL findings, in the
+    // same block whose own comment says "§2.5 adjudicates finding by finding".
+    const blockerFindingTexts = [];
     for (const b of blocks) {
       const s = parseSeverity(b);
-      if (s === 'MAJOR' || s === 'CRITICAL') blockerFindings++;
+      if (s === 'MAJOR' || s === 'CRITICAL') blockerFindingTexts.push(b);
     }
+    const blockerFindings = blockerFindingTexts.length;
 
     scored.push({
       id: rec.id, lane: rec.lane, phase: rec.phase, variant: rec.variant || artifact.variant || null,
@@ -478,10 +561,14 @@ function scoreRecords(records, key, opts) {
       type: artifact.seed ? artifact.seed.type : null,
       severity: artifact.seed ? artifact.seed.severity : null,
       hit: hitInfo.hit, matchedFinding: hitInfo.finding, matchedVia: hitInfo.via, pathMatchKind: hitInfo.pathMatchKind,
-      nearMisses: hitInfo.nearMisses || [], adjudicatedPromotion: false, blockerFindings,
-      unavailableFinal, integrityWarning: anyIntegrityWarning,
+      nearMisses: hitInfo.nearMisses || [], adjudicatedPromotion: false,
+      blockerFindings, blockerFindingTexts,
+      unavailableFinal, unavailableReason, noVerdict, integrityWarning: anyIntegrityWarning,
       expectedModel, servedModel, identity, identityKnown, identityMismatch, identityUnknown,
+      identityEvidence: identityEvidence(engineHeader, expectedModel),
       emptyFindingsSection,
+      // The verdict text an adjudication promotion must quote FROM.
+      verdictText: last ? String(last.stdout || '') : '',
       // `order` is the CORPUS position, recovered from the id; `runIndex` is
       // the position in the lane's own interleaved dispatch order. Both are
       // kept: the first is what the key means by "corpus order", the second is
@@ -492,6 +579,39 @@ function scoreRecords(records, key, opts) {
     });
   }
   return { scored, unknownIds };
+}
+
+/**
+ * §2.6 resume leaves the possibility of a results file that already carried
+ * duplicate rows for one (lane, id) — run-lane now refuses to ADD one, but a
+ * file written before that guard existed still has them, and the round-3
+ * record showed what they do: `complete` demands exactly 84 records per lane,
+ * so the phase pins INCOMPLETE forever and gate 1's denominator grows past the
+ * seed population ("X-Terra hits 0/40" over 30 seeds).
+ *
+ * Scoring therefore DEDUPES by (lane, id), keeping the last COMPLETE record —
+ * the one a resume would have produced — and reports every duplicate rather
+ * than silently dropping evidence. "Complete" prefers a record with a real
+ * verdict over one that died, so a successful re-run supersedes the failure it
+ * was re-running.
+ */
+function dedupeScored(scored) {
+  const rank = (r) => (r.finalStatus === 'COMPLETED' ? 2 : (r.unavailableFinal ? 1 : 0));
+  const best = new Map();
+  const duplicates = [];
+  for (const r of scored) {
+    const key = r.lane + '::' + r.id;
+    const prior = best.get(key);
+    if (!prior) { best.set(key, r); continue; }
+    duplicates.push({ lane: r.lane, id: r.id, kept: null, sourceFiles: [prior.sourceFile, r.sourceFile] });
+    // Later record wins on an equal rank: it is the more recent attempt.
+    best.set(key, rank(r) >= rank(prior) ? r : prior);
+  }
+  for (const d of duplicates) {
+    const kept = best.get(d.lane + '::' + d.id);
+    d.kept = kept ? kept.finalStatus : null;
+  }
+  return { deduped: Array.from(best.values()), duplicates };
 }
 
 /**
@@ -512,30 +632,101 @@ function applyAdjudicatedPromotions(scored, key, adjudication) {
   const promotions = [];
   const rejected = [];
   if (!adjudication) return { promotions, rejected };
+  const byId = new Map(key.artifacts.map((a) => [a.id, a]));
   const seededIds = new Set(key.artifacts.filter((a) => a.kind === 'seeded').map((a) => a.id));
   for (const entry of adjudication) {
     if (!entry || String(entry.verdict).toUpperCase() !== 'HIT') continue;
-    if (!seededIds.has(entry.id)) continue;
+
+    // Round-3, Anthropic MAJOR 4. Every one of these was demonstrated live in
+    // the record: an entry with no `lane` promoted the seed on ALL FOUR lanes
+    // at once, and a one-character "quote" was accepted as the citation §2.5
+    // requires. A single data-entry slip moved 12f gate 1 on both sides,
+    // could clear gate 2, and shifted 12d's union — the one place §3.2's
+    // complementarity reading is decided.
+    if (!entry.id || typeof entry.id !== 'string') {
+      rejected.push({ id: entry.id || '(missing)', lane: entry.lane || null, reason: 'adjudication entry has no `id`' });
+      continue;
+    }
+    if (!entry.lane || typeof entry.lane !== 'string') {
+      rejected.push({
+        id: entry.id, lane: null,
+        reason: '§2.5 adjudicates finding by finding ON A LANE: an entry with no `lane` is refused rather than applied to every lane at once',
+      });
+      continue;
+    }
+    if (!seededIds.has(entry.id)) {
+      rejected.push({ id: entry.id, lane: entry.lane, reason: 'adjudicated HIT for an id that is not a seeded artifact' });
+      continue;
+    }
     const quote = entry.quote || entry.finding || null;
     if (!quote || !String(quote).trim()) {
       rejected.push({ id: entry.id, lane: entry.lane, reason: 'adjudicated HIT with no quoted line — §2.5 promotes only "on a quoted citation"' });
       continue;
     }
-    const targets = scored.filter((r) => r.id === entry.id && (!entry.lane || r.lane === entry.lane));
+    const targets = scored.filter((r) => r.id === entry.id && r.lane === entry.lane);
     if (!targets.length) {
       rejected.push({ id: entry.id, lane: entry.lane, reason: 'adjudicated HIT for a record that is not in the loaded results' });
       continue;
     }
+
+    // The quote must be EVIDENCE, not an assertion: it has to appear verbatim
+    // in THAT lane's verdict text for THAT id, and it has to cite the seed's
+    // locator file. A quote that is not in the verdict did not come from the
+    // verdict.
+    const seed = byId.get(entry.id) && byId.get(entry.id).seed;
+    const locatorFile = seed && seed.locator ? seed.locator.file : null;
+    const needle = normalizeWhitespace(String(quote));
+    // A one-character "quote" substring-matches almost any verdict. §2.5 asks
+    // for a QUOTED CITATION — a line a reader can check — so a quote too short
+    // to be one is refused as evidence rather than being let through to the
+    // locator test (round-3: the record demonstrated `quote: "x"` promoting).
+    if (needle.length < MIN_ADJUDICATION_QUOTE_CHARS) {
+      rejected.push({
+        id: entry.id, lane: entry.lane,
+        reason: 'the quoted line is ' + needle.length + ' character(s) — too short to be the quoted citation §2.5 requires (minimum ' +
+          MIN_ADJUDICATION_QUOTE_CHARS + '); a short string substring-matches almost any verdict and proves nothing',
+      });
+      continue;
+    }
+    let applied = false;
     for (const r of targets) {
+      const haystack = normalizeWhitespace(String(r.verdictText || ''));
+      if (!needle || haystack.indexOf(needle) === -1) {
+        rejected.push({
+          id: entry.id, lane: entry.lane,
+          reason: 'the quoted line does not appear in that lane\'s own verdict text for that artifact — a promotion must quote the verdict it promotes',
+        });
+        continue;
+      }
+      if (locatorFile && !citesLocatorFile(String(quote), locatorFile)) {
+        rejected.push({
+          id: entry.id, lane: entry.lane,
+          reason: 'the quoted line does not cite the seed\'s locator file (' + locatorFile + ') — §2.5\'s hit rule is a citation of that path',
+        });
+        continue;
+      }
       if (r.hit) continue; // never a demotion, and never double-counted
       r.hit = true;
       r.adjudicatedPromotion = true;
       r.matchedFinding = String(quote);
       r.matchedVia = 'adjudication';
       promotions.push({ id: r.id, lane: r.lane, quote: String(quote) });
+      applied = true;
     }
+    void applied;
   }
   return { promotions, rejected };
+}
+
+function normalizeWhitespace(s) { return String(s).replace(/\s+/g, ' ').trim(); }
+
+/** Does this quoted finding cite `locatorFile` by its full repo-relative path? */
+function citesLocatorFile(quote, locatorFile) {
+  for (const c of parseCitations(quote)) {
+    if (classifyFileMatch(c.file, locatorFile) === 'exact-path') return true;
+  }
+  // A citation without a line number still names the path.
+  return normalizePath(quote).indexOf(normalizePath(locatorFile)) !== -1;
 }
 
 /**
@@ -647,14 +838,29 @@ function gate12f(scored, key, adjudication, exclusions) {
 
   const items = [];
 
+  // Round-3, Anthropic MAJOR 3. A lane with ANY run that produced no verdict
+  // has not been measured, and no recall/identity/stability number computed
+  // over it means anything. The round-2 gates read such a lane as a perfectly
+  // stable lane that found nothing — certifying an infrastructure failure as a
+  // recall result. Every affected item is INCOMPLETE and says so.
+  const terraDead = terra.filter((r) => r.noVerdict);
+  const solDead = sol.filter((r) => r.noVerdict);
+  const deadNote = (rows, lane) => rows.length
+    ? ' ' + lane + ' has ' + rows.length + ' run(s) that produced NO VERDICT (' +
+      rows.slice(0, 6).map((r) => r.id + ':' + r.finalStatus).join(', ') + (rows.length > 6 ? ', …' : '') +
+      ') — the lane was not measured, so this item cannot read PASS.'
+    : '';
+  const anyDead = terraDead.length > 0 || solDead.length > 0;
+
   // 1. hits(Terra) >= hits(Sol) - 1, on the 30 seeds.
   {
-    const ready = complete && solSeeded.length === totalSeeds && terraSeeded.length === totalSeeds;
+    const ready = complete && solSeeded.length === totalSeeds && terraSeeded.length === totalSeeds && !anyDead;
     items.push({
       n: 1, name: 'hits(X-Terra) ≥ hits(X-Sol) − 1 (30 seeds)',
       status: !ready ? 'INCOMPLETE' : (terraHits >= solHits - 1 ? 'PASS' : 'FAIL'),
       detail: 'X-Sol hits ' + solHits + '/' + solSeeded.length + '; X-Terra hits ' + terraHits + '/' + terraSeeded.length +
-        (ready ? '' : ' (corpus not complete: need ' + totalSeeds + ' seeds scored on both X-lanes)'),
+        (complete ? '' : ' (corpus not complete: need ' + totalSeeds + ' seeds scored on both X-lanes)') +
+        deadNote(terraDead, 'X-Terra') + deadNote(solDead, 'X-Sol'),
     });
   }
 
@@ -711,21 +917,45 @@ function gate12f(scored, key, adjudication, exclusions) {
       // control artifact on this lane that actually PRODUCED a MAJOR/CRITICAL
       // finding has an adjudication entry. An adjudication of "no findings at
       // all" is a different, checkable statement from "no adjudication".
-      const adjudicatedIds = new Set(terraAdj.map((a) => a.id));
-      const needsAdjudication = terraControls
-        .filter((r) => (r.blockerFindings || 0) > 0 && !adjudicatedIds.has(r.id))
-        .map((r) => r.id);
+      // Round-3 (cross-vendor CRITICAL at score.js:714): completeness is per
+      // FINDING. One adjudication entry used to satisfy a control carrying
+      // three MAJOR/CRITICAL findings — "given one control with two blocker
+      // findings and an adjudication for only one, gate 3 reports PASS at 0%
+      // instead of INCOMPLETE". An entry covers a finding when its own
+      // `finding`/`quote` text matches that finding's text.
+      const adjByArtifact = new Map();
+      for (const a of terraAdj) {
+        if (!adjByArtifact.has(a.id)) adjByArtifact.set(a.id, []);
+        adjByArtifact.get(a.id).push(a);
+      }
+      const unadjudicatedFindings = [];
+      for (const r of terraControls) {
+        const texts = r.blockerFindingTexts || [];
+        if (!texts.length) continue;
+        const entries = adjByArtifact.get(r.id) || [];
+        for (const text of texts) {
+          const covered = entries.some((e) => {
+            const t = normalizeWhitespace(String(e.finding || e.quote || ''));
+            if (!t) return false;
+            const f = normalizeWhitespace(text);
+            return f.indexOf(t) !== -1 || t.indexOf(f) !== -1;
+          });
+          if (!covered) unadjudicatedFindings.push(r.id + ': ' + normalizeWhitespace(text).slice(0, 70));
+        }
+      }
+      const needsAdjudication = Array.from(new Set(unadjudicatedFindings.map((s) => s.split(':')[0])));
       const laneHasNoEntries = terraAdj.length === 0;
-      const ready = complete && terraControls.length > 0 && !laneHasNoEntries && needsAdjudication.length === 0;
+      const ready = complete && terraControls.length > 0 && !laneHasNoEntries && unadjudicatedFindings.length === 0;
       const rate = terraControls.length ? falseBlockers.length / terraControls.length : null;
       let detail;
       if (laneHasNoEntries) {
         detail = 'NOT ADJUDICATED — the --adjudication file carries no X-Terra entries at all, so a 0% rate here would be ' +
           'the absence of adjudication, not the absence of false blockers (§2.5 adjudicates finding by finding).';
-      } else if (needsAdjudication.length) {
-        detail = 'PARTIALLY ADJUDICATED — ' + needsAdjudication.length + ' control artifact(s) on this lane carry MAJOR/CRITICAL ' +
-          'findings with no adjudication entry: ' + needsAdjudication.slice(0, 10).join(', ') + (needsAdjudication.length > 10 ? ', …' : '') +
-          '. Every such finding must be adjudicated before a rate means anything.';
+      } else if (unadjudicatedFindings.length) {
+        detail = 'PARTIALLY ADJUDICATED — ' + unadjudicatedFindings.length + ' MAJOR/CRITICAL finding(s) on ' +
+          needsAdjudication.length + ' control artifact(s) have no adjudication entry: ' +
+          unadjudicatedFindings.slice(0, 6).join(' | ') + (unadjudicatedFindings.length > 6 ? ' | …' : '') +
+          '. §2.5 adjudicates finding by finding, so a per-artifact entry does not cover an artifact\'s other findings.';
       } else {
         detail = falseBlockers.length + ' MAJOR/CRITICAL NOISE/NOISE finding(s) on controls / ' + terraControls.length +
           ' control(s) reviewed = ' + pct(rate) +
@@ -771,10 +1001,24 @@ function gate12f(scored, key, adjudication, exclusions) {
     detailBits.push(excludedHere.length + ' artifact(s) EXCLUDED from BOTH lanes per §3.1 item 5' +
       (excludedHere.length ? ': ' + excludedHere.join(', ') : ''));
     if (pending.length) detailBits.push(pending.length + ' run(s) still awaiting the single re-run the item requires: ' + pending.join(', '));
+    // The standing limitation, stated on the gate row itself rather than left
+    // for the reader to discover: `orchestra-review.js` builds its header from
+    // the model it was ASKED for (`CONFIG.model`), so MATCHED means "the runner
+    // was asked for, and reports, the lane's model" — NOT "the vendor served
+    // it". A silent substitution is invisible here (round-3, cross-vendor
+    // CRITICAL at score.js:427). Only a runner that surfaces a vendor-reported
+    // served model can close it.
+    const echoed = terra.filter((r) => r.identityEvidence === 'echoed-request').length;
+    const independent = terra.filter((r) => r.identityEvidence === 'independent').length;
+    if (echoed && !independent) {
+      detailBits.push('EVIDENCE LIMIT: all ' + echoed + ' matched run(s) rest on the runner ECHOING the requested model ' +
+        '(orchestra-review.js builds its header from CONFIG.model), not on a vendor-reported served model — a silent ' +
+        'substitution would still read MATCHED here. Closing that needs a served_model line from the runner.');
+    }
     items.push({
       n: 5, name: 'exact model identity on every counted X-Terra run',
-      status: !complete || pending.length ? 'INCOMPLETE' : (stillWrong.length === 0 ? 'PASS' : 'FAIL'),
-      detail: detailBits.join('; ') + (complete ? '' : ' (corpus not complete)'),
+      status: !complete || pending.length || terraDead.length ? 'INCOMPLETE' : (stillWrong.length === 0 ? 'PASS' : 'FAIL'),
+      detail: detailBits.join('; ') + (complete ? '' : ' (corpus not complete)') + deadNote(terraDead, 'X-Terra'),
     });
   }
 
@@ -782,11 +1026,24 @@ function gate12f(scored, key, adjudication, exclusions) {
   {
     const stab = stabilityForLane(terra);
     const ok = stab.rate !== null && stab.rate <= 0.10 && stab.maxStreak < 3;
+    // No-verdict runs are counted as UNAVAILABLE by stabilityForLane now, so
+    // they land in this rate rather than vanishing — but a lane carrying them
+    // is still INCOMPLETE rather than FAIL-or-PASS, because the question this
+    // gate asks (is Terra's execution stable enough to trust its numbers?) has
+    // no answer until the infrastructure failure is resolved.
+    const byReason = {};
+    for (const r of terra) {
+      if (!r.unavailableFinal) continue;
+      const k = r.unavailableReason || 'engine-unavailable';
+      byReason[k] = (byReason[k] || 0) + 1;
+    }
+    const reasonBits = Object.keys(byReason).sort().map((k) => k + '×' + byReason[k]).join(', ');
     items.push({
       n: 6, name: 'UNAVAILABLE ≤ 10% after retry, no streak ≥ 3 (X-Terra)',
-      status: !complete ? 'INCOMPLETE' : (ok ? 'PASS' : 'FAIL'),
+      status: !complete || terraDead.length ? 'INCOMPLETE' : (ok ? 'PASS' : 'FAIL'),
       detail: stab.unavailableCount + '/' + stab.total + ' = ' + pct(stab.rate) + '; max streak ' + stab.maxStreak +
-        (complete ? '' : ' (corpus not complete)'),
+        (reasonBits ? '; by reason: ' + reasonBits : '') +
+        (complete ? '' : ' (corpus not complete)') + deadNote(terraDead, 'X-Terra'),
     });
   }
 
@@ -1143,7 +1400,11 @@ function main() {
   const files = findResultsFiles(resultsDir);
   const { records, malformedFiles } = loadResultRecords(files);
   const filtered = args.lanes.length ? records.filter((r) => args.lanes.includes(r.lane)) : records;
-  const { scored, unknownIds } = scoreRecords(filtered, key, { lenientPaths: args.lenientPaths });
+  const { scored: rawScored, unknownIds } = scoreRecords(filtered, key, { lenientPaths: args.lenientPaths });
+  // Dedupe BEFORE anything counts (round-3): duplicate (lane, id) rows from a
+  // pre-resume re-run otherwise pin the corpus INCOMPLETE and inflate every
+  // denominator.
+  const { deduped: scored, duplicates: duplicateRecords } = dedupeScored(rawScored);
   const adjudication = loadAdjudication(args.adjudication);
   // §2.5: adjudication PROMOTES mechanical misses before anything is counted.
   const adjudicated = applyAdjudicatedPromotions(scored, key, adjudication);
@@ -1235,6 +1496,7 @@ function main() {
     lenientPaths: args.lenientPaths, strictPaths: !args.lenientPaths,
     identityExclusions: exclusions, emptyFindings,
     adjudicatedPromotions: adjudicated.promotions, adjudicatedPromotionsRejected: adjudicated.rejected,
+    duplicateRecords,
     gate12f: gate12fResult, gate12d: gate12dResult,
     unknownIds, malformedFiles,
     adjudicationLoaded: !!adjudication,
@@ -1249,7 +1511,9 @@ function main() {
 module.exports = {
   wilson, extractFindingsSection, splitFindingBlocks, parseSeverity, parseCitations,
   fileMatches, classifyFileMatch, overlapsWithTolerance, mentionsSymbol, evaluateSeedHit, scoreRecords,
-  extractServedModel, classifyIdentity, identityExclusions, applyAdjudicatedPromotions, LANE_EXPECTED_MODEL,
+  extractServedModel, classifyIdentity, identityEvidence, identityExclusions,
+  applyAdjudicatedPromotions, dedupeScored, citesLocatorFile, normalizeWhitespace,
+  LANE_EXPECTED_MODEL, KNOWN_MODEL_FAMILIES,
   gate12f, gate12d, loadKey, loadResultRecords, findResultsFiles, parseArgs,
   PROXIMITY_WINDOW, SEVERITIES,
 };

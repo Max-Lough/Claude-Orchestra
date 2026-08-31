@@ -217,6 +217,22 @@ function checkPhaseOrder(lane, phase, key, resultsDir) {
     if (missing.length) {
       return { ok: false, refusal: 'phase ' + prior + ' is INCOMPLETE on lane ' + lane + ' (' + missing.length + ' of ' + expected.length + ' artifact(s) unrecorded: ' + missing.slice(0, 6).join(', ') + (missing.length > 6 ? ', …' : '') + '). §2.6 runs the phases in order; finish phase ' + prior + ' first.' };
     }
+    // Round-3 (Anthropic MINOR): presence of a record is not completion. The
+    // round-2 check accepted 24 SPAWN_FAILED records as a finished phase 0, so
+    // phase 1 could proceed on a pilot that measured no draw at all — and the
+    // projected-draw arm of the very next gate depends on that measurement.
+    const unusable = [];
+    for (const rec of recs) {
+      const attempts = rec && Array.isArray(rec.attempts) ? rec.attempts : [];
+      const last = attempts.length ? attempts[attempts.length - 1] : null;
+      if (!last || isUnavailableAttempt(last)) unusable.push((rec && rec.id) || '(no id)');
+    }
+    if (unusable.length) {
+      return { ok: false, refusal: 'phase ' + prior + ' has ' + unusable.length + ' of ' + expected.length +
+        ' artifact(s) with NO usable verdict on lane ' + lane + ' (' + unusable.slice(0, 6).join(', ') + (unusable.length > 6 ? ', …' : '') +
+        '). A record is not a result: phase ' + prior + ' is the run whose measured draw phase ' + phase +
+        '\'s projected-draw check depends on, so it must have produced verdicts, not just rows.' };
+    }
   }
   return { ok: true, refusal: null };
 }
@@ -562,6 +578,107 @@ function appendResult(resultsFile, record) {
 }
 
 /**
+ * Reads a results file, or returns [] when it is absent. Throws (rather than
+ * silently starting over) on anything unreadable — the same discipline
+ * appendResult applies.
+ */
+function readResults(file) {
+  if (!fs.existsSync(file)) return [];
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); }
+  catch (e) { const err = new Error('cannot read ' + file + ': ' + e.message); err.wo12ResultsCorrupt = true; throw err; }
+  let arr;
+  try { arr = JSON.parse(raw); } catch (e) {
+    const err = new Error(file + ' does not parse as JSON: ' + e.message);
+    err.wo12ResultsCorrupt = true; throw err;
+  }
+  if (!Array.isArray(arr)) {
+    const err = new Error(file + ' is not a JSON array');
+    err.wo12ResultsCorrupt = true; throw err;
+  }
+  return arr;
+}
+
+/**
+ * §2.6 RESUME (round-3, Anthropic MAJOR 5 / cross-vendor MAJOR at
+ * run-lane.js:821). The round-2 loop dispatched every artifact of the phase
+ * unconditionally, while the driver's OWN refusal texts told the operator that
+ * "the artifacts already recorded in it must not be re-billed" — an instruction
+ * there was no way to obey and still finish the phase. Worse than the cost: the
+ * duplicate records wedged scoring permanently, because `complete` demands
+ * exactly 84 records per lane and gate 1's denominator grew past the seed
+ * population.
+ *
+ * An artifact is ALREADY RECORDED when the results file holds a record for its
+ * id whose final attempt is terminal — COMPLETED, or unavailable after the one
+ * retry §2.5 allows. A record whose single attempt is unavailable is NOT
+ * terminal: its retry never happened, so it is re-dispatched.
+ *
+ * DUPLICATES are a refusal, not something to clean up silently: a file that
+ * already contains two records for one id is evidence of a previous
+ * re-billing, and the operator has to decide which to keep.
+ */
+function planResume(resultsFile, artifacts) {
+  const existing = readResults(resultsFile);
+  const byId = new Map();
+  const duplicates = [];
+  for (const rec of existing) {
+    const id = rec && rec.id;
+    if (!id) continue;
+    if (byId.has(id)) { if (duplicates.indexOf(id) === -1) duplicates.push(id); }
+    byId.set(id, rec);
+  }
+  if (duplicates.length) {
+    const err = new Error(
+      'refusing: ' + resultsFile + ' already contains DUPLICATE records for ' + duplicates.length + ' artifact(s): ' +
+      duplicates.join(', ') + '. That is the fingerprint of a phase re-run that re-billed reviews already paid for. ' +
+      'Decide which record to keep (they are all preserved, verbatim), remove the others, then re-run — this driver ' +
+      'will not guess, and will not append a third.'
+    );
+    err.wo12DuplicateResults = true;
+    throw err;
+  }
+  const done = [];
+  const todo = [];
+  for (const a of artifacts) {
+    const rec = byId.get(a.id);
+    const attempts = rec && Array.isArray(rec.attempts) ? rec.attempts : null;
+    const last = attempts && attempts.length ? attempts[attempts.length - 1] : null;
+    if (!last) { todo.push(a); continue; }
+    const terminal = !isUnavailableAttempt(last) || attempts.length >= 2;
+    if (terminal) done.push({ artifact: a, record: rec, status: last.status });
+    else todo.push(a);
+  }
+  return { existing, done, todo };
+}
+
+/**
+ * §2.6's phase-0 stop condition counts ">2 UNAVAILABLE **in either lane**", and
+ * a phase can be run across several invocations. Round-3 (cross-vendor MAJOR at
+ * run-lane.js:855): the round-2 counter was a local variable, so a fresh
+ * invocation restarted at zero, and a lane that had already burned three
+ * UNAVAILABLE on X-Sol did not stop X-Terra. Counted from the results files on
+ * DISK, across every lane, so the rule means what it says.
+ */
+function countUnavailableOnDisk(resultsDir, phase, lanes) {
+  const perLane = {};
+  for (const lane of lanes) {
+    const file = path.join(resultsDir, 'results-' + lane + '-phase' + phase + '.json');
+    let recs = [];
+    try { recs = readResults(file); } catch (e) { recs = []; } // an unreadable file is handled elsewhere
+    let n = 0;
+    const ids = [];
+    for (const rec of recs) {
+      const attempts = rec && Array.isArray(rec.attempts) ? rec.attempts : [];
+      const last = attempts.length ? attempts[attempts.length - 1] : null;
+      if (isUnavailableAttempt(last)) { n++; ids.push(rec.id); }
+    }
+    perLane[lane] = { count: n, ids };
+  }
+  return perLane;
+}
+
+/**
  * The durable half of an owner override (round-2 MINOR): one append-only line
  * per overridden phase, next to the scripts, independent of any results file.
  */
@@ -595,8 +712,35 @@ function quoteForDisplay(a) {
  */
 function classifyVerdict(verdict) {
   if (!verdict) return null;
-  const token = String(verdict).trim().split(/[\s,;:—–-]+/)[0] || '';
-  return /^(REVIEW_UNAVAILABLE|UNAVAILABLE)$/i.test(token) ? 'UNAVAILABLE' : 'COMPLETED';
+  const text = String(verdict).trim();
+  // Round-3 (Anthropic MINOR): the round-2 splitter cut on `[\s,;:—–-]+`, so a
+  // hand-transcribed `VERDICT: REVIEW UNAVAILABLE` (a SPACE, not an
+  // underscore) yielded the leading token `REVIEW` and classified COMPLETED —
+  // the very case the docstring said was accommodated. The production runner
+  // emits `REVIEW_UNAVAILABLE`, so the X-lanes were never affected; §2.4's
+  // S-lanes are transcribed by hand and are. Both spellings are now read from
+  // the LEADING position, and `UNAVAILABLE_<something>` too, while
+  // `APPROVE — … when the engine is unavailable` still does not match because
+  // the word is not in the leading position.
+  if (/^(?:REVIEW[_ ])?UNAVAILABLE(?:[_-][A-Z0-9]+)?\b/i.test(text)) return 'UNAVAILABLE';
+  return 'COMPLETED';
+}
+
+// Statuses that mean "this run produced no usable verdict". Round-3
+// (Anthropic MAJOR 3, closing round-1 MAJOR 11's second half): these used to be
+// recorded and then counted NOWHERE — not retried, not counted by the phase-0
+// stop condition, and invisible to score.js's stability arm, so §3.1 gate 6
+// could certify a lane that emitted nothing at all as perfectly stable while
+// gate 1 recorded the infrastructure failure as "X-Terra hits 0/30". A run that
+// died without a verdict is an UNAVAILABLE run: that is what the word means.
+const DEAD_STATUS_RE = /^(NO_VERDICT_LINE|SPAWN_FAILED|KILLED_AT_OUTER_TIMEOUT)/;
+
+function isDeadStatus(status) { return DEAD_STATUS_RE.test(String(status || '')); }
+
+/** Does this attempt count as UNAVAILABLE for retry, the stop rule and scoring? */
+function isUnavailableAttempt(attempt) {
+  if (!attempt) return false;
+  return attempt.status === 'UNAVAILABLE' || isDeadStatus(attempt.status);
 }
 
 /**
@@ -649,12 +793,25 @@ function runOneAttempt(runner, wo, er, base, head, cwd, timeoutMs, laneCfg) {
   const integrityWarning = /INTEGRITY WARNING/.test(stdoutVerbatim) || /INTEGRITY WARNING/.test(verdict || '');
 
   let status;
-  if (r.error) status = 'SPAWN_FAILED (' + r.error.message + ')';
-  else if (r.signal) status = 'KILLED_AT_OUTER_TIMEOUT (' + r.signal + ')';
-  else if (!verdict) status = 'NO_VERDICT_LINE';
-  else status = classifyVerdict(verdict);
+  let unavailableReason = null;
+  if (r.error) { status = 'SPAWN_FAILED (' + r.error.message + ')'; unavailableReason = 'spawn-failed'; }
+  else if (r.signal) { status = 'KILLED_AT_OUTER_TIMEOUT (' + r.signal + ')'; unavailableReason = 'killed-at-outer-timeout'; }
+  else if (!verdict) { status = 'NO_VERDICT_LINE'; unavailableReason = 'no-verdict'; }
+  else {
+    status = classifyVerdict(verdict);
+    if (status === 'UNAVAILABLE') unavailableReason = 'engine-unavailable';
+  }
 
-  return { wallMs, verdict: verdict || '(none)', status, engineHeader, integrityWarning, stdout: stdoutVerbatim };
+  return {
+    wallMs, verdict: verdict || '(none)', status,
+    // A run that died without printing a verdict IS unavailable — recorded with
+    // the reason so the stability table can say WHICH kind of unavailable it
+    // was, rather than the round-2 behaviour of recording a status nothing ever
+    // counted (round-3, Anthropic MAJOR 3 / round-1 MAJOR 11's second half).
+    unavailable: status === 'UNAVAILABLE' || isDeadStatus(status),
+    unavailableReason,
+    engineHeader, integrityWarning, stdout: stdoutVerbatim,
+  };
 }
 
 // ---------------------------------------------------------------------- main
@@ -690,6 +847,19 @@ function main() {
   process.stdout.write('  results:  ' + resultsFile + '\n');
   process.stdout.write('  artifacts: ' + artifacts.length + ' (dispatched in the interleaved run order below, not corpus order)\n');
   process.stdout.write('  run order: sha256(phase + ":" + id) — deterministic, identical on both X-lanes, independent of seeded/control\n\n');
+
+  // Phase ORDER is checked BEFORE the dry-run branch AND before the run order
+  // is printed, on purpose. It is not an allowance question — it is whether
+  // this phase may run at all (§2.6), and the answer is the same whether or not
+  // anything is about to be spent. A dry-run that printed a full, plausible
+  // plan for phase 3 while phase 0 had never run would be telling the operator
+  // to do something the real run is going to refuse, which is exactly the wrong
+  // way round for a rehearsal. (Round-3, cross-vendor NIT: the round-2 code
+  // checked the order before the dry-run BRANCH but after this print, so a
+  // refused run still emitted the whole plan first.)
+  const order = checkPhaseOrder(args.lane, args.phase, key, resultsDir);
+  if (!order.ok) fail('refusing (phase order, protocol §2.6):\n  ' + order.refusal);
+
   {
     const seededPositions = artifacts.map((a, i) => (a.kind === 'seeded' ? i : -1)).filter((i) => i >= 0);
     const controlPositions = artifacts.map((a, i) => (a.kind === 'control' ? i : -1)).filter((i) => i >= 0);
@@ -701,15 +871,6 @@ function main() {
     process.stdout.write('  seeded at run positions: ' + (seededPositions.map((i) => i + 1).join(', ') || '(none)') + '\n');
     process.stdout.write('  controls at run positions: ' + (controlPositions.map((i) => i + 1).join(', ') || '(none)') + '\n\n');
   }
-
-  // Phase ORDER is checked BEFORE the dry-run branch, on purpose. It is not an
-  // allowance question — it is whether this phase may run at all (§2.6), and
-  // the answer is the same whether or not anything is about to be spent. A
-  // dry-run that printed a full, plausible plan for phase 3 while phase 0 had
-  // never run would be telling the operator to do something the real run is
-  // going to refuse, which is exactly the wrong way round for a rehearsal.
-  const order = checkPhaseOrder(args.lane, args.phase, key, resultsDir);
-  if (!order.ok) fail('refusing (phase order, protocol §2.6):\n  ' + order.refusal);
 
   if (args.dryRun) {
     process.stdout.write('DRY RUN — nothing executed, no Quartermaster check, nothing billed.\n');
@@ -818,10 +979,25 @@ function main() {
     : fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-wo12-run-'));
   const keyBlobSha = buildCorpus.keyBlobShaFor(repoRoot);
 
-  let unavailableCount = 0;
-  for (let i = 0; i < artifacts.length; i++) {
-    const a = artifacts[i];
-    process.stdout.write('[' + (i + 1) + '/' + artifacts.length + '] ' + a.id + ' ...\n');
+  // §2.6 RESUME (round-3): skip what is already recorded rather than re-billing
+  // it. Computed AFTER the P0 gate so a resumed phase still passes the gate,
+  // and printed so the operator sees exactly what is being skipped and why.
+  const resume = planResume(resultsFile, artifacts);
+  for (const d of resume.done) {
+    process.stdout.write('    already recorded: ' + d.artifact.id + ' (' + d.status + ') — skipping, not re-billing\n');
+  }
+  if (resume.done.length) {
+    process.stdout.write('  resuming: ' + resume.done.length + ' of ' + artifacts.length +
+      ' artifact(s) already recorded in ' + path.basename(resultsFile) + '; ' + resume.todo.length + ' to run\n\n');
+  }
+  if (!resume.todo.length) {
+    process.stdout.write('\nnothing to do: all ' + artifacts.length + ' artifact(s) are already recorded in ' + resultsFile + '\n');
+    return;
+  }
+
+  for (let i = 0; i < resume.todo.length; i++) {
+    const a = resume.todo[i];
+    process.stdout.write('[' + (i + 1) + '/' + resume.todo.length + '] ' + a.id + ' ...\n');
     const wo = readBrief(path.join(briefsDir, a.id + '.wo.txt'), 'work order', a.id);
     const er = readBrief(path.join(briefsDir, a.id + '.er.txt'), 'executor report', a.id);
     const mat = buildCorpus.materializeArtifact(a, cloneDir, patchesDir, {
@@ -833,7 +1009,11 @@ function main() {
     let attempt = runOneAttempt(runner, wo, er, mat.base, mat.head, mat.runCloneDir, timeoutMs, laneCfg);
     attempts.push(attempt);
     process.stdout.write('    attempt 1: ' + attempt.status + ' / ' + attempt.verdict + '  (' + fmtMs(attempt.wallMs) + ')\n');
-    if (attempt.status === 'UNAVAILABLE') {
+    // §2.5 retries "each UNAVAILABLE" once — and a run that died without a
+    // verdict IS unavailable (round-3). The round-2 code retried only the
+    // literal 'UNAVAILABLE' status, so a spawn failure or an outer-timeout kill
+    // was recorded once and never given the retry the protocol grants it.
+    if (isUnavailableAttempt(attempt)) {
       const retryAttempt = runOneAttempt(runner, wo, er, mat.base, mat.head, mat.runCloneDir, timeoutMs, laneCfg);
       attempts.push(retryAttempt);
       process.stdout.write('    attempt 2 (retry): ' + retryAttempt.status + ' / ' + retryAttempt.verdict + '  (' + fmtMs(retryAttempt.wallMs) + ')\n');
@@ -852,24 +1032,37 @@ function main() {
     const total = appendResult(resultsFile, record);
     process.stdout.write('    -> appended (' + total + ' record(s) now in ' + path.basename(resultsFile) + ')\n');
 
-    if (attempts[attempts.length - 1].status === 'UNAVAILABLE') unavailableCount++;
-    if (args.phase === 0 && unavailableCount > PHASE0_MAX_UNAVAILABLE) {
-      fail(
-        'HALTING phase 0 (§2.6 stop condition): ' + unavailableCount + ' final UNAVAILABLE result(s) on lane ' + args.lane +
-        ', more than the 2 the pilot tolerates. Escalate the fault (roster/codex-fault-investigation-*.md) before ' +
-        'proceeding; ' + (i + 1) + ' of ' + artifacts.length + ' artifact(s) are recorded in ' + resultsFile + ' and must not be re-billed.'
-      );
+    // §2.6's phase-0 stop condition, counted from DISK across BOTH lanes
+    // (round-3, cross-vendor MAJOR): ">2 UNAVAILABLE in either lane" is a
+    // statement about the phase, not about one process. The round-2 local
+    // counter restarted at zero on every invocation and never saw the other
+    // lane at all.
+    if (args.phase === 0) {
+      const perLane = countUnavailableOnDisk(resultsDir, args.phase, Object.keys(LANES));
+      const breached = Object.keys(perLane).filter((l) => perLane[l].count > PHASE0_MAX_UNAVAILABLE);
+      if (breached.length) {
+        const detail = breached.map((l) => l + ': ' + perLane[l].count + ' (' + perLane[l].ids.join(', ') + ')').join('; ');
+        fail(
+          'HALTING phase 0 (§2.6 stop condition): more than ' + PHASE0_MAX_UNAVAILABLE + ' final UNAVAILABLE result(s) — ' + detail +
+          '. The rule is ">2 in EITHER lane", counted across every invocation from the results files on disk, so this halts ' +
+          'even when the breach happened on the other lane or in an earlier run. Escalate the fault ' +
+          '(roster/codex-fault-investigation-*.md) before proceeding; everything already recorded in ' + resultsFile +
+          ' is preserved and will be SKIPPED on the next run, not re-billed.'
+        );
+      }
     }
   }
 
-  process.stdout.write('\ndone: ' + artifacts.length + ' artifact(s), results in ' + resultsFile + '\n');
+  process.stdout.write('\ndone: ' + resume.todo.length + ' artifact(s) run this invocation (' +
+    resume.done.length + ' already recorded), results in ' + resultsFile + '\n');
 }
 
 module.exports = {
   LANES, PHASE0_MAX_UNAVAILABLE, OVERRIDE_LOG_BASENAME,
   parseArgs, phaseRunOrder, checkQuartermaster, checkProjectedDraw, checkPhaseOrder, readRequiredReserve, loadLadder, toolingRepoRoot,
   resolveQmCommand, resolveRunner, runOneAttempt, classifyVerdict, extractEngineHeader,
-  appendResult, appendOverrideLog,
+  appendResult, appendOverrideLog, readResults, planResume, countUnavailableOnDisk,
+  isDeadStatus, isUnavailableAttempt, DEAD_STATUS_RE,
 };
 
 if (require.main === module) {

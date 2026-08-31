@@ -141,6 +141,30 @@ function fail(msg) {
   throw e;
 }
 
+// --------------------------------------------------------- artifact ids
+//
+// An artifact id is interpolated into filesystem paths — `corpus/<id>.patch`,
+// `corpus/<id>.seed.json`, `corpus/content/<id>.json`, and (the dangerous one)
+// `<--run-clone-root>/<id>`, which `prepareRunClone` DELETES RECURSIVELY before
+// re-creating it. The cross-vendor R0 lane (`roster/wo12-r0-review-openai-3.md`,
+// CRITICAL at build-corpus.js:364) demonstrated the consequence: an id of
+// `../victim` escaped the run-clone root and `rmSync` destroyed a sibling
+// directory — their reproducer lost its sentinel file.
+//
+// Ids are not free text: the corpus is `sdc-001` … `sdc-084` by construction
+// (`base-pool.json`), so the id is validated against that shape BEFORE it is
+// joined into any path or handed to any removal. Anything else is refused.
+const ARTIFACT_ID_RE = /^sdc-\d{3}$/;
+
+function assertSafeArtifactId(id, where) {
+  if (typeof id !== 'string' || !ARTIFACT_ID_RE.test(id)) {
+    fail((where ? where + ': ' : '') + 'unsafe artifact id ' + JSON.stringify(id) +
+      ' — an id is interpolated into filesystem paths and into a recursive delete, so it must match ' +
+      ARTIFACT_ID_RE + ' (sdc-001 … sdc-084). Refusing before any path is built.');
+  }
+  return id;
+}
+
 // -------------------------------------------------------------------- git
 
 function git(dir, args) {
@@ -172,11 +196,90 @@ function detectRepoRoot() {
 
 // -------------------------------------------------------------------- clone
 
-// Filesystems that compare paths case-insensitively. Windows and macOS both
-// do by default, and on those two the same directory can be spelled
-// `C:\Users\...` or `c:\users\...` — a case-sensitive string compare would
-// call those different places.
-const CASE_INSENSITIVE_FS = process.platform === 'win32' || process.platform === 'darwin';
+// --------------------------------------------------- case-sensitivity probe
+//
+// Whether two spellings that differ only in case name the same directory is a
+// property of the FILESYSTEM, not of the platform. `process.platform` is a bad
+// proxy in both directions: macOS is case-INSENSITIVE on a default APFS volume
+// but case-SENSITIVE when the volume was formatted APFSX (and on any
+// case-sensitive disk image, which CI images sometimes use), while Linux — the
+// "obviously sensitive" platform — mounts exFAT, NTFS-3g, ciopfs and network
+// shares that fold case. Assuming from the platform gets the answer wrong on
+// real machines, so this asks the filesystem instead.
+//
+// The probe is READ-ONLY: it case-swaps the BASENAME of the nearest existing
+// directory and stats that spelling. Success means the filesystem folded the
+// name; ENOENT means it did not. Nothing is created, so a source repository
+// under review never sees a probe file appear and vanish in its own tree.
+//
+// Fail-safe default when the probe cannot conclude: INSENSITIVE. Folding makes
+// two spellings compare EQUAL, which makes the nesting guard MORE likely to
+// fire — the fail-closed direction for a guard whose whole job is refusing.
+const CASE_PROBE_CACHE = new Map();
+
+function caseProbeOverride() {
+  if (process.env.WO12_FORCE_CASE_SENSITIVE === '1') return false;
+  if (process.env.WO12_FORCE_CASE_INSENSITIVE === '1') return true;
+  return null;
+}
+
+function swapCase(s) {
+  return String(s).replace(/[A-Za-z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+}
+
+/** The nearest ancestor of `p` (inclusive) that exists and is a directory. */
+function nearestExistingDir(p) {
+  let abs = path.resolve(p);
+  for (;;) {
+    try { if (fs.statSync(abs).isDirectory()) return abs; } catch (e) { /* keep walking up */ }
+    const parent = path.dirname(abs);
+    if (parent === abs) return abs;
+    abs = parent;
+  }
+}
+
+/**
+ * Does the filesystem holding `somePath` compare names case-insensitively?
+ * Answered empirically, cached per probed directory. `WO12_FORCE_CASE_SENSITIVE=1`
+ * / `WO12_FORCE_CASE_INSENSITIVE=1` override the probe (tests, and an operator
+ * on an exotic mount); the override is consulted BEFORE the cache so it takes
+ * effect immediately without a cache flush.
+ */
+function isCaseInsensitiveFs(somePath) {
+  const forced = caseProbeOverride();
+  if (forced !== null) return forced;
+
+  let dir = nearestExistingDir(somePath === undefined || somePath === null ? '.' : somePath);
+  if (CASE_PROBE_CACHE.has(dir)) return CASE_PROBE_CACHE.get(dir);
+  const probed = dir;
+
+  let result = null;
+  // Walk up until a basename with at least one letter to swap turns up.
+  for (;;) {
+    const base = path.basename(dir);
+    const swapped = swapCase(base);
+    if (base && swapped !== base) {
+      const other = path.join(path.dirname(dir), swapped);
+      try {
+        fs.statSync(other);
+        result = true; // the swapped spelling resolves: names are folded
+      } catch (e) {
+        result = false; // ENOENT: the swapped spelling is a different name
+      }
+      break;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // reached the root with nothing to swap
+    dir = parent;
+  }
+  if (result === null) result = true; // inconclusive -> fail closed (see above)
+
+  CASE_PROBE_CACHE.set(probed, result);
+  return result;
+}
+
+/** Test seam: forget every probe result. */
+function resetCaseProbeCache() { CASE_PROBE_CACHE.clear(); }
 
 function realpathOrNull(p) {
   try { if (fs.realpathSync.native) return fs.realpathSync.native(p); } catch (e) { /* fall through */ }
@@ -222,10 +325,14 @@ function realResolve(p) {
 }
 
 // Comparison key: identical paths must compare equal on a case-insensitive
-// filesystem.
-function pathKey(p) { return CASE_INSENSITIVE_FS ? String(p).toLowerCase() : String(p); }
+// filesystem. `context` is the path whose filesystem decides — the parent /
+// left-hand side of the comparison, since both sides are always on it by the
+// time these are called.
+function pathKey(p, context) {
+  return isCaseInsensitiveFs(context === undefined ? p : context) ? String(p).toLowerCase() : String(p);
+}
 
-function samePath(a, b) { return pathKey(a) === pathKey(b); }
+function samePath(a, b) { return pathKey(a, a) === pathKey(b, a); }
 
 /**
  * Is `child` strictly inside `parent`? Decided from `path.relative()`'s own
@@ -239,9 +346,21 @@ function samePath(a, b) { return pathKey(a) === pathKey(b); }
  * named `..config` is not mistaken for an escape.
  */
 function isInside(parent, child) {
-  const rel = path.relative(pathKey(parent), pathKey(child));
+  const fold = isCaseInsensitiveFs(parent);
+  const rel = path.relative(pathKey(parent, parent), pathKey(child, parent));
   if (rel === '' || path.isAbsolute(rel)) return false;
-  return rel.split(/[\\/]/)[0] !== '..';
+  if (rel.split(/[\\/]/)[0] === '..') return false;
+  if (!fold) {
+    // `path.relative` cannot express both case regimes on its own: the win32
+    // implementation lowercases internally (so `C:\T\Abc` -> `C:\T\ABC\inner`
+    // returns "inner", folding whether we asked it to or not), while the posix
+    // implementation never folds. `pathKey` supplies the folding posix lacks;
+    // this supplies the strictness win32 lacks. Re-walking the traversal from
+    // the parent must land on the child EXACTLY, byte for byte, or the two
+    // differed only in case on a filesystem that treats that as two names.
+    if (path.resolve(parent, rel) !== path.resolve(child)) return false;
+  }
+  return true;
 }
 
 // Creates (or, if --clone-root already looks like a clone OF THIS SOURCE,
@@ -381,14 +500,45 @@ function sanitizeClone(dir, head, keyBlobSha) {
     fail('sanitize ' + dir + ': objects are reachable beyond the pinned head\'s ancestry (rev-list --all has ' +
       all.split('\n').filter(Boolean).length + ' commit(s), rev-list HEAD has ' + fromHead.split('\n').filter(Boolean).length + ')');
   }
+  // (a) PATH-based: nothing under the corpus directory may be reachable from
+  // this clone at all. Round-3 (Anthropic MINOR): the blob assertion below is
+  // keyed to the CURRENT key.json's bytes, so a base commit that carried an
+  // OLDER key.json would sail past it — the sha differs, and an answer key
+  // would sit in the clone with the check reporting success. Path-based is the
+  // assertion that survives the corpus changing.
+  const wo12Dir = path.posix.dirname(KEY_REL_PATH); // .../wo12/corpus
+  const inTree = gitOrThrow(dir, ['ls-tree', '-r', '--name-only', 'HEAD', '--', wo12Dir],
+    'list corpus paths in the sanitized clone ' + dir).trim();
+  if (inTree) {
+    fail('sanitize ' + dir + ': the pinned head\'s TREE contains corpus path(s) under ' + wo12Dir + ':\n  ' +
+      inTree.split(/\r?\n/).slice(0, 10).join('\n  '));
+  }
+  const inHistory = gitOrThrow(dir, ['log', '--all', '--oneline', '--max-count=1', '--', wo12Dir],
+    'search the sanitized clone\'s history for corpus paths').trim();
+  if (inHistory) {
+    fail('sanitize ' + dir + ': a commit REACHABLE from this clone touches ' + wo12Dir + ' (' + inHistory +
+      ') — the corpus is recoverable from history even though the worktree is clean.');
+  }
+
+  // (b) BLOB-based, when the caller could compute it: a direct check that this
+  // exact key.json is not in the object store. Complements (a) rather than
+  // replacing it.
+  let keyBlobChecked = false;
   if (keyBlobSha) {
     const present = git(dir, ['cat-file', '-e', keyBlobSha]);
     if (present.status === 0) {
       fail('sanitize ' + dir + ': the sealed answer key\'s blob (' + keyBlobSha + ', ' + KEY_REL_PATH +
         ') is STILL PRESENT in this clone\'s object store — the reviewer could `git cat-file -p` it.');
     }
+    keyBlobChecked = true;
+  } else {
+    // Round-3 (Anthropic MINOR): the round-2 code skipped this SILENTLY when
+    // the sha could not be computed. A check that did not run must say so.
+    process.stderr.write('build-corpus: NOTE — the key-blob assertion did not run for ' + dir +
+      ' (no blob sha available: ' + KEY_REL_PATH + ' is absent from the source tree, or `git hash-object` failed). ' +
+      'The path-based assertions above DID run and passed.\n');
   }
-  return { dir, head, refs: leftoverRefs, keyBlobSha: keyBlobSha || null };
+  return { dir, head, refs: leftoverRefs, keyBlobSha: keyBlobSha || null, keyBlobChecked, pathAssertionsRan: true };
 }
 
 /**
@@ -415,6 +565,15 @@ function keyBlobShaFor(sourceRepo, keyRelPath) {
  */
 function prepareRunClone(buildClone, head, runDir, keyBlobSha) {
   const resolvedRun = path.resolve(runDir);
+  // The last line of defence before a recursive delete (round-3, cross-vendor
+  // CRITICAL): whatever produced this path, its final component must be a
+  // well-formed artifact id. `path.resolve` has already collapsed any `..`, so
+  // an id like `../victim` shows up here as a basename that cannot match.
+  if (!ARTIFACT_ID_RE.test(path.basename(resolvedRun))) {
+    fail('refusing to prepare (and recursively delete) a run clone at ' + resolvedRun +
+      ' — its final path component is not a valid artifact id (' + ARTIFACT_ID_RE + '). This is the guard that stops a ' +
+      'crafted or malformed id from escaping --run-clone-root and deleting a sibling directory.');
+  }
   if (isInside(realResolve(buildClone), realResolve(resolvedRun))) {
     fail('refusing to build the run clone at ' + resolvedRun + ' — it is inside the build clone ' + buildClone);
   }
@@ -450,6 +609,7 @@ function prepareRunClone(buildClone, head, runDir, keyBlobSha) {
 function materializeArtifact(artifact, cloneDir, patchesDir, opts) {
   opts = opts || {};
   if (!artifact || !artifact.id) fail('materializeArtifact: artifact is missing an id');
+  assertSafeArtifactId(artifact.id, 'materializeArtifact');
   if (!artifact.base) fail(artifact.id + ': key.json entry has no `base` sha');
 
   // Leftover state from a prior artifact in a reused clone must never leak
@@ -581,6 +741,10 @@ function loadKey(keyPath) {
     fail('key.json at ' + keyPath + ' is not valid JSON: ' + e.message);
   }
   if (!key || !Array.isArray(key.artifacts)) fail('key.json at ' + keyPath + ' has no `artifacts` array');
+  // Validate EVERY id at the door, so nothing downstream can join or delete a
+  // path built from an id this file never vetted (round-3, cross-vendor
+  // CRITICAL).
+  key.artifacts.forEach((a, i) => assertSafeArtifactId(a && a.id, keyPath + ' artifacts[' + i + ']'));
   return key;
 }
 
@@ -630,7 +794,12 @@ function main() {
 module.exports = {
   GIT_PINS,
   KEY_REL_PATH,
-  CASE_INSENSITIVE_FS,
+  ARTIFACT_ID_RE,
+  assertSafeArtifactId,
+  isCaseInsensitiveFs,
+  resetCaseProbeCache,
+  swapCase,
+  nearestExistingDir,
   realResolve,
   isInside,
   samePath,

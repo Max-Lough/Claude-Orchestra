@@ -85,6 +85,26 @@ saw it.
   have created a clone inside the tree under review. Fixed by resolving the
   nearest existing ancestor on both sides and comparing segment-wise, case-folded
   on win32/darwin, with every source-spelling × destination-spelling pair pinned.
+- **Round 3 (pre-run), after the round-2 delta verdicts** (Anthropic 0C/5M/6m,
+  OpenAI 4C/2M — no CRITICAL reopened). The finding that mattered was measured,
+  not argued: a fresh evaluator separated seeds from controls at 83% on ORDER
+  prose alone, because seeds were drawn from single-invariant code commits and
+  controls from softer chore/docs commits. The fix is content plus a lint: every
+  control ORDER/CLAIMS was re-authored to the seeds' register from its own
+  commit body (135–160 / 65–95 words, hard constraints the body supports), then
+  calibrated against the seeds' measured hardness (2.3 whole-word
+  must/never/exactly/… per ORDER) — first drafts overshot to 4–16 and would have
+  flipped the tell — and a **population-balance lint** now fails assembly when the
+  populations' mean lengths differ by more than 6 words or their hardness ratio
+  leaves 0.80–1.25 (final: Δ3.2 / Δ1.8 / 1.00). Also closed: artifact ids are
+  validated before any delete path; no-verdict runs are UNAVAILABLE, not 0-hit
+  completions; false-blocker completeness is per finding; adjudication
+  promotions require the lane, the id, and a quote that appears in that lane's
+  verdict; interrupted phases resume and duplicates refuse; the phase-0 stop
+  counter persists across invocations and lanes; the exact-path suffix tier is
+  gone. One limit stated rather than papered over: the runner's model header
+  echoes the request, so the 12f identity gate is labelled `echoed-request` until
+  the runner surfaces a served model. Suite: 533 checks.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

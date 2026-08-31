@@ -121,6 +121,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const HERE = __dirname;
+const buildCorpusLib = require(path.join(HERE, 'build-corpus.js'));
 const TYPES = ['CV', 'OO', 'LC', 'FT', 'HF', 'RC'];
 const VARIANTS = ['V1', 'V2', 'V3'];
 
@@ -132,6 +133,43 @@ const ORDER_MIN_WORDS = 60;
 const ORDER_MAX_WORDS = 160;
 const CLAIMS_MIN_WORDS = 30;
 const CLAIMS_MAX_WORDS = 100;
+
+// ------------------------------------------------- population balance (round 3)
+//
+// The word BANDS above are satisfied by both populations and are not the test.
+// Both round-2 delta reviews found the same residual tell and called it
+// blocking: the corpus's own construction record printed
+//
+//     seeded  144.3 ± 11.7 order words   control 128.3 ± 18.3
+//
+// and shipped anyway, under a docstring that had already declared "a visible gap
+// is a blinding finding". Measured over the sealed corpus, `ORDER < 121 words`
+// identified a CONTROL at 100% precision across 21 of 54 controls. A blind
+// re-read by a fresh evaluator, given only 24 brief files, then separated the
+// populations at 83% — naming "density of hard absolute constraints in the
+// ORDER" as its top signal and going 3 for 3 on its confident bets.
+//
+// So two distributional properties are now HARD FAILURES, not report lines:
+//   - mean word count, seeded vs control, within MEAN_WORD_TOLERANCE for both
+//     `order` and `claims`;
+//   - a HARDNESS PROXY — how many absolute-constraint words the ORDER carries —
+//     whose seeded/control ratio must sit inside [HARDNESS_RATIO_MIN,
+//     HARDNESS_RATIO_MAX]. The register, not just the length.
+// Both are reported in CONSTRUCTION.md's length report either way, so the
+// numbers stay visible even when they pass.
+const MEAN_WORD_TOLERANCE = 6;
+const HARDNESS_RATIO_MIN = 0.8;
+const HARDNESS_RATIO_MAX = 1.25;
+
+// The blind evaluator's own vocabulary, as it described the signal: absolute
+// constraint words. Whole-word, case-insensitive; `byte-identical` is hyphenated
+// so it is matched as a unit.
+const HARDNESS_TERMS_RE = /\b(?:must|never|exactly|only|byte-identical|unchanged|forbid(?:s|den|ding)?)\b/gi;
+
+function hardnessScore(text) {
+  const m = String(text || '').match(HARDNESS_TERMS_RE);
+  return m ? m.length : 0;
+}
 
 // ------------------------------------------------------- hazard vocabulary
 
@@ -341,9 +379,17 @@ function skeletonize(text, artifact, head) {
     if (line === 'ORDER:') { out.push(line); inProse = 'ORDER'; continue; }
     if (line === 'CLAIMS:') { out.push(line); inProse = 'CLAIMS'; continue; }
     if (line === HAZARD_HEADER) { out.push(line); inProse = 'HAZARDS'; continue; }
+    // Round-3 NIT: mask the SUBJECT first. The round-2 order wrote `<HEAD>` /
+    // `<BASE>` into the line before substituting the subject, so a subject that
+    // happened to be a substring of those tokens corrupted the mask
+    // (`Base (its parent):   <BA<SUBJECT>E>`, reproducible with a
+    // one-character subject). Real subjects are long sentences, and the
+    // corruption differed per artifact so it would have made the lint FIRE
+    // rather than pass — but ordering the substitutions correctly costs
+    // nothing and removes the trap.
+    if (artifact.subject) line = line.split(artifact.subject).join('<SUBJECT>');
     line = line.split(head).join('<HEAD>');
     if (artifact.base) line = line.split(artifact.base).join('<BASE>');
-    if (artifact.subject) line = line.split(artifact.subject).join('<SUBJECT>');
     out.push(line);
   }
   return out.join('\n');
@@ -515,6 +561,11 @@ function assertContentDirPreserved(contentDir, before, createdAllowed, what) {
 function checkRequirements(pool, paths) {
   const missing = [];
   for (const slot of pool.slots) {
+    // Every id here is interpolated into a filesystem path (`<id>.patch`,
+    // `<id>.seed.json`, `content/<id>.json`, `briefs/<id>.wo.txt`). Validated
+    // with build-corpus's own rule so one shape is enforced everywhere
+    // (round-3, cross-vendor CRITICAL).
+    buildCorpusLib.assertSafeArtifactId(slot && slot.id, 'base-pool.json slot');
     if (slot.kind === 'seeded') {
       const seedPath = path.join(paths.corpusDir, slot.id + '.seed.json');
       const patchPath = path.join(paths.corpusDir, slot.id + '.patch');
@@ -739,6 +790,54 @@ function structuralTellLint(rows, findings) {
 }
 
 /**
+ * The population-balance lint (round 3, both delta records). Hard failure —
+ * the round-2 code computed these numbers, printed them, and shipped a visible
+ * gap. See MEAN_WORD_TOLERANCE above for why this is a gate rather than a note.
+ */
+function populationBalanceLint(rows, findings) {
+  const seeded = rows.filter((r) => r.kind === 'seeded');
+  const controls = rows.filter((r) => r.kind === 'control');
+  if (!seeded.length || !controls.length) return null; // nothing to balance
+
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const sOrder = mean(seeded.map((r) => r.orderWords));
+  const cOrder = mean(controls.map((r) => r.orderWords));
+  const sClaims = mean(seeded.map((r) => r.claimsWords));
+  const cClaims = mean(controls.map((r) => r.claimsWords));
+  const sHard = mean(seeded.map((r) => r.orderHardness));
+  const cHard = mean(controls.map((r) => r.orderHardness));
+
+  if (Math.abs(sOrder - cOrder) > MEAN_WORD_TOLERANCE) {
+    findings.push('population balance: mean ORDER words differ by ' + Math.abs(sOrder - cOrder).toFixed(1) +
+      ' (seeded ' + sOrder.toFixed(1) + ', control ' + cOrder.toFixed(1) + '), above the ' + MEAN_WORD_TOLERANCE +
+      '-word tolerance. Length alone separated the populations in round 2 (ORDER < 121 words was a control at 100% precision).');
+  }
+  if (Math.abs(sClaims - cClaims) > MEAN_WORD_TOLERANCE) {
+    findings.push('population balance: mean CLAIMS words differ by ' + Math.abs(sClaims - cClaims).toFixed(1) +
+      ' (seeded ' + sClaims.toFixed(1) + ', control ' + cClaims.toFixed(1) + '), above the ' + MEAN_WORD_TOLERANCE + '-word tolerance.');
+  }
+  // The hardness ratio. A zero on either side is itself the extreme case of an
+  // imbalance, so it fails rather than dividing.
+  let ratio = null;
+  if (cHard === 0 || sHard === 0) {
+    if (sHard !== cHard) {
+      findings.push('population balance: the ORDER hardness proxy is ' + sHard.toFixed(2) + ' (seeded) vs ' + cHard.toFixed(2) +
+        ' (control) — one population carries absolute-constraint language and the other carries none, which is the register ' +
+        'tell a blind reader used to separate them at 83%.');
+    }
+  } else {
+    ratio = sHard / cHard;
+    if (ratio < HARDNESS_RATIO_MIN || ratio > HARDNESS_RATIO_MAX) {
+      findings.push('population balance: the ORDER hardness proxy ratio is ' + ratio.toFixed(2) +
+        ' (seeded ' + sHard.toFixed(2) + ' vs control ' + cHard.toFixed(2) + ' absolute-constraint words per order), outside [' +
+        HARDNESS_RATIO_MIN + ', ' + HARDNESS_RATIO_MAX + ']. "Density of hard absolute constraints in the ORDER" was the ' +
+        'top-ranked signal in the round-2 blind read.');
+    }
+  }
+  return { sOrder, cOrder, sClaims, cClaims, sHard, cHard, ratio };
+}
+
+/**
  * VARIANTS.md v2 keys the V3 hazard list on the artifact's KIND, "a property
  * of the base commit, shared by seeds and controls alike". If a KIND value is
  * ever carried by only ONE population, that sharing is not true and the hazard
@@ -858,16 +957,42 @@ function renderLengthReport(rows) {
   const seeded = rows.filter((r) => r.kind === 'seeded');
   const controls = rows.filter((r) => r.kind === 'control');
   const lines = [];
-  lines.push('| population | order words (mean ± sd) | claims words (mean ± sd) |');
-  lines.push('|---|---|---|');
-  lines.push('| seeded | ' + fmtMeanSd(meanSd(seeded.map((r) => r.orderWords))) + ' | ' + fmtMeanSd(meanSd(seeded.map((r) => r.claimsWords))) + ' |');
-  lines.push('| control | ' + fmtMeanSd(meanSd(controls.map((r) => r.orderWords))) + ' | ' + fmtMeanSd(meanSd(controls.map((r) => r.claimsWords))) + ' |');
-  lines.push('| all | ' + fmtMeanSd(meanSd(rows.map((r) => r.orderWords))) + ' | ' + fmtMeanSd(meanSd(rows.map((r) => r.claimsWords))) + ' |');
+  lines.push('| population | order words (mean ± sd) | claims words (mean ± sd) | ORDER hardness (mean ± sd) |');
+  lines.push('|---|---|---|---|');
+  const row = (label, set) => '| ' + label + ' | ' + fmtMeanSd(meanSd(set.map((r) => r.orderWords))) +
+    ' | ' + fmtMeanSd(meanSd(set.map((r) => r.claimsWords))) +
+    ' | ' + fmtMeanSd(meanSd(set.map((r) => r.orderHardness || 0))) + ' |';
+  lines.push(row('seeded', seeded));
+  lines.push(row('control', controls));
+  lines.push(row('all', rows));
   lines.push('');
   lines.push('Bands enforced on EVERY artifact: order ' + ORDER_MIN_WORDS + '–' + ORDER_MAX_WORDS +
-    ' words, claims ' + CLAIMS_MIN_WORDS + '–' + CLAIMS_MAX_WORDS + ' words (VARIANTS.md v2). A band satisfied by both');
-  lines.push('populations is necessary but not sufficient: read the two means above against each other. A visible gap is a');
-  lines.push('blinding finding even though nothing here failed.');
+    ' words, claims ' + CLAIMS_MIN_WORDS + '–' + CLAIMS_MAX_WORDS + ' words (VARIANTS.md v2).');
+  lines.push('');
+  lines.push('**The bands are not the test — the two populations\' MEANS are.** Round 2 shipped a corpus whose bands all');
+  lines.push('passed while `ORDER < 121 words` identified a control at 100% precision, and a blind reader given only brief');
+  lines.push('text separated the populations at 83% using constraint register. Both are now HARD GATES, checked before');
+  lines.push('anything is written:');
+  lines.push('');
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const dOrder = Math.abs(mean(seeded.map((r) => r.orderWords)) - mean(controls.map((r) => r.orderWords)));
+  const dClaims = Math.abs(mean(seeded.map((r) => r.claimsWords)) - mean(controls.map((r) => r.claimsWords)));
+  const sHard = mean(seeded.map((r) => r.orderHardness || 0));
+  const cHard = mean(controls.map((r) => r.orderHardness || 0));
+  const ratio = cHard === 0 ? null : sHard / cHard;
+  lines.push('| gate | value | limit | verdict |');
+  lines.push('|---|---|---|---|');
+  lines.push('| \\|mean ORDER words seeded − control\\| | ' + dOrder.toFixed(1) + ' | ≤ ' + MEAN_WORD_TOLERANCE + ' | ' +
+    (dOrder <= MEAN_WORD_TOLERANCE ? 'pass' : '**FAIL**') + ' |');
+  lines.push('| \\|mean CLAIMS words seeded − control\\| | ' + dClaims.toFixed(1) + ' | ≤ ' + MEAN_WORD_TOLERANCE + ' | ' +
+    (dClaims <= MEAN_WORD_TOLERANCE ? 'pass' : '**FAIL**') + ' |');
+  lines.push('| ORDER hardness ratio (seeded ÷ control) | ' + (ratio === null ? 'n/a' : ratio.toFixed(2)) + ' | ' +
+    HARDNESS_RATIO_MIN + '–' + HARDNESS_RATIO_MAX + ' | ' +
+    (ratio !== null && ratio >= HARDNESS_RATIO_MIN && ratio <= HARDNESS_RATIO_MAX ? 'pass' : '**FAIL**') + ' |');
+  lines.push('');
+  lines.push('The hardness proxy counts whole-word occurrences of `must`, `never`, `exactly`, `only`, `byte-identical`,');
+  lines.push('`unchanged` and `forbid*` in the ORDER prose — the vocabulary the round-2 blind evaluator named when it');
+  lines.push('explained how it was telling the populations apart.');
   return lines.join('\n');
 }
 
@@ -1282,6 +1407,7 @@ function generateAndLint(key, heads, pool, paths) {
     rows.push({
       id: a.id, kind: a.kind, variant: a.variant, baseKind, head,
       orderWords: counts.order, claimsWords: counts.claims,
+      orderHardness: hardnessScore(content.order),
       wo: briefs.wo, er: briefs.er,
       woSkeleton: skeletonize(briefs.wo, a, head),
       erSkeleton: skeletonize(briefs.er, a, head),
@@ -1290,6 +1416,7 @@ function generateAndLint(key, heads, pool, paths) {
 
   structuralTellLint(rows, findings);
   lintKindSymmetry(rows, findings);
+  const balance = populationBalanceLint(rows, findings);
 
   const erByVariant = {};
   for (const v of VARIANTS) {
@@ -1307,7 +1434,7 @@ function generateAndLint(key, heads, pool, paths) {
     kinds: Array.from(kindPopulations.keys()).sort(),
     asymmetricKinds: Array.from(kindPopulations.values()).filter((s) => s.size === 1).length,
   };
-  return { rows, findings, skeletonSummary };
+  return { rows, findings, skeletonSummary, balance };
 }
 
 function writeAtomic(file, content) {
@@ -1455,6 +1582,8 @@ module.exports = {
   parseArgs, resolvePaths, checkRequirements, loadContent, buildKeyAndNotes, contentPath,
   guardedWriteContentFile, snapshotContentDir, assertContentDirPreserved, CONTENT_IMPORT_REPORT_BASENAME,
   leakageLint, vendorLint, hazardLint, wordBandLint, structuralTellLint, lintKindSymmetry,
+  populationBalanceLint, hardnessScore,
+  MEAN_WORD_TOLERANCE, HARDNESS_RATIO_MIN, HARDNESS_RATIO_MAX,
   isSubjectLine, isV2AuthorLine,
   computeTallies, renderTalliesTable, renderConstructionMd, renderLengthReport, meanSd,
   importOrderFromWorkOrder, importClaimsFromExecutorReport, importLegacyBriefs, renderImportReport,

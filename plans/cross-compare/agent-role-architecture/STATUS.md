@@ -611,9 +611,19 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   general — 15 distinct sentence-initial labels across 21 content files, every one
   carried by a single population (e.g. `Verification:` in seeds, `Suites:` in
   controls) — so the lint forbids inline labels outright and all 21 files were
-  rewritten as prose with every fact preserved (561 checks). Round-4 assembly and
-  verification, the second blind test (a disjoint 24-id draw), the round-3 delta
-  verdicts (both lanes) and a round-4 delta follow.
+  rewritten as prose with every fact preserved (561 checks). **Round-3 delta verdict,
+  Anthropic lane: REVISE — 0 CRITICAL, 5 MAJOR, 5 MINOR** (`roster/wo12-r0-review-
+  anthropic-3.md`): its fresh blind reader scored exactly chance (50%), but a
+  corpus-level classifier still separates 25 artifacts at 100% precision on
+  distribution tails the balance lint's three means do not see — controls had been
+  authored into 135–160 / 65–95-word bands while seeds kept 121–159 / 57–99;
+  backticks in 10 seeded orders and no control; two idioms in 15 controls and no
+  seed — plus four scorer/driver fixes landing on the named path but not its
+  neighbour. **Round 5 opened** (protocol amendment x): both populations to the same
+  bands, backticks forbidden, a distribution lint (range floors/ceilings, sd ratio,
+  digit density, 3-gram exclusivity, watched idioms), and the adjacent-path closures;
+  content passes on all 84 files and the tooling closures in progress; the second
+  blind test runs on the round-5 corpus.
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

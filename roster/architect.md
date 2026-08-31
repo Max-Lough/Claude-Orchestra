@@ -89,7 +89,8 @@ replaced by the subscription Codex CLI (WO-13) or reported unavailable." `CHANGE
 2.0.0 entry already deleted `/deep-plan` and its `orchestra_deepplan` MCP tool outright —
 "No lane bills a metered API any more... the codex pack now requires the Codex CLI alone"
 — but **WO-13 itself, the work order formally chartered to migrate this transport, has
-not been executed**: `plans/cross-compare/agent-role-architecture/STATUS.md:521-523`
+not been executed**: `plans/cross-compare/agent-role-architecture/STATUS.md` §
+"Fresh-session quick start", the WO-13 "(metered planning transport…)" item
 still lists it unstruck among the parallelizable orders, noting "scope needs a check
 against the `/deep-plan` retirement." So: no separate metered path survives to migrate
 away from, but WO-13's own formal scope and closure remain open. This launcher declares

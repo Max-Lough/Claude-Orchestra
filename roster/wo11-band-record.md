@@ -152,7 +152,8 @@ gap found this round, with the verbatim grep evidence behind each.
    `2.0.0` entry confirms `/deep-plan`, `orchestra-deepplan.js`, and the
    `orchestra_deepplan` MCP tool are already deleted outright — "No lane
    bills a metered API any more... the codex pack now requires the Codex CLI
-   alone." But `plans/cross-compare/agent-role-architecture/STATUS.md:521-523`
+   alone." But `plans/cross-compare/agent-role-architecture/STATUS.md` §
+   "Fresh-session quick start", the WO-13 "(metered planning transport…)" item
    still lists **WO-13 itself** unstruck among the parallelizable,
    not-yet-run orders: "WO-13 (metered planning transport; 'after WO-4, any
    time' — but scope needs a check against the `/deep-plan` retirement)."
@@ -304,7 +305,17 @@ raised, per the Director's ruling on this band:
 
 ## Dispositions
 
-_(pending — stage 2/3, following an R0 review of this staffing round)_
+Findings are dispositioned round-by-round as they are fixed, not collected in
+a separate table — see "## Review rounds" below for the round-by-round
+ledger. Rulings on named findings are recorded in place: the Conductor audit
+dispositions (D1-D6) above; each review round's own fix commit and its
+"## Review rounds" entry state exactly which findings closed and where.
+Ruled and closed across rounds 2-4: round 1's R0 review (`roster/
+wo11-r0-review-1.md`, REVISE — 1 CRITICAL, 5 MAJOR), the owner-requested
+Sol·max holistic review (`roster/wo11-sol-holistic-verdict.md`, REVISE — 4
+MAJOR, 2 MINOR), and the round-4 R0 delta review (`roster/wo11-r0-review-2.md`,
+REVISE — 1 new MAJOR, plus one round-3-re-broken MINOR and one partially-closed
+Sol·max MAJOR, all closed this round).
 
 ## Incidents
 
@@ -345,21 +356,43 @@ _(pending — stage 2/3, following an R0 review of this staffing round)_
    `wo11-fixtures/`, `wo11-transcripts/`, `wo11-reports/` — all untracked.
    **Corrected evidence basis (round 2):** the round-1 text attributed a
    "`git status --porcelain` before/after both attempts" attestation to
-   this agent that does not exist verbatim in either transcript. The actual
-   basis is the Architect exercise agent's own report line, as the
-   dispatching session recorded it: *"git status --porcelain in the live
-   project root shows no modified/deleted tracked files — only new
-   untracked dirs this exercise created (`wo11-fixtures/`,
-   `wo11-transcripts/`, `wo11-reports/`) plus pre-existing unrelated
-   untracked material from a parallel agent building `quartermaster/`."*
+   this agent that does not exist verbatim in either transcript. Round 2
+   replaced it with a different quote, attributed to "the Architect exercise
+   agent's own report line, as the dispatching session recorded it" — but
+   that replacement quote is itself **uncorroborated in the repo** (round 4,
+   R0 delta review MINOR): it returns exactly one grep hit repo-wide, this
+   band record asserting it, in neither transcript file verbatim. Honestly
+   labeled rather than repeating round 1's mistake of presenting an
+   unverifiable quote as sourced fact:
+   > *(uncorroborated-in-repo, session-recorded only)* "git status --porcelain in the live
+   > project root shows no modified/deleted tracked files — only new
+   > untracked dirs this exercise created (`wo11-fixtures/`,
+   > `wo11-transcripts/`, `wo11-reports/`) plus pre-existing unrelated
+   > untracked material from a parallel agent building `quartermaster/`."
+
+   **Corroborated basis (round 4), used for the claim this incident actually
+   needs to support** — that no tracked repository state was ever at risk:
+   `roster/wo11-architect-ex1-transcript.md:24`, verified verbatim in the
+   committed transcript, `"TREE AUDIT: no source paths changed while the
+   engine ran."` This is the runner's own in-process before/after
+   fingerprint comparison (not a self-report), and it is what the "no
+   tracked repository state was ever at risk" conclusion below actually
+   rests on, not the uncorroborated quote above.
+
    **Reconciled against the sibling record:** `roster/wo11-p0-ex1-report.md:337-340`
    states these same three directories "predate this session… left
    untouched" from the P0 exercise task's own point of view. Both records
-   are consistent once the timeline is stated: the Architect exercise agent
-   created the three directories during its own run, ~19:10–19:15
-   (directory timestamps), and the P0 exercise task began later in the same
-   session window — correctly observing them as pre-existing relative to
-   ITSELF, not claiming to have created or touched them. Cleaned this
+   are consistent once the timeline is stated, and pinned to an actual date
+   (round 4 — the round-3 text left it undated against a header that could
+   read as a different day): the Architect exercise agent created the three
+   directories during its own run, ~19:10–19:15 **on 2026-08-30** (directory
+   timestamps, per `roster/wo11-p0-ex1-report.md:338`), and the P0 exercise
+   task began later in the same session window — correctly observing them as
+   pre-existing relative to ITSELF, not claiming to have created or touched
+   them. (This section's own "Stage 2, run 2026-08-31" header is not a
+   contradiction: the session spanned both 2026-08-30 and 2026-08-31, and
+   this incident's own directory-creation timestamps are the 08-30 half of
+   it.) Cleaned this
    commit: the evidence worth keeping was copied into
    `roster/wo11-architect-ex1-transcript.md`,
    `roster/wo11-architect-ex1-transcript-attempt1.md`, and this band
@@ -408,6 +441,15 @@ _(pending — stage 2/3, following an R0 review of this staffing round)_
    fail-closed demonstration into a lawful, fully real, complete pool
    state — the step that actually arms the §5.5/P15 gates for real
    dispatch decisions rather than leaving them structurally un-armable.
+   **Operational cadence (round 4, since freshness is now the only gate a
+   reading crosses):** a bucket's routing evidence goes stale — and
+   `bucketState()`/`--publish` fail closed for it — 24h (`maxFreshMs`) after
+   its last recorded reading, with no disclosed-but-usable grace band any
+   more. Go-live therefore requires a Claude `/status` reading at least once
+   per 24h window, matching `final-plan.md:1003`'s own "before each
+   scheduling window" cadence for the dynamic review reserve — not the
+   round-3 48h figure this record's earlier drafts and exercise row cite,
+   which round 4 retired.
 3. **Size-threshold definition (owner).** "Plan authoring above the size
    threshold (→ A0)" is undefined anywhere in the repository (D4/G-3
    above); a numeric or structural definition is an owner/plan-level
@@ -533,7 +575,7 @@ after the WO-9/WO-10 gap (G-2) — not summarized into a ledger row alone.
 ## Review rounds
 
 1. **Round 1 — R0 review: REVISE** (1 CRITICAL, 5 MAJOR). Verbatim verdict
-   committed as `roster/wo11-r0-review-1.md` (round 3, per D3 below). Fixed
+   committed as `roster/wo11-r0-review-1.md` (round 3, per D3 above). Fixed
    in round 2.
 2. **Round 2 (commit `7bf8e79`)** — all round-1 findings fixed: the
    confirmation-outlives-its-evidence CRITICAL (R5 re-anchored to live
@@ -543,7 +585,7 @@ after the WO-9/WO-10 gap (G-2) — not summarized into a ledger row alone.
 3. **Owner-requested Sol·max holistic review** (GPT-5.6 Sol,
    `model_reasoning_effort=max`, via `orchestra-review.js`, cross-family
    lane, range `1ab4a19..9fe143f`) — **REVISE** (4 MAJOR, 2 MINOR). Verbatim
-   verdict committed as `roster/wo11-sol-holistic-verdict.md` (D3 below).
+   verdict committed as `roster/wo11-sol-holistic-verdict.md` (D3 above).
    **Two of its four MAJORs were already closed at round 2** before this
    review ran: the R5 confirmation-outlives-its-evidence finding and the D1
    self-audit-disposition finding — an independent cross-family engine
@@ -561,4 +603,25 @@ after the WO-9/WO-10 gap (G-2) — not summarized into a ledger row alone.
    accurate status-typing defect; the n1-ex2 full-block mislabel in
    `roster/wo10-band-record.md` corrected to partial (local shell channel
    only). All three verdict files (this review, R0-1, and this ledger)
-   committed verbatim per D3. **Delta re-review pending.**
+   committed verbatim per D3.
+5. **Round 4 — R0 delta re-review** (Claude Opus 5 · high, R0 anthropic lane,
+   fresh context, tier: full, scope `9fe143f..772a688`) — **REVISE** (1 new
+   MAJOR). Verbatim verdict committed as `roster/wo11-r0-review-2.md` (per
+   D3 above). New MAJOR: `quartermaster.js`'s round-2 confirmation
+   re-anchoring never re-validated the live reading's own AGE, so the §5.5
+   Amber gate lifted on evidence up to 48h old despite both the code and
+   README claiming otherwise — closed this round by retiring the round-3
+   "stale (24h-48h), disclosed but usable" band outright: freshness
+   (`maxFreshMs`, 24h) is now the only gate a reading crosses for routing,
+   and a stale reading fails the whole bucket closed before confirmation
+   logic is ever reached. Also closed this round: the re-broken STATUS.md
+   citation MINOR (round 2's fix, broken again by round 3, now replaced with
+   a stable section+phrase anchor in both `roster/architect.md:92` and this
+   record); the "## Dispositions (pending)" MINOR (replaced with the actual
+   round ledger reference); and the Incident 2 MINOR (the round-2
+   replacement quote was itself uncorroborated in the repo — now labeled as
+   such, with `roster/wo11-architect-ex1-transcript.md:24`'s committed TREE
+   AUDIT line used as the corroborated basis, and the incident's timeline
+   date pinned to 2026-08-30). This closes the review chain begun in round
+   1: every finding from both prior verdicts is now CONFIRMED-CLOSED or
+   dispositioned.

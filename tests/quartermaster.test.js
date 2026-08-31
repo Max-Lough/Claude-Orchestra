@@ -197,45 +197,80 @@ section('3. Fail-closed: absent, too stale, malformed-latest');
     qm.recordReading(b, 0.5, 'vendor UI', undefined, { file: g, now: b === 'AU-fable' ? ago(24 * 8) : ago(3) });
   }
   const e = threw(() => qm.bucketState({ file: g, now: NOW, forecast: FC0 }));
-  check('a reading older than maxStaleMs fails closed', e !== null && e.failClosed === true);
-  check('the stale refusal names the bucket and the age', /AU-fable/.test(e.message) && /8\.0d old/.test(e.message));
+  check('a reading older than maxFreshMs fails closed (round 4: freshness is the only gate)', e !== null && e.failClosed === true);
+  check('the refusal names the bucket and the age', /AU-fable/.test(e.message) && /8\.0d old/.test(e.message));
   check('only the stale bucket fails — the other three are fine', (e.message.match(/REFUSED for/g) || []).length === 1);
-  check('the stale refusal invents no burn rate', /no burn rate is invented/.test(e.message));
+  check('the refusal invents no burn rate', /no burn rate is invented/i.test(e.message));
 }
 {
-  // R3 revised round 3 (Sol·max holistic review, MAJOR B): 24h fresh / 48h
-  // usable (struck-through 7d text preserved in README.md). 47h is stale but
-  // inside the 48h window: USED AS-IS and DISCLOSED, never discounted — and
-  // now disclosed on the PUBLISHED READING OBJECT ITSELF (state.stale /
-  // state.ageMs), the same object router.js's normalizeBuckets consumes, not
-  // only the analysis/report metadata.
+  // Round 4 (WO-11 R0 delta review MAJOR — "freshness is never a gate
+  // input"): the round-3 "24h fresh / 48h usable, disclosed" band is RETIRED
+  // OUTRIGHT. 23h old is inside maxFreshMs (24h): routes normally, no
+  // marker, no stale/ageMs on the published object at all (there is no such
+  // key any more).
   const f = newFile();
   for (const b of qm.BUCKETS) {
-    qm.recordReading(b, 0.62, 'vendor UI', undefined, { file: f, now: b === 'OU' ? ago(47) : ago(3) });
+    qm.recordReading(b, 0.62, 'vendor UI', undefined, { file: f, now: b === 'OU' ? ago(23) : ago(3) });
   }
   const st = qm.bucketState({ file: f, now: NOW, forecast: FC0 });
-  check('a 47h-old reading is still published — at its recorded value, undiscounted',
+  check('a 23h-old reading is fresh — published at its recorded value, no marker',
     st.OU.state.remainingFraction === 0.62);
-  check('…and the PUBLISHED reading object itself carries stale:true + ageMs (round 3)',
-    st.OU.state.stale === true && typeof st.OU.state.ageMs === 'number' && st.OU.state.ageMs > 0);
-  check('a fresh bucket\'s published object carries no stale/ageMs keys at all',
-    !('stale' in st['AU-all'].state) && !('ageMs' in st['AU-all'].state));
-  check('the published stale/ageMs keys pass through router.normalizeBuckets harmlessly (unknown keys ignored)',
-    (() => { const nb = router.normalizeBuckets(st); return nb.OU && typeof nb.OU.state === 'string'; })());
-  const d = qm.bucketStateDetail({ file: f, now: NOW, forecast: FC0 });
-  check('…and the accompanying report marks it stale: true', d.analysis.buckets.OU.stale === true);
-  check('a fresh bucket is not marked stale', d.analysis.buckets['AU-all'].stale === false);
-  check('the report text discloses staleness in words', /STALE \(disclosed, not discounted\)/.test(qm.report({ file: f, now: NOW, forecast: FC0 })));
+  check('the published state object carries no stale/ageMs key at all — round 4 removes the concept entirely',
+    !('stale' in st.OU.state) && !('ageMs' in st.OU.state) && !('stale' in st['AU-all'].state) && !('ageMs' in st['AU-all'].state));
 }
 {
-  // 49h old — past the revised 48h maxStaleMs default (round 3) — REFUSED.
+  // 25h old — past maxFreshMs (24h) — REFUSED FOR ROUTING, exactly like an
+  // absent reading, not published, not disclosed-but-usable. This is the
+  // round-3 "stale-but-usable" band's replacement behavior (round 4 MAJOR).
   const f = newFile();
   for (const b of qm.BUCKETS) {
-    qm.recordReading(b, 0.62, 'vendor UI', undefined, { file: f, now: b === 'OU' ? ago(49) : ago(3) });
+    qm.recordReading(b, 0.62, 'vendor UI', undefined, { file: f, now: b === 'OU' ? ago(25) : ago(3) });
   }
   const e = threw(() => qm.bucketState({ file: f, now: NOW, forecast: FC0 }));
-  check('a 49h-old reading is refused under the revised 48h default maxStaleMs (round 3)',
-    e !== null && e.failClosed === true && /OU/.test(e.message) && /2\.0d old/.test(e.message));
+  check('a 25h-old reading is refused for routing under the 24h maxFreshMs (round 4)',
+    e !== null && e.failClosed === true && /OU/.test(e.message) && /1\.0d old/.test(e.message));
+  check('the refusal cites the freshness window, not routing evidence',
+    /past the 1\.0d freshness window/.test(e.message) && /not routing evidence/.test(e.message));
+  const d = qm.bucketStateDetail({ file: f, now: NOW, forecast: FC0 });
+  check('bucketStateDetail agrees: not ok, buckets null', d.ok === false && d.buckets === null);
+  const txt = qm.report({ file: f, now: NOW, forecast: FC0 });
+  check('report() still shows the human operator the refused reading, its age, and the REFUSED-FOR-ROUTING marker',
+    /62\.0%/.test(txt) && /REFUSED-FOR-ROUTING/.test(txt));
+}
+{
+  // THE WEDNESDAY-08:00 SCENARIO — the exact exploit the R0 delta review's
+  // new MAJOR demonstrated on the round-3 code: AU-opus read at 35% Monday
+  // 09:00; confirm() granted LATE against that same reading — near the edge
+  // of the reading's own freshness window, as a dispatcher squeezing one more
+  // confirmation out of an aging number would — then no new reading was ever
+  // recorded. By "Wednesday 08:00" the review's own numbers are reading
+  // 47.9h old / confirmation 23.9h old; this fixture uses round, boundary-
+  // safe hour offsets with the same shape (reading fresh-at-grant,
+  // confirmation still fresh-at-now, reading long stale-at-now) rather than
+  // court floating-point edge cases: reading recorded at t0, confirmed 20h
+  // later (comfortably inside the reading's 24h freshness window), evaluated
+  // 40h after t0 (comfortably outside it, and only 20h after the grant —
+  // comfortably inside THAT window). Round 3 let exactly this shape reach
+  // the router and dispatch an un-gated Opus 5 primary. Round 4 must REFUSE
+  // the whole bucket before confirmation logic is ever reached.
+  const t0 = new Date('2026-08-24T09:00:00.000Z'); // "Monday 09:00" — the reading
+  const grantTime = new Date(t0.getTime() + 20 * H); // confirmed 20h later — reading still fresh
+  const evalTime = new Date(t0.getTime() + 40 * H); // "Wednesday 08:00" — reading now 40h old
+  const f = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.35 : 0.92, 'vendor UI', undefined, { file: f, now: b === 'AU-opus' ? t0 : new Date(evalTime.getTime() - 3 * H) });
+  const grant = qm.confirm('AU-opus', { file: f, now: grantTime });
+  check('Wednesday scenario setup: the confirmation was granted 20h after the 35% reading, while it was still fresh', grant.confirmed === true);
+  const readingAgeAtEval = evalTime.getTime() - t0.getTime();
+  const confirmAgeAtEval = evalTime.getTime() - grantTime.getTime();
+  check('setup sanity: at eval time the reading is stale (40h > 24h maxFreshMs) but the confirmation itself is still fresh (20h < 24h)',
+    readingAgeAtEval > 24 * H && confirmAgeAtEval < 24 * H);
+  const e = threw(() => qm.bucketState({ file: f, now: evalTime, forecast: FC0 }));
+  check('at eval time: bucketState REFUSES — the stale reading fails closed before confirmation logic ever runs',
+    e !== null && e.failClosed === true && /AU-opus/.test(e.message));
+  check('…live confirm() at the same instant also refuses (the reading itself is past its freshness window)',
+    qm.confirm('AU-opus', { file: f, now: evalTime }).confirmed === false);
+  check('round 3\'s bug is closed: refusal happens at bucketState() itself — a dispatcher can no longer see a confirmed, un-gated Opus 5 primary riding a stale reading',
+    e.failClosed === true);
 }
 {
   // A malformed line in the LATEST position for a bucket is fatal, by line number.
@@ -583,8 +618,10 @@ section('10. Report and snapshot publish');
   check('the snapshot carries bucket_state in the router\'s contract shape',
     qm.BUCKETS.every((b) => typeof snap.bucket_state[b].state.remainingFraction === 'number'));
   check('the snapshot round-trips through the real router', router.normalizeBuckets(snap.bucket_state)['AU-all'].state === 'Amber');
-  check('the snapshot discloses age, staleness and source per bucket',
-    snap.disclosures.length === 4 && snap.disclosures.every((d) => typeof d.ageMs === 'number' && typeof d.stale === 'boolean' && d.source));
+  check('the snapshot discloses age and source per bucket',
+    snap.disclosures.length === 4 && snap.disclosures.every((d) => typeof d.ageMs === 'number' && d.source));
+  check('round 4: the snapshot disclosure carries no `stale` key at all — nothing stale ever reaches publish()',
+    snap.disclosures.every((d) => !('stale' in d)));
   check('the snapshot names its generator and its contract',
     /quartermaster\.js/.test(snap.generator) && /normalizeBuckets/.test(snap.contract));
   const bad = path.join(TMP, 'never-written.json');
@@ -834,21 +871,26 @@ section('15. MAJOR (round 2) — module-boundary validation');
   rej('a non-object forecast is refused', () => qm.bucketState({ file: f, now: NOW, forecast: 'default' }), /forecast.*must be an object/);
   rej('a negative mandatoryReviewDraw is refused', () => qm.bucketState({ file: f, now: NOW, forecast: { mandatoryReviewDraw: -1, incidentDraw: 0 } }), /must be ≥ 0/);
   rej('maxFreshMs as NaN is refused', () => qm.bucketState({ file: f, now: NOW, forecast: FC0, maxFreshMs: NaN }), /maxFreshMs.*must be a finite number/);
-  rej('maxStaleMs as a string is refused rather than silently disabling the staleness check',
-    () => qm.bucketState({ file: f, now: NOW, forecast: FC0, maxStaleMs: 'abc' }),
-    /maxStaleMs.*must be a finite number/);
   rej('confirm() validates maxFreshMs at its own module boundary too',
     () => qm.confirm('AU-opus', { file: f, now: NOW, maxFreshMs: 'soon' }),
     /maxFreshMs.*must be a finite number/);
+  // Round 4: maxStaleMs is retired as a bucketState()/analyze() parameter —
+  // it is no longer read there at all, so it is validated only where it
+  // still applies: predictThrottle()'s own trend-staleness bound.
+  rej('predictThrottle() still validates its own maxStaleMs at the module boundary (round 4: the only place it still applies)',
+    () => qm.predictThrottle('AU-all', { file: f, now: NOW, maxStaleMs: 'abc' }),
+    /maxStaleMs.*must be a finite number/);
 
-  // The exact scenario the review named: without validation, `ageMs >
-  // maxStaleMs` compares a number against NaN (always false), so a
-  // 400-day-old reading would publish as if it were fresh evidence.
+  // Round 4: a bogus maxStaleMs passed to bucketState() is simply INERT — it
+  // is not read at all — rather than a silent bypass of anything. A
+  // 400-day-old reading is refused by the ordinary maxFreshMs check
+  // regardless of what maxStaleMs was passed, proving maxStaleMs can no
+  // longer make any reading routable (the MAJOR's own ruling).
   const g = newFile();
   qm.recordReading('AU-opus', 0.5, 'vendor UI', undefined, { file: g, now: new Date(NOW.getTime() - 400 * 24 * H) });
   const e2 = threw(() => qm.bucketState({ file: g, now: NOW, forecast: FC0, maxStaleMs: 'abc' }));
-  check('a bogus maxStaleMs throws BEFORE a 400-day-old reading could publish as fresh evidence',
-    e2 !== null && /maxStaleMs/.test(e2.message));
+  check('a 400-day-old reading is refused by maxFreshMs alone, unaffected by a bogus maxStaleMs opt',
+    e2 !== null && e2.failClosed === true && /freshness window/.test(e2.message));
 }
 
 // =========================================================================

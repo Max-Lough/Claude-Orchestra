@@ -25,9 +25,16 @@
  *     to Green (that fabricates capacity), and it does not default to Red
  *     (that fabricates scarcity and would halt the harness on an empty file).
  *     It refuses, names the bucket, and prints the exact command that fixes it.
- *   - Staleness is DISCLOSED, never discounted. A 3-day-old reading of 0.55 is
- *     published as 0.55 with `stale: true` — not as 0.55 decayed by some
- *     invented burn rate.
+ *   - Freshness is the ONLY gate a reading crosses (round 4, WO-11 R0 delta
+ *     review MAJOR, Director ruling): a reading older than `maxFreshMs` is
+ *     NOT ROUTING EVIDENCE, full stop — it fails closed exactly like an
+ *     absent reading, never published, never disclosed-but-usable. The
+ *     round-3 "stale (24-48h), disclosed, still usable" band is RETIRED —
+ *     disclosed-but-unrouted staleness was itself a fail-open path (the
+ *     router rebuilds `bucket_state` from four keys and drops any disclosure
+ *     wrapper), so the only safe encoding of staleness in this contract is
+ *     refusal. `report()` still shows a refused bucket's last reading and its
+ *     age, marked REFUSED-FOR-ROUTING, for human context only.
  *   - Predictions are labelled with their method and confidence, and a single
  *     reading yields no prediction at all.
  *
@@ -51,17 +58,15 @@
  *
  * `bucketState()` returns EXACTLY the router's `normalizeBuckets` input
  * (router/router.js:297-318) — all four buckets, own properties, each
- * `{state:{remainingFraction, stale?, ageMs?, reserveBreached?, throttleObserved?, exhausted?},
- * belowReserve, quartermasterConfirmation?}`. `stale`/`ageMs` (round 3, WO-11
- * Sol·max holistic review) are present whenever the reading is inside
- * maxFreshMs < age ≤ maxStaleMs — on the PUBLISHED state object itself, not
- * only in the human report, so a snapshot consumer or dispatcher sees the
- * disclosure too; router.js's normalizeBuckets/poolState ignore unrecognized
- * keys, so this is additive. The router owns the ladder and
- * the reserve formula; this file owns the EVIDENCE. `requiredReserve` is
- * imported from the router rather than reimplemented, so the reserve
- * arithmetic can never drift between the seat that computes it and the gate
- * that enforces it.
+ * `{state:{remainingFraction, reserveBreached?, throttleObserved?, exhausted?},
+ * belowReserve, quartermasterConfirmation?}`. There is no `stale`/`ageMs` on
+ * this object (round 4, WO-11 R0 delta review MAJOR: freshness is never a
+ * gate input, and staleness is never disclosed-but-routable — a bucket whose
+ * only evidence is stale never reaches this return at all; it fails closed).
+ * The router owns the ladder and the reserve formula; this file owns the
+ * EVIDENCE. `requiredReserve` is imported from the router rather than
+ * reimplemented, so the reserve arithmetic can never drift between the seat
+ * that computes it and the gate that enforces it.
  *
  * Usage:
  *   node quartermaster/quartermaster.js --record <bucket> <fraction> --source "..." [--note "..."]
@@ -101,22 +106,38 @@ const KINDS = ['reading', 'throttle', 'confirmation'];
 const SEVERITIES = ['soft', 'hard'];
 
 // Ruling R3 (Director-set operational values; the plan sets no window).
-// REVISED round 3 (WO-11, after the owner-requested Sol·max holistic review):
-// the original 7d maxStaleMs is STRUCK — a weekly window moves ~15-20%/day
-// under load, so a week-old reading is obsolete, not evidence; a 48h window
-// replaces it. Confirmations, and any gate-lifting, already require FRESH
-// (≤24h, maxFreshMs) evidence per the round-2 R5 fix (analyze() re-validates
-// against LIVE evidence every call) — R3's window only governs whether a
-// stale-but-usable reading may still be PUBLISHED, disclosed, never a gate
-// grant.
-//   fresh  ≤ 24h        — a reading of a rolling weekly allowance is still decision-grade a day later
-//   ~~stale ≤ 7d~~ (round-1 text, struck round 3 — see above)
-//   stale  ≤ 48h        — usable but DISCLOSED on the PUBLISHED reading object itself
-//                          (`stale: true, ageMs`), so the router/dispatcher sees it too,
-//                          not merely the human report
-//   older                — refused; a reading older than the window it describes is not evidence
+// REVISED round 4 (WO-11 R0 delta review, MAJOR — "freshness is never a gate
+// input"): the round-3 "stale ≤ 48h, disclosed but still usable" band is
+// STRUCK OUTRIGHT. Round 3 had already cut the old 7d window to 48h and
+// disclosed staleness on the published reading object itself, but never
+// stopped a 24-48h-old reading from ARMING routing decisions — the §5.5
+// Amber gate, and any dispatcher reading `bucket_state` directly, still
+// treated a reading up to 48h old as live evidence, contradicting both the
+// code's own comments and quartermaster/README.md's own claims. Disclosed
+// staleness is a fail-open path: the router rebuilds `bucket_state` from
+// exactly four keys (`remainingFraction`, `reserveBreached`,
+// `throttleObserved`, `exhausted`) and a disclosure wrapper never survives
+// that rebuild, so "disclosed, not discounted" was never actually load-
+// bearing at the one place it needed to be. The only safe encoding of
+// staleness in this contract is REFUSAL:
+//   fresh ≤ 24h (maxFreshMs) — routing evidence; can arm the confirmation gate
+//   older than maxFreshMs    — REFUSED for routing, exactly like an absent
+//                              reading (same typed error shape: names the
+//                              bucket, its age, and the `--record` fix). Never
+//                              published, never disclosed-but-usable.
+// `report()` still shows the human operator the last reading and its age for
+// a refused bucket — marked REFUSED-FOR-ROUTING — because a human deciding
+// whether to go record a fresh one needs the old number for context; that is
+// display, not a routing input, and it never reaches `bucketState()`'s return.
+//
+// `maxStaleMs` no longer governs routing or publication at all — it is
+// retired as a ROUTING parameter and kept only as `predictThrottle()`'s own,
+// unrelated staleness bound on trend-line inputs (a crossing-time estimate
+// fit to points more than `maxStaleMs` old is non-evidence, not lower-
+// confidence evidence — see ruling R6). It can no longer, by construction,
+// make any reading routable.
 const DEFAULT_MAX_FRESH_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_MAX_STALE_MS = 48 * 60 * 60 * 1000;
+const DEFAULT_MAX_STALE_MS = 48 * 60 * 60 * 1000; // predictThrottle()'s own bound only — see above
 
 // ---------------------------------------------------------------------------
 // Ruling R4 — the default review-draw forecast, derived from castings.json.
@@ -431,13 +452,15 @@ function analyze(opts) {
   const file = fileOf(opts);
   const now = nowOf(opts);
   const maxFreshMs = opts.maxFreshMs === undefined ? DEFAULT_MAX_FRESH_MS : opts.maxFreshMs;
-  const maxStaleMs = opts.maxStaleMs === undefined ? DEFAULT_MAX_STALE_MS : opts.maxStaleMs;
   // Module-boundary validation (WO-11 round 2, MAJOR): every caller-supplied
   // numeric option is validated HERE, typed, before anything downstream trusts
   // it. Defaults are always well-formed, so this only ever rejects an
   // explicit override.
   assertPositiveFiniteNumber(maxFreshMs, 'maxFreshMs');
-  assertPositiveFiniteNumber(maxStaleMs, 'maxStaleMs');
+  // `maxStaleMs` is NOT a parameter here (round 4, MAJOR): freshness is the
+  // only gate a reading crosses for routing. It survives only as
+  // predictThrottle()'s own, unrelated bound — see the ruling comment above
+  // DEFAULT_MAX_STALE_MS.
   const forecast = opts.forecast ? validateForecast(opts.forecast) : defaultForecast();
   const reserve = requiredReserve(forecast, RESERVE_CFG);
 
@@ -447,7 +470,6 @@ function analyze(opts) {
     now: now.toISOString(),
     exists: parsed.exists,
     maxFreshMs,
-    maxStaleMs,
     forecast,
     requiredReserve: reserve,
     malformed: parsed.malformed,
@@ -465,7 +487,6 @@ function analyze(opts) {
       bucket,
       latest: latest ? { ts: latest.ts, remainingFraction: latest.remainingFraction, source: latest.source, note: latest.note, lineNumber: latest.lineNumber } : null,
       ageMs: latest ? now - latest.at : null,
-      stale: false,
       readingCount: readings.length,
       throttles: [],
       hardThrottleFresh: false,
@@ -510,17 +531,25 @@ function analyze(opts) {
       out.buckets[bucket] = info;
       continue;
     }
-    if (info.ageMs > maxStaleMs) {
+    // (3b) Freshness (round 4, MAJOR — "freshness is never a gate input").
+    // A reading older than maxFreshMs is NOT ROUTING EVIDENCE at all: it
+    // fails closed exactly like an absent reading, never published, never
+    // disclosed-but-usable. The round-3 "stale (24-48h), usable and
+    // disclosed" band is retired outright — see the ruling comment above
+    // DEFAULT_MAX_FRESH_MS/DEFAULT_MAX_STALE_MS. `info.latest`/`info.ageMs`
+    // stay populated above so report() can still show the human operator the
+    // old reading and its age for context, marked REFUSED-FOR-ROUTING.
+    if (info.ageMs > maxFreshMs) {
       info.problem =
         'REFUSED for ' + bucket + ': latest reading is ' + fmtAge(info.ageMs) + ' old (line ' +
-        latest.lineNumber + ', ' + latest.ts + '), past the ' + fmtAge(maxStaleMs) + ' staleness limit. ' +
-        'A reading older than the window it describes is not evidence, and no burn rate is invented to ' +
-        'age it forward. Record a fresh one:\n  ' + recordHint(bucket);
+        latest.lineNumber + ', ' + latest.ts + '), past the ' + fmtAge(maxFreshMs) + ' freshness window. ' +
+        'A reading older than the window it describes is not routing evidence — round 4 retires the ' +
+        'disclosed-but-usable staleness band outright, since a stale-but-published reading is a fail-open ' +
+        'path (the router rebuilds bucket_state from four keys and drops any disclosure wrapper). No burn ' +
+        'rate is invented to age it forward. Record a fresh one:\n  ' + recordHint(bucket);
       out.buckets[bucket] = info;
       continue;
     }
-    // Stale is DISCLOSED, never discounted: the fraction is published as read.
-    info.stale = info.ageMs > maxFreshMs;
 
     // (4) Throttles inside the freshness window.
     info.throttles = throttles
@@ -541,19 +570,16 @@ function analyze(opts) {
     // SILENT SUBSTITUTION, so exhaustion is never assumed from silence.
     const exhausted = remainingFraction <= 0 || info.hardThrottleFresh;
 
+    // Round 4 (WO-11 R0 delta review MAJOR, supersedes round 3's MAJOR B):
+    // the published state carries no `stale`/`ageMs` at all. Round 3 rode
+    // staleness on this very object so a snapshot consumer would see the
+    // disclosure — but router.js's normalizeBuckets/poolState rebuild
+    // `bucket_state` from exactly state.remainingFraction/reserveBreached/
+    // throttleObserved/exhausted and drop every other key, so the
+    // disclosure never survived the one rebuild it needed to. Nothing
+    // stale ever reaches this line any more (the age check above already
+    // refused the whole bucket), so there is nothing left to disclose here.
     const state = { remainingFraction };
-    // Round 3 (Sol·max holistic review, MAJOR B): staleness must ride on the
-    // PUBLISHED reading object itself, not just the human report / analysis
-    // metadata (info.stale, above) — otherwise a stale-but-usable reading
-    // reaches the router/snapshot indistinguishable from a fresh one.
-    // router.js's normalizeBuckets/poolState (router/router.js:53-70,
-    // 297-318) read only state.remainingFraction/reserveBreached/
-    // throttleObserved/exhausted and ignore unrecognized keys, so adding
-    // stale/ageMs here is additive and does not perturb routing.
-    if (info.stale) {
-      state.stale = true;
-      state.ageMs = info.ageMs;
-    }
     if (belowReserve) state.reserveBreached = true;
     if (throttleObserved) state.throttleObserved = true;
     if (exhausted) state.exhausted = true;
@@ -578,6 +604,13 @@ function analyze(opts) {
     //   (e) the bucket carries no malformed-latest poison — guaranteed
     //       structurally: a poisoned bucket already returned at step (1)
     //       above and never reaches this code.
+    //   (f) the live reading is itself fresh (round 4) — guaranteed
+    //       structurally, same as (e): a bucket whose latest reading is past
+    //       maxFreshMs already returned at step (3b) above and never reaches
+    //       this code either, so a confirmation can never be evaluated
+    //       against stale live evidence. Listed for completeness — kept
+    //       consistent with confirm()'s own predicate — even though it can
+    //       never actually fire from this call site.
     // Any violation VOIDS the confirmation: quartermasterConfirmation is
     // omitted, the state publishes without it, and both info.confirmation and
     // the human report say exactly why.
@@ -625,12 +658,14 @@ function analyze(opts) {
 }
 
 /**
- * THE CONTRACT (ruling R1). Returns exactly what router.normalizeBuckets
- * accepts — all four buckets as own properties — or throws a fail-closed
- * refusal naming the bucket and the command that fixes it.
+ * Builds the router-contract bucket map from an ALREADY-COMPUTED analysis, or
+ * throws the same fail-closed refusal bucketState() always has. Factored out
+ * (round 4 nit) so bucketState()/bucketStateDetail()/publish() each read the
+ * readings file exactly once per call instead of re-running analyze()
+ * internally — behavior is unchanged, including the thrown error's shape and
+ * its attached `.analysis`.
  */
-function bucketState(opts) {
-  const a = analyze(opts);
+function bucketStateFromAnalysis(a) {
   const problems = BUCKETS.map((b) => a.buckets[b].problem).filter(Boolean);
   if (problems.length > 0) {
     const err = new Error(
@@ -646,11 +681,20 @@ function bucketState(opts) {
   return out;
 }
 
-/** bucketState() plus the disclosure metadata (staleness, ages, malformed). */
+/**
+ * THE CONTRACT (ruling R1). Returns exactly what router.normalizeBuckets
+ * accepts — all four buckets as own properties — or throws a fail-closed
+ * refusal naming the bucket and the command that fixes it.
+ */
+function bucketState(opts) {
+  return bucketStateFromAnalysis(analyze(opts));
+}
+
+/** bucketState() plus the disclosure metadata (ages, malformed). */
 function bucketStateDetail(opts) {
   const a = analyze(opts);
   const problems = BUCKETS.map((b) => a.buckets[b].problem).filter(Boolean);
-  return { ok: problems.length === 0, analysis: a, buckets: problems.length === 0 ? bucketState(opts) : null };
+  return { ok: problems.length === 0, analysis: a, buckets: problems.length === 0 ? bucketStateFromAnalysis(a) : null };
 }
 
 // ---------------------------------------------------------------------------
@@ -908,11 +952,25 @@ function report(opts) {
   for (const bucket of BUCKETS) {
     const info = a.buckets[bucket];
     if (info.problem) {
-      out.push(pad(bucket, 10) + 'FAILS CLOSED — see below');
+      // Round 4: a bucket refused for staleness (or future-dating, or
+      // malformed-latest poison) still has its last reading and age — shown
+      // for human context, marked REFUSED-FOR-ROUTING, never as if it were
+      // live evidence. A bucket with NO reading at all has nothing to show.
+      if (info.latest) {
+        out.push(
+          pad(bucket, 10) +
+          pad(pct(info.latest.remainingFraction), 10) +
+          pad(fmtAge(info.ageMs), 10) +
+          pad('REFUSED', 12) +
+          pad('-', 12) +
+          'REFUSED-FOR-ROUTING (see below)'
+        );
+      } else {
+        out.push(pad(bucket, 10) + 'FAILS CLOSED — see below');
+      }
       continue;
     }
     const flags = [];
-    if (info.stale) flags.push('STALE (disclosed, not discounted)');
     if (info.throttles.length) flags.push(info.throttles.length + ' throttle(s) in window');
     if (info.value.state.exhausted) flags.push('EXHAUSTED');
     if (info.value.quartermasterConfirmation) flags.push('confirmed (Amber arm)');
@@ -933,6 +991,11 @@ function report(opts) {
     out.push('');
     out.push(bucket + ':');
     if (info.problem) {
+      if (info.latest) {
+        out.push('  latest    ' + pct(info.latest.remainingFraction) + ' @ ' + info.latest.ts +
+          ' (line ' + info.latest.lineNumber + ', source: ' + info.latest.source + ', age ' + fmtAge(info.ageMs) + ')' +
+          '  [REFUSED-FOR-ROUTING — context only, not evidence]');
+      }
       out.push('  ' + info.problem.split('\n').join('\n  '));
       continue;
     }
@@ -1023,7 +1086,9 @@ function report(opts) {
 function publish(opts) {
   opts = opts || {};
   const a = analyze(opts);
-  const buckets = bucketState(opts); // throws (fail closed) before anything is written
+  // (round 4 nit) fail closed off the ALREADY-COMPUTED analysis — no second
+  // file read. Same throw-before-anything-is-written guarantee as before.
+  const buckets = bucketStateFromAnalysis(a);
   const outFile = opts.out || DEFAULT_SNAPSHOT_FILE;
   const snapshot = {
     generatedAt: a.now,
@@ -1033,10 +1098,12 @@ function publish(opts) {
     requiredReserve: a.requiredReserve,
     forecast: a.forecast,
     malformedLineCount: a.malformedCount,
+    // No `stale` key (round 4): every bucket reaching this point already
+    // passed the freshness gate in analyze() — nothing stale ever publishes,
+    // so there is nothing left to disclose.
     disclosures: BUCKETS.map((b) => ({
       bucket: b,
       ageMs: a.buckets[b].ageMs,
-      stale: a.buckets[b].stale,
       poolState: a.buckets[b].poolState,
       source: a.buckets[b].latest.source,
       readingTs: a.buckets[b].latest.ts,

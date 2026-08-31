@@ -579,7 +579,20 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   was inoperative on macOS/Windows because a not-yet-existing clone path cannot be
   realpath'd and the comparison went one-sided — fixed at `1ff2730` (nearest-existing-
   ancestor resolution, segment-wise `path.relative`, case-folded on win32/darwin; every
-  spelling pair pinned; 406 checks). Delta review of round 2 (both lanes) in progress.
+  spelling pair pinned; 406 checks). **Round-2 delta verdicts:** Anthropic lane
+  REVISE — 0 CRITICAL, 5 MAJOR, 6 MINOR (`roster/wo12-r0-review-anthropic-2.md`; all 7
+  round-1 CRITICALs confirmed closed by a live 9-case gate matrix and a sweep of all 84
+  sanitized clones; new: a residual blinding tell — seeds' ORDER prose is harder and
+  longer than controls', a fresh evaluator separated 10/12 briefs at 83% — plus a
+  suffix-tier path over-match, no-verdict runs scoring as 0-hit completions, unscoped
+  adjudication promotions, no resume); OpenAI lane REVISE — 4 CRITICAL, 2 MAJOR
+  (`roster/wo12-r0-review-openai-3.md`; adds an unchecked-id delete path, per-finding
+  false-blocker completeness, an identity-mismatch case, a non-persistent phase-0 stop
+  counter). **Round 3 (pre-run) in progress:** tooling closures for every item; control
+  ORDER/CLAIMS prose re-authored to the seeds' register; a population-balance lint
+  (length and hardness) and a fresh-evaluator blind classification re-run after every
+  content change; the 10 base-reused controls stay (history pool exhausted) and are
+  disclosed. macOS CI: one case-fold check being made empirical (probe, not platform).
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

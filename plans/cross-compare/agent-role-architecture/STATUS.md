@@ -430,13 +430,12 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   (mid-run, still DONE) (7). Clean (4): WO-9 `m0-ex2`, `n2-ex1`; WO-10
   Operator's engine-reaching attempt, Test Designer vsAnthropicAuthor. Full
   per-attempt list in `roster/wo10-band-record.md`'s Incidents section.
-  Follow-ons
-  registered: the codex sandbox protocol fault (ESCALATED, investigate/
-  upstream), the two owed E8/E1 exercises (orders reproducible from the band
-  record's appendix once the fault clears), Interface Artisan's browser/
-  render-loop gap (pre-registered, still open), and Spatial Specialist's
-  visual/critic path (mechanical validity only this round). Full record:
-  `roster/wo10-band-record.md`. Next: **WO-11**.
+  Follow-ons registered: the codex sandbox protocol fault (ESCALATED,
+  investigate/upstream), the two owed E8/E1 exercises (orders reproducible
+  from the band record's appendix once the fault clears), Interface
+  Artisan's browser/render-loop gap (pre-registered, still open), and
+  Spatial Specialist's visual/critic path (mechanical validity only this
+  round). Full record: `roster/wo10-band-record.md`. Next: **WO-11**.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

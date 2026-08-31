@@ -76,8 +76,9 @@ function effortMatches(fmEffort, castingEffort) {
 function lint() {
   const problems = [];
   // Lowercased throughout — the collision check is case-insensitive so a
-  // roster file cannot dodge it by case alone (e.g. `_TEMPLATE` vs a
-  // roster file named `_template`).
+  // roster file cannot dodge it by case alone (e.g. a roster file whose
+  // frontmatter `name` is `_template` would still collide with the
+  // legacy `agents/specialists/_TEMPLATE.md`).
   const legacyNames = new Set(
     fs.readdirSync(path.join(MASTER, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, '').toLowerCase())
   );
@@ -104,9 +105,13 @@ function lint() {
       if (!fm[key]) problems.push(file + ': frontmatter missing ' + key);
     }
     if (fm.name) {
-      if (seen.has(fm.name)) problems.push(file + ': duplicate roster agent name ' + fm.name);
-      seen.add(fm.name);
-      if (legacyNames.has(fm.name.toLowerCase())) {
+      // Case-insensitive, matching the legacy-collision check just below —
+      // `data-engineer` and `Data-Engineer` are the same collision, not two
+      // distinct roster names.
+      const nameLower = fm.name.toLowerCase();
+      if (seen.has(nameLower)) problems.push(file + ': duplicate roster agent name ' + fm.name);
+      seen.add(nameLower);
+      if (legacyNames.has(nameLower)) {
         problems.push(file + ': name "' + fm.name + '" collides with a legacy agents/*.md or agents/specialists/*.md — both rosters co-install during shadow (§6.6)');
       }
     }

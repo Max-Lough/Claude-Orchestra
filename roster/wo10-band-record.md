@@ -40,13 +40,14 @@ transcribed faithfully from
   `agents/*.md` (`executor-heavy-xhigh`, `executor-heavy`, `executor`,
   `reviewer`, `detective`, `scout`), which is the only directory
   `roster/lint.js`'s collision check actually reads.
-- **The collision check does not scan `agents/specialists/*.md`.**
-  `roster/lint.js:78-80` builds `legacyNames` from
+- **The collision check did not scan `agents/specialists/*.md` (as found
+  at authoring; closed at a0e38c0 — see Dispositions (c) below).**
+  `roster/lint.js:81-83` built `legacyNames` from
   `fs.readdirSync(path.join(MASTER, 'agents'))` — a single, non-recursive
   `readdirSync` call over the top-level `agents/` directory only. It never
-  descends into `agents/specialists/`, so `agents/specialists/modeler.md`
-  and `agents/specialists/_TEMPLATE.md` are invisible to the check. This
-  matters directly for `spatial-specialist.md`: the seat it embodies
+  descended into `agents/specialists/`, so `agents/specialists/modeler.md`
+  and `agents/specialists/_TEMPLATE.md` were invisible to the check. This
+  mattered directly for `spatial-specialist.md`: the seat it embodies
   **supersedes** the legacy `agents/specialists/modeler.md` per
   `router/aliases.json`'s `modeler` entry ("modeler is promoted:
   spatial/procedural work is the first-class Spatial Specialist"), and had
@@ -55,10 +56,10 @@ transcribed faithfully from
   collision even though the name would legitimately shadow a live
   specialist file. `spatial-specialist.md` was named for the seat itself
   regardless, for readability and consistency with the other nine plain
-  seat names, not because the lint forced it — but the gap is worth
+  seat names, not because the lint forced it — but the gap was worth
   recording because a future roster file named e.g. `modeler.md` or
-  `_template.md` would ship without a lint objection. Registered as a
-  follow-on below.
+  `_template.md` would have shipped without a lint objection at the time.
+  Registered as a follow-on below; closed per Dispositions (c).
 - **`test-designer-vs-anthropic.md` / `test-designer-vs-openai.md`,
   not `test-designer.md` (rung choice) or `test-designer-anthropic.md`
   / `test-designer-openai.md`.** The WO text explicitly raised this as a
@@ -181,12 +182,13 @@ failure would force it.
    that does not exist — the same posture WO-9's band record took for the
    missing `**Strengths.**` bullets across most of Band A/B.
 
-2. **Test Designer (Q0) and Interface Artisan (E5) both fail
+2. **Test Designer (Q0) and Interface Artisan (E5) both failed
    `roster/lint.js`'s mirror-or-declared-exception check, unavoidably, for
    any file shipped under either seat — a genuine `router/castings.json`
-   gap, not a file-authoring defect.** Confirmed empirically: running
+   gap, not a file-authoring defect (as found at authoring; closed at
+   a0e38c0 — see Dispositions (a) below).** Confirmed empirically: running
    `node roster/lint.js` against all eleven shipped files (commit 1 and
-   commit 2 together) returns exactly
+   commit 2 together) returned exactly
 
    ```
    test-designer-vs-anthropic.md: seat Test Designer has neither a mirror rung nor a declared no-mirror exception in castings.json
@@ -216,17 +218,22 @@ failure would force it.
    against real files rather than by inspecting the casting table's own
    `$comment`/`unstatedInPlan` annotations. **Per the WO-10 instruction —
    "NO changes to router/... if a lint failure forces one, STOP and report
-   the conflict" — `router/castings.json` is left unedited.** Both seats
-   ship anyway (the WO requires staffing all ten), and `node
-   roster/lint.js`'s exit code is non-zero for this reason alone in both
-   commits; see the WO-10 report for the exact, isolated diff this causes
-   against the "all green" bar. The honest fix, for a future work order,
-   is almost certainly adding `noMirrorFor` declarations to both roles in
+   the conflict" — `router/castings.json` was left unedited at the time.**
+   Both seats shipped anyway (the WO requires staffing all ten), and `node
+   roster/lint.js`'s exit code was non-zero for this reason alone in both
+   commits (at authoring; the lint now exits 0 — see Dispositions (a));
+   see the WO-10 report for the exact, isolated diff this caused against
+   the "all green" bar at the time. The honest fix identified at
+   authoring — adding `noMirrorFor` declarations to both roles in
    `router/castings.json` (Test Designer's two rungs are genuinely a
    family-conditional pair with no meaningful "mirror" of either
    individual rung; Interface Artisan's `closing`/`critic` are
-   phase-distinct, not primary/mirror) — not adding a synthetic `mirror`
-   rung that would misrepresent either seat's actual casting shape.
+   phase-distinct, not primary/mirror), not a synthetic `mirror` rung that
+   would misrepresent either seat's actual casting shape — is exactly what
+   Dispositions (a) below implemented: `noMirrorFor.primary` for Interface
+   Artisan, and (since Test Designer's rungs are not a `noMirrorFor` shape
+   at all but a mirror substitution that is unlawful by construction) a
+   new `crossFamilyByConstruction` exception for Test Designer.
 
 3. **`agents/specialists/*.md` is not scanned by the name-collision
    check** — see Naming decisions above. Recorded here too as a plan/lint
@@ -829,3 +836,11 @@ same suite against each mutant (which case(s) caught each mutant, or
 report explicitly if a mutant was NOT caught — that is a reportable
 vacuous-suite finding, not something to smooth over).
 ```
+
+## Review rounds
+
+| Round | Scope | Outcome |
+|---|---|---|
+| 1 | R0 review of `357c96d..e37a25d` (staffing + exercises) | REVISE — 5 MAJOR, 6 MINOR |
+| 2 | Fixes landed at `f98316f` | Delta review: APPROVE — 3 MINOR residuals, no CRITICAL/MAJOR |
+| 3 | This commit — post-APPROVE residual cleanup (3 MINOR residuals + 2 nits from the round-2 delta review) | No re-review required per charter: only CRITICAL/MAJOR findings force REVISE |

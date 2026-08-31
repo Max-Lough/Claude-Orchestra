@@ -1,0 +1,355 @@
+{
+  "$comment": "WO-6 casting tables — machine-readable transcription of final-plan.md Part 2 (per-role castings), Part 3.4 (review mandate + R0 matrix), Part 5.5 (pool states / degradation ladder), and the Q0 automatic triggers (seat 19). The registry (registry/classes.json) owns the taxonomy; this file owns who runs it at which rung under which pool state. Edit the plan first, then mirror here — router/router.js cross-checks this file against the registry at load and fails closed on any drift. Two entries are WO-6 defaults the plan leaves unstated, marked unstatedInPlan.",
+  "version": "2026-08-30",
+  "source": "plans/cross-compare/agent-role-architecture/final-plan.md — Parts 2, 3.4, 5.5; WO-6 order",
+  "families": {
+    "anthropic": ["Fable 5", "Opus 5", "Sonnet 5", "Haiku 4.5"],
+    "openai": ["GPT-5.6 Sol", "GPT-5.6 Terra", "GPT-5.6 Luna"]
+  },
+  "modelBuckets": {
+    "Fable 5": ["AU-all", "AU-fable"],
+    "Opus 5": ["AU-all", "AU-opus"],
+    "Sonnet 5": ["AU-all"],
+    "Haiku 4.5": ["AU-all"],
+    "GPT-5.6 Sol": ["OU"],
+    "GPT-5.6 Terra": ["OU"],
+    "GPT-5.6 Luna": ["OU"]
+  },
+  "buckets": ["AU-all", "AU-opus", "AU-fable", "OU"],
+  "effortLadders": {
+    "$comment": "Effort ladders differ per vendor (§2.0); 'off' is Haiku thinking-off; specials are dispatch-time values the Conductor seat carries.",
+    "anthropic": ["off", "low", "med", "high", "xhigh", "max"],
+    "openai": ["none", "low", "med", "high", "xhigh", "max"],
+    "specials": ["owner-set", "matched"]
+  },
+  "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
+  "poolStateLadder": {
+    "$comment": "§5.5, evaluated per bucket by the Quartermaster; the Conductor announces every rung change. No rung edits the mandatory set. 'Exhausted' is the exhaustion-matrix state past Red (allowance gone or hard-throttled out).",
+    "states": ["Green", "Amber", "Orange", "Red", "Exhausted"],
+    "thresholds": { "amberBelow": 0.4, "orangeBelow": 0.2, "redBelow": 0.08 },
+    "redAlso": ["dynamic reserve breached", "a throttle observed"],
+    "behavior": {
+      "Green": "Full architecture; primary castings",
+      "Amber": "Authoring on this bucket re-casts to the healthy pool's mirrors, per role; review unchanged (last thing to sacrifice). P15 gate arms: below 40% AU-opus, no Opus dispatch without Quartermaster confirmation",
+      "Orange": "Authoring on this bucket suspended; ceiling seats deferred (AU-fable stops first); only review, verification and in-flight completion draw",
+      "Red": "Only calls that close already-authored changes. Mandatory classes whose cross-family direction needs this bucket do not close (wait / named human / park). Preferred classes may take the disclosed degraded path. Irreversible work waits, unconditionally",
+      "Exhausted": "Per the exhaustion matrix: T0 work and cross-family-reviewable closure continue on the healthy pool; consequential closure needing this family waits or goes to a named human"
+    },
+    "purposesAllowedOnBucket": {
+      "Green": ["authoring", "review", "verification", "in-flight", "closing"],
+      "Amber": ["review", "verification", "in-flight", "closing"],
+      "Orange": ["review", "verification", "in-flight", "closing"],
+      "Red": ["closing"],
+      "Exhausted": []
+    }
+  },
+  "reserve": {
+    "$comment": "P0's dynamic review reserve (seat 24) with WO-2's measured numbers. required = (forecast mandatory-review draw + forecast incident draw) × (1 + uncertaintyBuffer), floored at max(floorFractionOfBucket, cost of two gate-class reviews).",
+    "uncertaintyBuffer": 0.3,
+    "floorFractionOfBucket": 0.08,
+    "twoGateClassReviewsCostFraction": 0.003,
+    "twoGateClassReviewsCostSource": "WO-2 throughput probe 2026-08-28: 20 gate-class reviews drew ~3 percentage points of the weekly Codex window (~8%→11%)"
+  },
+  "liveness": {
+    "$comment": "§3.4 deployment gate (P10), settled by WO-2 — the mandate is active on the pinned cross-vendor review lane.",
+    "measuredReviewCapacityPer5h": 36.0,
+    "forecastPeakArrivalsPer5h": 10,
+    "requiredCapacityRatio": 1.43,
+    "measuredCapacityRatio": 3.6,
+    "peakUtilization": 0.28,
+    "mandateActive": true,
+    "source": "WO-2 throughput probe, 2026-08-28 (PASSED; STATUS.md)"
+  },
+  "securityTriggerList": ["auth", "authz", "crypto", "parsing", "deserialization", "file-paths", "subprocess", "dependencies", "secrets"],
+  "mandatoryReview": {
+    "$comment": "§3.4 — the set that can never degrade; fixed at design time, no degradation rung edits it.",
+    "classes": ["E4", "E7", "E3", "A1"],
+    "riskTiers": ["T3"],
+    "flags": ["integrationGate", "chainFinal", "ceilingAuthored", "solAuthoredMutation", "gateClassConfirmed", "securityRelevant", "unattributed"],
+    "unavailableOptions": [
+      "wait (the Quartermaster dates the reset)",
+      "named human expert review recorded in the ledger",
+      "park unmerged with HOLD: cross-family review unavailable"
+    ]
+  },
+  "reviewMatrix": {
+    "$comment": "R0's computed casting (seat 21): family(reviewer) ∉ families(author + co-authors), evaluated at dispatch from the recorded family set. The Terra T1 lane is qualification-gated on WO-12f (not yet run) — Sol · high until the flag flips, and any pass is provisional with live monitoring.",
+    "terraT1Qualified": false,
+    "anthropic": {
+      "T1": { "qualified": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" }, "untilQualified": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" } },
+      "T2": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
+      "T3": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" }
+    },
+    "openai": {
+      "T1": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" },
+      "T2": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+      "T3": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" }
+    },
+    "human": {
+      "T1": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+      "T2": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+      "T3": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "secondOpinion": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" } }
+    },
+    "degradedSameFamilyCandidates": {
+      "$comment": "Preferred-band degraded path only (§3.4): fresh-context, different-model, same-family review + mandatory Verifier, review.cross_family = false disclosed.",
+      "anthropic": [
+        { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+        { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" }
+      ],
+      "openai": [
+        { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
+        { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" }
+      ]
+    }
+  },
+  "q0Triggers": {
+    "$comment": "Seat 19's automatic triggers — policy, not discretion. The scheduler creates Q0 when the implementation order is created; a missing required Q0 order blocks the work. Q0 is always Director-created, never implementer-spawned.",
+    "classes": ["E3", "E4", "E7"],
+    "riskTiers": ["T2", "T3"],
+    "sourceChangeClasses": ["E0", "E1", "E2", "E3", "E4", "E5", "E6", "E8"],
+    "touchAreas": ["auth", "authz", "concurrency", "persistent-data", "public-api"],
+    "calibrationSample": { "rate": 0.25, "riskTiers": ["T1"], "classes": ["E2", "E5", "E6"] }
+  },
+  "roles": {
+    "Conductor": {
+      "class": "O0",
+      "contextShapes": ["packet"],
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Fable 5", "effort": "owner-set", "note": "the interactive session model IS the Conductor; no bootstrap layer" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "matched", "note": "activated from a signed control checkpoint", "restrictions": ["may not semantically close OpenAI-authored T2/T3 artifacts", "may not author-and-approve the same plan", "may not override an Anthropic verdict", "may not authorize T3 effects"] }
+      },
+      "never": ["Opus 5", "Haiku 4.5", "Sonnet 5", "GPT-5.6 Luna", "GPT-5.6 Terra"],
+      "neverReason": "owner ruling 2026-08-28: Opus holds no USER-DIALOGUE seat; never any cheap tier (judgment seat, P4)"
+    },
+    "Architect": {
+      "class": "A0",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "xhigh" },
+        "nebulous": { "vendor": "anthropic", "model": "Fable 5", "effort": "high–xhigh", "note": "especially complex, nebulous, or ambiguous goals; owner judgment at intake; Max-or-above Anthropic seat" },
+        "exhaustionFallback": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "when the Codex allowance is exhausted" },
+        "mirror": { "vendor": "anthropic", "model": "Fable 5", "effort": "high–xhigh", "note": "the opposite family of whichever primary is cast; under the Sol default this is the Anthropic lane" },
+        "ceilingAnthropic": { "vendor": "anthropic", "model": "Fable 5", "effort": "xhigh", "ceiling": true, "note": "comparative sessions only" },
+        "ceilingOpenai": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "max", "ceiling": true, "note": "comparative sessions only" }
+      },
+      "securityRouteFilter": "security-sensitive planning is a hard route-filter to the Sol lane — never the Fable casting (silent classifier fallback on cyber/bio topics)"
+    },
+    "Synthesizer": {
+      "class": "A1",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Fable 5", "effort": "xhigh" },
+        "rationSpent": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "max" }
+      },
+      "never": ["Haiku 4.5", "GPT-5.6 Luna", "GPT-5.6 Terra"],
+      "neverReason": "never any cheap tier — the merge is the longest-horizon synthesis in the system"
+    },
+    "Scout": {
+      "class": "N0",
+      "contextShapes": ["packet", "scoped"],
+      "shapeNote": "scoped maximum — never haystack (§ seat 4); truncation or unexhausted surface auto-reclassifies to N2/I0",
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Haiku 4.5", "effort": "off" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "low", "note": "pool-aware — N0 stays on Haiku by default to protect the OpenAI review reserve" }
+      }
+    },
+    "Researcher": {
+      "class": "N1",
+      "contextShapes": ["packet", "scoped", "haystack"],
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med" },
+        "deep": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high", "note": "deep, contradictory retrieval chains or safety/architecture/procurement-relevant research" },
+        "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "med" }
+      },
+      "never": ["GPT-5.6 Luna", "Haiku 4.5"],
+      "neverReason": "the corpus is a haystack by definition",
+      "$comment": "`never` binds the CASTING (the engine doing the work, e.g. GPT-5.6 Sol) — not a thin OpenAI-launcher file's own `model: haiku` shell, which carries no judgment and is a different actor from the casting it dispatches to"
+    },
+    "LC Analyst": {
+      "class": "N2",
+      "contextShapes": ["packet", "scoped", "subsystem", "haystack"],
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
+        "dense": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "high", "note": "dense cross-document inference" },
+        "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "med", "note": "covers corpora up to ~1M tokens — full mirror, not partial" }
+      }
+    },
+    "Investigator": {
+      "class": "I0",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo"],
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high", "note": "preferred when the defect is environment- or tool-loop-shaped; wrong for race hunts — the concurrency blind spot" },
+        "ceiling": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "trail cold and blocking, or after two failed hunts with different hypotheses" }
+      }
+    },
+    "Archivist": {
+      "class": "M0",
+      "contextShapes": ["packet", "scoped", "haystack"],
+      "rungs": {
+        "documents": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med", "note": "documents, PDFs, logs, pre-extracted text" },
+        "images": { "vendor": "anthropic", "model": "Opus 5", "effort": "med", "note": "images, charts, renders" }
+      },
+      "defaultRung": "documents",
+      "noMirrorFor": {
+        "videoAudio": "declared no-mirror exception: raw video and audio go below the model layer — deterministic frame extraction + local speech-to-text, else typed UNAVAILABLE; never a silent narrowing to stills"
+      }
+    },
+    "Operator": {
+      "class": "E0",
+      "contextShapes": ["packet", "scoped", "subsystem", "haystack"],
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
+        "tacticalRaise": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "max", "note": "one effort raise on the same casting, once (tactical stall)" },
+        "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "strategy-level stall crosses families — a different lineage brings a different prior; ordering provisional pending WO-12e" }
+      }
+    },
+    "Runner": {
+      "class": "E1",
+      "contextShapes": ["packet"],
+      "shapeNote": "packet — the hardest constraint in the roster, dispatcher-enforced",
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "low–med" },
+        "mirror": { "vendor": "anthropic", "model": "Haiku 4.5", "effort": "off", "note": "choose by pool room and parent cache locality; never mix vendors inside one cached prefix" }
+      }
+    },
+    "Builder": {
+      "class": "E2",
+      "contextShapes": ["packet", "scoped", "subsystem"],
+      "rungs": {
+        "preferredBounded": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "xhigh–max", "note": "bounded, short-horizon, fully-specified, deterministically-verifiable orders only; Luna never receives under-specified work" },
+        "primary": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med", "note": "orders expected to run longer or whose spec is thinner than Luna's bar" },
+        "dense": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "high", "note": "unusually dense but bounded logic" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" }
+      },
+      "guardrail": "Luna never receives under-specified work — the guardrail survives the promotion"
+    },
+    "Principal": {
+      "class": "E3",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo"],
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+        "effortPoint2": { "vendor": "anthropic", "model": "Opus 5", "effort": "xhigh", "note": "one tier, two effort points — not two rungs of the ladder" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
+        "ceiling": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "Max seat only; reached only after both Opus effort points bounced AND the diagnosis is ceiling, not under-specified" }
+      }
+    },
+    "Data Engineer": {
+      "class": "E4",
+      "contextShapes": ["packet", "scoped", "subsystem", "haystack"],
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+        "reversibleT1": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "high", "note": "only reversible T1 extraction/transformation/query sub-work AFTER the integrity design is fixed by the primary or A0" }
+      },
+      "noMirrorFor": {
+        "irreversible": "declared no-mirror exception: the irreversible half. Pool pressure changes WHEN T2/T3 data work is scheduled, never WHO prepares it; if the Anthropic pool is exhausted, irreversible data work waits"
+      }
+    },
+    "Interface Artisan": {
+      "class": "E5",
+      "contextShapes": ["packet", "scoped", "subsystem"],
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med–high", "note": "generation, with a browser/screenshot loop" },
+        "closing": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "dispatched as a separate READ-ONLY order — no WRITE-TREE; an edit would make it a co-author and disqualify it from closing; always a different family from the generator" },
+        "critic": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "rare — passes every check and still looks wrong; effort unstated in the plan, high adopted to match the E6 critic (WO-6 default)", "unstatedInPlan": "effort" }
+      },
+      "noMirrorFor": {
+        "primary": "declared no-mirror exception, unstated in the plan: final-plan.md Part 2 seat 15 names no authoring mirror for the E5 primary — closing (Opus 5, high) is dispatched as a SEPARATE READ-ONLY order (an edit would make it a co-author and disqualify it from closing) and critic (Fable 5, ceiling) is a rare global-critique ceiling; neither is an authoring substitution target for the Sol primary. Pool outage on the primary casting waits or returns typed UNAVAILABLE.",
+        "unstatedInPlan": true
+      }
+    },
+    "Spatial Specialist": {
+      "class": "E6",
+      "contextShapes": ["packet", "scoped", "subsystem"],
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
+        "critic": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "global visual critique; runs last and rarely" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high", "note": "the agentic engine loop (build-run-screenshot-adjust) rather than the geometry itself" }
+      }
+    },
+    "Red Team": {
+      "class": "E7",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo"],
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
+        "threatModel": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "max", "note": "full threat model, human-approved scope" },
+        "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "strong at find-and-harden, weaker on exploitation reasoning" }
+      },
+      "never": ["Fable 5"],
+      "neverReason": "a policy fact, not a capability judgment: silent classifier fallback on cyber topics — a security review routed there may be answered by a different model with nothing saying so. Hard route-filter"
+    },
+    "Refactorer": {
+      "class": "E8",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
+      "shapeNote": "unstated in the plan; repo+haystack adopted (the consumer census is the point of the Terra 1M window) — WO-6 default",
+      "unstatedInPlan": "contextShapes",
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
+        "mirror": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" }
+      }
+    },
+    "Test Designer": {
+      "class": "Q0",
+      "contextShapes": ["packet", "scoped", "subsystem"],
+      "rungs": {
+        "vsAnthropicAuthor": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
+        "vsOpenaiAuthor": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" }
+      },
+      "castRule": "cast opposite the implementation author's family; a human-authored implementation takes whichever pool is healthier, tie → the Anthropic lane (protects the OpenAI review reserve, Part 5)",
+      "directorCreated": "Q0 is always Director-created, never spawned by the implementer — the independence is the point",
+      "crossFamilyByConstruction": {
+        "reason": "mirror substitution is unlawful by construction — the seat is cast opposite the implementation author's family, so substituting the other lane under pool outage would place the test designer same-family with the author, violating the invariant. router.js has no special-cased Q0 outage handling: rung selection (router.js:417-430) always names vsAnthropicAuthor or vsOpenaiAuthor from implementationAuthorFamily, and this role carries no `mirror` rung, so when that rung's bucket cannot take the authoring purpose, cast()'s generic degradation fallback (router.js:475-488) finds role.rungs.mirror undefined, the Data-Engineer-only reversibleT1 fallback does not apply, and it falls through to the final refusal: outcome WAIT, reason 'no lawful casting: <model> bucket at <state> ... and the role declares no mirror for this work' (router.js:485-488). Outage means wait, or a typed UNAVAILABLE at the caller — never a same-family substitution."
+      }
+    },
+    "Doc Writer": {
+      "class": "D0",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo"],
+      "shapeNote": "unstated in the plan; repo adopted (runbooks and migration guides read the tree) — WO-6 default",
+      "unstatedInPlan": "contextShapes",
+      "rungs": {
+        "primary": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med", "note": "routine developer documentation tied to verified behavior" },
+        "deliverable": { "vendor": "anthropic", "model": "Opus 5", "effort": "med", "note": "deliverable-grade documents, public contracts, migration guides" },
+        "ceiling": { "vendor": "anthropic", "model": "Fable 5", "effort": "med", "ceiling": true, "note": "documents that are themselves deliverables; Max seat only" },
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med", "note": "declared non-equivalent (~12 Elo behind on knowledge-work artifacts): add a cross-family register/over-claiming read; deliverable-grade documents wait for the primary pool rather than shipping on the mirror" }
+      },
+      "never": ["GPT-5.6 Terra", "GPT-5.6 Luna"],
+      "neverReason": "both identified as their family's weak writers in a blind prose panel; bad docs are not caught by tests and are read for years"
+    },
+    "Reviewer": {
+      "class": "R0",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo"],
+      "computed": true,
+      "computedRule": "family(reviewer) ∉ families(author + co-authors), evaluated at dispatch from the ledger's recorded family set — the full co-author set, never just the original author. Use reviewer(), never cast()"
+    },
+    "Sweeper": {
+      "class": "S0",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
+      "rungs": {
+        "primary": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
+        "mirror": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" }
+      },
+      "castRule": "never the instance that performed the fan-out; prefer the opposite family from the author"
+    },
+    "Verifier": {
+      "class": "V0",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
+      "substrate": true,
+      "modelAssist": {
+        "openai": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "low" },
+        "anthropic": { "vendor": "anthropic", "model": "Haiku 4.5", "effort": "off" },
+        "note": "checklist classification against explicit yes/no criteria only, cheapest tier with pool room, ensemble votes where a wrong vote must be absorbed; every result records model-assist provenance"
+      }
+    },
+    "Quartermaster": {
+      "class": "P0",
+      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
+      "substrate": true,
+      "modelAssist": {
+        "openai": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "low" },
+        "anthropic": { "vendor": "anthropic", "model": "Haiku 4.5", "effort": "off" },
+        "note": "deterministic code over the ledger; cheapest-tier model only for summarization"
+      }
+    }
+  }
+}

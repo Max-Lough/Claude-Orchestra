@@ -286,6 +286,222 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   (PowerShell's Out-File writes one by default). WO-5 is **gate-class** per the plan's
   review routing — cross-vendor review before merge. Next: **WO-6** (router, casting
   tables, review matrix, degradation machine, Q0 triggers).
+- **WO-6 EXECUTED (2026-08-30):** the router lives in `router/` at the repo root.
+  `castings.json` carries the Part-2 casting tables as data (58 rungs across the 23 roles,
+  hard never-rules included), the §3.4 computed R0 review matrix with the mandatory set,
+  the §5.5 pool-state ladder, the seat-19 Q0 triggers, and WO-2's measured liveness and
+  reserve numbers. `router.js` implements `route(class) → role` (alias-resolving, loading
+  the WO-4 registry and failing closed on any invariant violation), `cast(role,
+  bucket_state) → (vendor, model, effort)` through the degradation machine (Amber re-casts
+  authoring to the healthy pool's mirror, Orange suspends authoring and defers ceiling
+  rungs, Red permits only closing calls; E4's irreversible half and M0 video/audio wait or
+  return typed UNAVAILABLE — no substitute), `reviewer(author_families, risk)` (computed
+  no-self-family matrix; unattributed and both-family authorship fail closed; mandatory
+  review rides the frontier T2/T3 lane even at nominal T1, so a Sol-authored mutation gets
+  Opus 5 · high per Part 2; Terra T1 relief stays behind the WO-12f qualification flag),
+  the pre-dispatch AU-O gate (P15: below-reserve AU-opus blocks every Opus dispatch with
+  mirror/wait the only lawful responses; Amber arms Quartermaster confirmation; the
+  AU-fable twin re-casts Conductor turns to the Sol mirror), automatic Q0 creation
+  (Director-created companion cast opposite the implementing family; a missing required Q0
+  blocks dispatch), and the assembled `dispatch()`. Proof per the order:
+  `tests/router.test.js`, 74 checks green — no-self-family for every author family set; no
+  mandatory-class dispatch produces a same-family closing verdict under any of the 625
+  bucket-state combinations including Red/Exhausted (9,375-call sweep, every non-close
+  typed DOES_NOT_CLOSE); context-shape violations rejected; every rung matches an
+  independent transcription of Part 2 in both directions; every trigger-matching
+  implementation spawns Q0 and never a non-trigger one. Three WO-6 defaults where the plan
+  is silent are marked `unstatedInPlan` in castings.json (E5 critic effort, E8/D0 context
+  shapes). WO-6 is **gate-class** per the plan's review routing — cross-vendor review
+  before merge. Next: **WO-7b** (synthetic corpus through `dispatch()`, scored on misroute
+  recovery per the restated 7.2 gate, including the reserved B/W edges).
+- **WO-7b EXECUTED — ALL GATES PASS (2026-08-30):** the misroute-recovery probe through
+  the implemented router, in `wo7b/` (corpus + gates pre-registered and committed at
+  `c431274` before any model pass; `score.js` is the mechanical scorer, exit 0). 24
+  synthetic items — 13 seeded misroutes, 11 controls, both reserved edges by
+  construction. **G1: 13/13 misroutes caught** by fresh-context seat charter filters
+  (router/charters.json, Sonnet, no tools); **G2: zero mandatory-gate crossings** among
+  the four gate-relevant misroutes (M3 E3→E2, M5 E4→E8, M6 E4→E2, M12 E7→R0), with
+  tier-borne gates mechanically identical under seeded vs true dispatch for all items;
+  **G3: P95 = 1 hop**, all recoveries landed with hop-1 ACCEPT, zero escalations.
+  Telemetry: 0/11 false bounces, 13/13 correct recommended classes, classifier pass
+  24/24 (a separability number for a synthetic corpus, not real-intake accuracy — stated
+  in the report), B horn and W horn each clean in both classification and recovery.
+  Seeded recovery entries do NOT feed the standing three-entry redraw trigger (probe
+  provenance, not organic ambiguity). Full record: `wo7b/wo7b-report.md`. The restated
+  7.2 routing gate is validated; live P95 telemetry continues during shadow (WO-15).
+  Next: **WO-8–11** (staff the bands), with WO-13/WO-14/WO-12f parallelizable.
+- **WO-14 EXECUTED (2026-08-30):** the alias layer and roster kill switch, in
+  `router/aliases.json` + `router.resolveSeat()`. Every §6.6 retired name resolves
+  declaratively to its new (role, rung) pair AND carries its legacy identity; the
+  `roster: legacy | new` flag is evaluated per order (opts override; declarative default
+  `legacy` — the kill-switch home position), so rollback is a flag flip with no reload.
+  Proof per the order, in `tests/router.test.js` §12 (93 total green): an order written
+  against `executor` dispatches correctly under both flag values; the flip demonstrated
+  mid-session on one router instance; `executor-heavy-xhigh` lands on Principal's routed
+  xhigh effort point (not a second seat); `detective` lands on the merged Investigator
+  with the read-only pin carried; `reviewer`/`reviewer-codex` resolve to the computed
+  Reviewer (never a static casting); every retired-name resolution emits its ledger
+  deprecation line under both flags; a tampered alias map fails the load closed. One
+  judgment call recorded in the file: §6.6 wrote `planner-gpt → Architect(mirror)` before
+  the same-day Sol-default re-cast — operatively it maps to the Architect's Sol casting,
+  with WO-13 owning its transport migration.
+- **WO-9 STAFFED (2026-08-30); exercise contract INCOMPLETE** (round 3, after
+  the Sol·max holistic review — files shipped, lint green, five seats
+  exercised; the Archivist images lane ships staffed but unexercised, and is
+  ledgered debt, not a closed exercise): the evidence band (Band B, seats 4-8: Scout,
+  Researcher, LC Analyst, Investigator, Archivist) staffed per the WO-8-11 order — six
+  role files shipped (`roster/wo9-band-record.md`: naming decisions, Archivist's two lane
+  files, the Investigator read-only pin). `node roster/lint.js` and `node install.js
+  --lint` (roster/ and repo-wide) pass; all five required test suites pass in full. Stage
+  2 exercised all five seats: Investigator (I0, Opus 5 in-harness) PASS; Scout (N0, Haiku
+  4.5 in-harness) DEGRADED-ACCEPTED — the bounded inventory was correct and independently
+  verified, but the seat miscounted its own surface in both exercises (39/40, then
+  44/47); a calibration follow-on is registered. N1/N2/M0 ran via the `orchestra_exec`
+  codex runner (closest existing cross-vendor call — no dedicated research/long-context/
+  extraction runner exists yet). N1's first run (ex1) returned DONE after completing real, cited web
+  research, despite its own VERIFICATION section disclosing that its local shell channel had
+  separately failed (the command runner was down, and both attempted local commands are
+  recorded failing with the exact error) — a status-typing defect (DONE where BLOCKED or a
+  disclosed-degraded status was warranted), not a non-disclosure — and with no
+  retrieval dates on its citations, a charter duty — a report-integrity/verification-
+  discipline defect, not demonstrated fabrication (corrected in round 2 after R0 review; the
+  original "fabrication"/"live evidence of the charter's named failure mode" framing is
+  withdrawn, and two previously-cited grounds — a conditional `codex --version` duty that
+  never fired since network was available, and an openai-docs skill read never owed to ex1 —
+  are withdrawn as unsupported; ground reworded round 3 after the Sol·max holistic review, which
+  found the transcript's VERIFICATION section did in fact disclose the shell failure).
+  Discarded on the two anchored grounds — the status-typing defect plus the missing
+  retrieval dates; the retry, under an
+  integrity addendum, independently corroborated three of ex1's four cited sources and
+  conclusions (evidence against fabrication) — the npm-registry citation, ex1's sole source
+  for the 0.151.0-on-npm claim, lacks independent cross-run corroboration (opened only in
+  ex1's own VERIFICATION) — and correctly returned BLOCKED — rule-compliant, conservative
+  typing, not a choice against fabricating — provisionally accepted as the exercised order,
+  owner may override. M0's documents-lane ex1 hit the same transient codex sandbox fault
+  (`unsupported protocol version 6`) and typed BLOCKED honestly; ex2 PASS. N2 PASS
+  cleanly. M0's images lane ships staffed but unexercised. Follow-ons registered: the
+  codex sandbox protocol fault (investigate/upstream), a `verifier/checkout.js:322-327`
+  prune-comment fix (incidental I0 finding), the standing no-dedicated-runner gap, and
+  N0's self-reported exhaustion counts requiring mechanical verification (calibration
+  follow-on).
+  Full record: `roster/wo9-band-record.md`. Next: **WO-10**.
+- **WO-10 STAFFED (2026-08-30); exercise contract INCOMPLETE** (round 3, after
+  the Sol·max holistic review — files shipped, lint green, 8/10 seats
+  exercised; Refactorer/E8 and Runner/E1 environment-blocked with zero
+  competency signal, and Interface Artisan's E5 browser/render loop is
+  unexercisable in this harness — all three ledgered debt): the construction band (Band C, seats
+  9-20 minus retired 13: Operator, Runner, Builder, Principal, Data
+  Engineer, Interface Artisan, Spatial Specialist, Refactorer, Test
+  Designer, Doc Writer; Red Team shipped already in WO-8) staffed per the
+  WO-8-11 order — eleven role files across ten seats (Test Designer splits
+  into two lane files, Archivist precedent) shipped in two commits (Builder/
+  Principal/Operator/Test Designer/Refactorer first, then the five domain
+  seats), plus a third commit closing the Director's lint-conflict ruling
+  (`roster/wo10-band-record.md`: naming/rung decisions, the Builder/
+  Principal legacy-validation table, two flagged `router/castings.json`
+  mirror-or-declared-exception gaps for Test Designer and Interface Artisan,
+  closed by adding declared exceptions — `crossFamilyByConstruction` for
+  Q0, `noMirrorFor.primary` for E5 — that `roster/lint.js` was taught to
+  accept). `node roster/lint.js` and `node install.js --lint` (roster/ and
+  repo-wide) pass; all five required test suites pass in full. Stage 2
+  exercised all ten seats: **8/10 complete** — Builder (E2, Sonnet 5) PASS;
+  Principal (E3, Opus 5) PASS with an acceptance-log scope deviation
+  discovered on dispatcher review of the pasted output, not disclosed by the
+  seat (its own DEVIATIONS opens "Acceptance scenario: none."; contrast Data
+  Engineer's genuine self-disclosure below — honesty-calibration data for
+  E3); Operator (E0, Sol via Codex) PASS (MODULE_NOT_FOUND root cause,
+  minimal fix, independently reproven); Data Engineer (E4, Opus 5) PASS
+  (byte-exact rollback round-trip, poisoned record refused as a verified
+  no-op); Spatial Specialist (E6, Opus 5) PASS (15-check mesh validator,
+  non-vacuity proven by a negative control, self-caught its own report
+  transcription error); Doc Writer (D0, Sonnet 5) PASS (28 citations, the
+  checker proven to fail closed); Interface Artisan (E5, Sol via Codex)
+  DEGRADED-ACCEPTED (all 3 files independently verified including the
+  load-bearing contrast computation; the pre-registered browser/render-loop
+  gap stayed unexercised as expected). **The Q0 cross-family exercise pair
+  is the highlight**: both Test Designer lanes ran the same mission — an
+  independent pinning suite plus 2 required mutants, built from contract
+  alone — against an implementation from the *other* family (vsOpenaiAuthor,
+  Sonnet 5, pinned Sol-authored `contrast.js`; vsAnthropicAuthor, Terra via
+  Codex, pinned Sonnet-authored `parse-duration.js`), both PASS, both
+  mutants caught non-vacuously in each direction, and the vsOpenaiAuthor run
+  surfaced a genuine implementation finding (a `0.04045`-vs-spec-quoted-
+  `0.03928` sRGB threshold constant) proven behaviorally unobservable across
+  all 256 8-bit hex channel values. **2/10 environment-blocked**: Refactorer
+  (E8, Terra via Codex) and Runner (E1, Luna via Codex) each hit the
+  `unsupported protocol version 6` codex sandbox fault on all 3 authorized
+  attempts (2 in ex1, 1 final retry in ex2) with zero competency signal
+  obtained on either seat — the same fault this round also degraded
+  Interface Artisan's own mid-run self-check, and across WO-9+WO-10 has now
+  hit **10 of 14** engine-reaching attempts (counting rule: an attempt is
+  one `orchestra_exec` invocation that reached the engine; WO-10's Operator
+  first attempt — refused pre-engine by codex's own directory-trust gate —
+  is a distinct precondition fault and is counted separately, not among the
+  14). Fault-hit (10): WO-9 `m0-ex1`, `n1-ex1`, `n1-ex2` (3); WO-10
+  Refactorer's 3 attempts, Runner's 3 attempts, and Interface Artisan's 1
+  (mid-run, still DONE) (7). Clean (4): WO-9 `m0-ex2`, `n2-ex1`; WO-10
+  Operator's engine-reaching attempt, Test Designer vsAnthropicAuthor. Full
+  per-attempt list in `roster/wo10-band-record.md`'s Incidents section.
+  Follow-ons registered: the codex sandbox protocol fault (ESCALATED,
+  investigate/upstream), the two owed E8/E1 exercises (orders reproducible
+  from the band record's appendix once the fault clears), Interface
+  Artisan's browser/render-loop gap (pre-registered, still open), and
+  Spatial Specialist's visual/critic path (mechanical validity only this
+  round). Full record: `roster/wo10-band-record.md`. Next: **WO-11**.
+- **WO-11 STAFFED (2026-08-31); exercise contract INCOMPLETE** (round 3, after
+  the Sol·max holistic review — files shipped, lint green, 2 of 4 Band A
+  seats exercised; Architect/A0 environment-blocked with zero competency
+  signal and Synthesizer/A1 deferred-declared — both ledgered debt): Band A (seats 1-3: Conductor, Architect,
+  Synthesizer) staffed — three role files — plus the **P0 Quartermaster
+  substrate** built separately (`quartermaster/`), a deterministic code
+  substrate, not an agent file. `node roster/lint.js` / `node install.js
+  --lint` pass; all six required suites pass, including
+  `tests/quartermaster.test.js` (154 checks at this band's own build, 187
+  after the round-2 review fixes below, 191 after round 3's R3 48h-staleness
+  test additions, 195 after round 4's fail-closed >24h test additions:
+  recording, validation
+  rejections, fail-closed on absent/stale/malformed evidence, threshold
+  exactness, throttle/Exhausted precedence, confirmation, prediction, and —
+  load-bearing — real `router.js` interop: Green path, the P15 AU-O reserve
+  gate, the §5.5 Amber arm + lift, and the exhaustion-matrix recast). P0's
+  default forecast was corrected on Director review (R4, `acbf8f2`): a
+  rejected peak-derived reserve (~65.5%) replaced by the WO-2-MEASURED draw,
+  now floor-governed at 8% (rejected arithmetic preserved in
+  `quartermaster/README.md`, not deleted). Stage 2: **Conductor (O0)** — a
+  fresh-context Opus 5 audit of the Conductor's own conduct found 1
+  VIOLATION (direct Glob/Bash use — corrective: verification always
+  dispatched now), 2 COMPLIANT, 2 INDETERMINATE; seven Director dispositions
+  (D1-D6 plus F-1) rule on it — D1 re-ruled in full on round-2 review after
+  round 1's partial-acceptance disposition was found unsupported by the
+  audit it purported to close — including restoring WO-8's practice of
+  committing review verdicts as record files from this band on. **Architect (A0)** —
+  BLOCKED-PENDING-ENVIRONMENT, 2 engine-reaching attempts both hit the
+  standing sandbox fault before reaching the reference source, honest
+  BLOCKED, zero fabrication; exercise owed. **Synthesizer (A1)** —
+  DEFERRED-DECLARED (max-reserved, once-per-project; exercised at its first
+  real comparative session). **Quartermaster (P0)** — EXERCISED LIVE: PASS
+  with DEGRADED coverage (1/4 buckets real), fail-closed proven on the
+  other three, `--publish` correctly refused, full pipeline proven on a
+  labeled fixture. Fault tally now **12 of 16** engine-reaching attempts
+  across WO-9/10/11 (Architect's 2 add to WO-10's 10/14). Follow-ons: the
+  Architect exercise + its telemetry-extension plan (owed on fault clear);
+  **the owner recording real `/status` readings for AU-all/AU-opus/AU-fable
+  via `--record` — the P0 go-live step**; the size-threshold definition
+  (owner); the Synthesizer exercise; WO-9/10 verdict reconstruction
+  (owner's option). Full record: `roster/wo11-band-record.md`.
+  **ROUND-2 REVIEW FIXES (2026-08-31):** R0 review returned REVISE (1
+  CRITICAL, 5 MAJOR, ~12 MINOR/nits); all fixed. CRITICAL: a recorded
+  Amber-arm confirmation is now re-validated against LIVE evidence at every
+  `analyze()` call, not honored merely for being within `maxFreshMs` —
+  closes the confirmation-outlives-its-evidence exploit (0.35-evidence
+  confirmation + later 0.10 reading now correctly GATES). MAJOR: `confirm()`
+  no longer blind-grants over a fresh throttle, an exhausted bucket, or a
+  malformed-latest raw line; every public API entry validates caller-supplied
+  numeric options (`typeof number`, finite) and throws rather than coercing —
+  closes the `'0.3'+'0.1'` string-concat-to-NaN exploit that silently deleted
+  the P15 reserve gate; D1 re-ruled in full (above); STATUS.md's false
+  "all four Band A exercises" quick-start line corrected. Next:
+  **WO-12**.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -305,27 +521,68 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-29, final ruling applied)
+## Fresh-session quick start (as of 2026-08-31, WO-11 executed)
 
-1. **WO-6 is the active step — WO-4 and WO-5 are done.** The 2026-08-29 owner-delegated
-   final ruling (see the FINAL RULING bullet above) merged I0/I1, restructured Part 4
-   around the §4.0 total decision procedure, and demoted class to a routing hypothesis
-   with `RECLASSIFY` recovery; WO-4 encoded it all in `registry/` (classes.json + six
-   schemas + `load.js` invariant assertion; `node tests/registry.test.js` is the check);
-   WO-5 built the Verifier substrate in `verifier/` (disposable-checkout substrate +
-   deterministic checks; `node tests/verifier.test.js` is the check, 63 green). WO-5 is
-   gate-class and needs its cross-vendor review pass at PR time. B's
-   persisted-generated-output horn and W's values-only horn remain untested until
-   WO-7b synthetics, which now measure misroute recovery (restated 7.2 gate), not
-   one-shot agreement.
+1. **WO-4–WO-8 are DONE. WO-9–WO-11 are STAFFED; exercise contract
+   INCOMPLETE** (round 3, applying the owner-requested Sol·max holistic
+   review's MAJOR A) — **debt ledgered: E8 (Refactorer, WO-10,
+   environment-blocked), E1 (Runner, WO-10, environment-blocked), A0
+   (Architect, WO-11, environment-blocked), A1 (Synthesizer, WO-11,
+   deferred), E5 render loop (Interface Artisan, WO-10, unexercisable in
+   harness); plus WO-9's Archivist images lane (unexercised). Band
+   completion is gated on those exercises** — full ledger in
+   `roster/wo11-band-record.md`'s "## Exercise debt" section. What IS done,
+   stated precisely: every WO-9/10/11 role file shipped, `roster/lint.js`
+   and `install.js --lint` green, and the seats that WERE dispatched carry
+   real (including degraded) outcomes — WO-9: 5/5 seats exercised (images
+   lane excepted); WO-10: 8/10 seats exercised; WO-11 Band A: 2/4 seats
+   exercised. WO-11's round-2 review fixes landed on top of the P0
+   Quartermaster substrate — see the WO-11 entry above. Band A's four seats
+   do NOT all carry the same exercise
+   outcome — stated precisely, not rounded up to "all four exercises":
+   **Conductor** exercised (1 VIOLATION, dispositions re-ruled in full on
+   round 2); **Quartermaster** live-exercised (1/4 buckets evidenced,
+   fail-closed proven on the rest); **Architect**
+   BLOCKED-PENDING-ENVIRONMENT (2 engine-reaching attempts, no competency
+   signal, exercise owed); **Synthesizer** DEFERRED-DECLARED (max-reserved,
+   exercised at its first real comparative session). The 2026-08-29
+   owner-delegated final ruling
+   merged I0/I1, restructured Part 4 around the §4.0 total decision
+   procedure, and demoted class to a routing hypothesis with `RECLASSIFY`
+   recovery; WO-4 encoded it in `registry/` (`node tests/registry.test.js`);
+   WO-5 built the Verifier substrate in `verifier/` (`node tests/verifier.test.js`, 63
+   green); WO-6 built the router in `router/` (`node tests/router.test.js`, 82 green —
+   casting tables, review matrix, degradation machine, AU-O gate, Q0 triggers, charters,
+   RECLASSIFY hop machinery); WO-7b validated misroute recovery through it (all three
+   pre-registered gates pass — `wo7b/wo7b-report.md`, including the reserved B/W edges).
+   WO-5 and WO-6 are gate-class and need their cross-vendor review pass at PR time.
 2. **WO-1 is collecting passively** — nothing to do until a week of normal work has passed;
    then `node .claude/hooks/orchestra-telemetry.js --report` + the Opus-concentration
    readout against the manual readings file.
 3. Sequence (taxonomy gate closed by the ruling): ~~WO-4 (schemas)~~ → ~~WO-5
-   (Verifier substrate)~~ → WO-6 (router) → WO-7b (synthetics through the router — the
-   remaining routing validation). Parallelizable now per the plan's dependency line:
+   (Verifier substrate)~~ → ~~WO-6 (router)~~ → ~~WO-7b (misroute recovery — PASSED)~~
+   → ~~WO-8~~ → **WO-9 (evidence band STAFFED; exercise contract
+   INCOMPLETE — Archivist images lane unexercised)** →
+   **WO-10 (construction band STAFFED; exercise contract INCOMPLETE — 8/10
+   exercised, Refactorer/E8 and Runner/E1 environment-blocked, Interface
+   Artisan's E5 render loop unexercisable in harness)** →
+   **WO-11 (Band A STAFFED; exercise contract INCOMPLETE — 2 of 4 seats
+   exercised, Architect/A0 environment-blocked, Synthesizer/A1 deferred; P0
+   substrate live — round-2 review fixes landed)**
+   → **WO-12 trials** (12f any time) → **WO-13 scope check** → **WO-15
+   shadow** after. Neither WO-9, WO-10, nor WO-11 is struck through above:
+   staffing is done, but the WO-8–11 order's contract — "each with one
+   end-to-end exercised order" — is not yet fully discharged for any of the
+   three, so none is marked complete (round 3, Sol·max holistic review
+   MAJOR A). **Exercises owed on the standing codex sandbox fault**:
+   Refactorer (E8, WO-10), Runner (E1, WO-10), Architect (A0, WO-11) — all
+   three BLOCKED-PENDING-ENVIRONMENT, reproducible from their band records'
+   order-text appendices once the fault clears. Full debt ledger:
+   `roster/wo11-band-record.md`'s "## Exercise debt" section.
+   Parallelizable now per the plan's dependency line:
    WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
-   against the `/deep-plan` retirement) and WO-12f (Terra T1 qualification trial, "any
-   time after WO-2"; consumes real allowance). The P3→P2→P1 deferred backlog
+   against the `/deep-plan` retirement), WO-12f (Terra T1 qualification trial, "any
+   time after WO-2"; consumes real allowance), and WO-14 (alias layer + kill switch,
+   "after WO-6" — now unblocked). The P3→P2→P1 deferred backlog
    (`plans/proposed-orchestra-improvements.md`) remains schedulable meanwhile — P3
    (verification manifest) is the cheapest and benefits every review immediately.

@@ -1682,7 +1682,10 @@ fails the subscription-only gate), family, review-liveness, fallback and modalit
    `reviewer-codex → Reviewer(OpenAI casting)`, `scout → Scout`, `detective →
    Investigator(read-only pinned)`, `I1 → I0` (class alias, 2026-08-29 merge),
    `modeler → Spatial Specialist`, `architect-* → Architect(casting)`, `planner-gpt →
-   Architect(mirror)`, `plan-synthesizer → Synthesizer`), emitting ledger deprecation lines.
+   Architect(mirror)` *(written before the same-day Sol-default re-cast; operatively the
+   GPT planning lane is the Architect's Sol **primary** casting, and WO-14's alias map
+   encodes it so — the mirror is now the Anthropic lane)*, `plan-synthesizer →
+   Synthesizer`), emitting ledger deprecation lines.
 2. **Shadow period**: minimum two weeks or twenty orders, both rosters installed, ledger
    records the path each order took.
 3. **Canary by ascending consequence**: evidence/mechanical → routine authoring → hard

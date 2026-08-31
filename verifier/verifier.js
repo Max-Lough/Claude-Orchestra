@@ -35,9 +35,19 @@
  * `used: false` — the fields exist so a future model-assisted checklist path
  * cannot omit them).
  *
+ * Trust model (ruling 1a, WO-8): the manifest the Verifier executes is
+ * pinned OUTSIDE the commit under audit — read from an owner ref (the base
+ * ref by default) via git show, never from the head checkout, where the
+ * party under audit could edit it in the very diff being checked. A
+ * caller-supplied manifest asserts the dispatcher as its trust boundary.
+ * Artifact-sourced commands additionally run with a minimal environment
+ * (no inherited secrets) and redacted output tails.
+ *
  * Usage:
- *   node verifier/verifier.js --repo <dir> --commit <ref> [--base <ref>]
- *        --manifest <m.json> [--order <o.json>] [--report <r.json>]
+ *   node verifier/verifier.js --repo <dir> --commit <ref>
+ *        (--manifest <m.json> | --manifest-ref <ref> | --base <ref>)
+ *        [--base <ref>] [--manifest-path <repo-rel path>]
+ *        [--order <o.json>] [--report <r.json>]
  *        [--mutations <mu.json>] [--invariants <i.json>]
  *        [--citations <c.json>]
  *   Exit codes: 0 PASS · 1 FAIL · 2 UNAVAILABLE · 3 COVERAGE_GAP.
@@ -86,13 +96,99 @@ function tail(text) {
   return s.length > TAIL_CHARS ? '…' + s.slice(-TAIL_CHARS) : s;
 }
 
+// Confine an artifact-supplied relative path to `baseDir`. Mutation targets
+// and path:line citations come from the party under audit, so a `../` or
+// absolute path must never let a read or write escape the disposable
+// checkout — bound (1)/(2) of the substrate's own write model. Returns the
+// resolved absolute path, or null if it would escape.
+function confine(baseDir, relPath) {
+  if (typeof relPath !== 'string' || relPath === '') return null;
+  if (path.isAbsolute(relPath)) return null;
+  const base = path.resolve(baseDir);
+  const resolved = path.resolve(base, relPath);
+  const rel = path.relative(base, resolved);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  // Lexical containment is not enough (WO-14 re-review, WO-5 outstanding): a
+  // symlink committed INSIDE the checkout by the party under audit passes
+  // the checks above and is then followed by the read/write — the exact
+  // escape this function exists to prevent. Resolve the real path (of the
+  // target when it exists, else of its nearest existing ancestor) and
+  // re-check containment against the real base.
+  let realBase;
+  try { realBase = fs.realpathSync(base); } catch (_) { return null; }
+  let probe = resolved;
+  const suffix = [];
+  for (;;) {
+    let real = null;
+    try { real = fs.realpathSync(probe); } catch (_) { /* does not exist yet */ }
+    if (real !== null) {
+      const realResolved = suffix.length > 0 ? path.join(real, ...suffix) : real;
+      const realRel = path.relative(realBase, realResolved);
+      if (realRel === '' || realRel.startsWith('..') || path.isAbsolute(realRel)) return null;
+      return resolved;
+    }
+    const parent = path.dirname(probe);
+    if (parent === probe) return null; // walked off the top without finding anything real
+    suffix.unshift(path.basename(probe));
+    probe = parent;
+  }
+}
+
+// A minimum floor and an explicit output ceiling: a manifest-supplied
+// `timeout_ms: 1` or a suite that floods stdout must not silently become
+// UNAVAILABLE and mask a red-reported-green (the contradiction check now
+// fires on UNAVAILABLE too, but the floor/ceiling keep the common case a
+// real result rather than a spawn artifact).
+const MIN_TIMEOUT_MS = 1000;
+const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+
+// Blast-radius reduction (ruling 1a, applied regardless of trust model):
+// artifact-sourced commands run with a minimal environment — the party under
+// audit must not inherit the dispatcher's secrets (API keys, tokens, cloud
+// credentials). Only what a process needs to spawn and run at all survives.
+const ENV_ALLOWLIST = [
+  'PATH', 'PATHEXT', 'SYSTEMROOT', 'SYSTEMDRIVE', 'COMSPEC', 'WINDIR', 'OS',
+  'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+  'PROGRAMFILES', 'PROGRAMDATA', 'COMMONPROGRAMFILES', 'NUMBER_OF_PROCESSORS',
+  'PROCESSOR_ARCHITECTURE', 'LANG', 'LC_ALL', 'TZ', 'SHELL', 'USER', 'LOGNAME',
+];
+function minimalEnv() {
+  const out = {};
+  for (const k of ENV_ALLOWLIST) {
+    if (process.env[k] !== undefined) out[k] = process.env[k];
+  }
+  return out;
+}
+
+// Redaction over recorded output tails — defense in depth behind the env
+// allowlist, because tails are written into artifacts that outlive the run.
+// Mechanical patterns for common credential shapes; never a parser.
+const SECRET_PATTERNS = [
+  [/\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}\b/g, '[REDACTED]'],
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g, '[REDACTED]'],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, '[REDACTED]'],
+  [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, '[REDACTED]'],
+  [/\bAKIA[0-9A-Z]{16}\b/g, '[REDACTED]'],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b/g, '[REDACTED]'],
+  [/(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/gi, '$1[REDACTED]'],
+  [/((?:API|ACCESS|SECRET|AUTH|SESSION)[_-]?(?:KEY|TOKEN|SECRET)["']?\s*[=:]\s*["']?)[^\s"']{8,}/gi, '$1[REDACTED]'],
+];
+function redact(text) {
+  let s = String(text || '');
+  for (const [re, sub] of SECRET_PATTERNS) s = s.replace(re, sub);
+  return s;
+}
+
 function runShell(command, cwd, timeoutMs) {
   const started = Date.now();
+  const effectiveTimeout = Math.max(MIN_TIMEOUT_MS, timeoutMs || DEFAULT_TIMEOUT_MS);
   const r = spawnSync(command, {
     shell: true,
     cwd,
+    env: minimalEnv(),
     encoding: 'utf8',
-    timeout: timeoutMs || DEFAULT_TIMEOUT_MS,
+    timeout: effectiveTimeout,
+    maxBuffer: MAX_OUTPUT_BYTES,
     windowsHide: true,
   });
   return {
@@ -102,9 +198,18 @@ function runShell(command, cwd, timeoutMs) {
     error: r.error ? String(r.error.message || r.error) : null,
     timed_out: !!(r.error && r.error.code === 'ETIMEDOUT'),
     duration_ms: Date.now() - started,
-    stdout_tail: tail(r.stdout),
-    stderr_tail: tail(r.stderr),
+    // Redact BEFORE truncating (R0-EX3): tail-then-redact let a credential
+    // straddle the cutoff and survive as a reconstructible suffix — the
+    // pattern only matches whole tokens, and half a token is still a secret.
+    stdout_tail: tail(redact(r.stdout)),
+    stderr_tail: tail(redact(r.stderr)),
   };
+}
+
+// A ref beginning with '-' could be parsed by git as an option; refs enter
+// from opts today and may be artifact-adjacent tomorrow. Reject at the door.
+function badRef(ref) {
+  return (typeof ref !== 'string' && typeof ref !== 'number') || String(ref).startsWith('-');
 }
 
 function runGit(args, cwd) {
@@ -164,6 +269,39 @@ function runManifest(dir, manifest) {
   });
 }
 
+// The owner-manifest location and the pinning rule (ruling 1a, WO-8 Red Team
+// CRITICAL): the manifest the Verifier executes must come from OUTSIDE the
+// commit under audit. `.claude/orchestra.json` inside the head commit is
+// editable by the executor in the very diff being checked, so the manifest is
+// read from an owner ref — the base ref by default — via `git show` against
+// the real repository, never from the head checkout. A manifest change takes
+// effect only after it lands in a reviewed base.
+const DEFAULT_MANIFEST_PATH = '.claude/orchestra.json';
+
+function manifestFromRef(repoDir, ref, relPath) {
+  const p = String(relPath || DEFAULT_MANIFEST_PATH).replace(/\\/g, '/');
+  if (badRef(ref) || p.startsWith('-') || p.startsWith('/') || p.includes('..')) {
+    return { error: 'manifest ref/path rejected (leading dash, absolute, or traversal)' };
+  }
+  const r = runGit(['show', String(ref) + ':' + p], repoDir);
+  if (r.error || r.status !== 0) {
+    return { error: 'no manifest at ' + ref + ':' + p + ' (' + (((r.stderr || '').trim().split('\n')[0]) || 'git error') + ')' };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(String(r.stdout).replace(/^﻿/, ''));
+  } catch (e) {
+    return { error: 'manifest at ' + ref + ':' + p + ' unparseable: ' + e.message };
+  }
+  const manifest = parsed && parsed.verifier && parsed.verifier.manifest
+    ? parsed.verifier.manifest
+    : (parsed && Array.isArray(parsed.commands) ? parsed : null);
+  if (!manifest) {
+    return { error: 'no verifier manifest declared at ' + ref + ':' + p + ' (expected verifier.manifest, or a bare { commands, coverage } manifest)' };
+  }
+  return { manifest, path: p };
+}
+
 // -------------------------------------------------------------- nonce echo
 
 // The report must echo the order's integrity nonce byte-for-byte. A missing
@@ -214,6 +352,22 @@ function validateArtifact(kind, value) {
     });
   }
   const violations = validate(schemas[schemaName], value);
+  // The served-model mismatch detector is COMPUTED, never trusted from the
+  // record (ruling 4, WO-8): recompute requested vs served whenever served
+  // is known, and refuse a record that contradicts — or omits — a computable
+  // mismatch. A cross-field lie here is a masked P15 routing incident.
+  if (kind === 'casting-record' && value && typeof value === 'object' && !Array.isArray(value)) {
+    const requested = value.requested_casting && value.requested_casting.model;
+    const served = value.served_model;
+    if (typeof requested === 'string' && typeof served === 'string' && served !== 'UNKNOWN') {
+      const mismatch = served !== requested;
+      if (value.served_model_mismatch === undefined ? mismatch : value.served_model_mismatch !== mismatch) {
+        violations.push('$.served_model_mismatch: ' + (value.served_model_mismatch === undefined
+          ? 'omitted while requested≠served — a P15 routing incident must be flagged'
+          : 'contradicts the computed detector (requested ' + requested + ', served ' + served + ' → mismatch ' + mismatch + ')'));
+      }
+    }
+  }
   return violations.length === 0
     ? result('schema:' + kind, 'PASS', { schema: schemaName })
     : result('schema:' + kind, 'FAIL', { schema: schemaName, violations });
@@ -275,7 +429,10 @@ function claimedChanges(dir, baseRef, headRef, claims) {
   if (!Array.isArray(claims) || claims.length === 0) {
     return result('claimed-changes', 'UNAVAILABLE', { reason: 'no change claims to replay' });
   }
-  const diff = runGit(['diff', '--unified=0', String(baseRef), String(headRef || 'HEAD')], dir);
+  if (badRef(baseRef) || badRef(headRef || 'HEAD')) {
+    return result('claimed-changes', 'UNAVAILABLE', { reason: 'ref rejected (leading dash or non-string) — refs are never passed where git could read them as options' });
+  }
+  const diff = runGit(['diff', '--unified=0', String(baseRef), String(headRef || 'HEAD'), '--'], dir);
   if (diff.error || diff.status !== 0) {
     return result('claimed-changes', 'UNAVAILABLE', { reason: 'git diff failed: ' + ((diff.stderr || '').trim() || 'git error') });
   }
@@ -339,7 +496,14 @@ function mutationCheck(repoDir, commitish, manifest, mutations, opts) {
     }
     const items = [];
     for (const mut of mutations) {
-      const target = path.join(checkout.dir, mut.path);
+      const target = confine(checkout.dir, mut.path);
+      if (!target) {
+        // A mutation path that escapes the checkout is not a survivable
+        // test — it is an attempted write outside the sandbox. FAIL, never
+        // a silent write to the real tree.
+        items.push({ mutation: mut, result: 'ESCAPE', reason: 'mutation path escapes the disposable checkout — refused' });
+        continue;
+      }
       let content;
       try {
         content = fs.readFileSync(target, 'utf8');
@@ -353,8 +517,15 @@ function mutationCheck(repoDir, commitish, manifest, mutations, opts) {
       }
       fs.writeFileSync(target, content.replace(mut.find, mut.replace), 'utf8');
       const mutated = runManifest(checkout.dir, manifest);
-      // Restore from the commit so mutations never compound.
-      runGit(['checkout', '--', mut.path], checkout.dir);
+      // Restore from the commit so mutations never compound. A restore that
+      // does not clean the tree is itself a failure — a dirty checkout means
+      // the next mutation runs against corrupted state.
+      const restore = runGit(['checkout', '--', mut.path], checkout.dir);
+      const restored = !restore.error && restore.status === 0;
+      if (!restored) {
+        items.push({ mutation: mut, result: 'UNAVAILABLE', reason: 'restore failed — checkout left dirty, results after this point are void' });
+        break;
+      }
       if (mutated.outcome === 'FAIL') {
         items.push({ mutation: mut, result: 'CAUGHT' });
       } else if (mutated.outcome === 'UNAVAILABLE') {
@@ -364,8 +535,10 @@ function mutationCheck(repoDir, commitish, manifest, mutations, opts) {
       }
     }
     const survived = items.filter((i) => i.result === 'SURVIVED');
+    const escaped = items.filter((i) => i.result === 'ESCAPE');
     const unavailable = items.filter((i) => i.result === 'UNAVAILABLE');
-    const outcome = survived.length > 0 ? 'FAIL' : unavailable.length > 0 ? 'UNAVAILABLE' : 'PASS';
+    const outcome = (survived.length > 0 || escaped.length > 0) ? 'FAIL'
+      : unavailable.length > 0 ? 'UNAVAILABLE' : 'PASS';
     return result('mutation', outcome, { commit: checkout.commit, items });
   } finally {
     checkout.teardown();
@@ -451,9 +624,15 @@ function citationReplay(dir, citations) {
     }
     const parsed = /^(.*?):(\d+)$/.exec(String(c.citation || ''));
     if (!parsed) return { citation: String(c.citation || ''), replayed: false, result: 'UNREPLAYABLE' };
+    const citedPath = confine(dir, parsed[1]);
+    if (!citedPath) {
+      // A citation resolving outside the checkout is not a comparison — it
+      // would be an arbitrary-file oracle over the host. Refuse to replay.
+      return { citation: c.citation, replayed: false, result: 'UNREPLAYABLE', reason: 'citation path escapes the checkout' };
+    }
     let lines;
     try {
-      lines = fs.readFileSync(path.join(dir, parsed[1]), 'utf8').split(/\r?\n/);
+      lines = fs.readFileSync(citedPath, 'utf8').split(/\r?\n/);
     } catch (_) {
       return { citation: c.citation, replayed: true, result: 'DIVERGES' }; // cited file does not exist — the claim is refuted
     }
@@ -488,13 +667,36 @@ function aggregate(checks) {
  * manifest, replay change claims and citations, compare invariants, audit
  * both trees, tear everything down, aggregate.
  *
- * opts: { repoDir, commit, baseRef?, order?, report?, manifest,
- *         invariants?, citations?, generatedPatterns? }
+ * opts: { repoDir, commit, baseRef?, order?, report?, manifest?,
+ *         manifestRef?, manifestPath?, mutations?, invariants?, citations?,
+ *         generatedPatterns? }
+ *
+ * Manifest provenance (ruling 1a): pass `manifest` only from a
+ * dispatcher-trusted source — NEVER read from the commit under audit. Omit
+ * it and the manifest is read pinned from `manifestRef` (default: baseRef)
+ * at `manifestPath` (default: .claude/orchestra.json) via git show against
+ * the real repo, so the audited commit cannot edit its own oracle.
  */
 function runVerification(opts) {
   const started = Date.now();
   const checks = [];
   const guard = guardTree(opts.repoDir, opts.generatedPatterns);
+
+  let manifest = opts.manifest;
+  let manifestProvenance = null;
+  if (manifest !== undefined && manifest !== null) {
+    manifestProvenance = { pinned: false, source: 'caller-supplied', note: 'the dispatcher is the trust boundary — a manifest read from the commit under audit must never be passed here' };
+  } else if (opts.manifestRef !== undefined || opts.baseRef !== undefined) {
+    const ref = opts.manifestRef !== undefined ? opts.manifestRef : opts.baseRef;
+    const pinned = manifestFromRef(opts.repoDir, ref, opts.manifestPath);
+    if (pinned.error) {
+      manifest = null;
+      manifestProvenance = { pinned: true, ref: String(ref), error: pinned.error };
+    } else {
+      manifest = pinned.manifest;
+      manifestProvenance = { pinned: true, ref: String(ref), path: pinned.path };
+    }
+  }
 
   if (opts.order !== undefined) checks.push(validateArtifact('order', opts.order));
   if (opts.report !== undefined) checks.push(validateArtifact('report', opts.report));
@@ -506,17 +708,22 @@ function runVerification(opts) {
     checks.push(result('checkout', 'UNAVAILABLE', { reason: checkout.error }));
   } else {
     try {
-      const manifestResult = runManifest(checkout.dir, opts.manifest);
+      const manifestResult = runManifest(checkout.dir, manifest);
+      if (manifestProvenance) manifestResult.manifest_provenance = manifestProvenance;
       checks.push(manifestResult);
 
       // The red-reported-green catch, made legible: a report that claims the
       // work is done while the declared verification is red is a refuted
       // claim in its own right, not just a failing manifest.
       const report = opts.report;
-      if (report && manifestResult.outcome === 'FAIL' &&
+      if (report && (manifestResult.outcome === 'FAIL' || manifestResult.outcome === 'UNAVAILABLE') &&
           (report.status === 'DONE' || report.status === 'WAITING_FOR_REVIEW')) {
+        // Red OR un-runnable both refute a DONE claim: a suite that could
+        // not run (timeout, output overflow, spawn error) is not evidence
+        // of green, so a report calling it done is contradicted either way.
         checks.push(result('report-contradiction', 'FAIL', {
-          reason: 'report status ' + report.status + ' but the declared verification manifest is red',
+          reason: 'report status ' + report.status + ' but the declared verification manifest is ' +
+            (manifestResult.outcome === 'FAIL' ? 'red' : 'un-runnable (' + manifestResult.outcome + ') — absence of a green run is not a green run'),
         }));
       }
 
@@ -542,6 +749,14 @@ function runVerification(opts) {
 
       if (Array.isArray(opts.citations) && opts.citations.length > 0) {
         checks.push(citationReplay(checkout.dir, opts.citations));
+      }
+
+      // The mutation check is part of the integrated round (WO-8 gate MAJOR
+      // #1): green-by-construction detection must not be a separate call the
+      // CLI never makes. It stands up its own disposable checkout and runs
+      // the SAME pinned manifest.
+      if (Array.isArray(opts.mutations) && opts.mutations.length > 0) {
+        checks.push(mutationCheck(opts.repoDir, opts.commit, manifest, opts.mutations, opts));
       }
 
       // Bound (3): the checkout's own before/after audit. Expected churn is a
@@ -598,6 +813,7 @@ function runVerification(opts) {
 module.exports = {
   result,
   runManifest,
+  manifestFromRef,
   nonceEcho,
   validateArtifact,
   parseDiff,
@@ -608,6 +824,9 @@ module.exports = {
   citationReplay,
   aggregate,
   runVerification,
+  confine,
+  redact,
+  minimalEnv,
 };
 
 // --------------------------------------------------------------------- CLI
@@ -621,10 +840,16 @@ if (require.main === module) {
   // Strip a UTF-8 BOM: PowerShell's Out-File writes one by default, so JSON
   // artifacts produced on Windows routinely carry it.
   const readJson = (p) => (p ? JSON.parse(fs.readFileSync(p, 'utf8').replace(/^﻿/, '')) : undefined);
-  if (!opt.repo || !opt.commit || !opt.manifest) {
-    console.error('usage: node verifier/verifier.js --repo <dir> --commit <ref> --manifest <m.json>');
-    console.error('       [--base <ref>] [--order <o.json>] [--report <r.json>]');
+  if (!opt.repo || !opt.commit || (!opt.manifest && !opt['manifest-ref'] && !opt.base)) {
+    console.error('usage: node verifier/verifier.js --repo <dir> --commit <ref>');
+    console.error('       (--manifest <m.json> | --manifest-ref <ref> | --base <ref>)');
+    console.error('       [--base <ref>] [--manifest-path <repo-rel path>]');
+    console.error('       [--order <o.json>] [--report <r.json>] [--mutations <mu.json>]');
     console.error('       [--invariants <i.json>] [--citations <c.json>]');
+    console.error('');
+    console.error('Without --manifest, the manifest is read PINNED from --manifest-ref');
+    console.error('(default: --base) at --manifest-path (default: .claude/orchestra.json)');
+    console.error('via git show — never from the commit under audit (ruling 1a).');
     process.exit(2);
   }
   const out = runVerification({
@@ -632,8 +857,11 @@ if (require.main === module) {
     commit: opt.commit,
     baseRef: opt.base,
     manifest: readJson(opt.manifest),
+    manifestRef: opt['manifest-ref'],
+    manifestPath: opt['manifest-path'],
     order: readJson(opt.order),
     report: readJson(opt.report),
+    mutations: readJson(opt.mutations),
     invariants: readJson(opt.invariants),
     citations: readJson(opt.citations),
   });

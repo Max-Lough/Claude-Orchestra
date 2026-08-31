@@ -9,6 +9,67 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.2.0 — the Quartermaster substrate; the next-generation roster staffed; freshness becomes the pool state's only routing gate
+
+The agent-role-architecture plan (`plans/cross-compare/agent-role-architecture/`,
+WO-8 through WO-11) lands as a running capability rather than a design
+document: a deterministic pool-state substrate, and the roster of role files
+it and every other new seat run under.
+
+- **New: `quartermaster/`, class P0 of the plan's seat catalog** — the
+  substrate that knows how much of each vendor's allowance remains, per
+  bucket (`AU-all`, `AU-opus`, `AU-fable`, `OU`), predicts exhaustion, and
+  publishes the degradation state `router/router.js`'s `normalizeBuckets`
+  reads. It computes nothing it was not told: every fraction it publishes
+  came from a reading a human (or a future scraper) recorded, with a
+  mandatory provenance `source` string — never a number derived from the
+  telemetry ledger or a burn model (§5.2's "inventing a denominator would
+  fabricate a number"). A bucket with no usable evidence FAILS CLOSED,
+  never defaulting to Green (fabricated capacity) or Red (fabricated
+  scarcity) — the typed refusal names the bucket, its age where one exists,
+  and the exact `--record` command that fixes it. Also ships: the §5.5
+  Amber-arm confirmation protocol (a grant is evidence about the reading it
+  was made against, re-validated live on every call, never a standing
+  permission), two-point throttle prediction with typed confidence, a human
+  `--report`, and a `--publish` snapshot — all zero-dependency CommonJS, the
+  same conventions as `verifier/`. Proven by `tests/quartermaster.test.js`
+  (195 checks, including a router-interop section that feeds P0-produced
+  state through the real `router/router.js` end to end) and documented in
+  `quartermaster/README.md`'s R1-R12 numbered rulings, each marked
+  plan-cited or unstatedInPlan.
+- **Freshness is the pool state's only routing gate — no disclosed-but-usable
+  staleness band.** An early revision let a reading up to 48h old still
+  publish (disclosed, undiscounted) and still arm the §5.5 gate, on the
+  theory that disclosure was enough; a delta review demonstrated the gap
+  directly: `router/router.js`'s `normalizeBuckets` rebuilds `bucket_state`
+  from exactly four keys and drops any disclosure wrapper, so a
+  stale-but-published reading reached the router indistinguishable from a
+  fresh one at the one place the distinction needed to survive, and a
+  confirmation granted near the edge of its evidence's freshness window
+  could still be honored two days later. The rule now: a reading older than
+  `maxFreshMs` (24h) is not routing evidence at all — it fails the whole
+  bucket closed exactly like an absent reading, never published, never
+  disclosed-but-routable. A human operator still sees a refused bucket's
+  last reading and its age in `--report`, marked `REFUSED-FOR-ROUTING` —
+  that is display, never a routing input. Go-live for the substrate
+  therefore requires a `/status` reading per 24h window per bucket, matching
+  the plan's own "before each scheduling window" cadence for the dynamic
+  review reserve (`final-plan.md:1003`).
+- **The next-generation roster is staffed: 24 role files across WO-8–11's
+  four bands**, each carrying the plan's nine Part-2.0 fields, cross-checked
+  against `router/castings.json` and `router/charters.json`, and dispositioned
+  through committed review rounds rather than summarized into a single
+  ledger row — see `roster/wo8-review-dispositions.md` and
+  `roster/wo9-band-record.md` through `roster/wo11-band-record.md`.
+- **`roster/lint.js` hardens the roster contract check.** The legacy-name
+  collision check now scans `agents/specialists/*.md` in addition to
+  `agents/*.md` (a live specialist can supersede an old one under a name
+  that only collides one directory down) and runs case-insensitively; the
+  mirror-or-declared-exception check accepts a declared `noMirrorFor` or
+  `crossFamilyByConstruction` exception in place of a shipped mirror file,
+  but only when it carries a non-empty `reason` — a truthy key alone does
+  not satisfy the check.
+
 ## 2.1.0 — review findings carry a BREACH/GAP provenance bucket; the running-process rule reaches every Bash-granting role
 
 The WO-2 throughput probe re-reviewed 20 already-merged commits through the

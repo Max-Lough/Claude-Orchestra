@@ -181,6 +181,23 @@ function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
 
+// Wait for git's registration LOCK to clear on every non-main worktree —
+// polling the actual condition, never a fixed duration (R0-EX8: a slow
+// checkout can stay locked long past any sleep; killing while locked
+// freezes a worktree single-`--force` can never reclaim). `git worktree
+// add` holds the lock for the whole checkout while the entry is already
+// list-visible, so list-visibility alone is not "finished registering".
+async function waitWorktreesUnlocked(repo, timeoutMs) {
+  const deadline = Date.now() + (timeoutMs || 30000);
+  for (;;) {
+    const blocks = git(['worktree', 'list', '--porcelain'], repo).split(/\n\n+/);
+    const lockedLinked = blocks.slice(1).some((b) => /^locked/m.test(b));
+    if (!lockedLinked) return true;
+    if (Date.now() > deadline) return false;
+    await sleep(100);
+  }
+}
+
 // The runner spawns the engine binary DIRECTLY — no shell, deliberately, since
 // a shell would change quoting and argument handling. Windows cannot
 // CreateProcess a `.js` file, so there the "codex binary" handed to the runner
@@ -346,6 +363,33 @@ async function case4() {
     await sleep(100);
   }
   check('worktree was live before the kill (kill is meaningful)', registered);
+  // Let `worktree add` finish its checkout before pulling the plug. Until it
+  // does, `git worktree list` already shows the entry (registration is
+  // visible before the files are), but git itself holds it LOCKED for that
+  // whole window — proven by polling `list` during a slow add on this
+  // machine, which showed "locked" on every sample until the checkout
+  // finished. `runGit`'s worktree-add is a direct (non-shell) child of the
+  // runner, so it dies with it; kill during that window freezes the entry
+  // mid-checkout, still locked, forever. And a LOCKED worktree cannot be
+  // swept by anything downstream: sweepStaleScratch and teardownScratch both
+  // remove with a single `--force`, which git flatly refuses on a locked
+  // worktree ("cannot remove a locked working tree ... use 'remove -f -f' to
+  // override") — no amount of waiting or re-running the sweep changes that.
+  // So this wait is not pacing a flaky assertion; it is the difference
+  // between "killed mid-review" (recoverable, what this case tests) and
+  // "killed mid-registration" (unrecoverable by design, a different case).
+  // R0-EX8: wait on the LOCK CONDITION itself, never a fixed duration — a
+  // slow checkout stays locked long past any sleep.
+  const unlockedBeforeTerm = await waitWorktreesUnlocked(fx.repo, 30000);
+  check('checkout finished registering (lock cleared) before the SIGTERM', unlockedBeforeTerm);
+  if (!unlockedBeforeTerm) {
+    // R0-EX9: a timed-out guard has already failed the suite — do NOT also
+    // kill into the explicitly unreclaimable mid-registration state and let
+    // its wreckage cascade through the remaining assertions. Put the child
+    // down hard and skip the kill-dependent sub-checks.
+    child.kill('SIGKILL');
+    await new Promise((res) => child.on('exit', res));
+  } else {
   child.kill('SIGTERM');
   await new Promise((res) => child.on('exit', res));
   await sleep(300);
@@ -371,6 +415,7 @@ async function case4() {
       worktreeLines(fx.repo).length === 1,
       (swept.stdout || '').slice(0, 400) + '\n' + worktreeLines(fx.repo).join('\n')
     );
+  }
   }
 
   // SIGKILL runs no handler by design — the next run's sweep is what reclaims
@@ -401,12 +446,18 @@ async function case4() {
   // Let `worktree add` finish its checkout before pulling the plug, so the case
   // under test is "killed mid-review", not "killed mid-registration" — the
   // latter is a different (and much rarer) shape, and testing it by accident
-  // makes this case flaky rather than strict.
-  await sleep(250);
+  // makes this case flaky rather than strict. R0-EX8: wait on the lock
+  // condition itself, never a fixed duration.
+  const unlockedBeforeKill = await waitWorktreesUnlocked(fx2.repo, 30000);
+  check('checkout finished registering (lock cleared) before the SIGKILL', unlockedBeforeKill);
   check('SIGKILL: the worktree was live before the kill', registered2, 'never registered within 30s');
   c2.kill('SIGKILL');
   await new Promise((res) => c2.on('exit', res));
   await sleep(200);
+  // R0-EX9: when the lock guard timed out, the guard check above already
+  // failed the suite; the orphan is mid-registration (locked, unreclaimable
+  // by design), so the sweep sub-checks below would only compound the noise.
+  if (unlockedBeforeKill) {
   check(
     'SIGKILL leaves an orphan (so the sweep has something to prove)',
     worktreeLines(fx2.repo).length > 1,
@@ -423,6 +474,7 @@ async function case4() {
     /reclaimed \d+ abandoned review worktree/.test(r.stdout || ''),
     (r.stdout || '').slice(0, 600)
   );
+  }
 }
 
 function case5() {
@@ -857,7 +909,13 @@ function case15() {
 
   writeProjectConfig(fx, { helperSiblings: ['codex-command-runner.exe', 'codex-resources'] });
 
-  const wantHelpers = { ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' };
+  // Isolate the repair search from the REAL machine: the runner's known-good
+  // hunt walks home-derived paths (~/.codex/...), so a genuine install on
+  // the test machine that happens to carry the helpers would silently repair
+  // the "missing" fixture and flip these assertions (observed the moment
+  // this machine's Codex install was fixed by hand).
+  const iso = { HOME: fx.root, USERPROFILE: fx.root, CODEX_HOME: path.join(fx.root, '.codex') };
+  const wantHelpers = Object.assign({ ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' }, iso);
   const missing = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
   const mout = missing.stdout || '';
   check(
@@ -919,6 +977,7 @@ function case15() {
   const hard = runReview(fx2, ['--head-ref', fx2.head], {
     CODEX_BIN: fakeBin2,
     ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe',
+    HOME: fx2.root, USERPROFILE: fx2.root, CODEX_HOME: path.join(fx2.root, '.codex'),
   });
   check(
     'requireHelperSiblings turns a missing helper into a refusal',

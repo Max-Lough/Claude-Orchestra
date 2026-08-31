@@ -441,4 +441,345 @@ section('10. Typed outcomes, aggregation, and the deterministic-only closure');
   ]) === 'UNAVAILABLE');
 }
 
+// ------------------------------------------------- WO-8 round-2 hardening
+
+section('11. Ruling 1a: the manifest is pinned OUTSIDE the commit under audit');
+{
+  // A repo whose HEAD tampers .claude/orchestra.json in the very commit
+  // under review: the pinned read must execute the BASE's manifest.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-verifier-pin-'));
+  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+  git(dir, ['init']);
+  git(dir, ['config', 'user.email', 'verifier-suite@example.invalid']);
+  git(dir, ['config', 'user.name', 'Verifier Suite']);
+  fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'lib.js'), FIXTURE_LIB_GOOD);
+  fs.writeFileSync(path.join(dir, 'test.js'), FIXTURE_TEST);
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({
+    verifier: { manifest: { commands: [{ command: 'node test.js' }], coverage: 'complete' } },
+  }));
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'owner baseline with owner manifest']);
+  const pinBase = git(dir, ['rev-parse', 'HEAD']);
+  // The audited commit breaks the code AND rewrites the manifest to a
+  // vacuous oracle that would report green.
+  fs.writeFileSync(path.join(dir, 'lib.js'), FIXTURE_LIB_BROKEN);
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({
+    verifier: { manifest: { commands: [{ command: 'node -e 0' }], coverage: 'complete' } },
+  }));
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'breaks sum and tampers the manifest']);
+  const pinHead = git(dir, ['rev-parse', 'HEAD']);
+
+  const out = verifier.runVerification({ repoDir: dir, commit: pinHead, baseRef: pinBase });
+  const man = out.checks.find((c) => c.check === 'manifest');
+  check('manifest provenance is pinned to the base ref', man && man.manifest_provenance && man.manifest_provenance.pinned === true && man.manifest_provenance.ref === pinBase, man && JSON.stringify(man.manifest_provenance));
+  check('the BASE manifest ran, not the tampered head copy', man && man.ran.join() === 'node test.js', man && JSON.stringify(man.ran));
+  check('so the audited commit cannot green itself by editing its own oracle', out.outcome === 'FAIL' && man.outcome === 'FAIL');
+
+  const direct = verifier.manifestFromRef(dir, pinHead);
+  check('manifestFromRef reads whatever ref it is pinned to (head here, by explicit choice only)', !direct.error && direct.manifest.commands[0].command === 'node -e 0');
+  check('a leading-dash ref is rejected before git sees it', !!verifier.manifestFromRef(dir, '--help').error);
+  const inline = verifier.runVerification({ repoDir: dir, commit: pinBase, manifest: { commands: [{ command: 'node test.js' }], coverage: 'complete' } });
+  const inlineMan = inline.checks.find((c) => c.check === 'manifest');
+  check('a caller-supplied manifest records its provenance as unpinned (dispatcher trust boundary)',
+    inlineMan && inlineMan.manifest_provenance && inlineMan.manifest_provenance.pinned === false);
+}
+
+section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path confinement');
+{
+  process.env.WO5_SECRET_CANARY = 'canary-9f8e7d6c5b4a';
+  const probe = verifier.runManifest(fixture.dir, { commands: [{ command: 'node -e "console.log(process.env.WO5_SECRET_CANARY||0)"' }], coverage: 'partial' });
+  check('artifact-sourced commands do not inherit the dispatcher environment', probe.commands[0].stdout_tail.trim() === '0', JSON.stringify(probe.commands[0]));
+  delete process.env.WO5_SECRET_CANARY;
+  check('PATH survives the allowlist (commands can still run at all)', probe.commands[0].exit_code === 0);
+
+  check('credential shapes are redacted from recorded output tails',
+    verifier.redact('key sk-ABCDEFGHIJKLMNOPQRSTUV end') === 'key [REDACTED] end' &&
+    verifier.redact('Authorization: Bearer abcdef0123456789ABCDEF') === 'Authorization: Bearer [REDACTED]' &&
+    verifier.redact('AKIAIOSFODNN7EXAMPLE') === '[REDACTED]' &&
+    verifier.redact('API_KEY=super-secret-value-123') === 'API_KEY=[REDACTED]' &&
+    verifier.redact('plain output stays untouched') === 'plain output stays untouched');
+
+  const dash = verifier.claimedChanges(fixture.dir, '--output=owned', 'HEAD', ['lib.js:2']);
+  check('claimedChanges rejects a leading-dash ref as UNAVAILABLE', dash.outcome === 'UNAVAILABLE' && /ref rejected/.test(dash.reason));
+  check('createCheckout rejects a leading-dash commitish', !!checkoutLib.createCheckout(fixture.dir, '--help').error);
+
+  // confine(): lexical containment plus real-path (symlink/junction) escape.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-confine-base-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-confine-out-'));
+  cleanups.push(() => fs.rmSync(base, { recursive: true, force: true }));
+  cleanups.push(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(base, 'real'));
+  fs.writeFileSync(path.join(base, 'real', 'file.txt'), 'inside');
+  fs.writeFileSync(path.join(outside, 'target.txt'), 'outside');
+  check('confine accepts a real inside path and rejects traversal/absolute',
+    verifier.confine(base, 'real/file.txt') !== null &&
+    verifier.confine(base, '../escape.txt') === null &&
+    verifier.confine(base, path.join(outside, 'target.txt')) === null);
+  let linked = true;
+  try {
+    fs.symlinkSync(outside, path.join(base, 'sneaky'), process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (_) { linked = false; }
+  check('a symlink committed inside the tree cannot smuggle a read/write outside (real-path confinement)' + (linked ? '' : ' [skipped: cannot create links here]'),
+    !linked || (verifier.confine(base, 'sneaky/target.txt') === null && verifier.confine(base, 'real/file.txt') !== null));
+
+  // The E7 ReDoS finding: 8 stacked stars measured 7.9 s pre-fix. Post-fix
+  // the same probe must be effectively instant.
+  const t0 = Date.now();
+  checkoutLib.matchesAny('a/'.repeat(40) + 'deep-file-name-that-never-matches.txt', ['********x', '**/**/**/**/**/**/**y']);
+  const redosMs = Date.now() - t0;
+  check('glob compilation is star-collapse-safe (adversarial pattern < 250 ms, was ~7.9 s)', redosMs < 250, redosMs + 'ms');
+
+  // R0-EX3: SEPARATED star runs detonated the collapsed-regex fix (5.4 s on
+  // 32 chars). The DP matcher is polynomial by construction — pin it.
+  const t1 = Date.now();
+  const sepMatch = checkoutLib.matchesAny('a'.repeat(32), [('**a').repeat(10) + '**b']);
+  const sepMs = Date.now() - t1;
+  check('R0-EX3: separated star runs cannot detonate the matcher (< 250 ms, was 5.4 s)', sepMs < 250 && sepMatch === false, sepMs + 'ms');
+  check('glob semantics survive the DP rewrite',
+    checkoutLib.matchesAny('node_modules/x/y.js', ['node_modules/**']) === true &&
+    checkoutLib.matchesAny('a/b', ['a/**/b']) === true &&
+    checkoutLib.matchesAny('foo', ['**/foo']) === true &&
+    checkoutLib.matchesAny('a/b/c.log', ['**/*.log']) === true &&
+    checkoutLib.matchesAny('c.log', ['*.log']) === true &&
+    checkoutLib.matchesAny('x.logx', ['*.log']) === false &&
+    checkoutLib.matchesAny('a/b', ['*']) === false &&
+    checkoutLib.matchesAny('ab', ['a*b']) === true &&
+    checkoutLib.matchesAny('a/x/b', ['a*b']) === false);
+  check('R0-EX4: wildcard character classes match the retired regex exactly (globstar excludes line terminators, star excludes only /)',
+    checkoutLib.matchesAny('\n', ['**']) === false &&
+    checkoutLib.matchesAny('a\rb', ['a**b']) === false &&
+    checkoutLib.matchesAny('a\u2028b', ['**']) === false &&
+    checkoutLib.matchesAny('a\u2029b', ['**']) === false &&
+    checkoutLib.matchesAny('a\nb', ['a*b']) === true /* old [^/]* matched \n */ &&
+    checkoutLib.matchesAny('a/b/c', ['**']) === true);
+
+  // R0-EX3: tail-then-redact let a credential straddle the 2000-char cutoff
+  // and survive as a reconstructible suffix. Redaction now runs over the
+  // FULL output before truncation — end-to-end through runShell.
+  const straddleCmd = 'node -e "console.log(\'sk-ABCDEFGHIJKLMNOPQRSTUV\' + \'x\'.repeat(1990))"';
+  const straddle = verifier.runManifest(fixture.dir, { commands: [{ command: straddleCmd }], coverage: 'partial' });
+  check('R0-EX3: a credential straddling the tail cutoff is redacted, never truncated into a reconstructible suffix',
+    straddle.commands[0].exit_code === 0 && !/MNOPQRSTUV/.test(straddle.commands[0].stdout_tail),
+    JSON.stringify(straddle.commands[0].stdout_tail).slice(0, 120));
+
+  // R0-EX4: `worktree prune` alone clears only registrations whose directory
+  // is GONE — an untrappable kill leaves both directory and registration.
+  // Simulate the leftover exactly (a registered worktree under this module's
+  // own tmp prefix that no live checkout owns) and prove the startup sweep
+  // reclaims it while live checkouts survive.
+  const abandonedParent = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-verifier-'));
+  cleanups.push(() => fs.rmSync(abandonedParent, { recursive: true, force: true }));
+  const abandonedDir = path.join(abandonedParent, 'checkout');
+  git(fixture.dir, ['worktree', 'add', '--detach', abandonedDir, fixture.base]);
+  const co2 = checkoutLib.createCheckout(fixture.dir, fixture.base); // startup sweep runs here
+  const wtList = git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase();
+  check('R0-EX4: startup sweep reclaims an extant abandoned worktree (directory AND registration), live checkouts untouched',
+    !co2.error && !fs.existsSync(abandonedDir) &&
+    !wtList.includes(path.basename(abandonedParent).toLowerCase()) &&
+    fs.existsSync(co2.dir),
+    'abandoned exists=' + fs.existsSync(abandonedDir));
+  co2.teardown();
+
+  // The CI incident, pinned: this fixture repo's OWN tmp path carries the
+  // sweep prefix as a substring ('orchestra-verifier-fixture-…'). The
+  // substring guard classified the repo's MAIN worktree as a leftover and
+  // rm -rf'd its dirname — the OS TEMP ROOT. The structural guard must
+  // leave a prefix-substring-named repository completely alone.
+  check('R0-EX4/CI: a repository whose own path contains the sweep prefix is never treated as a leftover',
+    fs.existsSync(path.join(fixture.dir, 'lib.js')) &&
+    git(fixture.dir, ['rev-parse', 'HEAD']).length > 0,
+    'fixture repo damaged by the sweep');
+
+  // R0-EX5 CRITICAL, pinned: a LEGITIMATE worktree whose ancestor path
+  // merely contains the prefix substring (and its untracked contents, and
+  // an unrelated sibling file) must survive the sweep untouched.
+  const legitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'user-orchestra-verifier-project-'));
+  cleanups.push(() => fs.rmSync(legitRoot, { recursive: true, force: true }));
+  const legitWt = path.join(legitRoot, 'legitimate-worktree');
+  const sibling = path.join(legitRoot, 'unrelated-sibling.txt');
+  git(fixture.dir, ['worktree', 'add', '--detach', legitWt, fixture.base]);
+  fs.writeFileSync(path.join(legitWt, 'untracked-work.txt'), 'in progress');
+  fs.writeFileSync(sibling, 'not yours');
+  const co3 = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep runs
+  check('R0-EX5: a legitimate worktree under a prefix-substring ancestor survives the sweep (untracked contents and sibling intact)',
+    !co3.error && fs.existsSync(path.join(legitWt, 'untracked-work.txt')) && fs.existsSync(sibling) &&
+    git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(path.basename(legitRoot).toLowerCase()),
+    'legit worktree damaged');
+  co3.teardown();
+  git(fixture.dir, ['worktree', 'remove', '--force', legitWt]);
+
+  // The macOS/Windows CI incident, pinned: git records RESOLVED worktree
+  // paths while a live checkout's handle may be spelled through a symlink
+  // (macOS /var → /private/var) or an 8.3 short path (RUNNER~1). A lexical
+  // live-set compare misses and the sweep deletes the LIVE checkout mid-
+  // verification. Reproduce the class with an aliased tmp root.
+  const realTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-alias-target-'));
+  const aliasLink = path.join(os.tmpdir(), 'orchestra-alias-link-' + process.pid);
+  let aliased = true;
+  try {
+    fs.symlinkSync(realTmp, aliasLink, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (_) { aliased = false; }
+  cleanups.push(() => { try { fs.rmSync(aliasLink, { recursive: true, force: true }); } catch (_) { /* gone */ } });
+  cleanups.push(() => fs.rmSync(realTmp, { recursive: true, force: true }));
+  if (aliased) {
+    const liveViaAlias = checkoutLib.createCheckout(fixture.dir, fixture.base, { tmpRoot: aliasLink });
+    const trigger = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep must NOT kill liveViaAlias
+    check('CI: the live-checkout exemption compares REAL paths — an aliased tmp root does not orphan a live checkout to the sweep',
+      !liveViaAlias.error && !trigger.error && fs.existsSync(liveViaAlias.dir),
+      (liveViaAlias.error || trigger.error || 'live checkout deleted by the sweep'));
+    trigger.teardown();
+    liveViaAlias.teardown();
+
+    // R0-EX7: removing ONLY the alias must not strip a live checkout of its
+    // identity. Re-resolving at sweep time falls back to the lexical alias
+    // spelling (the alias is gone) while git's listed path stays canonical —
+    // identity must be captured at creation instead.
+    const realTmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-alias-target-'));
+    const aliasLink2 = path.join(os.tmpdir(), 'orchestra-alias-link2-' + process.pid);
+    fs.symlinkSync(realTmp2, aliasLink2, process.platform === 'win32' ? 'junction' : 'dir');
+    cleanups.push(() => fs.rmSync(realTmp2, { recursive: true, force: true }));
+    cleanups.push(() => { try { fs.rmSync(aliasLink2, { recursive: true, force: true }); } catch (_) { /* gone */ } });
+    const liveViaAlias2 = checkoutLib.createCheckout(fixture.dir, fixture.base, { tmpRoot: aliasLink2 });
+    const canonical = fs.realpathSync(liveViaAlias2.dir);
+    try { fs.unlinkSync(aliasLink2); } catch (_) { fs.rmdirSync(aliasLink2); } // the ALIAS only; the target lives
+    const trigger2 = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep runs
+    check('R0-EX7: removing only the alias does not orphan the live canonical checkout to the sweep',
+      !liveViaAlias2.error && !trigger2.error && fs.existsSync(canonical),
+      'canonical checkout deleted: ' + canonical);
+    trigger2.teardown();
+    // Manual cleanup — the entry's own paths are alias-spelled and the alias
+    // is gone, so its teardown can only clear the ACTIVE registration.
+    git(fixture.dir, ['worktree', 'remove', '--force', canonical]);
+    fs.rmSync(path.dirname(canonical), { recursive: true, force: true });
+    liveViaAlias2.teardown();
+
+    // R0-EX8/R0-EX9: identity comes from GIT'S RECORDS, so fs.realpath is
+    // no longer on the identity path at all — a poisoned realpath must
+    // yield a checkout whose handle IS git's spelling and whose sweep
+    // exemption still holds (both sides degrade to the same string), and a
+    // vanished alias can no longer strand a canonical registration, because
+    // creation, sweep, and teardown all address git's own spelling.
+    const realFn = fs.realpathSync;
+    const poisoned = () => { throw new Error('ENOENT: poisoned by the R0-EX8 regression'); };
+    poisoned.native = poisoned;
+    fs.realpathSync = poisoned;
+    let underPoison;
+    try { underPoison = checkoutLib.createCheckout(fixture.dir, fixture.base); }
+    finally { fs.realpathSync = realFn; }
+    const sweepTrigger = checkoutLib.createCheckout(fixture.dir, fixture.base);
+    check('R0-EX9: with realpath unavailable, the checkout handle is git\'s own spelling and the sweep exemption still holds',
+      !underPoison.error && fs.existsSync(underPoison.dir) &&
+      git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(
+        underPoison.dir.replace(/\\/g, '/').toLowerCase()) &&
+      !sweepTrigger.error && fs.existsSync(underPoison.dir),
+      underPoison.error || sweepTrigger.error || 'live checkout lost');
+    sweepTrigger.teardown();
+    underPoison.teardown();
+    check('R0-EX9: teardown by git\'s spelling leaves no registration or directory behind',
+      !fs.existsSync(underPoison.dir) &&
+      !git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase().includes(
+        underPoison.dir.replace(/\\/g, '/').toLowerCase()));
+
+    // R0-EX10: the residual compound race (records unreadable during
+    // creation + alias vanished) can strand a canonical registration whose
+    // alias spelling cleanup cannot address. That strand is by construction
+    // a <prefix>/checkout-shaped UNOWNED leftover — prove the standing
+    // sweep reclaims it: register one exactly that way (added through an
+    // alias, alias removed, never entering ACTIVE) and run a checkout.
+    const strandTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-alias-target-'));
+    const strandLink = path.join(os.tmpdir(), 'orchestra-alias-link3-' + process.pid);
+    fs.symlinkSync(strandTmp, strandLink, process.platform === 'win32' ? 'junction' : 'dir');
+    cleanups.push(() => fs.rmSync(strandTmp, { recursive: true, force: true }));
+    cleanups.push(() => { try { fs.rmSync(strandLink, { recursive: true, force: true }); } catch (_) { /* gone */ } });
+    const strandParent = fs.mkdtempSync(path.join(strandLink, 'orchestra-verifier-'));
+    const strandDir = path.join(strandParent, 'checkout');
+    git(fixture.dir, ['worktree', 'add', '--detach', strandDir, fixture.base]);
+    try { fs.unlinkSync(strandLink); } catch (_) { fs.rmdirSync(strandLink); } // strand it: alias gone, registration canonical
+    const healer = checkoutLib.createCheckout(fixture.dir, fixture.base); // standing sweep runs
+    const listAfterHeal = git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase();
+    check('R0-EX10: a stranded alias-created registration is reclaimed by the standing sweep (self-healing, not permanent)',
+      !healer.error && !listAfterHeal.includes(path.basename(strandParent).toLowerCase()) &&
+      fs.readdirSync(strandTmp).length === 0,
+      'strand survived: ' + fs.readdirSync(strandTmp).join(', '));
+    healer.teardown();
+  } else {
+    check('CI: real-path live-set regression [skipped: cannot create links here]', true);
+    check('R0-EX7: alias-removal regression [skipped: cannot create links here]', true);
+  }
+}
+
+section('13. The mutation check is wired into the integrated round and the CLI');
+{
+  const vacuous = {
+    path: 'test.js',
+    find: VACUOUS_ASSERT,
+    replace: VACUOUS_ASSERT.replace('assert.strictEqual', 'assert.notStrictEqual'),
+    description: 'invert the swallowed assertion',
+  };
+  const out = verifier.runVerification({
+    repoDir: fixture.dir, commit: fixture.base, baseRef: fixture.base,
+    manifest: MANIFEST, mutations: [vacuous],
+  });
+  const mut = out.checks.find((c) => c.check === 'mutation');
+  check('runVerification runs the mutation check when mutations are declared', !!mut, JSON.stringify(out.checks.map((c) => c.check)));
+  check('the surviving vacuous mutation fails the INTEGRATED round (no deterministic_only_closure)',
+    mut && mut.outcome === 'FAIL' && out.outcome === 'FAIL' && out.deterministic_only_closure === false);
+
+  // The CLI accepts and forwards --mutations (the finding: it never did).
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-verifier-cli-'));
+  cleanups.push(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(scratch, 'manifest.json'), JSON.stringify(MANIFEST));
+  fs.writeFileSync(path.join(scratch, 'mutations.json'), JSON.stringify([vacuous]));
+  const cli = spawnSync(process.execPath, [
+    path.join(MASTER, 'verifier', 'verifier.js'),
+    '--repo', fixture.dir, '--commit', fixture.base,
+    '--manifest', path.join(scratch, 'manifest.json'),
+    '--mutations', path.join(scratch, 'mutations.json'),
+  ], { encoding: 'utf8', windowsHide: true });
+  let cliOut = null;
+  try { cliOut = JSON.parse(cli.stdout.slice(0, cli.stdout.lastIndexOf('}') + 1)); } catch (_) { /* parse failure fails below */ }
+  check('CLI --mutations reaches the round and flips the exit code to FAIL',
+    cli.status === 1 && cliOut && cliOut.checks.some((c) => c.check === 'mutation' && c.outcome === 'FAIL'),
+    'exit ' + cli.status + ': ' + (cli.stderr || '').slice(0, 300));
+}
+
+section('14. Ruling 4: schema semantic gates (verdict-audit in-schema; casting-record computed)');
+{
+  const audit = (extra) => Object.assign({
+    task_id: 't', verdict: 'APPROVE',
+    citation_replay: [{ citation: 'lib.js:2', replayed: true, result: 'MATCHES' }],
+    refutation_duty_present: true, cross_family: true, gate_class: true,
+    falsification_run: { family: 'openai', outcome: 'SURVIVED' },
+    outcome: 'PASS',
+  }, extra || {});
+  check('a coherent gate-class PASS validates', verifier.validateArtifact('verdict-audit', audit()).outcome === 'PASS',
+    JSON.stringify(verifier.validateArtifact('verdict-audit', audit()).violations));
+  check('a PASS with refutation_duty_present:false cannot exist',
+    verifier.validateArtifact('verdict-audit', audit({ refutation_duty_present: false })).outcome === 'FAIL');
+  check('a gate-class PASS with falsification UNAVAILABLE cannot exist (UNAVAILABLE downgrades, never authorizes)',
+    verifier.validateArtifact('verdict-audit', audit({ falsification_run: { family: 'openai', outcome: 'UNAVAILABLE' } })).outcome === 'FAIL');
+  check('a gate-class PASS with cross_family:false cannot exist',
+    verifier.validateArtifact('verdict-audit', audit({ cross_family: false })).outcome === 'FAIL');
+  check('the same contradictions on a FAIL outcome remain expressible (the audit can still record them)',
+    verifier.validateArtifact('verdict-audit', audit({ outcome: 'FAIL', refutation_duty_present: false, cross_family: false, falsification_run: { family: 'openai', outcome: 'UNAVAILABLE' } })).outcome === 'PASS');
+
+  const record = (extra) => Object.assign({
+    task_id: 't', class: 'E2', risk: 'T1', role: 'Builder',
+    requested_casting: { vendor: 'anthropic', model: 'Sonnet 5', effort: 'med' },
+    served_model: 'Sonnet 5', served_model_mismatch: false,
+    bucket: 'AU-all', context_shape: 'packet', status: 'DONE', review_cross_family: true,
+  }, extra || {});
+  check('an honest casting record validates', verifier.validateArtifact('casting-record', record()).outcome === 'PASS',
+    JSON.stringify(verifier.validateArtifact('casting-record', record()).violations));
+  check('served≠requested with mismatch:false is refused (the detector is computed, ruling 4)',
+    (() => { const r = verifier.validateArtifact('casting-record', record({ served_model: 'GPT-5.6 Luna' })); return r.outcome === 'FAIL' && r.violations.some((v) => /contradicts the computed detector/.test(v)); })());
+  check('served≠requested with the flag omitted is refused (a masked P15 incident)',
+    (() => { const rec = record({ served_model: 'GPT-5.6 Luna' }); delete rec.served_model_mismatch; const r = verifier.validateArtifact('casting-record', rec); return r.outcome === 'FAIL' && r.violations.some((v) => /omitted/.test(v)); })());
+  check('served≠requested honestly flagged validates; UNKNOWN served stays out of the detector',
+    verifier.validateArtifact('casting-record', record({ served_model: 'GPT-5.6 Luna', served_model_mismatch: true })).outcome === 'PASS' &&
+    (() => { const rec = record({ served_model: 'UNKNOWN' }); delete rec.served_model_mismatch; return verifier.validateArtifact('casting-record', rec).outcome === 'PASS'; })());
+}
+
 console.log('\n' + passes + ' passed, ' + failures + ' failed');

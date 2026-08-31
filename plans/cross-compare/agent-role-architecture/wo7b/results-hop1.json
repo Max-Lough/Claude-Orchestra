@@ -1,0 +1,16 @@
+{
+  "$comment": "Hop-1 charter-filter decisions on the re-dispatched orders — one fresh-context Sonnet agent per recommended seat, 2026-08-30. Every re-dispatched order was ACCEPTed by the recommended seat.",
+  "M1": { "decision": "ACCEPT" },
+  "M2": { "decision": "ACCEPT" },
+  "M3": { "decision": "ACCEPT" },
+  "M4": { "decision": "ACCEPT" },
+  "M5": { "decision": "ACCEPT" },
+  "M6": { "decision": "ACCEPT" },
+  "M7": { "decision": "ACCEPT" },
+  "M8": { "decision": "ACCEPT" },
+  "M9": { "decision": "ACCEPT" },
+  "M10": { "decision": "ACCEPT" },
+  "M11": { "decision": "ACCEPT" },
+  "M12": { "decision": "ACCEPT" },
+  "M13": { "decision": "ACCEPT" }
+}

@@ -44,6 +44,12 @@
     "constraints": { "type": "array", "items": { "type": "string" } },
     "context_packet": { "type": "string" },
     "context_shape": { "enum": ["packet", "scoped", "subsystem", "repo", "haystack"] },
+    "touches": {
+      "type": "array",
+      "items": { "enum": ["auth", "authz", "concurrency", "crypto", "dependencies", "deserialization", "file-paths", "parsing", "persistent-data", "public-api", "secrets", "subprocess"] },
+      "uniqueItems": true,
+      "description": "Declared touch areas — the canonical carrier for the Q0 touch triggers (router q0Triggers.touchAreas) and the security-review triggers (securityTriggerList). Declared by the Director at order creation, because Q0 fires before a diff exists; the router refuses to load if this enum drifts from the trigger lists. A verification-time diff-derived cross-check (union, escalate on disagreement) is the registered follow-on."
+    },
     "search_surface": { "type": "string", "description": "N0 only: the declared, exhaustible surface" },
     "tool_capabilities": { "type": "array", "items": { "type": "string" }, "description": "Dispatcher-pinned; a read-only pin here is how the Conductor holds the merged Investigator to its read-only-first law" },
     "destructive_actions": { "type": "array", "items": { "type": "string" } },

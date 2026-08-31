@@ -64,31 +64,75 @@ function runGit(args, opts) {
 
 // Minimal glob matcher for the classification patterns: `**` crosses path
 // separators, `*` does not; paths are normalized to forward slashes first.
-function globToRegExp(pattern) {
-  const norm = pattern.replace(/\\/g, '/');
-  let re = '';
+//
+// NOT a regex. The first ReDoS fix collapsed only ADJACENT star runs; the
+// R0-EX3 re-review detonated the compiled regex with SEPARATED runs
+// (`**a**a**a…` — 5.4 s on 32 characters), because stacked `.*` groups
+// backtrack combinatorially no matter how each run is collapsed. Patterns
+// are token-compiled once (cached) and matched with a small dynamic program
+// over tokens × characters — strictly O(pattern × path), no backtracking to
+// detonate, whatever an agent-editable pattern source someday feeds it.
+const GLOB_CACHE = new Map();
+function compileGlob(pattern) {
+  const norm = String(pattern).replace(/\\/g, '/');
+  let tokens = GLOB_CACHE.get(norm);
+  if (tokens) return tokens;
+  tokens = [];
   for (let i = 0; i < norm.length; i++) {
-    const ch = norm[i];
-    if (ch === '*') {
-      if (norm[i + 1] === '*') {
-        re += '.*';
-        i++;
+    if (norm[i] === '*') {
+      let stars = 1;
+      while (norm[i + 1] === '*') { stars++; i++; }
+      if (stars >= 2) {
         if (norm[i + 1] === '/') i++; // `**/` also matches zero directories
-      } else {
-        re += '[^/]*';
+        if (tokens[tokens.length - 1] !== 'globstar') tokens.push('globstar');
+      } else if (tokens[tokens.length - 1] !== 'star') {
+        tokens.push('star');
       }
-    } else if ('\\^$.|?+()[]{}'.indexOf(ch) !== -1) {
-      re += '\\' + ch;
     } else {
-      re += ch;
+      tokens.push(norm[i]); // literal character (one-char tokens)
     }
   }
-  return new RegExp('^' + re + '$');
+  GLOB_CACHE.set(norm, tokens);
+  return tokens;
+}
+
+// dp[j] = "the tokens consumed so far can match text[0..j)". Each token
+// updates the whole row in one linear pass.
+//
+// Wildcard character classes replicate the retired regex EXACTLY (R0-EX4
+// MINOR: the first DP draft let `**` span line terminators, which regex `.`
+// never did): `**` matches anything except a line terminator (it does cross
+// '/'); `*` matches anything except '/'. Git-quoted paths keep terminators
+// out of real inputs, but the matcher must not drift just because the
+// engine changed.
+const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029']);
+function globMatch(tokens, text) {
+  const n = text.length;
+  let prev = new Array(n + 1).fill(false);
+  prev[0] = true;
+  for (const tok of tokens) {
+    const next = new Array(n + 1).fill(false);
+    if (tok === 'globstar') {
+      for (let j = 0; j <= n; j++) {
+        if (prev[j]) next[j] = true;
+        else if (j > 0 && next[j - 1] && !LINE_TERMINATORS.has(text[j - 1])) next[j] = true;
+      }
+    } else if (tok === 'star') {
+      for (let j = 0; j <= n; j++) {
+        if (prev[j]) next[j] = true;
+        else if (j > 0 && next[j - 1] && text[j - 1] !== '/') next[j] = true;
+      }
+    } else {
+      for (let j = n; j >= 1; j--) next[j] = prev[j - 1] && text[j - 1] === tok;
+    }
+    prev = next;
+  }
+  return prev[n];
 }
 
 function matchesAny(p, patterns) {
   const norm = String(p).replace(/\\/g, '/');
-  return (patterns || []).some((pat) => globToRegExp(pat).test(norm));
+  return (patterns || []).some((pat) => globMatch(compileGlob(pat), norm));
 }
 
 // ------------------------------------------------------------- fingerprint
@@ -161,16 +205,100 @@ function fingerprintDelta(before, after, generatedPatterns) {
 const ACTIVE = new Set();
 let exitHandlerInstalled = false;
 
+function sweepActive() {
+  for (const entry of [...ACTIVE]) {
+    try { entry.teardown(); } catch (_) { /* best effort — see below */ }
+    // Even if git refused, the parent tmpdir must not survive the process.
+    try { fs.rmSync(entry.parent, { recursive: true, force: true }); } catch (_) { /* gone */ }
+  }
+}
+
 function installExitHandler() {
   if (exitHandlerInstalled) return;
   exitHandlerInstalled = true;
-  process.on('exit', () => {
-    for (const entry of [...ACTIVE]) {
-      try { entry.teardown(); } catch (_) { /* best effort — see below */ }
-      // Even if git refused, the parent tmpdir must not survive the process.
-      try { fs.rmSync(entry.parent, { recursive: true, force: true }); } catch (_) { /* gone */ }
+  process.on('exit', sweepActive);
+  // SIGINT/SIGTERM do not fire 'exit' unless something handles them — the
+  // E7 LOW finding: an interrupted run left writable checkouts and stale
+  // worktree registrations behind (observed on this machine). Sweep, then
+  // re-raise the signal so the exit status stays honest; if re-raising is
+  // unsupported, fall back to a plain non-zero exit.
+  //
+  // Windows honesty (R0-EX3): SIGTERM is NOT deliverable to a Node handler
+  // on Windows — TerminateProcess kills without running anything, so no
+  // userland listener can help there. What IS trappable on Windows: SIGINT
+  // (Ctrl+C), SIGBREAK (Ctrl+Break), SIGHUP (console close, ~5 s grace).
+  // The startup `git worktree prune` in createCheckout() is the recovery
+  // path for the untrappable kills; these handlers cover the trappable rest.
+  const sigs = process.platform === 'win32'
+    ? ['SIGINT', 'SIGBREAK', 'SIGHUP']
+    : ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  for (const sig of sigs) {
+    try {
+      process.on(sig, () => {
+        sweepActive();
+        process.removeAllListeners(sig);
+        try { process.kill(process.pid, sig); } catch (_) { process.exit(1); }
+      });
+    } catch (_) { /* signal not supported on this platform */ }
+  }
+}
+
+// The mkdtemp prefix every checkout parent carries — the sweep recognizes
+// its own leftovers by it and touches nothing else.
+const PARENT_PREFIX = 'orchestra-verifier-';
+
+// Path identity, not string identity: git records RESOLVED worktree paths,
+// while our handles may be spelled through a symlink (macOS /var →
+// /private/var) or an 8.3 short path (Windows CI's RUNNER~1 tmpdir). A
+// lexical compare misses, the live-set exemption fails, and the sweep
+// deletes a LIVE checkout mid-verification (observed on macOS+Windows CI;
+// ubuntu and long-named local users pass by accident). Resolve for real
+// when the path exists; fall back to lexical for paths already gone.
+function normPath(p) {
+  let r = String(p);
+  try { r = fs.realpathSync.native ? fs.realpathSync.native(r) : fs.realpathSync(r); } catch (_) { /* not on disk — lexical */ }
+  r = path.resolve(r).replace(/\\/g, '/');
+  return process.platform === 'win32' ? r.toLowerCase() : r;
+}
+
+// Remove registered worktrees this module itself abandoned — no LIVE
+// checkout in this process owns them (runVerification legitimately holds
+// two at once — head + base — and mutationCheck a third; those are in
+// ACTIVE and skipped). A concurrent verifier PROCESS on the same repo could
+// in principle be swept — the same trade the reference lane makes; runs on
+// one repo are serialized by the dispatcher.
+//
+// Identification is STRUCTURAL, never a substring: our leftovers are exactly
+// <tmp>/<PARENT_PREFIX>XXXXXX/checkout — basename 'checkout' inside a parent
+// whose OWN BASENAME carries the prefix, and only that parent is ever
+// removed. The substring version of this guard shipped once and matched a
+// repository whose own path contained the prefix (the CI test fixture,
+// 'orchestra-verifier-fixture-…'): its MAIN worktree became a "leftover" and
+// path.dirname() of a repo sitting directly in tmp is the OS TEMP ROOT,
+// which this function then rm -rf'd. The main worktree (the first porcelain
+// entry) is skipped outright as a second belt.
+function sweepAbandoned(repoDir) {
+  const list = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
+  if (!list.error && list.status === 0) {
+    // A live checkout's identity is its CANONICAL path CAPTURED AT CREATION
+    // (entry.realDir), never re-derived here: re-resolving at sweep time
+    // through an alias that has since been removed falls back to the
+    // lexical alias spelling while git's listed path stays canonical — and
+    // the exemption misses a checkout that is very much alive (the R0-EX7
+    // finding: only the alias was gone; the canonical target was deleted).
+    const live = new Set([...ACTIVE].map((e) => e.realDir || normPath(e.dir)));
+    const entries = (list.stdout || '').split('\n').filter((l) => l.startsWith('worktree '));
+    for (const line of entries.slice(1)) { // [0] is always the main worktree
+      const wt = line.slice('worktree '.length).trim();
+      const parent = path.dirname(wt);
+      if (path.basename(wt) !== 'checkout') continue;
+      if (!path.basename(parent).startsWith(PARENT_PREFIX)) continue;
+      if (live.has(normPath(wt))) continue;
+      runGit(['-C', repoDir, 'worktree', 'remove', '--force', wt]);
+      try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
     }
-  });
+  }
+  runGit(['-C', repoDir, 'worktree', 'prune']);
 }
 
 /**
@@ -181,18 +309,30 @@ function installExitHandler() {
  */
 function createCheckout(repoDir, commitish, opts) {
   const options = opts || {};
+  // A commitish beginning with '-' could be read by git as an option; refs
+  // may be artifact-adjacent one day, so reject at the door.
+  if (typeof commitish !== 'string' || commitish === '' || commitish.startsWith('-')) {
+    return { error: 'commitish rejected (empty, non-string, or leading dash): ' + String(commitish) };
+  }
   const top = runGit(['-C', repoDir, 'rev-parse', '--show-toplevel']);
   if (top.error || top.status !== 0) {
     return { error: 'not a git repository (or git unavailable): ' + repoDir };
   }
   const toplevel = path.resolve(top.stdout.trim());
+  // Reclaim leftovers from previously interrupted runs (E7 + R0-EX4): a
+  // `worktree prune` alone clears only registrations whose DIRECTORY is
+  // gone — an untrappable kill (TerminateProcess) leaves both the directory
+  // and the registration, which prune happily keeps. Sweep any registered
+  // worktree living under this module's own mkdtemp prefix that no live
+  // checkout in this process owns, then prune the rest.
+  sweepAbandoned(repoDir);
   const resolved = runGit(['-C', repoDir, 'rev-parse', '--verify', String(commitish) + '^{commit}']);
   if (resolved.error || resolved.status !== 0) {
     return { error: 'cannot resolve commit ' + commitish + ': ' + ((resolved.stderr || '').trim() || 'git error') };
   }
   const commit = resolved.stdout.trim();
 
-  const parent = fs.mkdtempSync(path.join(options.tmpRoot || os.tmpdir(), 'orchestra-verifier-'));
+  const parent = fs.mkdtempSync(path.join(options.tmpRoot || os.tmpdir(), PARENT_PREFIX));
   // Bound (1): the checkout lives OUTSIDE the repository. If a caller pointed
   // tmpRoot inside the repo, refuse rather than sandbox the tree inside itself.
   const rel = path.relative(toplevel, parent);
@@ -201,28 +341,71 @@ function createCheckout(repoDir, commitish, opts) {
     return { error: 'refusing a checkout inside the repository under examination: ' + parent };
   }
 
+  // Canonical identity comes from GIT'S OWN RECORDS, not from fs.realpath
+  // (R0-EX9): snapshot the linked-worktree list, add, and the one new entry
+  // IS the identity — the exact spelling every later sweep will list. This
+  // removes the whole aliasing class: there is no separate resolution step
+  // to race (R0-EX8's mid-creation ENOENT), and cleanup can always address
+  // the registration by the path git itself holds, so a vanished alias can
+  // no longer strand a canonical registration (this round's finding).
+  const listedLinked = () => {
+    const l = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
+    if (l.error || l.status !== 0) return null;
+    return (l.stdout || '').split('\n').filter((x) => x.startsWith('worktree ')).slice(1)
+      .map((x) => x.slice('worktree '.length).trim());
+  };
+  // The pre-add snapshot is a HARD prerequisite (R0-EX10): if git's records
+  // cannot be read now, nothing has been registered yet and refusing here
+  // costs nothing — whereas discovering the records are unreadable AFTER an
+  // add leaves a registration whose spelling we may no longer know.
+  const before = listedLinked();
+  if (before === null) {
+    try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+    return { error: 'cannot read git\'s worktree records before creating a checkout — refusing (fail closed)' };
+  }
   const dir = path.join(parent, 'checkout');
   const added = runGit(['-C', repoDir, 'worktree', 'add', '--detach', dir, commit]);
   if (added.error || added.status !== 0) {
     fs.rmSync(parent, { recursive: true, force: true });
     return { error: 'worktree add failed: ' + ((added.stderr || '').trim() || 'git error') };
   }
+  let after = listedLinked();
+  for (let i = 0; after === null && i < 3; i++) after = listedLinked(); // a transient read failure gets retried
+  const created = after === null ? null : after.filter((p) => !before.includes(p));
+  if (!created || created.length !== 1) {
+    // Ambiguous or unreadable records (a concurrent add — the
+    // dispatcher-serialization trade violated — or a post-add list
+    // failure): refuse, cleaning every registration we might own by the
+    // spellings we have. If the alias also vanished and a registration
+    // survives this best-effort pass, it is by construction a
+    // <prefix>/checkout-shaped UNOWNED leftover — exactly what the standing
+    // sweep at the next createCheckout reclaims (regression-pinned).
+    for (const p of created || []) runGit(['-C', repoDir, 'worktree', 'remove', '--force', p]);
+    runGit(['-C', repoDir, 'worktree', 'remove', '--force', dir]);
+    runGit(['-C', repoDir, 'worktree', 'prune']);
+    try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+    return { error: 'cannot establish the checkout\'s canonical identity from git\'s records — refusing rather than guessing (fail closed)' };
+  }
+  // The entry's working handle IS git's spelling: usable and removable even
+  // if the alias the caller's tmpRoot came through disappears later.
+  const gitDir = created[0];
 
-  const fingerprintBefore = treeFingerprint(dir);
+  const fingerprintBefore = treeFingerprint(gitDir);
   let torndown = false;
 
   const entry = {
-    dir,
+    dir: gitDir,
     commit,
     parent,
+    realDir: normPath(gitDir),
     fingerprintBefore,
     // The before/after comparison, classified. Callers pass project-declared
     // churn patterns; the defaults cover the common generated artifacts.
     delta(generatedPatterns) {
-      const after = treeFingerprint(dir);
-      if (!fingerprintBefore || !after) return null;
+      const afterFp = treeFingerprint(gitDir);
+      if (!fingerprintBefore || !afterFp) return null;
       const patterns = DEFAULT_GENERATED_PATTERNS.concat(generatedPatterns || []);
-      return fingerprintDelta(fingerprintBefore, after, patterns);
+      return fingerprintDelta(fingerprintBefore, afterFp, patterns);
     },
     teardown() {
       if (torndown) return;
@@ -230,9 +413,15 @@ function createCheckout(repoDir, commitish, opts) {
       ACTIVE.delete(entry);
       // `worktree remove` also unregisters the checkout from the real repo's
       // metadata; --force because the whole point is that the copy is dirty.
-      runGit(['-C', repoDir, 'worktree', 'remove', '--force', dir]);
+      // Removal addresses git's own spelling, then both parent spellings
+      // (the alias-side mkdtemp parent and the canonical parent) best-effort.
+      runGit(['-C', repoDir, 'worktree', 'remove', '--force', gitDir]);
       runGit(['-C', repoDir, 'worktree', 'prune']);
-      fs.rmSync(parent, { recursive: true, force: true });
+      try { fs.rmSync(parent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+      const canonParent = path.dirname(gitDir);
+      if (path.basename(canonParent).startsWith(PARENT_PREFIX)) {
+        try { fs.rmSync(canonParent, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+      }
     },
   };
   ACTIVE.add(entry);

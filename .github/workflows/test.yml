@@ -109,6 +109,43 @@ jobs:
         # stays green, and a broken row-count invariant.
         run: node tests/verifier.test.js
 
+      - name: Router suite
+        # WO-6: route/cast/reviewer, the pool-state degradation machine, the
+        # pre-dispatch AU-O gate, and automatic Q0 creation. Proves
+        # no-self-family for every author family, that no mandatory-class
+        # dispatch can produce a same-family closing verdict under any bucket
+        # state including Red/exhausted, context-shape rejection, every rung's
+        # documented casting set, and Q0 spawn on every trigger.
+        run: node tests/router.test.js
+
+      - name: Quartermaster suite
+        # WO-11: the P0 allowance substrate — recorded readings in, the
+        # router's bucket_state out. Proves it fails CLOSED on absent, stale,
+        # future-dated or malformed-latest evidence (never Green, never Red),
+        # that staleness is disclosed rather than discounted, and — the
+        # load-bearing part — that a P0-produced state drives the REAL router
+        # end-to-end: Green dispatches, a below-reserve AU-opus reading fires
+        # the P15 gate, an unconfirmed Amber fires the §5.5 arm, and a
+        # hard-throttled bucket takes the exhaustion-matrix path.
+        run: node tests/quartermaster.test.js
+
+      - name: WO-7b misroute-recovery gates
+        # Re-scores the committed WO-7b probe results through the live
+        # router, so a router change that would break the pre-registered
+        # G1/G2/G3 gates (recovery, no gate crossing, P95 hops) fails CI
+        # instead of silently invalidating the probe. (Added on an S0
+        # sweep finding — the same class of gap the registry suite had.)
+        run: node plans/cross-compare/agent-role-architecture/wo7b/score.js
+
+      - name: Roster contract lint
+        # WO-8-11: every staffed roster file carries all nine Part-2.0
+        # fields, its frontmatter matches the documented casting rung/lane,
+        # and mirror-or-declared-exception holds (plus the installer's
+        # frontmatter lint over the same files).
+        run: |
+          node roster/lint.js
+          node install.js --lint roster
+
       - name: MCP-lane suite
         # The orchestra-engine MCP server — the typed transport that replaced
         # the launcher shell pipeline. Speaks real JSON-RPC to the server over

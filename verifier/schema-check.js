@@ -125,12 +125,18 @@ function walk(schema, value, at, problems) {
   }
 
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    // hasOwnProperty, never `in`: `in` walks the prototype chain, so a
+    // required field could be satisfied by Object.prototype and a property
+    // named `__proto__`/`constructor`/`toString` could both slip past
+    // additionalProperties:false and skip its own sub-schema (the sub-schema
+    // handed to walk would be Object.prototype, which validates nothing).
+    const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
     for (const req of schema.required || []) {
-      if (!(req in value)) problems.push(at + ': missing required property "' + req + '"');
+      if (!own(value, req)) problems.push(at + ': missing required property "' + req + '"');
     }
     const props = schema.properties || {};
     for (const key of Object.keys(value)) {
-      if (key in props) {
+      if (own(props, key)) {
         walk(props[key], value[key], at + '.' + key, problems);
       } else if (schema.additionalProperties === false) {
         problems.push(at + ': unexpected property "' + key + '" (additionalProperties: false)');

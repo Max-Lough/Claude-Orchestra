@@ -34,12 +34,31 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const MASTER = path.resolve(__dirname, '..');
 const QM_PATH = path.join(MASTER, 'quartermaster', 'quartermaster.js');
 const qm = require(QM_PATH);
 const { createRouter } = require(path.join(MASTER, 'router', 'router.js'));
+
+// The suite must not care whether the real readings file exists — WO-11's P0
+// live exercise made it real operational data (WO-2/WO-5 Codex OU readings),
+// so "it never exists" is no longer a lawful assertion. What the suite DOES
+// owe is proof that it never creates, modifies, or deletes that file itself.
+// Snapshot it now, before any fixture work below, and compare at the end.
+const REAL_READINGS = path.join(MASTER, '.claude', 'orchestra-pool-readings.jsonl');
+function snapshotRealReadings() {
+  if (!fs.existsSync(REAL_READINGS)) return { exists: false };
+  const stat = fs.statSync(REAL_READINGS);
+  return {
+    exists: true,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    hash: crypto.createHash('sha256').update(fs.readFileSync(REAL_READINGS)).digest('hex'),
+  };
+}
+const REAL_READINGS_BEFORE = snapshotRealReadings();
 
 let failures = 0;
 let passes = 0;
@@ -636,8 +655,16 @@ section('12. CLI');
   check('CLI --confirm exits 1 on a refusal', r9.status === 1 && /"confirmed": false/.test(r9.stdout));
   const r10 = run([]);
   check('CLI with no command prints usage and exits 1', r10.status === 1 && /usage:/.test(r10.stderr));
-  check('the CLI never touched the repository\'s real readings file',
-    !fs.existsSync(path.join(MASTER, '.claude', 'orchestra-pool-readings.jsonl')));
+  check('the suite created, modified, or deleted no bytes of the repository\'s real readings file '
+      + '(present or absent, it is byte-identical before and after — every fixture call above used an explicit --file)',
+    (() => {
+      const after = snapshotRealReadings();
+      if (after.exists !== REAL_READINGS_BEFORE.exists) return false;
+      if (!after.exists) return true;
+      return after.size === REAL_READINGS_BEFORE.size
+        && after.mtimeMs === REAL_READINGS_BEFORE.mtimeMs
+        && after.hash === REAL_READINGS_BEFORE.hash;
+    })());
 }
 
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

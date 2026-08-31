@@ -436,6 +436,40 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   Artisan's browser/render-loop gap (pre-registered, still open), and
   Spatial Specialist's visual/critic path (mechanical validity only this
   round). Full record: `roster/wo10-band-record.md`. Next: **WO-11**.
+- **WO-11 EXECUTED (2026-08-31):** Band A (seats 1-3: Conductor, Architect,
+  Synthesizer) staffed — three role files — plus the **P0 Quartermaster
+  substrate** built separately (`quartermaster/`), a deterministic code
+  substrate, not an agent file. `node roster/lint.js` / `node install.js
+  --lint` pass; all seven required suites pass, including
+  `tests/quartermaster.test.js` (154 checks: recording, validation
+  rejections, fail-closed on absent/stale/malformed evidence, threshold
+  exactness, throttle/Exhausted precedence, confirmation, prediction, and —
+  load-bearing — real `router.js` interop: Green path, the P15 AU-O reserve
+  gate, the §5.5 Amber arm + lift, and the exhaustion-matrix recast). P0's
+  default forecast was corrected on Director review (R4, `acbf8f2`): a
+  rejected peak-derived reserve (~65.5%) replaced by the WO-2-MEASURED draw,
+  now floor-governed at 8% (rejected arithmetic preserved in
+  `quartermaster/README.md`, not deleted). Stage 2: **Conductor (O0)** — a
+  fresh-context Opus 5 audit of the Conductor's own conduct found 1
+  VIOLATION (direct Glob/Bash use — corrective: verification always
+  dispatched now), 2 COMPLIANT, 2 INDETERMINATE; five Director dispositions
+  (D1-D6) rule on it, including restoring WO-8's practice of committing
+  review verdicts as record files from this band on. **Architect (A0)** —
+  BLOCKED-PENDING-ENVIRONMENT, 2 engine-reaching attempts both hit the
+  standing sandbox fault before reaching the reference source, honest
+  BLOCKED, zero fabrication; exercise owed. **Synthesizer (A1)** —
+  DEFERRED-DECLARED (max-reserved, once-per-project; exercised at its first
+  real comparative session). **Quartermaster (P0)** — EXERCISED LIVE: PASS
+  with DEGRADED coverage (1/4 buckets real), fail-closed proven on the
+  other three, `--publish` correctly refused, full pipeline proven on a
+  labeled fixture. Fault tally now **12 of 16** engine-reaching attempts
+  across WO-9/10/11 (Architect's 2 add to WO-10's 10/14). Follow-ons: the
+  Architect exercise + its telemetry-extension plan (owed on fault clear);
+  **the owner recording real `/status` readings for AU-all/AU-opus/AU-fable
+  via `--record` — the P0 go-live step**; the size-threshold definition
+  (owner); the Synthesizer exercise; WO-9/10 verdict reconstruction
+  (owner's option). Full record: `roster/wo11-band-record.md`. Next:
+  **WO-12**.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -455,13 +489,15 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-30, WO-10 executed)
+## Fresh-session quick start (as of 2026-08-31, WO-11 executed)
 
-1. **WO-8–11 are the active steps — WO-4, WO-5, WO-6, WO-7b, WO-8, WO-9, and
-   WO-10 are done (WO-10 pending review); WO-11 is next.** The
-   2026-08-29 owner-delegated final ruling merged I0/I1, restructured Part 4 around the
-   §4.0 total decision procedure, and demoted class to a routing hypothesis with
-   `RECLASSIFY` recovery; WO-4 encoded it in `registry/` (`node tests/registry.test.js`);
+1. **WO-8–11 are ALL DONE, pending WO-11 review** (WO-4, WO-5, WO-6, WO-7b,
+   WO-8, WO-9, WO-10 done; WO-11 executed 2026-08-31, staffing + all four
+   Band A exercises + the P0 Quartermaster substrate — see the WO-11
+   EXECUTED entry above). The 2026-08-29 owner-delegated final ruling
+   merged I0/I1, restructured Part 4 around the §4.0 total decision
+   procedure, and demoted class to a routing hypothesis with `RECLASSIFY`
+   recovery; WO-4 encoded it in `registry/` (`node tests/registry.test.js`);
    WO-5 built the Verifier substrate in `verifier/` (`node tests/verifier.test.js`, 63
    green); WO-6 built the router in `router/` (`node tests/router.test.js`, 82 green —
    casting tables, review matrix, degradation machine, AU-O gate, Q0 triggers, charters,
@@ -475,8 +511,13 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
    (Verifier substrate)~~ → ~~WO-6 (router)~~ → ~~WO-7b (misroute recovery — PASSED)~~
    → ~~WO-8~~ → ~~WO-9 (evidence band staffed + exercised)~~ →
    ~~WO-10 (construction band staffed + exercised, 8/10 complete, 2
-   environment-blocked — pending review)~~ → **WO-11** →
-   WO-12 trials → WO-15 shadow.
+   environment-blocked — pending review)~~ →
+   ~~WO-11 (Band A staffed + exercised, P0 substrate live — pending review)~~
+   → **WO-12 trials** (12f any time) → **WO-13 scope check** → **WO-15
+   shadow** after. **Exercises owed on the standing codex sandbox fault**:
+   Refactorer (E8, WO-10), Runner (E1, WO-10), Architect (A0, WO-11) — all
+   three BLOCKED-PENDING-ENVIRONMENT, reproducible from their band records'
+   order-text appendices once the fault clears.
    Parallelizable now per the plan's dependency line:
    WO-13 (metered planning transport; "after WO-4, any time" — but scope needs a check
    against the `/deep-plan` retirement), WO-12f (Terra T1 qualification trial, "any

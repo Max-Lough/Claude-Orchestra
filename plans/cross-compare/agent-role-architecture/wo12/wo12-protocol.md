@@ -91,7 +91,17 @@ remotes and reflogs removed and unreachable objects pruned, leaving only the pin
 head's ancestry — the corpus (`wo12/`, `key.json`) is unreachable from `.git`, not merely
 absent from the worktree; (iii) briefs are generated from per-artifact content files
 under one structure for all 84 artifacts (`briefs/VARIANTS.md` v2) and a structural-tell
-lint fails assembly on any deviation.
+lint fails assembly on any deviation; (iv) the V3 hazard KIND is declared **pool-wide
+as `code`** — every seeded base is a code commit while the control pool includes docs
+commits, so a per-commit KIND would itself separate the populations; (v) within a
+phase, `run-lane.js` processes artifacts in a deterministic pseudo-random order
+(seeded by phase number), not seeds-then-controls. Seed content prose was authored by
+type-grouped agents that saw their own five seeds' records (the seed's substance —
+its constraint, scope or claim — must live in the prose); this is recorded as a
+deviation from the one-seed-per-agent construction rule, which governed the patches,
+not the packet prose. Registered follow-on before phase 1: `quartermaster.js --state`
+must publish the OU `requiredReserve` figure (computed in `analyze()` but not emitted)
+for `run-lane.js`'s projected-draw check; phase 0 does not need it.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

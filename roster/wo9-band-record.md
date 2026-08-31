@@ -160,7 +160,7 @@ full (counts in the WO-9 report).
 |---|---|---|---|
 | Scout (N0) | Bounded inventory of `engine:codex` roster files | Haiku 4.5 (in-harness, primary rung) | ex1 superseded (`wo9-n0-ex1-report.md`); ex2 DEGRADED-ACCEPTED — inventory correct and independently verified (4/4 `engine:codex` files), but the SEARCH LOG's exhaustion count failed independent verification (44 claimed vs 47 actual, second consecutive miscount) (`wo9-n0-ex2-report.md`) |
 | Investigator (I0) | Causal account: worktree lock mechanism | Opus 5 (in-harness, primary rung) | PASS, VERDICT CONFIRMED (`wo9-i0-ex1-report.md`) |
-| Researcher (N1) | Roster model-facts verification | GPT-5.6 Sol · med via `orchestra_exec` runner | ex1 DISCARDED (report-integrity defect, corrected in round 2 after R0 review — see Incidents; not demonstrated fabrication); ex2 DEGRADED-ACCEPTED (`STATUS: BLOCKED`, rule-compliant under the retry's integrity addendum; three of ex1's four cited sources — github release tag, model guidance, launch announcement — independently corroborated by ex2's own fetches; the npm-registry citation, ex1's sole source for the 0.151.0-on-npm claim, was never touched by ex2 and remains uncorroborated by either run's VERIFICATION; local shell channel blocked by the sandbox fault). Director's provisional acceptance as the exercised order; owner may override. (`wo9-n1-ex1-transcript.md`, `wo9-n1-ex2-transcript.md`) |
+| Researcher (N1) | Roster model-facts verification | GPT-5.6 Sol · med via `orchestra_exec` runner | ex1 DISCARDED (report-integrity defect, corrected in round 2 after R0 review — see Incidents; not demonstrated fabrication); ex2 DEGRADED-ACCEPTED (`STATUS: BLOCKED`, rule-compliant under the retry's integrity addendum; three of ex1's four cited sources — github release tag, model guidance, launch announcement — independently corroborated by ex2's own fetches; the npm-registry citation, ex1's sole source for the 0.151.0-on-npm claim, was never touched by ex2 and lacks independent cross-run corroboration (opened only in ex1's own VERIFICATION); local shell channel blocked by the sandbox fault). Director's provisional acceptance as the exercised order; owner may override. (`wo9-n1-ex1-transcript.md`, `wo9-n1-ex2-transcript.md`) |
 | LC Analyst (N2) | Synthesis over the nine R0-EX verdicts | GPT-5.6 Terra · med via `orchestra_exec` runner | PASS (`wo9-n2-ex1-transcript.md`) |
 | Archivist (M0), documents lane | Owner-rulings extraction from `wo8-review-dispositions.md` | GPT-5.6 Terra · med via `orchestra_exec` runner | ex1 typed BLOCKED (honest); ex2 PASS (`wo9-m0-ex1-transcript.md`, `wo9-m0-ex2-transcript.md`). Images lane ships staffed but unexercised; first real image order will exercise it. |
 
@@ -172,9 +172,11 @@ full (counts in the WO-9 report).
    OpenAI model guidance, OpenAI launch announcement), of which its VERIFICATION section
    opened three (github, npm, model guidance; the launch announcement was cited but never
    opened) — while its VERIFICATION section separately admitted that the LOCAL shell channel
-   (the repository-status check) failed with `unsupported protocol version 6`; the transcript
-   keeps the two channels distinct and shows no self-contradiction between the completed web
-   research and the failed local command. The anchored grounds, and the reason the run's
+   failed on both commands it attempted, `codex --version` (`wo9-n1-ex1-transcript.md:21`)
+   and the repository-status check (`wo9-n1-ex1-transcript.md:22`), each with `unsupported
+   protocol version 6`; the transcript keeps the two channels distinct and shows no
+   self-contradiction between the completed web research and the failed local commands.
+   The anchored grounds, and the reason the run's
    discard stands: (1) it returned `STATUS: DONE` without disclosing the degraded local
    channel up front — the command runner was down and the report did not surface that as a
    limitation — and (2) it carried no retrieval dates on its citations, a charter duty
@@ -191,9 +193,10 @@ full (counts in the WO-9 report).
    on R0 review and is withdrawn.** The retry (`wo9-n1-ex2-transcript.md`), run under an
    integrity addendum requiring quoted fetch transcripts for every citation, independently
    corroborated three of ex1's four cited sources — the github release tag, OpenAI's model
-   guidance, and the launch announcement — and their conclusions; the npm-registry citation,
-   ex1's sole source for the 0.151.0-on-npm claim, was not touched by ex2 and remains
-   uncorroborated by either run's VERIFICATION — evidence against fabrication, not for it —
+   guidance, and the launch announcement — and their conclusions (evidence against
+   fabrication, not for it); the npm-registry citation, ex1's sole source for the
+   0.151.0-on-npm claim, was not touched by ex2 and lacks independent cross-run
+   corroboration (opened only in ex1's own VERIFICATION, `wo9-n1-ex1-transcript.md:19`) —
    and returned `STATUS: BLOCKED` because the addendum compels BLOCKED whenever the command
    runner is unavailable: rule-compliant, conservative typing, not a choice made against
    fabricating.
@@ -228,11 +231,10 @@ full (counts in the WO-9 report).
    further inconsistency: its numbered ranges run to position 49 while the SEARCH LOG and
    report both declare a total of 44 files. Both runs' bounded inventories were themselves
    correct — only the exhaustion arithmetic was wrong. Calibration for the N0 Haiku·off
-   casting: bounded
-   inventories are reliable, self-reported counts are not; SEARCH LOG numbers must be
-   quoted tool output, and count claims verified mechanically by the dispatcher, not
-   accepted on the seat's own arithmetic — investigate/fix in the N0 charter or dispatch
-   discipline (evidence lane).
+   casting: bounded inventories are reliable, self-reported counts are not; SEARCH LOG
+   numbers must be quoted tool output, and count claims verified mechanically by the
+   dispatcher, not accepted on the seat's own arithmetic — investigate/fix in the N0
+   charter or dispatch discipline (evidence lane).
 
 ## Order texts
 
@@ -337,3 +339,12 @@ closing.
 ## Review dispositions
 
 _(pending — stage 2)_
+
+## Review rounds
+
+| Round | Scope | Outcome |
+|---|---|---|
+| 1 | R0 review of `1ab4a19..316759a` (staffing + exercises) | REVISE — 4 MAJOR, 4 MINOR |
+| 2 | Fixes landed at `9336392` (runner semantics, incident narrative, report contracts) | Delta review: REVISE — 3 MAJOR, 5 MINOR |
+| 3 | Fixes landed at `ee5aec4` (self-consistent sandbox facts, anchored discard grounds, exact counts) | Delta review: APPROVE — 3 MINOR residuals, no CRITICAL/MAJOR |
+| 4 | This commit — post-APPROVE residual cleanup (3 MINOR residuals + 2 substantive nits from the round-3 delta review) | No re-review required per charter: only CRITICAL/MAJOR findings force REVISE |

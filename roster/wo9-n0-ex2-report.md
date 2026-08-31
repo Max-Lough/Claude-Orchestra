@@ -37,7 +37,7 @@ report's SEARCH LOG claims. The report's opened-files list omits `scout-anthropi
 it is never named individually and no numbered range in the list accounts for it. The naive
 47−44=3 arithmetic was never verified against actual filenames; only this one omission is
 confirmed. The SEARCH LOG's own opened-files list carries a further inconsistency: its numbered
-ranges run to position 49 (items 42–49) while the SEARCH LOG (line 10) and the report (line 28)
+ranges run to position 49 (items 42–49) while the SEARCH LOG (line 13) and the report (line 31)
 both declare a total of 44 files. The
 4-file `engine:codex` inventory itself (the RESULT table above) is verified correct: exactly
 `archivist-documents.md`, `lc-analyst.md`, `researcher.md`, and `reviewer-openai.md` declare

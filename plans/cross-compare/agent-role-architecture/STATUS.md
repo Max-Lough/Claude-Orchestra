@@ -365,11 +365,11 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   never fired since network was available, and an openai-docs skill read never owed to ex1 —
   are withdrawn as unsupported). Discarded on the two anchored grounds; the retry, under an
   integrity addendum, independently corroborated three of ex1's four cited sources and
-  conclusions — the npm-registry citation, ex1's sole source for the 0.151.0-on-npm claim,
-  remains uncorroborated by either run (evidence against fabrication) — and correctly
-  returned BLOCKED — rule-compliant, conservative typing,
-  not a choice against fabricating — provisionally accepted as the exercised order, owner
-  may override. M0's documents-lane ex1 hit the same transient codex sandbox fault
+  conclusions (evidence against fabrication) — the npm-registry citation, ex1's sole source
+  for the 0.151.0-on-npm claim, lacks independent cross-run corroboration (opened only in
+  ex1's own VERIFICATION) — and correctly returned BLOCKED — rule-compliant, conservative
+  typing, not a choice against fabricating — provisionally accepted as the exercised order,
+  owner may override. M0's documents-lane ex1 hit the same transient codex sandbox fault
   (`unsupported protocol version 6`) and typed BLOCKED honestly; ex2 PASS. N2 PASS
   cleanly. M0's images lane ships staffed but unexercised. Follow-ons registered: the
   codex sandbox protocol fault (investigate/upstream), a `verifier/checkout.js:322-327`

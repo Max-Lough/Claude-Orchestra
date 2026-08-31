@@ -196,7 +196,31 @@ transcribes a precision figure — and `--check-only` prints a `SEAL:` line that
 by exit code, a corpus whose blind read is absent, stale against the sealed content, or
 above (vi)'s 65% ceiling. Gate 5's `served_model` is honoured only from a runner-emitted
 header block delimited from the engine's output, so the identity gate is no longer
-writable by its own subject.
+writable by its own subject. (xiv) *Round-8 close-out amendment (2026-08-31) — the
+stopping rule, authored by the session's scope oracle at owner direction and adopted
+verbatim:* WO-12 pre-trial content work ends with the round-8 completion batch: after
+at most one completion pass (the 20 residue ids named by the 2026-08-31 `--check-only`
+report) and at most one repair pass, no further content, lint, gate, or tooling changes
+are permitted regardless of what any classifier, reviewer, or lint later finds — later
+findings are recorded in CONSTRUCTION.md as disclosures. Acceptance is exactly one
+artifact: a committed `--check-only` transcript whose SEAL line reads PASS against a
+`blind-read.json` from blind test #4 (one administration; if it exceeds the 65%
+ceiling, one scoped fix touching only its named confident calls and one
+re-administration are permitted, after which any failure goes to the owner). The
+rounds-8 delta review pre-registered in round 8's plan is struck; the delta-review
+cycle is closed with rounds 3–7's cross-vendor verdicts standing. Any WO-12 work
+beyond this rule and the two owner gates (P0 `/status` readings, codex helper repair)
+requires a new owner order. (xv) *Owner ruling (2026-08-31) — 12f WITHDRAWN.* Terra
+is dropped as a reviewer candidate: the cheaper-reviewer search is unnecessary (no
+reviewer allowance drain was ever observed), so the Terra T1 qualification question is
+moot. The X-Terra lane is struck from every phase; phase 0 runs the X-Sol lane plus
+the in-harness 12d arms only. The served-model identity follow-on ("before 12f is
+scored") closes as moot with it — gate 5's LIMITED reading stands as a disclosure on
+the remaining codex lane, gating nothing. The seeded corpus's consumers are 12d
+(cross-family vs same-family recall — the question live telemetry cannot answer, since
+live traffic has no ground truth for missed defects) and 12h (exploratory factor, no
+gate). §3.5's 12f gate table, the X-Terra row of §3.1, and every 12f phase step are
+historical record superseded by this ruling.
 
 Base-commit pool: KIND=code, SIZE S or M, TESTED preferred, drawn from the scout's
 shortlist (`corpus/base-pool.json`, committed with this protocol). Each base commit is

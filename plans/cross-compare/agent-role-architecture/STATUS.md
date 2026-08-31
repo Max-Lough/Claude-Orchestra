@@ -729,6 +729,31 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   0.151.0 exposes no served-model field (the `--json` stream carries none; the rollout
   log echoes the request) — so gate 5 reads LIMITED honestly on every codex lane until
   the CLI reports one. The OpenAI-lane delta itself was delivered on attempt 6.
+- **WO-12 DE-SCOPED AND BOUNDED (2026-08-31) — amendments xiv + xv; 12f WITHDRAWN:**
+  after the round-4–8 blinding arms race was called out as scope creep (10+ hr
+  session postmortem, owner concurrence), the owner directed a hard turn to live
+  pilot testing and dropped Terra as a reviewer candidate outright ("attempting to
+  find cheaper reviewers is unnecessary"). A session scope oracle (Fable fork, full
+  context) ratified a bounded close-out and authored the stopping rule, adopted
+  verbatim as **protocol amendment xiv**: at most one completion pass (the 20
+  residue ids from the 2026-08-31 `--check-only` report) + one repair pass; blind
+  test #4 (one administration, one scoped fix + one re-administration max, then
+  owner); the pre-registered rounds-8 delta review is STRUCK (the treadmill
+  itself); no further content/lint/gate/tooling changes regardless of later
+  classifier findings — disclosures only; anything beyond needs a new owner order.
+  **Amendment xv withdraws 12f**: X-Terra struck from every phase, phase 0 = X-Sol
+  + in-harness 12d arms only, the served-model identity follow-on closes as moot
+  (gate 5 LIMITED = disclosure, gates nothing). The corpus's consumers are 12d
+  (needs ground truth; live telemetry cannot measure missed defects) and 12h
+  (exploratory). Oracle facts that forced the shape: round-8 content was never
+  materialized (on-disk briefs are round-7), `--check-only` refuses on 3 findings
+  naming exactly the 20 residue ids, and no override path exists — so "accept
+  as-is" was unreachable and one completion batch is the cheapest consistent end
+  state. Close-out sequence: amendment committed first → completion batch →
+  regenerate + reseal → blind #4 (draw stored verbatim) → SEAL PASS transcript
+  committed → `run-lane.js --dry-run` (X-Sol only) → STOP at the two owner gates.
+  Oracle cadence is standing policy: a high-effort oracle reviews scope every few
+  rounds; stopping rules are oracle-authored, never worker-authored.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

@@ -169,7 +169,19 @@ saw it.
   is accepted when every gated feature passes and the delta reviewer's best ungated
   style classifier no longer reaches 80% precision over 84 artifacts — an adversary
   with all 84 labels will always find *something*; the standard is that it is
-  disclosed, not that it is zero.
+  disclosed, not that it is zero. Round 7 landed: the 84 content files re-authored,
+  every gate green on the sealed content (sentence floor 0 failures, shortest-sentence
+  means Δ1.3 of a limit of 3, unigram exclusivity 0 at df≥8), 168 briefs regenerated
+  idempotently with zero sha-like tokens, sanitized run clones re-verified, 815 checks
+  in the suite. A third blind read and the rounds-6–7 delta reviews run against it.
+- **Found: a review runner can silently run the test stub.** The OpenAI-lane delta's
+  third attempt returned `VERDICT: APPROVE` — the literal output of
+  `tests/fixtures/stub-codex.js`. `CODEX_BIN` (the runner's only engine override) was
+  set in the invoking environment; the source is undetermined and the runner logs no
+  resolved engine path, so nothing but the fixture's prose exposed it. Ruled VOID; the
+  lane's delta stays outstanding and re-runs with the binary pinned and the environment
+  quoted. Follow-on: the runner prints the resolved engine path and hash in every
+  verdict header and refuses a fixture path outside an explicit test mode.
 - **Found: the "intermittent codex sandbox fault" was never intermittent.**
   A fresh-context Investigator refuted the working-directory hypothesis and
   located the emitter by hash and binary search: the `codex-command-runner.exe`

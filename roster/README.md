@@ -62,6 +62,11 @@ runners, per the field-tested cross-vendor lane.
 | Construction | `test-designer-vs-anthropic.md` | Q0 vsAnthropicAuthor — Terra · med via Codex CLI | pending (WO-10 stage 2) |
 | Construction | `test-designer-vs-openai.md` | Q0 vsOpenaiAuthor — Sonnet 5 · medium | pending (WO-10 stage 2) |
 | Construction | `refactorer.md` | E8 primary — Terra · med via Codex CLI | pending (WO-10 stage 2) |
+| Construction | `runner.md` | E1 primary — Luna · low–med via Codex CLI | pending (WO-10 stage 2) |
+| Construction | `data-engineer.md` | E4 primary — Opus 5 · high | pending (WO-10 stage 2) |
+| Construction | `interface-artisan.md` | E5 primary — Sol · med–high via Codex CLI, browser/screenshot loop | pending (WO-10 stage 2) |
+| Construction | `spatial-specialist.md` | E6 primary — Opus 5 · high | pending (WO-10 stage 2) |
+| Construction | `doc-writer.md` | D0 primary — Sonnet 5 · medium | pending (WO-10 stage 2) |
 
 Exercise records and the review dispositions they produced (assurance band):
 `wo8-review-dispositions.md`. **The tranche's mandatory cross-vendor review

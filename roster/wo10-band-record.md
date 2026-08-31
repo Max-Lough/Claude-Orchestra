@@ -7,14 +7,15 @@ and the WO-8/WO-9 construction pattern, in the staffing order the WO text
 named: **Builder and Principal first, validated against existing work; then
 Operator, Test Designer, Refactorer** (commit 1); **then the domain seats**
 — Runner, Data Engineer, Interface Artisan, Spatial Specialist, Doc Writer
-(commit 2, not yet landed as of this section). Red Team (E7) shipped
-already in WO-8 and is not re-touched here. All nine Part 2.0 fields
+(commit 2). Red Team (E7) shipped already in WO-8 and is not re-touched
+here. Eleven role files ship across ten seats (Test Designer splits into
+two lane files, Archivist precedent). All nine Part 2.0 fields
 transcribed faithfully from
 `plans/cross-compare/agent-role-architecture/final-plan.md` Part 2 Band C
 (~lines 496–848), cross-checked against `router/castings.json` and
 `router/charters.json`.
 
-## Seats shipped (commit 1)
+## Seats shipped
 
 | Seat | File(s) | Rung embodied | Model | Notes |
 |---|---|---|---|---|
@@ -24,15 +25,17 @@ transcribed faithfully from
 | Test Designer (Q0) | `test-designer-vs-anthropic.md` | vsAnthropicAuthor | GPT-5.6 Terra · med (Codex CLI launcher) | one of two lane files; **flagged `router/castings.json` gap — see Conflicts below** |
 | Test Designer (Q0) | `test-designer-vs-openai.md` | vsOpenaiAuthor | Claude Sonnet 5 · medium | other lane file; same flagged gap |
 | Refactorer (E8) | `refactorer.md` | primary | GPT-5.6 Terra · med (Codex CLI launcher) | mirror (Sonnet med) not shipped as a file; plan carries no Tools bullet for this seat — see Conflicts |
-
-_(Commit 2 seats — Runner, Data Engineer, Interface Artisan, Spatial
-Specialist, Doc Writer — will be added to this table when that commit
-lands.)_
+| Runner (E1) | `runner.md` | primary | GPT-5.6 Luna · low–med (Codex CLI launcher) | mirror (Haiku off) not shipped as a file |
+| Data Engineer (E4) | `data-engineer.md` | primary | Claude Opus 5 · high | reversibleT1 (Terra high) documented in-file; `noMirrorFor.irreversible` satisfies the mirror-or-exception check |
+| Interface Artisan (E5) | `interface-artisan.md` | primary | GPT-5.6 Sol · med–high (Codex CLI launcher), browser/screenshot loop | closing (Opus high) and critic (Fable high, effort `unstatedInPlan`) documented in-file, not separate files; **flagged `router/castings.json` gap — see Conflicts below** |
+| Spatial Specialist (E6) | `spatial-specialist.md` | primary | Claude Opus 5 · high | critic (Fable high) and mirror (Sol high) documented in-file; supersedes legacy specialist `modeler` per `router/aliases.json` |
+| Doc Writer (D0) | `doc-writer.md` | primary | Claude Sonnet 5 · medium | deliverable/ceiling/mirror documented in-file; plan carries no Tools bullet for this seat — see Conflicts |
 
 ## Naming decisions
 
-- **All six commit-1 seats ship under plain, un-qualified names**
-  (`builder`, `principal`, `operator`, `refactorer`, plus the two
+- **All ten seats ship under plain, un-qualified names** (`builder`,
+  `principal`, `operator`, `refactorer`, `runner`, `data-engineer`,
+  `interface-artisan`, `spatial-specialist`, `doc-writer`, plus the two
   `test-designer-vs-*` lane names) — none collide with any name in
   `agents/*.md` (`executor-heavy-xhigh`, `executor-heavy`, `executor`,
   `reviewer`, `detective`, `scout`), which is the only directory
@@ -42,13 +45,20 @@ lands.)_
   `fs.readdirSync(path.join(MASTER, 'agents'))` — a single, non-recursive
   `readdirSync` call over the top-level `agents/` directory only. It never
   descends into `agents/specialists/`, so `agents/specialists/modeler.md`
-  and `agents/specialists/_TEMPLATE.md` are invisible to the check. Not
-  load-bearing for any commit-1 file name, but recorded here since it was
-  verified by reading the lint source while checking these seats' names,
-  per the WO's explicit instruction to check what the collision check
-  actually scans; the commit-2 Spatial Specialist naming decision (which
-  supersedes the legacy `modeler` specialist) depends on this same finding
-  — see that section when it lands.
+  and `agents/specialists/_TEMPLATE.md` are invisible to the check. This
+  matters directly for `spatial-specialist.md`: the seat it embodies
+  **supersedes** the legacy `agents/specialists/modeler.md` per
+  `router/aliases.json`'s `modeler` entry ("modeler is promoted:
+  spatial/procedural work is the first-class Spatial Specialist"), and had
+  this file instead been named `modeler.md` — a plausible choice, since it
+  literally replaces that specialist — the lint would not have caught the
+  collision even though the name would legitimately shadow a live
+  specialist file. `spatial-specialist.md` was named for the seat itself
+  regardless, for readability and consistency with the other nine plain
+  seat names, not because the lint forced it — but the gap is worth
+  recording because a future roster file named e.g. `modeler.md` or
+  `_template.md` would ship without a lint objection. Registered as a
+  follow-on below.
 - **`test-designer-vs-anthropic.md` / `test-designer-vs-openai.md`,
   not `test-designer.md` (rung choice) or `test-designer-anthropic.md`
   / `test-designer-openai.md`.** The WO text explicitly raised this as a
@@ -71,17 +81,21 @@ lands.)_
 
 ## Rung / file-count decisions
 
-- **Builder, Principal, Operator, Refactorer: one file each (the primary
-  rung), not every documented rung.** Each of these seats' non-primary
-  rungs (Builder's `preferredBounded`/`dense`/`mirror`; Principal's
+- **Builder, Principal, Operator, Refactorer, Runner, Data Engineer,
+  Spatial Specialist, Doc Writer: one file each (the primary rung), not
+  every documented rung.** Each of these seats' non-primary rungs
+  (Builder's `preferredBounded`/`dense`/`mirror`; Principal's
   `effortPoint2`/`mirror`/`ceiling`; Operator's `tacticalRaise`/`mirror`;
-  Refactorer's `mirror`) is already present in `router/castings.json`, so
-  `roster/lint.js`'s mirror-or-declared-exception check (which reads the
-  casting table, not the shipped files) is satisfied without a matching
-  file — the same lawful gap `researcher.md`/`lc-analyst.md` established
-  in WO-9. Each file documents its seat's other rungs in prose
-  (Casting/Escalation) rather than shipping them, following
-  `investigator.md`'s established pattern for its own mirror/ceiling.
+  Refactorer's `mirror`; Runner's `mirror`; Data Engineer's
+  `reversibleT1`; Spatial Specialist's `critic`/`mirror`; Doc Writer's
+  `deliverable`/`ceiling`/`mirror`) is already present in
+  `router/castings.json`, so `roster/lint.js`'s mirror-or-declared-
+  exception check (which reads the casting table, not the shipped files)
+  is satisfied without a matching file — the same lawful gap
+  `researcher.md`/`lc-analyst.md` established in WO-9. Each file documents
+  its seat's other rungs in prose (Casting/Escalation) rather than
+  shipping them, following `investigator.md`'s established pattern for its
+  own mirror/ceiling.
 - **Principal: `effortPoint2` is a routed effort point on the primary
   file, not a second file.** `router/castings.json`'s own comment is
   explicit — "one tier, two effort points — not two rungs of the ladder"
@@ -92,6 +106,16 @@ lands.)_
   Naming decisions above for the full reasoning; the file-count question
   and the naming question were the same decision here, unlike Archivist
   where the lanes had unambiguous plain names available.
+- **Interface Artisan: one file (the `primary` generation rung), not three
+  (generation/closing/critic).** The plan's own contract makes closing "a
+  SEPARATE READ-ONLY order" dispatched to a different family than the
+  generator — a phase distinction within one seat's workflow, not a
+  family-conditional alternate casting the way Test Designer's rungs are.
+  This matches the Archivist/Investigator convention of documenting a
+  seat's other phases/rungs in prose rather than shipping every one as a
+  file; `closing` and `critic` are both already present in
+  `router/castings.json`, though (see Conflicts below) their presence does
+  not by itself satisfy the mirror-or-exception check for this seat.
 
 ## Builder/Principal legacy-validation table
 
@@ -124,68 +148,91 @@ shared law and Review/Escalation contracts, or changes in a direction the
 plan states explicitly (Principal's SPAWN grant, Principal's mandatory
 heartbeat).
 
-## Plan-silence / conflict spots (commit 1)
+## Plan-silence / conflict spots
 
 Verbatim quotes and citations for every gap found, per the WO instruction
 to say so honestly where the plan is silent, and to STOP and report rather
 than edit `router/`, `verifier/`, `registry/`, or `agents/` where a lint
 failure would force it.
 
-1. **Refactorer (#18) has no `**Tools.**` bullet in `final-plan.md` Part
-   2 at all.** Verified by grepping every `\*\*Tools\.\*\*` occurrence
-   across the whole of Part 2 (lines 179–1010): every role from #1
-   Conductor through #24 Quartermaster has one except Refactorer and Doc
-   Writer (the latter is a commit-2 seat; noted here for completeness,
-   fully recorded when that commit lands). `refactorer.md` flags this in
-   its own Tools section and synthesizes a Tools grant from the seat's
-   Purpose/Contract/Owns prose rather than transcribing a bullet that does
-   not exist — the same posture WO-9's band record took for the missing
-   `**Strengths.**` bullets across most of Band A/B.
+1. **Two Band-C seats have no `**Tools.**` bullet in `final-plan.md` Part
+   2 at all: Refactorer (#18) and Doc Writer (#20).** Verified by grepping
+   every `\*\*Tools\.\*\*` occurrence across the whole of Part 2 (lines
+   179–1010): every role from #1 Conductor through #24 Quartermaster has
+   one except these two. `refactorer.md` and `doc-writer.md` each flag
+   this in their own Tools sections and synthesize a Tools grant from the
+   seat's Purpose/Contract/Owns prose rather than transcribing a bullet
+   that does not exist — the same posture WO-9's band record took for the
+   missing `**Strengths.**` bullets across most of Band A/B.
 
-2. **Test Designer (Q0) fails `roster/lint.js`'s mirror-or-declared-
-   exception check, unavoidably, for any file shipped under this seat —
-   a genuine `router/castings.json` gap, not a file-authoring defect.**
-   Confirmed empirically: running `node roster/lint.js` against the
-   shipped commit-1 files returns exactly
+2. **Test Designer (Q0) and Interface Artisan (E5) both fail
+   `roster/lint.js`'s mirror-or-declared-exception check, unavoidably, for
+   any file shipped under either seat — a genuine `router/castings.json`
+   gap, not a file-authoring defect.** Confirmed empirically: running
+   `node roster/lint.js` against all eleven shipped files (commit 1 and
+   commit 2 together) returns exactly
 
    ```
    test-designer-vs-anthropic.md: seat Test Designer has neither a mirror rung nor a declared no-mirror exception in castings.json
    test-designer-vs-openai.md: seat Test Designer has neither a mirror rung nor a declared no-mirror exception in castings.json
+   interface-artisan.md: seat Interface Artisan has neither a mirror rung nor a declared no-mirror exception in castings.json
    ```
 
-   and no other problems, for all six commit-1 shipped files. The check
-   (`roster/lint.js:146-152`) is: `hasMirror = !!(role.rungs ||
+   and no other problems. (Commit 1, verified in isolation before that
+   commit landed with the five commit-2 files moved out of `roster/`,
+   showed only the two Test Designer lines — recorded in that commit's own
+   history; the Interface Artisan line is confirmed here, with commit 2.)
+   The check (`roster/lint.js:146-152`) is: `hasMirror = !!(role.rungs ||
    {}).mirror; hasException = !!role.noMirrorFor;` — a literal JSON-key
    test against `router/castings.json`'s `roles[seat]` object, independent
    of which or how many lane files ship for that seat. `Test Designer`'s
    two rungs are named `vsAnthropicAuthor` / `vsOpenaiAuthor` (no key
    literally named `mirror`) and the role carries no `noMirrorFor` key.
+   `Interface Artisan`'s three rungs are named `primary` / `closing` /
+   `critic` (again no `mirror` key) and also carries no `noMirrorFor`.
    Unlike Archivist — whose `documents`/`images` lanes are the same shape
    (no literal `mirror` key) but whose role **does** carry a declared
-   `noMirrorFor.videoAudio` exception that satisfies the check — Test
-   Designer has no declared exception at all. This is distinct from the
-   three `unstatedInPlan` markers the WO named in advance (E5 critic
-   effort, E8 contextShapes, D0 contextShapes) — it is an undiscovered
-   gap, found by running the lint against real files rather than by
-   inspecting the casting table's own `$comment`/`unstatedInPlan`
-   annotations. (Commit 2 will confirm a second instance of this same gap,
-   Interface Artisan (E5), and record it there.) **Per the WO-10
-   instruction — "NO changes to router/... if a lint failure forces one,
-   STOP and report the conflict" — `router/castings.json` is left
-   unedited.** Test Designer ships anyway (the WO requires staffing all
-   ten seats), and `node roster/lint.js`'s exit code is non-zero for this
-   reason alone; see the WO-10 report for the exact, isolated diff this
-   causes against the "all green" bar. The honest fix, for a future work
-   order, is almost certainly adding a `noMirrorFor` declaration to
-   `router/castings.json`'s Test Designer role (its two rungs are
-   genuinely a family-conditional pair with no meaningful "mirror" of
-   either individual rung) — not adding a synthetic `mirror` rung that
-   would misrepresent the seat's actual casting shape.
+   `noMirrorFor.videoAudio` exception that satisfies the check — neither
+   Test Designer nor Interface Artisan has any declared exception at all.
+   This is distinct from the three `unstatedInPlan` markers the WO named
+   in advance (E5 critic effort, E8 contextShapes, D0 contextShapes) — it
+   is a fourth and fifth undiscovered gap, found by running the lint
+   against real files rather than by inspecting the casting table's own
+   `$comment`/`unstatedInPlan` annotations. **Per the WO-10 instruction —
+   "NO changes to router/... if a lint failure forces one, STOP and report
+   the conflict" — `router/castings.json` is left unedited.** Both seats
+   ship anyway (the WO requires staffing all ten), and `node
+   roster/lint.js`'s exit code is non-zero for this reason alone in both
+   commits; see the WO-10 report for the exact, isolated diff this causes
+   against the "all green" bar. The honest fix, for a future work order,
+   is almost certainly adding `noMirrorFor` declarations to both roles in
+   `router/castings.json` (Test Designer's two rungs are genuinely a
+   family-conditional pair with no meaningful "mirror" of either
+   individual rung; Interface Artisan's `closing`/`critic` are
+   phase-distinct, not primary/mirror) — not adding a synthetic `mirror`
+   rung that would misrepresent either seat's actual casting shape.
 
 3. **`agents/specialists/*.md` is not scanned by the name-collision
    check** — see Naming decisions above. Recorded here too as a plan/lint
    discrepancy: the WO text asked "check what the collision check
    actually scans," and the answer is: `agents/*.md` only, non-recursive.
+   This is directly load-bearing for the Spatial Specialist naming
+   decision (above): had that file been named `modeler.md`, the lint
+   would not have caught the shadow of the live `agents/specialists/
+   modeler.md`.
+
+4. **Interface Artisan (E5) has no headless exercise path.** Its
+   generation casting's browser/screenshot loop runs inside the Codex
+   engine's own remote session; nothing in this harness's own tool grants
+   (including the `claude-in-chrome` MCP integration, which is a separate
+   channel bound to this session, not to `orchestra_exec` calls) reaches
+   into that loop. Flagged here as a plan-silence-adjacent finding — the
+   plan assumes a render-inspect-adjust loop exists to exercise, and this
+   construction round found no way to exercise it end-to-end without
+   either a live browser bound to the codex engine's session or touching
+   the repository working tree. See the stage-2 exercise map in the WO-10
+   report for the closest honest exercise proposed, and the gap it does
+   not close.
 
 ## Exercises
 
@@ -202,22 +249,29 @@ _(pending — stage 2)_
 
 ## Follow-ons registered
 
-1. **`router/castings.json` gap: Test Designer carries neither a `mirror`
-   rung nor a `noMirrorFor` declaration**, so `roster/lint.js`'s
-   mirror-or-declared-exception check fails unconditionally for this seat
-   — see Conflicts item 2 above for the full citation and the
-   empirically-confirmed lint output. Recommended fix (for the work order
-   authorized to edit `router/`): add a `noMirrorFor` declaration naming
-   why the seat's two rungs are not a primary/mirror pair, following the
-   Archivist precedent already in the file. (Commit 2 will register a
-   second instance of this same follow-on for Interface Artisan.)
+1. **`router/castings.json` gap: Test Designer and Interface Artisan carry
+   neither a `mirror` rung nor a `noMirrorFor` declaration**, so
+   `roster/lint.js`'s mirror-or-declared-exception check fails
+   unconditionally for both seats — see Conflicts item 2 above for the
+   full citation and the empirically-confirmed lint output. Recommended
+   fix (for the work order authorized to edit `router/`): add
+   `noMirrorFor` declarations naming why each seat's rungs are not a
+   primary/mirror pair, following the Archivist precedent already in the
+   file.
 2. **`agents/specialists/*.md` is invisible to `roster/lint.js`'s
    name-collision check** (non-recursive `readdirSync` over `agents/`
    only) — a future roster file could collide with a specialist name
    (e.g. `modeler.md`) without the lint objecting. Recommended fix:
    extend the collision check to also read `agents/specialists/*.md`.
-3. **Refactorer (E8) has no `**Tools.**` bullet in `final-plan.md` Part
-   2** — this round's file synthesizes a Tools grant from surrounding
-   prose rather than transcribing plan text that does not exist; a future
-   plan revision should add the missing bullet so the next construction
-   round can transcribe rather than synthesize.
+3. **Refactorer (E8) and Doc Writer (D0) have no `**Tools.**` bullet in
+   `final-plan.md` Part 2** — this round's files synthesize a Tools grant
+   from surrounding prose rather than transcribing plan text that does not
+   exist; a future plan revision should add the missing bullets so the
+   next construction round can transcribe rather than synthesize.
+4. **Interface Artisan (E5) has no headless exercise path** — its
+   generation casting's browser/screenshot loop runs inside the Codex
+   engine's own remote session; nothing in this harness's own tool grants
+   (including the `claude-in-chrome` MCP integration, which is a separate
+   channel) reaches into that loop. The stage-2 exercise map proposes the
+   closest honest exercise available and flags the gap explicitly rather
+   than claiming an equivalent one.

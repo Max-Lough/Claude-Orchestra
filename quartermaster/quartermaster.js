@@ -104,46 +104,72 @@ const DEFAULT_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Ruling R4 — the default review-draw forecast, derived from castings.json.
+// CORRECTED by Director ruling (WO-11 P0 review): the original derivation
+// sustained the PEAK arrival rate across a whole 168h week to get
+// mandatoryReviewDraw = 0.504, which pushed the default requiredReserve to
+// ~0.6552 — ABOVE the ladder's 40% Green threshold, so the P15 gate fired on
+// nearly every bucket under the default forecast. RULING: that derivation
+// FABRICATED LOAD — no week runs entirely at burst rate — and is REJECTED as
+// the default (its arithmetic is preserved below, unused, as the cautionary
+// alternative).
 //
 // requiredReserve(forecast) needs `mandatoryReviewDraw` as a FRACTION OF THE
-// BUCKET per scheduling window. The plan never states one; WO-2's measured
-// numbers in castings.json do let one be derived, and the Director set that
-// derivation as the operational default. It is an ESTIMATE and is labelled as
+// BUCKET per scheduling window. The plan never states one; the ADOPTED
+// default is WO-2's directly MEASURED weekly draw — the same throughput
+// probe castings.reserve.twoGateClassReviewsCostSource cites — rather than an
+// extrapolation from a sustained peak. It is an ESTIMATE and is labelled as
 // one everywhere it surfaces.
+//
+//   mandatoryReviewDraw = 0.03
+//     (WO-2 throughput probe 2026-08-28: 20 gate-class reviews drew ~3
+//      percentage points of the weekly window, 8%→11% ⇒ 0.03 measured
+//      directly — the SAME probe castings.reserve.twoGateClassReviewsCostSource
+//      cites, read as a weekly aggregate rather than derived through the
+//      peak-arrival-rate arithmetic below.)
+//
+// incidentDraw is NOT derivable from anything measured today. It is left at 0
+// — a DISCLOSED under-estimate rather than a fabricated number (§5.2).
+//
+// requiredReserve(default) = mandatoryReviewDraw × (1 + uncertaintyBuffer)
+//                           = 0.03 × 1.3 = 0.039
+//                           → floored at max(floorFractionOfBucket,
+//                             twoGateClassReviewsCostFraction)
+//                           = max(0.08, 0.003) = 0.08
+// The dynamic term (0.039) sits BELOW the plan's own 8% floor, so the floor
+// governs the default: a bucket below 8% remaining is belowReserve. Callers
+// who want a busier-window forecast still pass one explicitly
+// ({mandatoryReviewDraw, incidentDraw}, or --forecast-mandatory /
+// --forecast-incident) — the override is unaffected by this correction.
+//
+// REJECTED ALTERNATIVE, preserved as the cautionary arithmetic (not used by
+// defaultForecast() below):
 //
 //   per-review basis   = reserve.twoGateClassReviewsCostFraction / 2
 //                      = 0.003 / 2 = 0.0015 of the bucket per gate-class review
-//     (WO-2 throughput probe 2026-08-28: 20 gate-class reviews drew ~3
-//      percentage points of the weekly window, 8%→11% ⇒ 0.0015 each; the
-//      castings constant is the two-review floor, i.e. twice that.)
+//     (the castings constant is the two-review floor, i.e. twice that.)
 //   5h windows / week  = 168 / 5 = 33.6
 //   weekly reviews     = liveness.forecastPeakArrivalsPer5h × 33.6
 //                      = 10 × 33.6 = 336
 //   mandatoryReviewDraw = 336 × 0.0015 = 0.504
-//
-// incidentDraw is NOT derivable from anything measured today. It is left at 0
-// — a DISCLOSED under-estimate rather than a fabricated number (§5.2). The
-// reserve is consequently a lower bound on the plan's full formula.
-//
-// NOTE, escalated rather than silently softened: the literal derivation uses
-// the PEAK arrival rate sustained across a whole week, so the default
-// required reserve is 0.504 × 1.3 = ~0.655 — above the ladder's Green
-// threshold. Under the default forecast a bucket below ~65.5% remaining is
-// belowReserve and the P15 gate fires. That is what the ruling's arithmetic
-// says; callers who want a duty-cycled forecast pass one explicitly.
-const HOURS_PER_WEEK = 168;
-const ROLLING_WINDOW_HOURS = 5;
-const WINDOWS_PER_WEEK = HOURS_PER_WEEK / ROLLING_WINDOW_HOURS;
+//   required reserve    = 0.504 × 1.3 = 0.6552 — above the ladder's Green
+//                          threshold; a bucket below ~65.5% remaining would
+//                          have been belowReserve under this rejected default.
+const REJECTED_HOURS_PER_WEEK = 168;
+const REJECTED_ROLLING_WINDOW_HOURS = 5;
+const REJECTED_WINDOWS_PER_WEEK = REJECTED_HOURS_PER_WEEK / REJECTED_ROLLING_WINDOW_HOURS;
+const REJECTED_PER_REVIEW = RESERVE_CFG.twoGateClassReviewsCostFraction / 2;
+const REJECTED_WEEKLY_REVIEWS = LIVENESS.forecastPeakArrivalsPer5h * REJECTED_WINDOWS_PER_WEEK;
+const REJECTED_MANDATORY_REVIEW_DRAW = REJECTED_WEEKLY_REVIEWS * REJECTED_PER_REVIEW; // 0.504, kept only for the record — NOT used below
 
 function defaultForecast() {
-  const perReview = RESERVE_CFG.twoGateClassReviewsCostFraction / 2;
-  const weeklyReviews = LIVENESS.forecastPeakArrivalsPer5h * WINDOWS_PER_WEEK;
+  const mandatoryReviewDraw = 0.03; // WO-2-MEASURED weekly draw (Director ruling: corrected default)
   return {
-    mandatoryReviewDraw: weeklyReviews * perReview,
+    mandatoryReviewDraw,
     incidentDraw: 0,
-    basis: 'WO-2-derived ESTIMATE (ruling R4): ' + LIVENESS.forecastPeakArrivalsPer5h +
-      ' peak review arrivals/5h × ' + WINDOWS_PER_WEEK + ' windows/week × ' + perReview +
-      ' bucket-fraction/review; incidentDraw left at 0 — not derivable, disclosed not fabricated',
+    basis: 'WO-2-MEASURED weekly draw (Director ruling R4, corrected): ' + RESERVE_CFG.twoGateClassReviewsCostSource +
+      ' ⇒ mandatoryReviewDraw=' + mandatoryReviewDraw + '; incidentDraw left at 0 — not derivable, disclosed not ' +
+      'fabricated. Supersedes the rejected peak-arrival-rate derivation (mandatoryReviewDraw=' +
+      REJECTED_MANDATORY_REVIEW_DRAW + ', requiredReserve≈0.6552) which sustained a peak burst across a full week.',
     estimate: true,
   };
 }

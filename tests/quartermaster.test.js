@@ -248,27 +248,33 @@ section('4. The contract shape (ruling R1)');
   check('every remainingFraction is in [0,1] — the router throws otherwise',
     qm.BUCKETS.every((b) => st[b].state.remainingFraction >= 0 && st[b].state.remainingFraction <= 1));
 
-  // The default (WO-2-derived) forecast, ruling R4: imported from the router.
+  // The default (WO-2-MEASURED) forecast, ruling R4 (corrected): imported
+  // from the router.
   const fc = qm.defaultForecast();
   check('the default forecast is derived from castings and MARKED as an estimate',
-    fc.estimate === true && /WO-2-derived ESTIMATE/.test(fc.basis));
-  check('the default mandatoryReviewDraw is the documented arithmetic (10 × 33.6 × 0.0015)',
-    Math.abs(fc.mandatoryReviewDraw - 0.504) < 1e-9);
+    fc.estimate === true && /WO-2-MEASURED weekly draw/.test(fc.basis));
+  check('the default mandatoryReviewDraw is the WO-2 MEASURED weekly draw (0.03), not the rejected peak-derived 0.504',
+    Math.abs(fc.mandatoryReviewDraw - 0.03) < 1e-9);
   check('incidentDraw is 0 — a disclosed under-estimate, not a fabricated number', fc.incidentDraw === 0);
   check('requiredReserve comes from the ROUTER, not a local reimplementation',
     (() => {
       const d = qm.bucketStateDetail({ file: f, now: NOW });
       return Math.abs(d.analysis.requiredReserve - router.requiredReserve(fc)) < 1e-12;
     })());
-  // The R4 derivation is aggressive on purpose: peak arrivals sustained for a
-  // whole week ⇒ required reserve ≈65.5%, ABOVE the ladder's Green threshold.
-  // Pinned here so the consequence is visible rather than surprising.
-  check('the default required reserve is the documented ~65.5%, above the Green threshold',
-    Math.abs(router.requiredReserve(fc) - 0.6552) < 1e-9);
+  // Corrected R4: the dynamic term (0.03 × 1.3 = 0.039) sits BELOW the plan's
+  // own 8% floor, so the FLOOR governs the default required reserve — not the
+  // rejected peak-derived ~65.5%. Pinned here so the floor-dominance is
+  // visible rather than surprising.
+  check('the default required reserve is the corrected 0.039 dynamic term, floor-dominated to 0.08',
+    Math.abs(router.requiredReserve(fc) - 0.08) < 1e-9);
+  check('the floor (0.08), not the dynamic term (0.039), is what the default actually enforces',
+    router.requiredReserve(fc) > (fc.mandatoryReviewDraw + fc.incidentDraw) * 1.3);
   check('under the default forecast a 75% bucket is NOT below reserve',
     qm.bucketState({ file: f, now: NOW })['AU-all'].belowReserve === false);
-  check('…but a 60% bucket IS — the derivation is aggressive, and the README says so',
-    (() => { const g = newFile(); seedAll(g, 0.6, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === true; })());
+  check('…nor is a 60% bucket — the corrected default reserve is the 8% floor, not ~65.5%',
+    (() => { const g = newFile(); seedAll(g, 0.6, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === false; })());
+  check('…but a bucket AT the floor (8%) IS below reserve under the default forecast',
+    (() => { const g = newFile(); seedAll(g, 0.0799, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === true; })());
 }
 
 // =========================================================================
@@ -345,8 +351,8 @@ section('7. THE INTEROP — a P0-produced state through the real router');
   check('INTEROP: no gate fires on the Green path', dGreen.outcome === undefined);
 
   // (b) A below-reserve AU-opus READING blocks a real Opus dispatch.
-  // 0.30 of the bucket against the WO-2-derived default forecast (~65.5%
-  // required) — the reading alone arms the P15 stop, no hand-set flag.
+  // 0.30 of the bucket against an explicit 39%-required forecast (not the
+  // default) — the reading alone arms the P15 stop, no hand-set flag.
   const g = newFile();
   for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.30 : 0.92, 'vendor UI', undefined, { file: g, now: ago(1) });
   const low = qm.bucketState({ file: g, now: NOW, forecast: { mandatoryReviewDraw: 0.3, incidentDraw: 0 } });

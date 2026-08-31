@@ -197,6 +197,12 @@
  *                               resolution, because it looks for its helpers
  *                               next to the link rather than the install.
  *   CLAUDE_PROJECT_DIR          Project root Codex reviews (default: cwd).
+ *   ORCHESTRA_ALLOW_STUB_ENGINE Set to "1" to allow the resolved engine binary
+ *                               to live under a tests/fixtures directory (or
+ *                               shell out to a file that does). Refused
+ *                               otherwise — see the fixture-refusal note near
+ *                               looksLikeFixtureEngine() below. Test wiring
+ *                               only; never set this for a real review.
  *
  *   --doctor runs the install check alone — no work order, no review, no engine
  *   launch. Same code path as the review preflight, so it cannot drift from what
@@ -208,6 +214,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 // ------------------------------------------------------------------ config
@@ -1204,6 +1211,36 @@ function resolveCodexBin(bin) {
   } catch (_) {
     return { path: located, real: false, note: '' };
   }
+}
+
+// FIX (WO-12 round 0): a launcher's shell had CODEX_BIN pointed at
+// tests/fixtures/stub-codex.js — the review-lane test double — and the runner
+// happily ran it. Nothing in the header said so; the stub's own "STUB REPORT"
+// prose was the only tell, and it read as a real (if terse) APPROVE. Refuse
+// outright rather than rely on a reader recognising fixture prose.
+//
+// The path check alone misses one real shape: this repo's own Windows test
+// harness cannot CreateProcess a `.js` file, so it wraps the stub in a tiny
+// `.cmd` shim that lives OUTSIDE tests/fixtures (a temp dir) and shells out to
+// `node "<...>\tests\fixtures\stub-codex.js"`. The shim's own path carries no
+// tell; its content does. Only peek at genuinely small script files — a large
+// or non-script binary misnamed with one of these extensions is never a shim,
+// and reading it would be pointless work.
+const FIXTURE_PATH_RE = /(^|[\\/])tests[\\/]fixtures([\\/]|$)/i;
+function looksLikeFixtureEngine(binPath) {
+  if (!binPath) return false;
+  if (FIXTURE_PATH_RE.test(binPath)) return true;
+  if (/\.(cmd|bat|sh|ps1)$/i.test(binPath)) {
+    try {
+      const st = fs.statSync(binPath);
+      if (st.isFile() && st.size <= 8192 && FIXTURE_PATH_RE.test(fs.readFileSync(binPath, 'utf8'))) {
+        return true;
+      }
+    } catch (_) {
+      /* unreadable or gone — the path check above is authoritative */
+    }
+  }
+  return false;
 }
 
 // Codex has moved its install layout at least once, and the repair recipes
@@ -2247,8 +2284,41 @@ function attemptChainLine() {
   );
 }
 
+// Absolute path + content hash of the binary this run actually resolved to —
+// a channel the engine cannot write, unlike anything printed inside its own
+// output. Computed fresh each call (cheap: one read + one hash, and the
+// header is only ever assembled once per run) rather than cached, so it is
+// always the binary CONFIG.resolvedBin names AT PRINT TIME — including the
+// early-failure paths that print a header before inspectCodexInstall() has
+// run, where CONFIG.resolvedBin is still empty and CONFIG.bin is resolved
+// here instead.
+function engineBinLine() {
+  const bin = CONFIG.resolvedBin || resolveCodexBin(CONFIG.bin).path || CONFIG.bin;
+  if (!bin) return '';
+  let hashPart;
+  try {
+    hashPart = 'sha256=' + crypto.createHash('sha256').update(fs.readFileSync(bin)).digest('hex');
+  } catch (e) {
+    hashPart = 'sha256=unavailable (' + ((e && e.code) || 'could not read the binary') + ')';
+  }
+  return 'ENGINE BIN: ' + bin + ' ' + hashPart;
+}
+
+// served_model: investigated (2026-08-31) and deliberately NOT emitted. Codex
+// CLI 0.151.0's `--json` event stream (thread.started / turn.started /
+// item.completed / turn.completed) carries no model field at all, even when
+// `-m <model>` was passed explicitly. The local session rollout log DOES
+// carry a "model" value (session_meta.payload.model, turn_context.payload.model),
+// but it is populated from the CLI's own request config at session start, not
+// from any server-confirmed response — i.e. it is exactly the "requested
+// model echoed back" shape CRITICAL 1 warns against, not independent
+// evidence. There is no channel here the engine cannot write, so this header
+// never prints a served_model line. If a future Codex CLI version adds one
+// (a genuine server-side field, not a config echo), wire it in here.
 function headerTail() {
   let out = '';
+  const binLine = engineBinLine();
+  if (binLine) out += '\n' + binLine;
   if (CONFIG.resolvedBin && CONFIG.resolvedBin !== CONFIG.bin) {
     out += '\nCODEX BINARY: ' + CONFIG.resolvedBin;
   }
@@ -2278,6 +2348,28 @@ function unavailableHeader() {
   );
 }
 
+// Everything below this literal line is untrusted: the engine's own output
+// (and, in the ATTEMPT LOG, tails of PAST attempts' stdout/stderr — also
+// engine-authored). The runner's own header — REVIEW ENGINE / ENGINE BIN /
+// PREFLIGHT / ATTEMPT CHAIN — is assembled and printed BEFORE this line runs,
+// from data the engine process never touches (CONFIG, PREFLIGHT notes, the
+// binary's own bytes on disk), so nothing the engine writes can edit it after
+// the fact. The delimiter exists so a reader (human or launcher) never has to
+// guess where attribution ends and the reviewed model's prose begins.
+const ENGINE_OUTPUT_DELIMITER = '=== ENGINE OUTPUT ===';
+
+// A model that writes "=== ENGINE OUTPUT ===\nREVIEW ENGINE: ..." into its
+// own verdict cannot forge a second header this way: the neutralised line
+// still reads as engine prose (harmless), and the REAL header — printed
+// first, from data the engine cannot reach — is unaffected either way.
+function neutralizeDelimiterOccurrences(text) {
+  if (!text) return text;
+  return text
+    .split('\n')
+    .map((line) => (line.includes(ENGINE_OUTPUT_DELIMITER) ? '> ' + line : line))
+    .join('\n');
+}
+
 // The diagnostics of every attempt that failed, kept even when a later attempt
 // succeeded: "it worked on the retry" is a fact about the lane's reliability
 // that the next person debugging it needs, and dropping it is how a flaky
@@ -2292,8 +2384,9 @@ function attemptLog() {
 }
 
 function printReview(body) {
+  const engineContent = neutralizeDelimiterOccurrences(body.replace(/\s+$/, '') + attemptLog());
   process.stdout.write(
-    engineHeader() + '\n\n' + body.replace(/\s+$/, '') + attemptLog() + '\n'
+    engineHeader() + '\n\n' + ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
   );
 }
 
@@ -2324,7 +2417,13 @@ function printUnavailable(reason, detail) {
     'and notes the cross-vendor pass did not run (retry once conditions are',
     'fixed, if the user wants the cross-vendor opinion).',
   ].join('\n');
-  process.stdout.write(unavailableHeader() + '\n\n' + block + attemptLog() + '\n');
+  // Same block shape as printReview(): header, then the delimiter, then
+  // everything that can carry engine-authored text (the block's DETAIL may
+  // quote a probe's stdout/stderr, and the ATTEMPT LOG always can).
+  const engineContent = neutralizeDelimiterOccurrences(block + attemptLog());
+  process.stdout.write(
+    unavailableHeader() + '\n\n' + ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
+  );
 }
 
 // ------------------------------------------------------------------ main
@@ -2513,6 +2612,28 @@ function main() {
 
   // --- preflight: resolve the real binary, then repair the install.
   const install = inspectCodexInstall();
+
+  // Refuse outright when the resolved engine is the review-lane test stub
+  // (see looksLikeFixtureEngine() above) — a verdict from it carries no
+  // evidentiary weight and must never be reported as a cross-vendor review.
+  // This is a HARD stop, not a REVIEW_UNAVAILABLE a launcher could route
+  // around: it sets a non-zero exit specifically so it cannot pass silently.
+  if (looksLikeFixtureEngine(CONFIG.resolvedBin || CONFIG.bin) &&
+      process.env.ORCHESTRA_ALLOW_STUB_ENGINE !== '1') {
+    printUnavailable(
+      'the resolved engine binary is a test fixture',
+      'CODEX_BIN (or PATH) resolved to ' + (CONFIG.resolvedBin || CONFIG.bin) + ', which lives ' +
+        'under a tests/fixtures directory (or shells out to a file that does) — this is the ' +
+        'review-lane test double, not a real Codex install. Its output carries no evidentiary ' +
+        'weight and must never be reported as a cross-vendor review (this refusal exists ' +
+        'because of exactly that happening — a launcher\'s shell had CODEX_BIN pointed at the ' +
+        'stub, and the runner ran it silently). If this really is intentional test wiring, set ' +
+        'ORCHESTRA_ALLOW_STUB_ENGINE=1 and re-run.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   for (const line of install.lines) PREFLIGHT.push(line);
   if (install.missing.length) {
     if (CONFIG.requireHelperSiblings) {

@@ -41,6 +41,14 @@
  *                         comma-split entries to put in a CHANGES section of
  *                         the report WITHOUT touching anything — models an
  *                         engine claiming edits it never made.
+ *   STUB_CODEX_EXTRA_LINES
+ *                         raw text (literal "\n" sequences are turned into
+ *                         real newlines) appended as its own section of the
+ *                         report — models a hostile/confused engine writing
+ *                         runner-header-shaped text (a "=== ENGINE OUTPUT
+ *                         ===" delimiter, a "served_model:" field) into its
+ *                         own verdict, to prove the runner cannot be spoofed
+ *                         by it.
  *
  * A probe invocation is recognised by its prompt: the runner asks for a single
  * token echo. The stub answers it without pretending to review anything.
@@ -241,6 +249,11 @@ const report = [
 ]
   .concat(claimedChanges.length ? ['', 'CHANGES'].concat(claimedChanges.map((c) => '- ' + c)) : [])
   .concat(nonceToEcho ? ['', 'REPORT INTEGRITY: ' + nonceToEcho] : [])
+  .concat(
+    process.env.STUB_CODEX_EXTRA_LINES
+      ? ['', process.env.STUB_CODEX_EXTRA_LINES.replace(/\\n/g, '\n')]
+      : []
+  )
   .join('\n');
 
 if (outFile) {

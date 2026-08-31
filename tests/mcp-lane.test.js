@@ -217,6 +217,8 @@ function mcpSession(opts) {
         ORCHESTRA_MCP_HOOKS_DIR: opts.hooksDir || HOOKS_DIR,
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
+        // orchestra-review.js now refuses a CODEX_BIN resolving into tests/fixtures (or a shim pointing at it) unless this is set.
+        ORCHESTRA_ALLOW_STUB_ENGINE: '1',
         CODEX_HOME: CLEAN_CODEX_HOME,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         ORCHESTRA_EXEC_IDLE_MS: '0',

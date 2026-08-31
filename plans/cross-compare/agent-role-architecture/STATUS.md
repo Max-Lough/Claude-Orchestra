@@ -696,6 +696,15 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   `--run-clone-root` inside the repository reaches the live key; the stopping standard
   is rendered but unenforced; resume resets the run index so gate 6's streak can be
   split. All folded into round 8. Rounds 3–7 now carry a cross-vendor verdict.
+  **Round-8 tooling landed `20145a5`** (983 checks, CI 9/9): arm (8) single-threshold
+  purity over 15 derived features with content targets; `SEAL:` verdict on
+  `--check-only` (drift / purity / absent-or-stale `blind-read.json` → exit 1); served
+  model honoured only before `=== ENGINE OUTPUT ===`; terminator reconciled; VARIANTS
+  v4 (no subject line); opaque clone tokens + refused in-repo clone roots; absolute run
+  index; protocol amendment (xiii). On round-7 content the gate refuses: 13 pure rules
+  (the `sdc-024–032` control cluster fires on six; ten seeds carry no digit; nine seeds
+  over-use "and"; both shortest-sentence tails pure). Content round 8 in flight in four
+  disjoint groups against shared target bands. Version 2.4.0 cut (`a473588`).
   **Incidental findings registered during corpus construction (follow-ons, own
   lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
   assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak

@@ -3,13 +3,13 @@ STATUS: DONE. The change is commit 69127bdbb56e8ffaf6781b4ce27663fc710ca7f0. An 
 
 CLAIMS:
 The two investigator classes were merged into one, holding the taxonomy at
-twenty-three classes with the retired name kept only as an alias;
+exactly twenty-three classes with the retired name kept only as an alias;
 read-only-first ordering was internalized and the boundary treated as
 undecidable at intake. A new decision procedure of seven fixed-order steps
-was added, with three discriminators amended and one retired. Classification
-was reframed as a routing hypothesis tied to risk tier and author family,
-the downstream gate restated as misroute recovery, and the next order
-rewritten to validate through the router. The gated work order was unblocked
-and the outstanding pair ledger closed with dispositions recorded.
+was added, with exactly three discriminators amended and exactly one
+retired. Classification was reframed as a routing hypothesis tied to risk
+tier and author family. The change touched three files with 384 insertions
+and 142 deletions, and the gated work order was unblocked, with the pair
+ledger closed.
 
 Verify the diff on its own merits.

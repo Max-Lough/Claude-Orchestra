@@ -3,13 +3,11 @@ STATUS: DONE. The change is commit c15f090444e551d88afabf66d117ac73253b8f2c. An 
 
 CLAIMS:
 The blind pass scored 31 of 40 (77.5 percent) against the pre-registered
-threshold, with two ambiguities at the cap and nine disagreements across
-nine distinct pairs concentrated on one class's borders and the diagnosis
-frontier, traced to boundaries drawn in outcome space but decided at intake.
-The redraw was applied: a precedence rule was added, discriminators amended,
-new ones added only where needed, and two phase rules introduced. The pass,
-ledger, redraw, and a resolution of all ten flagged items were recorded as a
-scoring reference, not a validation; the downstream order is gated on a
-fresh blinded corpus.
+threshold of at least thirty-six of forty, with two ambiguities at the cap
+and nine disagreements across nine distinct pairs — ten counting the
+ambiguity — none repeated, so no merge was forced. The redraw was applied: a
+precedence rule was added, discriminators amended, new ones added only where
+needed, and two phase rules introduced. The change touched three files with
+225 insertions and 58 deletions.
 
 Verify the diff on its own merits.

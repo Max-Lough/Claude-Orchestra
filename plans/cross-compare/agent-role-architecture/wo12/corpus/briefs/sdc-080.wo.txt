@@ -9,15 +9,16 @@ Fix a sharper edge on the stable-alias fix: when the alias a live checkout
 was created through is later removed, sweep-time path re-lookup falls back
 to the lexical alias spelling while git's own listed path stays canonical,
 causing the sweep to delete the live canonical checkout. Capture the
-canonical identity once at creation time, when every path component is
-guaranteed to exist, and have the live-set comparison always use that
-captured identity rather than a sweep-time re-lookup. Pin a regression for
-the alias-removal case. Separately, diagnose and fix an intermittent
-review-lane test failure: git holds a newly created worktree locked for the
-whole checkout while it is already visible in the list, so a kill during
-that window leaves it locked forever, and a single removal command cannot
-clear a locked worktree; make the terminate-signal branch wait out the
-registration window the same way the kill-signal branch already does.
+canonical identity exactly once, at creation time, when every path component
+is guaranteed to exist; the live-set comparison always uses that captured
+identity instead of a sweep-time re-lookup. Pin a regression for the
+alias-removal case and confirm it fails without the fix. Separately,
+diagnose and fix an intermittent review-lane test failure: git holds a newly
+created worktree locked for the whole checkout while it is already visible
+in the list, so a kill during that window leaves it locked forever, and a
+single removal command cannot clear a locked worktree; the terminate-signal
+branch must wait out the registration window exactly as the kill-signal
+branch already does.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

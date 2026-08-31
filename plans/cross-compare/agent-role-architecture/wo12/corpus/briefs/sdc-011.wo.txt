@@ -5,19 +5,19 @@ Base (its parent):   c733d7750afb13290ed603412272334a80c8b9cf
 Commit subject:      guard: allow the Director to write plan files (.claude/plans/*.md)
 
 ORDER:
-Add a narrow carve-out to the guard hook so the Director can write its own
+Add a narrow carve-out to the guard hook so the Director may write its own
 plan files directly instead of routing every plan write through an executor.
-Scope it precisely: allow write and edit operations only for markdown files
-under the project's designated plans directory, resolving the target path
-and verifying containment so a parent-directory traversal cannot escape it,
-and requiring the .md extension so the carve-out cannot be used to smuggle
-arbitrary code writes. Let projects extend the allowed locations via a new
-config key of path-pattern regexes, additive to the default directory,
-matched against the forward-slash project-relative path, and never allowed
-to match outside the project; parse it with the same fail-open rules as the
-existing config keys. Update the default deny message for file-writing tools
-to name this exception so a blocked Director can see where plans may go, and
-update the docs and installer notes to match.
+Scope the carve-out to Write, Edit, and MultiEdit calls targeting markdown
+files inside the project's plans directory; resolve the target path and
+verify containment so a parent-directory traversal cannot escape it, and
+require the .md extension so the carve-out cannot smuggle arbitrary code
+writes. Let projects extend the allowed locations through a new config key
+of path-pattern regexes, additive to the default directory; keep those
+patterns from matching any path outside the project, and parse them with the
+same fail-open rules as the existing config keys. Update the default deny
+message to name this exception, so a blocked Director can see exactly where
+plans may go. Update the docs and installer notes to match, and leave the
+existing pause-file exemption exactly as it is.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

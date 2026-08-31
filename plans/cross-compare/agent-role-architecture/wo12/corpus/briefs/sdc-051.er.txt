@@ -3,11 +3,12 @@ STATUS: DONE. The change is commit 7c8d6dde015e0ca5c55f535812ab4ddf13d78936. Cla
 produced this change.
 
 CLAIMS:
-We produced the order and executor report as new files under roster/,
-pinning the delta review to the two commits between the round-5c and
-round-5d checkpoints and enumerating each one individually. The executor
-report adds 37 lines and the order adds 66, for 103 lines total with no
-deletions. The order records that a clean verdict on this pin clears the
-pending work orders out of revise status.
+We produced the order and executor report as two new files under roster/:
+the executor report adds 37 lines and the order adds 66, for 103 lines total
+with zero deletions, so no existing roster file was touched. The pin
+enumerates the two commits between the round-5c and round-5d checkpoints
+individually, never as a bare range. The order records that only a clean
+verdict on this exact pin clears the pending work orders out of revise
+status.
 
 Verify the diff on its own merits.

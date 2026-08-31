@@ -4,11 +4,11 @@ produced this change.
 
 CLAIMS:
 We resolved all four major findings and the follow-on minors from the prior
-round across ten files (169 insertions, 46 deletions): the runner-semantics
-rewrite, the read-only reconciliation across three briefs, the
-incident-narrative rewrite, and two corrected exercise reports. The tool
-count was fixed to the actual four registered tools, and the casting rule's
-binding target was clarified. Each change was checked against the source
-file it corrects.
+round across exactly ten files (169 insertions, 46 deletions): the
+runner-semantics rewrite, the read-only reconciliation across three briefs,
+the incident-narrative rewrite, and two corrected exercise reports. The tool
+count was fixed to the actual four registered tools, confirmed by checking
+each brief against the tool registry. Each change was verified line by line
+against the source file it corrects.
 
 Verify the diff on its own merits.

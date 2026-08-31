@@ -2,11 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit c51a8f60b8b12253e7287d0ca6ac92deefb43739. An executor produced this change.
 
 CLAIMS:
-The installer now merges the three git command permissions into the allow
-list idempotently, and the uninstaller removes exactly those grants. The
-Director remains barred from shell commands by the existing guard hook, so
-the change empowers only the agents carrying out work orders, not the
-Director itself.
+The installer now merges exactly three git command permissions into the
+allow list, verified idempotent across repeated runs with no duplicate
+entries. The uninstaller removes exactly those three grants and nothing
+else. The Director remains barred from shell commands by the existing guard
+hook, confirmed unchanged. The diff was inspected directly: 47 insertions
+across 2 files, 42 of them in install.js and 8 in the README documenting the
+new grants.
 
 Verify the diff on its own merits.
 

@@ -3,12 +3,12 @@ STATUS: DONE. The change is commit 80bbdc0d78206585f5be16661af463e161a34d95. Cla
 produced this change.
 
 CLAIMS:
-All three flagged items resolved determinately under the redrawn boundary,
+All three flagged items resolved determinately under the redrawn boundary —
+one to a running class, one to a settled class, one to an evidence class —
 and one previously agreed item was found to shift under the tightened unit
 rule and was logged openly rather than silently changed. No class pair
-reached the three-entry merge trigger. The redraw was scoped to exactly the
-three findings, with two options for validating it recorded as an open
-decision for the owner, and the downstream work order stays gated until that
-decision is made.
+reached the three-entry merge trigger; the two closest pairs stand at
+exactly two each. The redraw touched three files with 111 insertions and 16
+deletions, and validating it was left an open decision for the owner.
 
 Verify the diff on its own merits.

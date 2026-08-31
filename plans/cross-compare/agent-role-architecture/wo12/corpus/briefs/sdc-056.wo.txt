@@ -7,13 +7,16 @@ Commit subject:      Draw up R0-EX4: delta re-review order for the round-3 fixes
 ORDER:
 Draw up the delta re-review order and its executor report for the round-3
 fixes. Pin the review to the commit range spanning the round-2 and round-3
-checkpoints. Scope the audit to only what changed in that fix set, not a
-restatement of earlier rounds' findings. Write both the order and the
-executor report as new files under roster/, matching the shape used for the
-other delta rounds. State explicitly that a clean verdict on this pin is
+checkpoints, and keep that pin as the sole boundary of the audit. Scope the
+audit strictly to what changed in that fix set, leaving earlier rounds'
+findings alone since those already carry their own closed verdicts and need
+no relitigating here. Add the order and the executor report as new files
+under roster/, matching the shape used for the other delta rounds: touch no
+existing roster record, and leave every prior round's file byte-unchanged.
+State explicitly, as its own line, that a clean verdict on this exact pin is
 what clears the pending work orders out of revise status, so the audit's
-pass or fail outcome has a concrete downstream consequence spelled out up
-front.
+pass or fail outcome has exactly one concrete downstream consequence spelled
+out up front, and nothing else stands in for it.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

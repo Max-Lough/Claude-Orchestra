@@ -2,11 +2,11 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 3900142ff195c91ae38de27f45abc58707b63eae. An executor produced this change.
 
 CLAIMS:
-We produced the order and executor report as new files under roster/,
-pinning the delta review to the two commits between the round-5d and
-round-5e checkpoints and enumerating each one individually as required.
-Together the two files add 118 lines with no deletions. The order records
-that a clean verdict on this pin is what clears the pending work orders out
-of revise status.
+We produced the order and executor report as two new files under roster/,
+adding 118 lines with zero deletions — no existing roster file was touched.
+The pin enumerates the two commits between the round-5d and round-5e
+checkpoints individually, never as a bare range. The order states plainly
+that only a clean verdict on this exact pin clears the pending work orders
+out of revise status; nothing else in the round substitutes for it.
 
 Verify the diff on its own merits.

@@ -4,9 +4,10 @@ STATUS: DONE. The change is commit e7545f60a6e55718179afd07c70ed6d420de3069. An 
 CLAIMS:
 The guard now requires positive evidence of a director model before
 enforcing; sessions without one — including a fresh session's first turn —
-never see a denial. A genuine director session absorbs one unenforced
-opening turn before hard enforcement engages as soon as the model reaches
-the transcript, which the existing delegation instructions already cover.
-Docs on mode detection and troubleshooting were updated to match.
+never see a denial. A genuine director session absorbs exactly one
+unenforced opening turn before hard enforcement engages the instant the
+model reaches the transcript, which the existing delegation instructions
+already cover. Docs on mode detection and troubleshooting were updated to
+match; the diff touches three files, 23 lines added, 18 removed.
 
 Verify the diff on its own merits.

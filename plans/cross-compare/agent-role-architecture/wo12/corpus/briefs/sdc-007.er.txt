@@ -3,11 +3,11 @@ STATUS: DONE. The change is commit 7bf8e794306376835716c422313e85d997eaf7c0. An 
 
 CLAIMS:
 We added 33 checks across four new adversarial sections, bringing the suite
-from 154 to 187, verified them failing against the pre-fix implementation —
-29 failures, including the critical exploit dispatching instead of gating
-and a live range error out of predictThrottle — then verified all green
-after the fix. D1 was re-ruled against the reviewer's verbatim text, the
-incident-2 record reconciled against its sibling report, and count and
-attribution nits across the band record and role docs were resolved.
+from 154 to 187 — verified failing against the pre-fix implementation (29
+failures, including the critical exploit dispatching instead of gating and a
+live range error out of predictThrottle), then verified all green after the
+fix. D1 was re-ruled against the reviewer's verbatim text, the incident-2
+record reconciled against its sibling report, and every count and
+attribution nit across the band record and role docs was resolved.
 
 Verify the diff on its own merits.

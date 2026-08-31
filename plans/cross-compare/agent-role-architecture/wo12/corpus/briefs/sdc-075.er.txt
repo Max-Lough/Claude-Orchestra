@@ -2,13 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 772a6881219f61db76a79b9e99846cc97512b70e. An executor produced this change.
 
 CLAIMS:
-The exercise debt was ledgered explicitly, the round-three window was
-extended to forty-eight hours, and the tracking module plus its test suite
-were updated to match (nine files touched, 316 insertions, 48 deletions).
-The independent review's verdict was recorded verbatim in a dedicated roster
-file, a first-round review record was added, and the plan's status file and
-the band records for the affected work orders were updated to reflect the
-same findings.
+The seven-day stale ceiling was struck and replaced with a 48-hour ceiling,
+while the 24-hour fresh window stayed unchanged; staleness now rides on the
+published state object itself (stale, ageMs), additive only, and a stale
+reading can never arm a confirmation gate. The router file was not touched,
+and its routing-relevant fields are computed exactly as before. `node
+tests/quartermaster.test.js` reports 191 checks, up from 187.
 
 Verify the diff on its own merits.
 

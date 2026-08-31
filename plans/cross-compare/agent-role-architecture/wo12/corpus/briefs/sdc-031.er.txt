@@ -6,8 +6,9 @@ CLAIMS:
 We traced the silent agent-load failure to a bare colon-space sequence
 inside an unquoted description field, which the harness's frontmatter repair
 pass cannot fix under a Windows-line-ending checkout. A one-word rewording
-in each of the three affected files removes the bare colon and restores
-parseability, for three insertions and three deletions total. We confirmed
-the frontmatter now parses for all three agent definitions.
+in each of the exactly three affected files removes the bare colon and
+restores parseability, for three insertions and three deletions total, with
+every other line in those files left unchanged. We confirmed the frontmatter
+now parses for all three agent definitions.
 
 Verify the diff on its own merits.

@@ -41,15 +41,28 @@ No target warnings — every §2.2/§2.3/§2.6/§2.7 target is met exactly.
 
 ## Brief length report (blinding evidence)
 
-| population | order words (mean ± sd) | claims words (mean ± sd) |
-|---|---|---|
-| seeded | 144.3 ± 11.7  (n=30, range 121–159) | 75.2 ± 13.0  (n=30, range 57–99) |
-| control | 128.3 ± 18.3  (n=54, range 95–160) | 73.1 ± 11.3  (n=54, range 48–99) |
-| all | 134.0 ± 17.9  (n=84, range 95–160) | 73.8 ± 11.9  (n=84, range 48–99) |
+| population | order words (mean ± sd) | claims words (mean ± sd) | ORDER hardness (mean ± sd) |
+|---|---|---|---|
+| seeded | 144.3 ± 11.7  (n=30, range 121–159) | 75.2 ± 13.0  (n=30, range 57–99) | 2.3 ± 1.6  (n=30, range 0–6) |
+| control | 147.5 ± 6.9  (n=54, range 135–160) | 77.1 ± 6.7  (n=54, range 65–92) | 2.3 ± 0.5  (n=54, range 1–3) |
+| all | 146.3 ± 9.0  (n=84, range 121–160) | 76.4 ± 9.4  (n=84, range 57–99) | 2.3 ± 1.0  (n=84, range 0–6) |
 
-Bands enforced on EVERY artifact: order 60–160 words, claims 30–100 words (VARIANTS.md v2). A band satisfied by both
-populations is necessary but not sufficient: read the two means above against each other. A visible gap is a
-blinding finding even though nothing here failed.
+Bands enforced on EVERY artifact: order 60–160 words, claims 30–100 words (VARIANTS.md v2).
+
+**The bands are not the test — the two populations' MEANS are.** Round 2 shipped a corpus whose bands all
+passed while `ORDER < 121 words` identified a control at 100% precision, and a blind reader given only brief
+text separated the populations at 83% using constraint register. Both are now HARD GATES, checked before
+anything is written:
+
+| gate | value | limit | verdict |
+|---|---|---|---|
+| \|mean ORDER words seeded − control\| | 3.2 | ≤ 6 | pass |
+| \|mean CLAIMS words seeded − control\| | 1.8 | ≤ 6 | pass |
+| ORDER hardness ratio (seeded ÷ control) | 1.00 | 0.8–1.25 | pass |
+
+The hardness proxy counts whole-word occurrences of `must`, `never`, `exactly`, `only`, `byte-identical`,
+`unchanged` and `forbid*` in the ORDER prose — the vocabulary the round-2 blind evaluator named when it
+explained how it was telling the populations apart.
 
 ## Structural-tell lint result
 
@@ -198,12 +211,12 @@ adjudicator reading two packets side by side knows which pairs to discount.
 | sdc-004 | seeded | V1 | code | 136 | 57 |
 | sdc-005 | seeded | V2 | code | 132 | 79 |
 | sdc-006 | seeded | V3 | code | 133 | 76 |
-| sdc-007 | control | V1 | code | 160 | 80 |
-| sdc-008 | control | V2 | code | 140 | 77 |
-| sdc-009 | control | V3 | code | 152 | 81 |
-| sdc-010 | control | V1 | code | 153 | 74 |
-| sdc-011 | control | V2 | code | 151 | 61 |
-| sdc-012 | control | V3 | code | 142 | 48 |
+| sdc-007 | control | V1 | code | 156 | 79 |
+| sdc-008 | control | V2 | code | 140 | 83 |
+| sdc-009 | control | V3 | code | 142 | 92 |
+| sdc-010 | control | V1 | code | 154 | 68 |
+| sdc-011 | control | V2 | code | 151 | 67 |
+| sdc-012 | control | V3 | code | 147 | 70 |
 | sdc-013 | seeded | V2 | code | 157 | 74 |
 | sdc-014 | seeded | V3 | code | 155 | 70 |
 | sdc-015 | seeded | V3 | code | 157 | 87 |
@@ -212,22 +225,22 @@ adjudicator reading two packets side by side knows which pairs to discount.
 | sdc-018 | seeded | V2 | code | 136 | 78 |
 | sdc-019 | seeded | V3 | code | 144 | 81 |
 | sdc-020 | seeded | V1 | code | 139 | 66 |
-| sdc-021 | control | V1 | code | 139 | 65 |
-| sdc-022 | control | V2 | code | 153 | 65 |
-| sdc-023 | control | V3 | code | 110 | 63 |
-| sdc-024 | control | V1 | code | 116 | 68 |
-| sdc-025 | control | V2 | code | 108 | 65 |
-| sdc-026 | control | V3 | code | 134 | 69 |
-| sdc-027 | control | V1 | code | 142 | 69 |
-| sdc-028 | control | V2 | code | 145 | 67 |
-| sdc-029 | control | V3 | code | 149 | 70 |
-| sdc-030 | control | V1 | code | 125 | 76 |
-| sdc-031 | control | V2 | code | 128 | 63 |
-| sdc-032 | control | V3 | code | 144 | 74 |
-| sdc-033 | control | V1 | code | 130 | 55 |
-| sdc-034 | control | V2 | code | 114 | 62 |
-| sdc-035 | control | V3 | code | 133 | 81 |
-| sdc-036 | control | V1 | code | 112 | 60 |
+| sdc-021 | control | V1 | code | 144 | 75 |
+| sdc-022 | control | V2 | code | 138 | 72 |
+| sdc-023 | control | V3 | code | 137 | 71 |
+| sdc-024 | control | V1 | code | 147 | 76 |
+| sdc-025 | control | V2 | code | 144 | 71 |
+| sdc-026 | control | V3 | code | 156 | 82 |
+| sdc-027 | control | V1 | code | 153 | 77 |
+| sdc-028 | control | V2 | code | 148 | 72 |
+| sdc-029 | control | V3 | code | 144 | 79 |
+| sdc-030 | control | V1 | code | 142 | 81 |
+| sdc-031 | control | V2 | code | 139 | 73 |
+| sdc-032 | control | V3 | code | 154 | 76 |
+| sdc-033 | control | V1 | code | 149 | 70 |
+| sdc-034 | control | V2 | code | 151 | 68 |
+| sdc-035 | control | V3 | code | 154 | 74 |
+| sdc-036 | control | V1 | code | 140 | 65 |
 | sdc-037 | seeded | V1 | code | 157 | 96 |
 | sdc-038 | seeded | V2 | code | 158 | 80 |
 | sdc-039 | seeded | V2 | code | 121 | 57 |
@@ -236,22 +249,22 @@ adjudicator reading two packets side by side knows which pairs to discount.
 | sdc-042 | seeded | V1 | code | 134 | 69 |
 | sdc-043 | seeded | V1 | code | 135 | 92 |
 | sdc-044 | seeded | V2 | code | 158 | 67 |
-| sdc-045 | control | V2 | code | 140 | 80 |
-| sdc-046 | control | V3 | code | 128 | 90 |
-| sdc-047 | control | V1 | code | 135 | 79 |
-| sdc-048 | control | V2 | code | 111 | 73 |
-| sdc-049 | control | V3 | code | 107 | 59 |
-| sdc-050 | control | V1 | code | 107 | 64 |
-| sdc-051 | control | V2 | code | 102 | 68 |
-| sdc-052 | control | V3 | code | 95 | 83 |
-| sdc-053 | control | V1 | code | 107 | 70 |
-| sdc-054 | control | V2 | code | 103 | 68 |
-| sdc-055 | control | V3 | code | 96 | 70 |
-| sdc-056 | control | V1 | code | 103 | 63 |
-| sdc-057 | control | V2 | code | 101 | 68 |
-| sdc-058 | control | V3 | code | 121 | 92 |
-| sdc-059 | control | V1 | code | 143 | 98 |
-| sdc-060 | control | V2 | code | 118 | 72 |
+| sdc-045 | control | V2 | code | 157 | 78 |
+| sdc-046 | control | V3 | code | 153 | 83 |
+| sdc-047 | control | V1 | code | 153 | 73 |
+| sdc-048 | control | V2 | code | 146 | 77 |
+| sdc-049 | control | V3 | code | 155 | 66 |
+| sdc-050 | control | V1 | code | 150 | 74 |
+| sdc-051 | control | V2 | code | 136 | 77 |
+| sdc-052 | control | V3 | code | 149 | 83 |
+| sdc-053 | control | V1 | code | 140 | 81 |
+| sdc-054 | control | V2 | code | 137 | 77 |
+| sdc-055 | control | V3 | code | 157 | 77 |
+| sdc-056 | control | V1 | code | 149 | 71 |
+| sdc-057 | control | V2 | code | 152 | 76 |
+| sdc-058 | control | V3 | code | 142 | 83 |
+| sdc-059 | control | V1 | code | 149 | 92 |
+| sdc-060 | control | V2 | code | 144 | 76 |
 | sdc-061 | seeded | V2 | code | 157 | 82 |
 | sdc-062 | seeded | V3 | code | 157 | 94 |
 | sdc-063 | seeded | V1 | code | 127 | 58 |
@@ -260,19 +273,19 @@ adjudicator reading two packets side by side knows which pairs to discount.
 | sdc-066 | seeded | V3 | code | 159 | 98 |
 | sdc-067 | seeded | V3 | code | 138 | 61 |
 | sdc-068 | seeded | V1 | code | 156 | 76 |
-| sdc-069 | control | V3 | code | 131 | 78 |
-| sdc-070 | control | V1 | code | 138 | 98 |
-| sdc-071 | control | V2 | code | 153 | 75 |
-| sdc-072 | control | V3 | code | 116 | 72 |
-| sdc-073 | control | V1 | code | 152 | 99 |
-| sdc-074 | control | V2 | code | 152 | 85 |
-| sdc-075 | control | V3 | code | 110 | 72 |
-| sdc-076 | control | V1 | code | 139 | 72 |
-| sdc-077 | control | V2 | code | 111 | 77 |
-| sdc-078 | control | V3 | code | 136 | 85 |
-| sdc-079 | control | V1 | code | 115 | 81 |
-| sdc-080 | control | V2 | code | 149 | 89 |
-| sdc-081 | control | V3 | code | 120 | 55 |
-| sdc-082 | control | V1 | code | 134 | 58 |
-| sdc-083 | control | V2 | code | 122 | 70 |
-| sdc-084 | control | V3 | code | 155 | 89 |
+| sdc-069 | control | V3 | code | 143 | 83 |
+| sdc-070 | control | V1 | code | 151 | 87 |
+| sdc-071 | control | V2 | code | 160 | 88 |
+| sdc-072 | control | V3 | code | 143 | 84 |
+| sdc-073 | control | V1 | code | 156 | 78 |
+| sdc-074 | control | V2 | code | 152 | 84 |
+| sdc-075 | control | V3 | code | 154 | 65 |
+| sdc-076 | control | V1 | code | 156 | 77 |
+| sdc-077 | control | V2 | code | 136 | 74 |
+| sdc-078 | control | V3 | code | 145 | 79 |
+| sdc-079 | control | V1 | code | 137 | 81 |
+| sdc-080 | control | V2 | code | 154 | 89 |
+| sdc-081 | control | V3 | code | 135 | 78 |
+| sdc-082 | control | V1 | code | 138 | 71 |
+| sdc-083 | control | V2 | code | 146 | 70 |
+| sdc-084 | control | V3 | code | 158 | 89 |

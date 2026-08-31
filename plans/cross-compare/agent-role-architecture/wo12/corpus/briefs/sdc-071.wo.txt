@@ -7,17 +7,18 @@ Commit subject:      Apply Part-4 boundary redraw #2 from the WO-7a-bis disagree
 ORDER:
 Apply a second class-boundary redraw scoped strictly to the three findings
 in the prior disagreement ledger. Recast one discriminator on where the
-evidence lives — evidence existing only during a live run, nothing
-persisted, routes one way, while evidence persisting in a readable artifact
-routes the other, and a symptom merely being active or recurring is never by
-itself sufficient — and mirror the wording in the phase-chain rule and the
-related discriminator. Add a new discriminator closing the gap between the
-two ambiguous classes, keyed on whether content was recovered by reconciling
-a corpus versus settled at intake. Give one discriminator an explicit unit
-definition, and add a preamble rule scoping each discriminator to its own
-two classes. Resolve the three flagged items and log any previously agreed
-item that shifts under the tightened rule. Leave validation of this redraw
-an open decision for the owner before the downstream work order proceeds.
+evidence lives: evidence existing solely during a live run routes one way,
+while evidence persisting in a readable artifact routes the other, and a
+symptom merely being active or recurring never by itself counts as a running
+requirement; mirror that wording in the phase-chain rule and the related
+discriminator. Add a new discriminator closing the gap between the two
+ambiguous classes, keyed on whether content was recovered by reconciling a
+corpus or settled at intake. Give one discriminator an explicit unit
+definition, where an acceptance unit must span two or more components, and
+add a preamble rule scoping each discriminator strictly to its own two
+classes. Resolve the three flagged items and log any agreed item that shifts
+under the tightened rule. Leave validation of this redraw an open decision
+for the owner before the work order proceeds.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

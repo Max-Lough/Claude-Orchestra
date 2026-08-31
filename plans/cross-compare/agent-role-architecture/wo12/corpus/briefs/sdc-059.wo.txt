@@ -8,16 +8,16 @@ ORDER:
 Close the probe/redraw cycle with a final ruling applied to the plan. Merge
 the two investigator classes into a single class — identical castings at
 every rung, a five-entry ledger, and the boundary treated as undecidable at
-intake — keeping the retired class name only as an alias; make no other
-class merges, holding the taxonomy at twenty-three classes. Add a new
-decision procedure: seven fixed-order steps where the first match decides,
-closing free entry into the later discriminator set. Amend three named
-discriminators and retire one. Reframe classification as a routing
-hypothesis, so safety rides on risk tier plus author family; restate the
+intake — keeping the retired class name as an alias and nothing more; no
+other classes are merged, so the taxonomy holds at twenty-three classes
+exactly. Add a new decision procedure: seven fixed-order steps where the
+first match decides, and free entry into the later discriminator set must
+never reopen once closed. Amend three named discriminators and retire one,
+leaving every other discriminator as it stands. Reframe classification as a
+routing hypothesis tied to risk tier plus author family; restate the
 downstream gate as misroute recovery and rewrite the next work order to
-validate through the implemented router instead of a static reference set.
-Unblock the previously gated work order and close the outstanding pair
-ledger with its dispositions recorded.
+validate through the router. Unblock the previously gated work order and
+close the outstanding pair ledger with dispositions recorded.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

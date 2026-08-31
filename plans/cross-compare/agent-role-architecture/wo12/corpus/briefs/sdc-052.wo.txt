@@ -7,12 +7,17 @@ Commit subject:      Draw up R0-EX8: delta re-review order for the round-5c fixe
 ORDER:
 Draw up the delta re-review order and its executor report for the round-5c
 fixes. Pin the review to the two commits spanning the round-5b and round-5c
-checkpoints, enumerating each one individually. In addition to the standard
-delta scope, register the reference runner's locked-worktree single-force
-sweep limitation as a follow-on item for its own lane, rather than folding
-it into this review's findings. Write both the order and the executor report
-as new files under roster/. State explicitly that a clean verdict on this
-pin is what clears the pending work orders out of revise status.
+checkpoints, enumerating each one individually. Register the reference
+runner's locked-worktree single-force sweep limitation as a follow-on item
+for its own lane, kept separate from this review's findings, since it is a
+pre-existing runner constraint, not a problem the round-5c fix itself
+introduced. Add the order and the executor report as new files under
+roster/: touch no existing roster record, and leave every prior round's file
+byte-unchanged. Scope the audit strictly to what changed between the two
+pinned commits and nothing else. State explicitly, as its own line, that a
+clean verdict on this exact pin is what clears the pending work orders out
+of revise status, with the follow-on note standing apart as its own item,
+never a blocking finding against this pin.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

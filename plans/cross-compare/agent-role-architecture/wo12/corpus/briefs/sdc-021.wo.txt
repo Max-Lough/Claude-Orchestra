@@ -6,17 +6,18 @@ Commit subject:      guard: stand down on undetermined model instead of enforcin
 
 ORDER:
 Change the guard's default behavior for an undetermined model from enforcing
-to standing down. Today, when the transcript has no assistant entry yet —
-notably a brand-new session's very first turn — the guard treats the
-undetermined state as if it belonged to a director model and blocks basic
-tools, forcing a fresh session into unnecessary delegation before it has
-done anything. Require positive evidence of a director model in the
-transcript before enforcing, so plain sessions never see a denial, including
-on their first turn. Accept that a genuine director session pays a one-turn
-cost — a single unenforced opening turn — before hard enforcement engages as
-soon as the model appears in the transcript, and confirm the existing
-delegation instructions already cover that gap. Update the docs describing
-mode detection and troubleshooting to match the corrected default.
+to standing down. Base enforcement on positive evidence of a director model
+in the transcript, rather than falling back to enforcing simply because the
+model is undetermined at the moment of the check. A brand-new session's
+first turn — before any assistant entry is flushed into the transcript —
+sees no denial, and neither does an ordinary, non-director session at any
+later turn of its own. A genuine director session absorbs exactly one
+unenforced opening turn, with hard enforcement engaging the instant the
+model reaches the transcript and not a moment later. The existing delegation
+instructions already cover that single gap, so no further compensating
+change belongs anywhere else. Update only the docs describing mode detection
+and troubleshooting to match the corrected default, and leave every other
+guard behavior exactly as it stands.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

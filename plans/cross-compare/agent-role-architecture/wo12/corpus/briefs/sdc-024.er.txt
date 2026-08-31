@@ -3,10 +3,11 @@ STATUS: DONE. The change is commit 2c93004e7bed040128ef1f5e8036621612255c2c. An 
 
 CLAIMS:
 We committed the round-4 delta verdict and closed round 5 as a records-only
-pass touching six files: the phase status file, the quartermaster README,
-the band record, an early-exercise report, and two round-review notes, for
-82 insertions and 6 deletions. No source or router file was touched. The
-band record and status file were cross-checked against the newly committed
-verdict so the written record matches the reviewed outcome.
+pass touching exactly six files — the phase status file, the quartermaster
+README, the band record, an early-exercise report, and two round-review
+notes — for 82 insertions and 6 deletions, with zero source or router files
+touched. The band record and status file were diffed against the newly
+committed verdict line by line to confirm the written record matches the
+reviewed outcome exactly.
 
 Verify the diff on its own merits.

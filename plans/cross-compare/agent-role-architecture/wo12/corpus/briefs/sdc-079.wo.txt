@@ -5,17 +5,19 @@ Base (its parent):   e5d3d9bb8209c6a3ecedf85bd1da206138e035bc
 Commit subject:      WO-8 round 5d: fail-closed identity capture; lock-condition kill guards; CI records corrected
 
 ORDER:
-Address two findings from review. First, creation-time identity capture must
-not degrade to a lexical guess: have checkout creation determine the
-canonical path itself and refuse the checkout, with the registration cleaned
-up, when that lookup fails; the lexical fallback should serve only paths
-that are already gone through sweeping. Pin a regression for a
-poisoned-real-path scenario. Second, make both review-lane kill branches
-poll git's actual registration lock rather than sleeping a fixed duration,
-since a slow checkout can remain locked past any fixed delay. Also correct
-the continuous-integration records: name the actual pull-request-head run
-rather than a generic label, and record the superseded run's true outcome,
-including a flake that fired during that run.
+Address two findings raised during the latest review pass. First,
+creation-time identity capture must never degrade to a lexical guess:
+checkout creation determines the canonical path itself and refuses the
+checkout, with the registration cleaned up, whenever that lookup fails; the
+lexical fallback serves paths that are already gone through sweeping, not
+the general case. Pin a regression for a poisoned-real-path scenario and
+confirm it fails without the fix. Second, both review-lane kill branches
+poll git's actual registration lock rather than sleeping a fixed duration —
+a slow checkout can remain locked past any fixed delay, so a duration-based
+sleep does not hold up here. Also correct the continuous-integration
+records: name the actual pull-request-head run rather than a generic label,
+and record the superseded run's true outcome in full, including the flake
+that fired during that run.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

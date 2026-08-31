@@ -6,11 +6,10 @@ We ran the probe against the pinned corpus and gates: the catch-rate gate
 went 13/13 on the constructed misroutes under fresh-context, charter-only
 classification; the mandatory-gate-crossing check found zero crossings among
 the four gate-relevant misroutes across all 24 items; the hop-count gate
-held P95 at one hop with zero escalations. Telemetry showed 0/11 false
-bounces on the control set and 24/24 classifier agreement against the
-construction key, reported as a separability number rather than a
-live-intake accuracy claim. Both reserved edge cases recovered clean, and
-the routing gate is validated on this corpus.
+held P95 at exactly one hop with zero escalations. Telemetry showed 0/11
+false bounces on the control set and 24/24 classifier agreement against the
+construction key, reported as a separability number, never a live-intake
+accuracy claim. Both reserved edge cases recovered clean.
 
 Verify the diff on its own merits.
 

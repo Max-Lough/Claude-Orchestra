@@ -7,15 +7,17 @@ Commit subject:      Score WO-7a-quater validation gates
 ORDER:
 Score the validation gates for the follow-on probe against the
 pre-registered thresholds and record the outcome in the plan's status and
-corpus files. Update the status file to reflect the current gate result,
+corpus files alone; the sealed source items in the corpus stay untouched,
+since any change to them would invalidate the blind pass that already ran
+against them. Update the status file to reflect the current gate result,
 extend the plan document with the ruling's downstream consequences, and
 record the itemized scoring — per-item calls, any disagreements, and the
-gate's pass/fail threshold — in the probe's corpus file. Do not alter the
-corpus's sealed source items; only append scoring and its consequences. Keep
-the record traceable: any item resolved differently than a prior probe must
-show the discriminator or rule that changed the call, and the final status
-must state plainly whether the taxonomy is now validated or a further redraw
-is required.
+gate's pass/fail threshold — in the probe's corpus file by appending; leave
+a prior entry alone once it is recorded. Keep the record traceable: any item
+resolved differently than a prior probe must show the exact discriminator or
+rule that changed the call, and the final status states plainly, in exactly
+one line, whether the taxonomy is now validated or a further redraw is
+required.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

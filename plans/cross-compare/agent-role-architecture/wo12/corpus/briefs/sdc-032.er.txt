@@ -6,9 +6,9 @@ We recorded the four cross-platform runner faults that the first hour of
 continuous integration surfaced and this release fixed, noted the one
 negative control that reports inconclusive under one platform's shell, and
 added a field-validation line for the shim case that integration testing can
-prove but not stage on a real PATH. Documentation only: three files, 54
-insertions, 10 deletions. Check counts were synced from 94 to 96 to match
-the suite's current total.
+prove but not stage on a real PATH. Documentation only: exactly three files,
+54 insertions, 10 deletions. Check counts were synced from 94 to exactly 96
+to match the suite's current total.
 
 Verify the diff on its own merits.
 

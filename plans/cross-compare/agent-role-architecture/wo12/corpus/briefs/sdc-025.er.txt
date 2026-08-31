@@ -5,9 +5,10 @@ produced this change.
 CLAIMS:
 We closed out the round with a residual cleanup: the lint script picked up
 15 lines of check adjustments, the band record's round ledger was rewritten
-(53 lines touched) to state each round's disposition precisely, and the
-status file was brought into line, for 50 insertions and 31 deletions across
-three files. The status file's phase summary was checked against the
-rewritten ledger for consistency.
+(53 lines touched) to state each round's disposition exactly, and the status
+file was brought into line, for 50 insertions and 31 deletions across
+exactly three files. The status file's phase summary was checked
+number-by-number against the rewritten ledger, with every shared count
+matching exactly.
 
 Verify the diff on its own merits.

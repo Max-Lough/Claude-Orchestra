@@ -6,20 +6,19 @@ Commit subject:      WO-6: router, casting tables, review matrix, degradation ma
 
 ORDER:
 Build the dispatch layer over the existing registry as a router module at
-the repo root. Transcribe the plan's casting tables — rungs, roles, hard
-never-rules, the computed review matrix and mandatory-review set, the
-pool-state degradation ladder, the automatic-trigger rules, and the measured
-liveness and reserve numbers — into a data file the router reads rather than
-hardcodes. Implement a route function that resolves a role, alias-aware,
-failing closed on any ownership-invariant violation; implement casting
-through a degradation machine so degraded pool states recast, suspend,
-defer, or restrict dispatch; implement reviewer selection with
-no-self-family logic computed from the full co-author set, failing closed on
-unattributed or mixed-family authorship; implement the pre-dispatch reserve
-gate and its confirmation-arming step; implement automatic companion-task
-creation so a missing required companion blocks dispatch. Assemble it into a
-single pipeline and wire the new suite into CI. Mark any default the plan
-leaves silent as an explicit unstated choice.
+the repo root. Transcribe the plan's casting tables — rungs, roles, the hard
+never-rules, the computed review matrix, the degradation ladder, the
+automatic-trigger rules — into a data file the router reads rather than
+hardcodes; check every rung against an independent transcription of the
+source table in both directions. The route function fails closed on any
+ownership-invariant violation, resolving a role only through a loaded,
+intact registry. Reviewer selection computes no-self-family status from the
+full co-author set, and unattributed or mixed-family authorship fails closed
+rather than dispatching open. A missing required companion task blocks the
+dispatch entirely, and nothing proceeds until every required companion
+exists. Mark any default the plan leaves silent as an explicit unstated
+choice rather than guessing. Wire the new suite into CI and leave the
+gate-class order — cross-vendor review before merge — exactly as it stands.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

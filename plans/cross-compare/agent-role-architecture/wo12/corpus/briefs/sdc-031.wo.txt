@@ -6,16 +6,17 @@ Commit subject:      chore(orchestra): fix silent agent-load failure in codex pa
 
 ORDER:
 Fix a silent agent-load failure affecting the cross-vendor pack's three
-agent definitions. Diagnose why the harness silently drops these agents
+agent definitions. Diagnose why the harness drops these agents silently
 instead of raising an error: a bare colon-space sequence inside an unquoted
 description field makes the frontmatter unparseable, and the harness's own
-repair pass cannot recover it when the file was checked out with Windows
-line endings. Fix each of the three affected agent files with a minimal,
-one-word rewording of the offending description text — do not restructure
-the frontmatter or quote the field, since a small wording change is enough
-to eliminate the bare colon and restore parseability without touching any
-other part of the file. Keep the fix scoped to exactly the three files that
-silently failed to load; do not touch unrelated pack definitions.
+repair pass cannot be relied on to recover it, since it is defeated outright
+by a Windows-line-ending checkout, let alone a clean one. Fix each of the
+three affected agent files with a one-word rewording of the offending
+description text — do not restructure the frontmatter, do not add quoting,
+and touch nothing else in any of the three files; a minimal wording change
+is exactly enough to eliminate the bare colon and restore parseability. Keep
+the fix scoped to these three files that silently failed to load; every
+other agent definition in the pack stays byte-identical.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -15,9 +15,10 @@ reports itself inconclusive under one platform's shell, so a future reader
 does not mistake it for a passing proof. Add a field-validation line
 documenting the shim case that continuous integration can prove but cannot
 stage against a real user's PATH. Bring the changelog's stated check count
-into sync with the suite's actual current total. Keep the change confined to
-documentation — the changelog, the readme, and the field-validation notes —
-with no source or test-code edits.
+into sync with the suite's actual total, moving it from ninety-four to
+exactly ninety-six. Keep the change confined to documentation only — the
+changelog, the readme, and the field-validation notes — with no source or
+test-code edits of any kind.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

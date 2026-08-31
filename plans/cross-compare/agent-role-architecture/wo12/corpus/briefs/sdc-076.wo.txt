@@ -5,19 +5,20 @@ Base (its parent):   b8a1957838da66600f5320d13c83e54c43d59130
 Commit subject:      WO-11: P0 R4 default forecast corrected to WO-2 measured draw; floor governs
 
 ORDER:
-Correct the default forecast in the reserve calculator. The current default
+Correct the default forecast in the reserve calculator: the current
 derivation sustains the peak review arrival rate across a full week to
-compute a mandatory draw figure that pushes the default reserve requirement
-above the ladder's green threshold, which is unrealistic since no week runs
-entirely at burst rate. Replace it with the directly measured weekly draw
-already produced by the existing throughput probe. Keep the disclosed
-incident draw at zero as an under-estimate. Recompute the default reserve
-from the measured draw and apply the plan's floor whenever the dynamic term
-falls below it. Preserve the rejected peak-derived arithmetic in code
-comments as a cautionary alternative, computed but unused. Update the README
-to record both derivations, and update the test suite's pinned values,
-including an explicit check that the floor governs when the dynamic term
-sits below it.
+compute a mandatory draw figure that pushes the default reserve above the
+ladder's green threshold, which is unrealistic since no week runs entirely
+at burst rate. Replace it with the directly measured weekly draw already
+produced by the existing throughput probe. The incident draw stays exactly
+zero — a disclosed under-estimate, not a computed figure. Recompute the
+default reserve from the measured draw and apply the plan's floor whenever
+the dynamic term sits below it; the floor governs the default in that case,
+not the dynamic term. Leave the rejected peak-derived arithmetic in code
+comments as it stands, computed but unused, as a cautionary record. Update
+the README to record both derivations, and update the test suite's pinned
+values, including an explicit check that the floor governs when the dynamic
+term is below it.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

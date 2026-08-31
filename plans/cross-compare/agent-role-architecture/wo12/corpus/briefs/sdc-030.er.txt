@@ -2,12 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is commit 9ff2a530ec2c5fb99dde185ef4fbafdc60154ea1. An executor produced this change.
 
 CLAIMS:
-We fixed launch discipline across all three launcher scripts: each now
-starts from the repository root, writes its output to the scratch directory,
-and pins the review warmup to the checkout under test. The three files
-changed by 90 insertions and 24 deletions, with the base executor, heavy
-executor, and reviewer launchers kept consistent with one another. Each
-script's startup path was traced manually to confirm the repo-root working
-directory takes effect before any relative-path use.
+We fixed launch discipline across exactly three launcher scripts: each now
+starts only from the repository root, writes its output only to the scratch
+directory, and pins the review warmup to the checkout under test. The three
+files changed by 90 insertions and 24 deletions, with the base executor,
+heavy executor, and reviewer launchers kept consistent with one another.
+Each script's startup path was traced manually line by line to confirm the
+repo-root working directory takes effect before any relative-path use.
 
 Verify the diff on its own merits.

@@ -8,16 +8,17 @@ ORDER:
 Close out every finding from the prior review round. Rewrite the
 test-authoring seat's mirror-substitution conflict text to match the
 exception now declared for that seat, closed by the cross-family exception
-recorded elsewhere. Restore the documentation seat's dropped rule that the
-inert verification tier never applies to documentation. Correct the
-legacy-validation rule-count table for the base and heavy executors, adding
-the two heavy-only rules it omitted. Fix the write-up so the
-environment-variable deviation is described as caught on review, not
-self-disclosed. Derive the exact cross-vendor engine fault tally with an
-explicit counting rule and a full per-attempt list, replacing the earlier
-rough figure. Clear the remaining minor findings — a partial search-tool
-hit, an exercise count, a missing prohibition clause, an invented trigger,
-an unexercisable grant, a stale line citation — and every outstanding nit.
+recorded elsewhere, and confirm the lint check exits clean. Restore the
+documentation seat's dropped rule that the inert verification tier never
+applies to documentation, reinstating it at its original plan lines. Correct
+the legacy-validation rule-count table for the base and heavy executors —
+ten rules for the base, twelve for heavy — adding the two rules unique to
+heavy that it omitted. Fix the write-up so the environment-variable
+deviation is described as caught on review rather than self-disclosed, since
+the report's own deviations line says none. State the cross-vendor engine
+fault tally as exactly 10 of 14 engine-reaching attempts, with an explicit
+counting rule and full per-attempt list, replacing the earlier wrong figure.
+Clear the remaining minor findings and nits still open from the prior round.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

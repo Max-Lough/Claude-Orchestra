@@ -8,7 +8,8 @@ touched. Interop was proven against the live router: a green state
 dispatches end to end, a below-reserve reading fires the reserve gate, an
 unconfirmed arm fires and a recorded confirmation lifts it, a hard throttle
 takes the exhaustion recast, and an exhausted bucket forces mandatory review
-to not close. CI runs the suite right after the router's.
+to not close. CI now runs the suite directly after the router's, and the two
+runtime files stay out of version control.
 
 Verify the diff on its own merits.
 

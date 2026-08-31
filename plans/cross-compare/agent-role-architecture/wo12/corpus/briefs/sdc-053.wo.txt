@@ -6,14 +6,17 @@ Commit subject:      Record the R0-EX6 verdict; draw up R0-EX7 for the round-5b 
 
 ORDER:
 Record the verdict on the round-5 sweep re-review and draw up the next delta
-re-review order in the same pass. Confirm whether the earlier CRITICAL
-finding is closed, and separately assess whether the live-set comparison the
-sweep guard relies on is lexical rather than real-path, treating that as its
-own finding if so. Pin the follow-on order to the two commits spanning the
-current and next checkpoints, enumerated individually. Update the standing
-review-dispositions record to reflect both the confirmed closure and the
-newly identified issue, and note whether the issue was already fixed by the
-time the verdict lands, since that changes how urgently it needs tracking.
+re-review order in the same pass. The verdict confirms the earlier CRITICAL
+finding closed and stays closed on this pass, and separately records that
+the live-set comparison the sweep guard relies on is lexical, not real-path,
+as its own MAJOR finding. Because that MAJOR was already fixed at an earlier
+commit before the verdict landed, the disposition record states it as
+already resolved rather than as an open action item. Pin the follow-on order
+to the two commits spanning the current and next checkpoints, enumerated
+individually and never as a bare range. Update the standing
+review-dispositions record and add the new verdict and order files, leaving
+every other existing roster record byte-unchanged, since this pass touches
+exactly one prior file beyond the new ones it creates.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

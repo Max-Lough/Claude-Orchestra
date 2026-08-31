@@ -8,16 +8,17 @@ ORDER:
 Score a blind validation pass against the pre-registered follow-on corpus
 and record the result. Save and fingerprint the independent pass before the
 sealed corpus file is unsealed, then compare it against the primary scored
-pass and report agreement, disagreement, and ambiguity counts against the
+pass to report agreement, disagreement, and ambiguity counts against the
 full-gate threshold of eighteen out of twenty. Separately score the sealed
-subset that was drawn to validate the second boundary redraw against its own
-gate. Where the full pass misses items outside that subset, draw a narrowly
-scoped third redraw limited to those misses: sharpen one discriminator's
-evidence-object definition, define the diagnosis corollary's threshold for
-when a cause counts as stated, and add one new discriminator for the
-affected class pair. Leave the other discriminators unchanged. Mark the
-corpus burned once scored, and require a fresh blinded corpus before the
-downstream work order proceeds.
+subset drawn to validate the second boundary redraw against its own gate,
+keeping that subset apart from the full-corpus tally. Where the full pass
+misses items outside that subset, draw a narrowly scoped third redraw
+limited to those misses: sharpen one discriminator's evidence-object
+definition, define the diagnosis corollary's threshold for when a cause
+counts as stated, and add exactly one new discriminator for the affected
+class pair — leave the three other named discriminators as they stand,
+unchanged. Mark the corpus burned once scored, and require a fresh blinded
+corpus before the downstream work order proceeds.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

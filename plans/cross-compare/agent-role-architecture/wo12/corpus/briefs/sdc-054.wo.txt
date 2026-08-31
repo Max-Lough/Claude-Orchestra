@@ -8,12 +8,14 @@ ORDER:
 Draw up the delta re-review order and its executor report for the round-5
 sweep fix. Pin the review to the two commits spanning the round-4 and
 round-5 checkpoints, enumerating each one individually rather than citing
-the range as a whole. Scope the audit to only what changed in that
-structural sweep guard fix, not a restatement of the earlier round's
-findings. Write both the order and the executor report as new files under
-roster/, matching the shape used for the other delta rounds. State
-explicitly that a clean verdict on this pin is what clears the pending work
-orders out of revise status.
+the range as a whole. Scope the audit strictly to what changed in that
+structural sweep guard fix, leaving the earlier round's findings alone since
+those were already closed on their own pass. Add the order and the executor
+report as new files under roster/, matching the shape used for the other
+delta rounds: touch no existing roster record, and leave every prior round's
+file byte-unchanged. State explicitly, as its own line, that only a clean
+verdict on this exact pin clears the pending work orders out of revise
+status, with no other line in the order permitted to soften that condition.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

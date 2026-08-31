@@ -7,7 +7,8 @@ Added .gitattributes with LF rules for sh/js/md files and set install.sh's
 executable bit; no other file content changed. This keeps a checkout on any
 platform from corrupting the installer's shebang line, since git now
 normalizes those extensions to LF regardless of the checking-out machine's
-default line-ending setting. Verified by inspecting the diff: five lines
-added to .gitattributes, a mode-only change on install.sh.
+default line-ending setting. Verified by inspecting the diff: 5 lines added
+to .gitattributes, install.sh shows 0 insertions and 0 deletions — a
+mode-only change.
 
 Verify the diff on its own merits.

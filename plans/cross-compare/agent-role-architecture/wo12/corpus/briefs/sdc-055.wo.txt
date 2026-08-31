@@ -7,12 +7,17 @@ Commit subject:      Draw up R0-EX5: delta re-review order for the round-4 fixes
 ORDER:
 Draw up the delta re-review order and its executor report for the round-4
 fixes. Pin the review to the two commits spanning the round-3 and round-4
-checkpoints, enumerating each one individually per the precision finding
-raised in the prior delta round, which flagged that citing a commit range
-collectively was not precise enough. Scope the audit to only what changed
-across that pin. Write both the order and the executor report as new files
-under roster/. State explicitly that a clean verdict on this pin is what
-clears the pending work orders out of revise status.
+checkpoints, and enumerate each one individually — never cite the span as a
+bare range again, since the prior delta round's precision finding already
+flagged that a collective range citation was not exact enough for a reviewer
+to trace which fix produced which line. Add the order and the executor
+report as new files under roster/: touch no existing roster record, and
+leave every prior round's file byte-unchanged. Scope the audit strictly to
+what changed across that pin, not to the cumulative history behind it. State
+explicitly, as its own line, that a clean verdict on this exact pin is what
+clears the pending work orders out of revise status, and that the
+enumeration requirement carried forward from the precision finding holds for
+every future delta round, not just this one.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -10,12 +10,13 @@ following the structural sweep guard change. Git records canonical worktree
 paths, but a live checkout's own handle may be spelled through a symlink or
 a short alias path, so a lexical comparison inside the sweep's live-set
 exemption misses the match and the sweep deletes a live checkout
-mid-verification. Make the path-normalization function look up real paths,
-falling back to a lexical comparison only for paths that are already gone.
-Pin a regression using an aliased temporary-root reproducer, such as a
-junction or symlink, that fails on every platform without the fix. Keep the
-fix scoped to the normalization function and the live-set comparison; do not
-touch the sweep's other classification logic.
+mid-verification. The path-normalization function looks up real paths first,
+falling back to a lexical comparison only for paths that are already gone —
+not for a path still on disk. Pin a regression using an aliased
+temporary-root reproducer, such as a junction or symlink, that must fail on
+every platform without the fix, skipping cleanly where links cannot be
+created. Keep the fix scoped to the normalization function and the live-set
+comparison; leave the sweep's other classification logic alone.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

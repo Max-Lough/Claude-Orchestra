@@ -6,8 +6,9 @@ CLAIMS:
 We produced the order and executor report for the cross-vendor gate
 re-review, pinning it to the commit range between the initial round and the
 round-2 fixes and routing it through the cross-vendor review lane. The two
-files add 136 lines with no deletions: 65 for the order and 71 for the
-executor report. The order states that this verdict decides whether the
-pending work orders clear revise status.
+files add 136 lines with zero deletions: 65 for the order and 71 for the
+executor report, so no existing roster file was touched. The order states
+that this verdict alone decides whether the pending work orders clear revise
+status.
 
 Verify the diff on its own merits.

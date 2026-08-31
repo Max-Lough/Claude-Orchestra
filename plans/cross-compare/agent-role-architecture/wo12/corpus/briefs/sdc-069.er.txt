@@ -3,13 +3,13 @@ STATUS: DONE. The change is commit d9af01673efd2e098b5647d4d609398822bc031b. An 
 
 CLAIMS:
 The independent review confirmed every prior score, gate, and commit-order
-claim and returned three significant findings, all of which were applied:
-one discriminator was amended so displayed values count as data, the
-merge/redraw trigger was codified to count scored cross-pass disagreements,
-the prior redraw's validation claim was scoped precisely, and the
-related-pull-request index was corrected. The verdict and its dispositions
-were recorded verbatim in a dedicated review file, and the probe now
-validates the latest redraw as amended.
+claim and returned exactly three significant findings, all of which were
+applied: one discriminator was amended so displayed values count as data,
+the merge/redraw trigger was codified to count only scored cross-pass
+disagreements, the prior redraw's validation claim was scoped precisely, and
+the related-pull-request index was corrected. The verdict and dispositions
+were recorded verbatim, across four files with 105 insertions and 4
+deletions, and the probe now validates the latest redraw as amended.
 
 Verify the diff on its own merits.
 

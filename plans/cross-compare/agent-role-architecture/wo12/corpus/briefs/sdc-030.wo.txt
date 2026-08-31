@@ -6,17 +6,18 @@ Commit subject:      fix(codex): launcher launch-discipline — repo-root cwd, s
 
 ORDER:
 Tighten launch discipline for the cross-vendor executor and reviewer
-launchers. Ensure every launcher starts from the repository root rather than
-an arbitrary working directory, so relative paths resolve consistently
-regardless of where the parent process was invoked from. Route each
-launcher's output into the shared scratch directory instead of leaving files
-scattered wherever the process happened to run. Pin the review warmup step
-to a known checkout so it exercises the same state the review will actually
-run against, not a stale or unrelated one. Apply the same three fixes across
-the base executor, the heavy executor, and the reviewer launcher scripts so
-their startup behavior stays consistent with one another. Keep each script's
-existing command-line interface unchanged; only the startup and warmup
-discipline changes.
+launchers. Every launcher starts from the repository root, not an arbitrary
+working directory, so relative paths resolve consistently regardless of
+where the parent process was invoked from. Each launcher's output goes into
+the shared scratch directory, not scattered wherever the process happened to
+run. The review warmup step pins to a known checkout, exercising exactly the
+state the review will actually run against rather than a stale or unrelated
+one. Apply the same three fixes across all three files — the base executor,
+the heavy executor, and the reviewer launcher script — so their startup
+behavior stays consistent with one another. Keep each script's existing
+command-line interface as it stands; the startup and warmup discipline are
+the only pieces that change, and every other behavior in these files stays
+exactly as it was.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

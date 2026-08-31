@@ -6,18 +6,17 @@ Commit subject:      Make the guard model-aware: enforce only for director model
 
 ORDER:
 Make the guard hook read the session's model before deciding whether to deny
-a tool call. Today it blocks edit, write, shell, and search tools for every
-main-session call regardless of which model is running it, so a session
-already told to go dormant and behave like a plain session is denied every
-edit anyway, because instructions alone cannot unblock a hook. Read the
-latest non-sidechain assistant model from the session transcript with a
-fixed-cost tail read, and enforce only when that model is a director model;
-any other model stands the guard down entirely. Resolve an undetermined
-model to enforce, so the harness never silently disappears for an actual
-director session. Read the latest turn so a mid-session model switch is
-honored immediately, and skip sidechain entries so a finished scout run
-under a different model cannot be mistaken for the session's own model.
-Update the docs to describe the new behavior.
+a tool call. Enforce only for director models; every other model stands the
+guard down entirely, with no partial enforcement in between. Resolve an
+undetermined model to enforce rather than to stand-down, so the harness
+cannot silently vanish for an actual director session. Read only the latest
+non-sidechain assistant model from the transcript, using a fixed-cost tail
+read, and skip sidechain entries so a finished scout run under a different
+model is not mistaken for the session's own model. Read the latest turn
+alone, so a mid-session model switch is honored immediately rather than on a
+stale cached value. Run detection on the would-deny path and nowhere else,
+adding no cost to an allowed call. Update the docs to describe the new
+behavior in full.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

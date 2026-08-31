@@ -6,16 +6,19 @@ Commit subject:      WO-11 round 3: Sol·max holistic findings applied (exercise
 
 ORDER:
 Apply the findings from an independent holistic review to the
-resource-tracking substrate and its round-three status, and commit the
-resulting verdict record. Ledger the outstanding exercise debt explicitly
-rather than leaving it implicit, extend the round-three window to
-forty-eight hours, and update the tracking module and its test suite to
-match the corrected behavior. Update the plan's status file and the band
-records for the affected work orders to reflect the same findings, and
-record the review's own verdict verbatim in a dedicated roster file
-alongside a first-round review record. Keep the change to records and the
-substrate implicated by the findings only — do not touch unrelated roster
-files.
+resource-tracking substrate and its round-three staleness window, and commit
+the resulting verdict record. Strike the previous seven-day stale ceiling
+entirely and replace it with a 48-hour ceiling, since a week-old reading no
+longer describes a pool state that exists; leave the 24-hour fresh window as
+it stands. Carry the staleness disclosure onto the published state object
+itself — not just the human report — so a snapshot consumer or dispatcher
+sees it too; the disclosure adds new fields and changes nothing else, and a
+stale reading can never arm or satisfy a confirmation gate, only a fresh one
+may. Leave the router's own routing fields computed as they were, and do not
+touch the router file itself. Ledger the outstanding exercise debt
+explicitly, extend the test suite to cover the new stale-window boundary,
+and record the review's verdict verbatim alongside the affected band
+records.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

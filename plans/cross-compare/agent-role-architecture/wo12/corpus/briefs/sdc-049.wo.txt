@@ -2,22 +2,20 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Draw up R0-EX11: delta re-review order for the round-5f fix
 
 ORDER:
-Draft the round's re-review instructions for the fix applied in the latest
-cycle, pinning the exact two-commit range it covers by full commit
-identifiers, enumerated in full, not described as a moving branch tip — so
-the reviewer works against a fixed diff that cannot drift out from under
-them. State plainly that the point of this round is to get an explicit
-ruling on the one residual strand still open, and that strand alone; the
-order must not reopen anything already settled in prior rounds. Make clear
-in the order text that a clean verdict here is exactly what clears the two
-blocked tracks out of their needs-revision state, not a partial or
-provisional clearance — so the reviewer understands the stakes of the ruling
-they are about to make, not just the mechanics of what to check. Keep the
-order and its companion writeup separate from every prior round's file,
-which stays untouched.
+Draft the round's re-review instructions for the latest applied fix. Pin the
+exact 2-commit range it covers by full commit identifiers, enumerated in
+full, so the reviewer works against a fixed diff that cannot drift. State
+plainly that the point of this round is to get an explicit ruling on the one
+residual strand still open, and that strand alone, but never to reopen
+anything already resolved in a prior round. Make clear that a clean verdict
+at this round is exactly what clears the two blocked tracks out of their
+needs-revision state, not a partial or provisional clearance. The reviewer
+should understand the stakes of the ruling about to be made, and not just
+the mechanics of what to check. Keep the order and its companion writeup
+distinct from every prior round's file, which stays untouched throughout
+this entire pass.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

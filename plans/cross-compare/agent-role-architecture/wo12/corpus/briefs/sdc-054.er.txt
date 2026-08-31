@@ -3,11 +3,12 @@ STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthr
 produced this change.
 
 CLAIMS:
-The two new files for this pass sit inside roster/, 112 lines split between
-them, forty-nine for the executor's report and sixty-three for the order,
-neither one touching anything elsewhere in roster/. That consecutive commit
-pair marks the very boundary the order describes. The file shows that only a
-clear verdict on that pair lets the standing orders shed their revise status
-for good, nothing less.
+The two new files for this pass sit inside the roster directory today. They
+add up to one hundred twelve lines split between them, forty-nine for the
+executor's report and sixty-three for the order, and neither one touches
+anything elsewhere in the tree. That consecutive commit pair marks the very
+boundary the order describes, and nothing before it enters the audit. The
+file states that only a clear verdict on that pair lets the standing orders
+shed their revise status for good, and no partial reading changes that.
 
 Verify the diff on its own merits.

@@ -4,11 +4,11 @@ produced this change.
 
 CLAIMS:
 All three MAJOR and three MINOR findings from the delta review are fixed,
-plus the noted nits, across 5 files, and no file outside that list. Sandbox
-and working-tree language in researcher.md now matches the other role files;
-discard grounds are rewritten onto the two facts that hold up; source-count
-and omission language corrected to the precise figures. Verified by
-re-checking each corrected line against the source facts it now cites, item
-by item against all six numbered findings.
+plus the noted nits, across 5 files, and no file off that list moved.
+Sandbox and working-tree language in the researcher role file now matches
+the other role files, while discard grounds are rewritten onto the two facts
+that hold up. Source-count and omission language was corrected to the
+precise figures, and each corrected line was re-checked against the fact it
+now cites, item by item against all six numbered findings.
 
 Verify the diff on its own merits.

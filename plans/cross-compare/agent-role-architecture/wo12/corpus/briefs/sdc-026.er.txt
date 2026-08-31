@@ -2,13 +2,14 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We fixed all five major findings and six minor findings from the prior
-round. Every outstanding nit was cleared too, across ten files altogether.
-The cross-vendor engine fault tally was recomputed as exactly 10 of 14
-engine-reaching attempts. That figure came with an explicit counting rule
-and a full per-attempt list. It replaces the earlier wrong figure of roughly
-six of fifteen. The rule-count table now reads ten base rules and twelve
-heavy rules. We checked every entry against the source files, row by row.
+All five major findings and six minor findings from the prior round were
+fixed, and every outstanding nit was cleared too, spread across ten files in
+total. The cross-vendor engine fault tally was recomputed as exactly 10 of
+14 engine-reaching attempts, arriving with an explicit counting rule and a
+full per-attempt list. That figure replaces the earlier wrong tally of
+roughly six of fifteen, so the record now reflects what actually happened.
+The rule-count table now reads ten base rules and twelve heavy rules,
+checked against the source files row by row.
 
 Verify the diff on its own merits.
 

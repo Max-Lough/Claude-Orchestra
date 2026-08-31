@@ -2,22 +2,20 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-9 exercises: all five evidence seats exercised; N1 fabrication incident recorded
 
 ORDER:
-Exercise all five evidence-band seats and record the results in the band
-file — every seat gets exercised at least once before this pass is complete,
-none skipped. Run Scout and Investigator in-harness; run Researcher, LC
-Analyst, and the documents lane of Archivist through the external runner
-used for that lane. If a run's own verification shows a problem with the run
-itself — for example a command runner that was down — that run must be
-discarded, never accepted at face value, and re-run under a stricter
-integrity check instead. Record every incident and follow-on that turns up
-during the exercises, including any transient tooling fault, rather than
+Exercise all five evidence-band seats and record the results fully. Run
+Scout and Investigator in-harness, and run Researcher, LC Analyst, and the
+documents lane of Archivist through the external runner used for that lane.
+If a run's own verification shows a problem with the run itself, such as a
+command runner that was down, that run must be discarded rather than
+accepted at face value, and re-run instead under a stricter integrity check
+before its result counts. Record every incident and follow-on that turns up
+across the exercises, including any transient tooling fault, rather than
 smoothing them over or leaving them out. Update the exercise log with the
-results table, the incidents, the follow-ons, and the order text each seat
-was actually given, worded as issued, and update the plan's status page to
-reflect the stage reached.
+results table, the incidents, the follow-ons and each seat's order text
+worded as issued. Update the plan's status page too, so it reflects the
+stage this band has now reached.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

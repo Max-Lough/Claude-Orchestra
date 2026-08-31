@@ -2,12 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-The independent pass scored 17 of 20 (85 percent) against the pre-registered
-corpus, missing the threshold. Three disagreements were logged in the ledger
-— one on an evidence-class pair, exactly one flagged as a genuine ambiguity
-at the ambiguity cap, and one on a diagnosis-class pair — with no flaw found
-in any corpus item itself. Per the pre-registered rule, the second boundary
-pass was triggered before the taxonomy proceeds to downstream encoding.
+The independent pass graded seventeen of twenty items, 85 percent, against
+the pre-registered corpus, missing the threshold required to pass. Three
+disagreements were recorded in the ledger: one on an evidence-class pair,
+exactly one flagged as a genuine ambiguity at the ambiguity cap, and one on
+a diagnosis-class pair, with no flaw found in any corpus item itself. Per
+the pre-registered rule, the second border pass was triggered before the
+taxonomy proceeds to downstream encoding.
 
 Verify the diff on its own merits.
 

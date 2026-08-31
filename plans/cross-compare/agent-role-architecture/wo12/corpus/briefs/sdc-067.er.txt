@@ -3,13 +3,13 @@ STATUS: DONE. The change is the commit at HEAD. An executor produced this change
 
 CLAIMS:
 The corpus and the mechanical scorer are in place and the gates were
-registered ahead of any model pass. The scorer reports all three passing:
-thirteen of thirteen constructed misroutes caught; four gate-relevant
-misroutes with none crossed, and tier-borne gates identical under both
-dispatches for every item; and a ninety-fifth-percentile hop count of one
-with no escalations. Recovery runs through the router's reclassification
-path, the telemetry counters are recorded without gating, and the run exits
-zero.
+registered ahead of any model pass. The scorer reports all three passing,
+with thirteen of thirteen constructed misroutes caught, four gate-relevant
+misroutes crossing none, and tier-borne gates staying identical under both
+dispatches for every item. The hop count sat at one, at the ninety-fifth
+percentile, with no escalations. Recovery runs through the router's
+reclassification path, the telemetry counters are recorded without gating,
+and the run exits zero.
 
 Verify the diff on its own merits.
 

@@ -3,13 +3,13 @@ STATUS: DONE. The change is the commit at HEAD. An executor produced this change
 
 CLAIMS:
 Order fulfilled exactly as written, with the workflow at
-.github/workflows/test.yml running node tests/review-lane.test.js on
-ubuntu-latest, windows-latest and macos-latest across Node 20/22/24, on
-push, pull_request and manual dispatch. Every matrix leg runs to completion
-and reports its own result, so one platform's failure cannot cancel or hide
-the others and a run always shows which platforms disagree. No build, bundle
-or publish step, no linter job and no new dependency — the job needs only
-plain node and git. The Windows shim and the SIGKILL expectation are both in
-the suite.
+.github/workflows/test.yml running the review-lane suite on ubuntu-latest,
+windows-latest and macos-latest across runtimes twenty, twenty-two and
+twenty-four, triggering on push, pull_request and manual dispatch. Every leg
+runs to completion and reports its own result, so a run shows which
+platforms disagree, and no failure ever cancels or hides another. No build,
+bundle or publish step is added. No linter job or new dependency is added
+either — the job needs only the runtime and git. The Windows shim and the
+SIGKILL expectation are both in the suite.
 
 Verify the diff on its own merits.

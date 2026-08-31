@@ -4,10 +4,11 @@ produced this change.
 
 CLAIMS:
 Detection runs only on the would-deny path, so allowed calls pay nothing
-extra; measured at roughly zero added time over the existing spawn cost on
-an 8.8MB transcript, using a fixed-cost tail read. The guard now enforces
-only for director models and stands down entirely for any other model, with
-an undetermined model still resolving to enforce. The diff touches three
-files, and the docs were revised to reflect the new behavior.
+extra, and the measured cost came out at roughly zero added time over the
+existing spawn cost on an 8.8MB transcript. The guard now enforces solely
+for director models and stands down entirely for any other model, while an
+undetermined model still resolves to enforce rather than stand down from it.
+The change touches three files in all, and the docs were revised to describe
+the new behavior throughout.
 
 Verify the diff on its own merits.

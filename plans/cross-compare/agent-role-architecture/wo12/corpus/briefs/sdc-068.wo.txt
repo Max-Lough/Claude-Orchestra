@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Fix three cross-platform defects CI found in its first run
 
 ORDER:
 Fix three cross-platform faults the first integration run found in the

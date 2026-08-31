@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-8 round 5d: fail-closed identity capture; lock-condition kill guards; CI records corrected
 
 ORDER:
 Close out the two majors and the records item from the standing review

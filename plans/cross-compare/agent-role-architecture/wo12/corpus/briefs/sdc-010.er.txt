@@ -2,13 +2,13 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-74 checks went green, including an exhaustive sweep across every
-bucket-state combination confirming no mandatory-class dispatch ever
-produces a same-family closing verdict — every non-close case typed
-DOES_NOT_CLOSE. No-self-family behavior was checked for every author-family
-combination, and an independent bidirectional transcription check confirmed
-every rung matches the source table. Fail-closed loading was tamper-tested
-against registry corruption, never-rule violations, vendor/family
-mismatches, and off-ladder inputs; CI runs the suite.
+74 checks went green, and an exhaustive sweep across every bucket-state
+combination confirmed that no mandatory-class dispatch ever produces a
+same-family closing verdict. No-self-family behavior was checked for every
+author-family combination in turn, and an independent bidirectional
+transcription check confirmed that every rung matches the source table
+exactly. Fail-closed loading was then tamper-tested against registry
+corruption, never-rule violations, vendor and family mismatches, and
+off-ladder inputs, so the pipeline now runs the full suite on every change.
 
 Verify the diff on its own merits.

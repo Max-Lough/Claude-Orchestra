@@ -2,13 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We fixed launch discipline across exactly three launcher scripts altogether.
-Each one now starts only from the repository root, never elsewhere. Each
-script also writes its own output only to the scratch directory, and pins
-the warmup to the checkout under test. The three files changed by 90 added
-lines and 24 removed lines. That covers the base executor, the heavy
-executor, and the reviewer launchers, all kept consistent. Each script's
-startup path was traced manually, line by line, to verify the repo-root
-behavior.
+Launch discipline was fixed across exactly three launcher scripts
+altogether, and each one now starts from the repository root alone, never
+from anywhere else. Each script also writes its own output solely to the
+scratch directory, and pins the warmup to the checkout under test rather
+than an arbitrary one. The three files changed by 90 added lines and 24
+removed lines in total, covering the base executor, the heavy executor, and
+the reviewer launchers, all kept consistent with one another.
 
 Verify the diff on its own merits.

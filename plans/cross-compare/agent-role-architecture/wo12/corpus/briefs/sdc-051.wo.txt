@@ -2,21 +2,19 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Draw up R0-EX9: delta re-review order for the round-5d fixes
 
 ORDER:
-Compose the ninth of these reviews for the round-5d fixes, the order that
-pins the diff and a write-up recording what came back from running it. The
-newer commit and the one just before it, bounding round-5c and round-5d,
-anchor the whole pass, following how the earlier reviews in this series were
-pinned before it. Neither document already exists; both arrive fresh under
-roster/ today. The pass makes no other edit anywhere in that tree. It never
-reaches into what earlier rounds already settled on their own. Confine what
-gets audited to that one pinned pair; the history further back stays out of
-scope entirely, since it was closed out in its own separate pass. The
-write-up is explicit that a clean verdict against that same pair, and only
-that, is what lets the two open work orders shed their revise status this
-round.
+Compose the ninth review in this series for the round-5d fixes. Pin both the
+diff and a write-up recording what came back from running it, anchored by
+the newer commit and the one just before it. That pair bounds round-5c and
+round-5d, following how earlier reviews in this series were pinned before
+it, so neither document already exists, while both arrive fresh under the
+roster directory today, carrying no trace of any earlier draft. The pass
+makes no other edit anywhere in that tree, but it never reaches into what
+earlier rounds already resolved on their own. Confine what gets audited to
+that one pinned pair, since the history behind it was closed out in its own
+earlier pass. The write-up must state that a clean verdict against that same
+pair, and only that, lets the two open work orders shed revise status.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-8 round 3: fix all five R0-EX3 findings; record the R0-EX3 verdict
 
 ORDER:
 Fix all five findings from the pinned external review and record its verdict

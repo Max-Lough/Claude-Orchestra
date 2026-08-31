@@ -5,10 +5,10 @@ produced this change.
 CLAIMS:
 The heavy brief ships with the full executor law plus its tier rules, and
 the roster is synced across the installer, the README, the harness document
-and the status skill. Syntax checks pass on the installer and all three
-hooks. An install round-trip into a temporary directory copies the agent set
-and finishes clean, and uninstall returns the project to a standard setup.
-The status company check, run against the installed tree, reports every core
-agent present with no findings line.
+and the status skill. The installer's verification mode clears it and all 3
+supporting scripts. An install round-trip into a temporary directory copies
+the agent set and finishes clean, and uninstall returns the project to a
+standard setup. The status company check, run against the installed tree,
+reports every core agent present with no findings line.
 
 Verify the diff on its own merits.

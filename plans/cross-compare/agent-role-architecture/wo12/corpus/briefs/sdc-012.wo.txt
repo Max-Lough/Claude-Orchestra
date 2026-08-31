@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      installer: grant executor git add/commit/push via settings permissions
 
 ORDER:
 Grant the agents that carry out work the git permissions they need to

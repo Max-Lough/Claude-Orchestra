@@ -3,11 +3,13 @@ STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthr
 produced this change.
 
 CLAIMS:
-The pass adds 136 lines to roster/ across two files that did not exist
-before, the order carrying sixty-five of them and the account seventy-one;
-the rest of roster/ stays untouched. The commit pair covered anchors the
-initial round through the round two fixes, reviewed through the cross-vendor
-lane. The account closes on the same point, this single verdict settles,
-outright, whether the two open work orders leave revise status.
+The pass brings one hundred thirty-six new lines into the roster directory,
+and touches nothing outside it in the tree. Two files that did not exist
+before now carry that sum, the order holding sixty-five of them and the
+account seventy-one, while the rest of the directory stays untouched. The
+commit pair covered anchors the initial round through the round two fixes,
+and the review ran through the cross-vendor lane. The account closes on the
+same point, since this single verdict settles, outright, whether the two
+open work orders leave revise status.
 
 Verify the diff on its own merits.

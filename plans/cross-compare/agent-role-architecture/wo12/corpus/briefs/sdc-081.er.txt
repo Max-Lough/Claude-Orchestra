@@ -7,8 +7,8 @@ back lexically only for paths already gone, which fixes the macOS and
 Windows continuous-integration failures caused by a canonical-versus-aliased
 path mismatch. A regression was pinned using an aliased temporary-root
 reproducer, built from a junction or symlink, that fails on every platform
-absent the fix; the change spans 2 files in all — the verifier test suite
-and the checkout module — with nothing else affected.
+absent the fix. The change spans 2 files in all, the verifier test suite and
+the checkout module, and no other part of the sweep was touched.
 
 Verify the diff on its own merits.
 

@@ -2,22 +2,22 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      guard: stand down on undetermined model instead of enforcing
 
 ORDER:
-Change the guard's default behavior for an undetermined model from enforcing
-to standing down. Base enforcement on positive evidence of a director model
-in the transcript, rather than falling back to enforcing simply because the
-model is undetermined at the moment of the check. A brand-new session's
-first turn sees no denial. That holds before any assistant entry is flushed
-into the transcript, and neither does an ordinary, non-director session see
-one at any later turn of its own. A genuine director session absorbs exactly
-one unenforced opening turn, with hard enforcement engaging the instant the
-model reaches the transcript and not a moment later. The existing delegation
-instructions already cover that single gap, so no further compensating
-change is needed at all. Update only the docs describing mode detection and
-troubleshooting to match the corrected default, and keep every other guard
-behavior unchanged.
+This change flips the guard's default for an undetermined model. It now
+stands down instead of enforcing, so enforcement rests on positive evidence
+of a director model somewhere in the transcript, and it no longer falls back
+to enforcing simply because the model happens to be undetermined at the
+moment of the check. A brand-new session's very first turn sees no denial as
+a direct result, and that holds even before any assistant entry gets flushed
+into the transcript, while an ordinary non-director session never sees a
+denial at any later turn either. A genuine director session still absorbs
+exactly one unenforced opening turn, but hard enforcement engages the
+instant the model reaches the transcript and not a moment later, so the
+exposure stays bounded. The existing delegation instructions already cover
+that one remaining gap, and no other compensating change is needed. Only the
+docs describing mode detection and troubleshooting get updated to match the
+amended default.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

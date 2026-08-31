@@ -2,22 +2,21 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Opus is the default reviewer again; Codex becomes the optional cross-vendor engine
 
 ORDER:
 Restore the in-house fresh-context adversarial reviewer as the primary
 review engine for both modes, and demote the external command-line engine to
 an optional cross-vendor layer — gate-class second opinions, or primary for
 projects that opt in. Pin that the primary brief carries exactly the
-contract the external brief encodes: presume-broken discipline, independent
-re-verification through the project's verification manifest, inert-tier
-claims verified from the diff with a tier violation rated CRITICAL and
-forcing full depth, and the same verdict format under a REVIEW ENGINE header
-for auditability. Route the unavailable path to the primary reviewer rather
-than degrading, and drop the in-session fallback to a last-resort rung that
-must be reachable only when no reviewer agent can run at all. Ship the new
-launcher brief and sync the harness document, the README trade-off wording,
-and the installer roster.
+contract the external brief encodes: presume-broken discipline and
+independent re-verification through the project's verification manifest.
+Inert-tier claims are verified from the diff, with a tier violation rated
+CRITICAL and forcing full depth, and the same verdict format applies under a
+REVIEW ENGINE header for auditability. Route the unavailable path to the
+primary reviewer rather than degrading, and drop the in-session fallback to
+a last-resort rung that must be reachable only when no reviewer agent can
+run at all. Ship the new launcher brief and sync the harness document, the
+README trade-off wording, and the installer roster.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -2,23 +2,21 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Apply Part-4 boundary redraw #2 from the WO-7a-bis disagreement ledger
 
 ORDER:
-Apply a second class-border redraw scoped to the three findings. It sits
-within the prior disagreement ledger alone. Recast one discriminator on
-where the evidence lives: evidence existing solely during a live run routes
-one way, while evidence persisting in a readable artifact routes the other,
-and a symptom being active or recurring never by itself counts as a running
-requirement; mirror that wording in the phase-chain rule and the related
-discriminator. Add a new discriminator closing the gap between the two
+Apply a second class-border redraw scoped to three findings only. It sits
+within the prior disagreement ledger and nothing beyond it. Recast one
+border rule on where the evidence lives, so evidence existing solely while a
+run is live routes one way, evidence persisting in a readable artifact
+routes the other, and a symptom being active or recurring is never by itself
+a running requirement. Mirror that wording in the phase-chain rule and the
+related border rule. Add a new rule closing the gap between the two
 ambiguous classes, keyed on whether content was recovered by reconciling a
-corpus or settled at intake. Give one discriminator an explicit unit
-definition, where an acceptance unit must span two or more components, and
-add a preamble rule scoping each discriminator to its own two classes.
-Resolve the three flagged items and log any agreed item that shifts under
-the tightened rule. Leave validation of this redraw an open decision for the
-owner before the work order proceeds.
+corpus or fixed at intake. Give one rule an explicit unit definition, where
+an acceptance unit must span two or more components, and add a preamble rule
+scoping each border rule to its own two classes. Resolve the three flagged
+items, and record any agreed item that shifts under the tightened rule,
+leaving validation an open decision for the owner.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

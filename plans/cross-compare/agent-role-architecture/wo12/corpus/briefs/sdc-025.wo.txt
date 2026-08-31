@@ -2,21 +2,21 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-10 round 3: post-APPROVE residual cleanup; review-round ledger
 
 ORDER:
-Round two must reach approval before this cleanup pass begins. Close out
-anything left over in the review lint script. Bring STATUS.md and the roster
-ledger in line with the approved state. Update the lint script's checks so
-they reflect the ruleset the round actually settled on. Never leave an
-intermediate draft still lingering in the file. Rewrite the roster ledger's
-round entry so every round's disposition is stated exactly. State the final
-tally precisely as well, with no round left off. No tally may be
-approximated, and no earlier disposition gets quietly revised. Keep
-STATUS.md's phase summary consistent with the ledger's own numbers. Match
-them count for count across every shared figure. Change nothing outside
-these three files, and add no new lint check. This is simply a closing pass,
-not a new review round.
+Round two has to reach full approval before anything starts. Only then can
+this cleanup pass begin, closing out anything left over in the review lint
+script so the tooling matches what was actually decided. The status file and
+the roster ledger get brought in line with the approved state, and the lint
+script's own checks get updated so they reflect the ruleset the round
+actually decided on, rather than an earlier draft. No intermediate draft is
+ever left lingering in the file, and the roster ledger's round entry gets
+rewritten so every round's disposition is stated exactly, with the final
+tally stated precisely too and no round left off the list. No earlier
+disposition gets quietly revised along the way, and the status file's phase
+summary then has to stay consistent with the ledger's own numbers, matching
+them count for count. Nothing outside these three files changes, and no new
+lint check gets added at all.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

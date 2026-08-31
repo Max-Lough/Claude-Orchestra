@@ -4,11 +4,11 @@ produced this change.
 
 CLAIMS:
 All three flagged items resolved determinately under the revised class
-border — one to a running class, one to a settled class, one to an evidence
-class — and one previously agreed item was found to shift under the
-tightened unit rule and was logged openly rather than silently changed. No
-class pair reached the three-entry merge trigger; the two closest pairs
-stand at exactly two each. The redraw was narrowly scoped, touching 3 files,
-and validating it was left an open decision for the owner.
+border: one item went to a running class, one to a fixed class, and one to
+an evidence class. One previously agreed item was found to shift under the
+tightened unit rule, and that shift was recorded openly rather than changed
+silently. No class pair reached the three-item combination trigger, but the
+two closest pairs stand at exactly two each. The redraw was narrowly scoped,
+touching 3 files, and validating it was left an open decision for the owner.
 
 Verify the diff on its own merits.

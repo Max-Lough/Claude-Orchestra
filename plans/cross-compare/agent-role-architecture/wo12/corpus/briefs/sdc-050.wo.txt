@@ -2,20 +2,19 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Draw up R0-EX10: delta re-review order for the round-5e fixes
 
 ORDER:
-Write up the tenth in this long-running series of delta reviews, the order
-paired with the account of what its executor found, covering the round-5e
-fixes. The review is anchored to the two pinned commits marking where
-round-5d ends and round-5e begins, cited as that specific pair rather than
-folded into a shared range. Both files are wholly new additions placed under
-roster/ itself. The tree elsewhere stays untouched, and nothing on file is
-rewritten. Hold the scope to exactly that pinned pair, not the string of
-rounds behind it, since this pass answers only for what those two commits
+Write up the tenth delta review in this long-running series. Pair the order
+with the account of what its executor found, covering the round-5e fixes
+anchored to the two commits marking where round-5d ends and this round
+begins. Cite that pair as the specific boundary rather than folding it into
+a shared range, and place both files as wholly new additions under the
+roster directory, so the tree elsewhere stays untouched and nothing on file
+gets rewritten. Hold the scope to exactly that pinned pair, not the string
+of rounds behind it, since this pass answers only for what those two commits
 changed. State, as a standalone sentence, that only a clean verdict against
-that pair moves the two pending work orders out of revise; a partial or
-qualified result changes nothing about where they stand today.
+that pair moves the two pending work orders out of revise. A partial or
+qualified result changes nothing about where those orders stand today.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -2,12 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-The order and the account of what its executor found went in under roster/
-as two brand-new files, 118 lines together and no deletions anywhere in the
-tree. The two pinned commits are cited as that specific pair rather than
-folded into a shared range. Only a clean verdict against exactly that pair
-moves the two pending work orders out of revise; the write-up treats that
-fact as the pass's single deliverable outcome, with nothing further claimed
-beyond it.
+The order and its companion account went in under roster as two new files.
+They add up to one hundred eighteen lines together, and no deletion touches
+any other file in the tree, while the two pinned commits are cited as that
+specific pair. Only a clean verdict against exactly that pair moves the two
+pending work orders out of revise, and nothing less does. The write-up
+treats that fact as the pass's single deliverable outcome, with nothing
+additional claimed beyond it.
 
 Verify the diff on its own merits.

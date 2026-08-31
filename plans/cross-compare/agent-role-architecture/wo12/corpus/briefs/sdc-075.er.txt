@@ -3,12 +3,12 @@ STATUS: DONE. The change is the commit at HEAD. An executor produced this change
 
 CLAIMS:
 The seven-day stale ceiling was struck and replaced with a forty-eight-hour
-ceiling, while the twenty-four-hour fresh window stayed unchanged; staleness
+ceiling, while the twenty-four-hour fresh window stayed unchanged. Staleness
 now rides on the published state object itself, marked stale with an age
 figure, additive only, and a stale reading can never arm a readiness gate.
 The router file was not touched, and its routing-relevant fields are
 computed exactly as before. The quartermaster test suite now reports 191
-checks.
+passing checks.
 
 Verify the diff on its own merits.
 

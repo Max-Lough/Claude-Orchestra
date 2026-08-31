@@ -2,24 +2,21 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-6: router, casting tables, review matrix, degradation machine, Q0 triggers
 
 ORDER:
-Build the dispatch layer over the existing registry as a router module at
-the repo root. Transcribe the plan's casting tables into a single data file.
-It lists rungs, roles, the hard never-rules, the computed review matrix, the
-degradation ladder, and the automatic-trigger rules, and the router reads it
-rather than hardcoding them; check every rung against an independent
-transcription of the source table in both directions. The route function
-fails closed on any ownership-invariant violation, resolving a role only
-through a loaded, intact registry. Reviewer selection computes
-no-self-family status from the full co-author set, and unattributed or
+This change builds the dispatch layer over the existing registry. It ships
+as a router module at the repository root, and the plan's casting tables
+become a single data file listing the rungs, the roles, the review matrix,
+the ladder, and the trigger rules, so the router reads them instead of
+hardcoding anything. Every rung then gets checked against an independent
+transcription of the source table in both directions before it ships. The
+route function fails closed on any ownership-invariant violation, resolving
+a role only through a registry that loads clean. Reviewer selection computes
+no-self-family status from the full co-author set, so unattributed or
 mixed-family authorship fails closed rather than dispatching open. A missing
-required companion task blocks the dispatch entirely, and nothing proceeds
-until every required companion exists. Mark any default the plan leaves
-silent as an explicit unstated choice rather than guessing. Wire the new
-suite into CI and keep the gate-class order — cross-vendor review before
-merge — unchanged.
+required companion task blocks the dispatch entirely, and any default the
+plan leaves silent gets marked as an explicit unstated choice, while the
+gate order, cross-vendor review before code ships, stays just as it was.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

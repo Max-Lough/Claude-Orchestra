@@ -2,22 +2,22 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-8 round 4: fix all four R0-EX4 findings; record the R0-EX4 verdict
 
 ORDER:
-Address four findings raised by this round's review, while checking that all
-five prior-round closures still hold. Change the touches lint to compare
+Address four findings raised by this round's review, while confirming that
+all five prior-round closures still hold. Change the touches lint to compare
 individual elements in place of a comma-joined string that is prone to false
 collisions. Make the glob matcher replicate the line-terminator character
 classes of the regular expression it replaced exactly, with no deviation.
 Have checkout startup sweep any abandoned worktrees still on disk, since
-pruning alone clears registrations whose directory is already missing,
-nothing more; live in-process checkouts must remain exempt from that sweep
+pruning alone clears registrations whose directory is already missing, and
+nothing more. Live in-process checkouts must remain exempt from that sweep
 in every case. Correct future review orders so they enumerate every commit
-in their pinned range rather than overclaiming a single commit — the range
-should not collapse to one entry when more than one commit is in scope.
-Enter that verdict into the roster word for word, and leave the tranche open
-until the next pass.
+in their pinned range, rather than overclaiming a single commit, since the
+range should never collapse down to just one entry when more than one commit
+sits in scope, and a truncated range can mislead a later audit. Enter that
+verdict into the roster word for word, and leave the tranche open until the
+next pass.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

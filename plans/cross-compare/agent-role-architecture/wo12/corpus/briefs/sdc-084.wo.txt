@@ -2,24 +2,23 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-8 round 3: fix all five R0-EX3 findings; record the R0-EX3 verdict
 
 ORDER:
-Address five findings turned up in this round's review of the round-two
-code, while verifying that every round-one and round-two closure still
-holds. The reserve gate must evaluate the requested rung instead of a recast
-rung, so a degradation recast never silently satisfies a stop condition;
-disclose restrictions on every turn served through a fallback path. Replace
-the collapsed regular-expression glob matcher with a token-based
+Address five findings found in this round's review of the round-two code,
+while verifying that every round-one and round-two closure still holds. The
+reserve gate must evaluate the requested rung, not a recast rung, so a
+degradation recast never silently satisfies a stop condition, and disclose
+restrictions on every turn served through a fallback path. Replace the
+collapsed regular-expression glob matcher with a token-based
 dynamic-programming matcher, since separated wildcard runs broke the
 collapsed regex. Run output redaction before tail truncation only, so
 straddling credentials cannot leak a partial suffix. Install the trappable
 signal set on Windows, where one termination signal is untrappable, and
-document startup pruning as the recovery path there. Remove every literal
-NUL byte left in the router source. Also exempt record documents from a lint
-by filename prefix, and separate a review-lane test case from interference
-by a genuine external tool installation on the host machine. Put that
-verdict into the roster without changing a word.
+document startup pruning as the recovery path. Remove every literal NUL byte
+left in the router source, exempt record documents from a lint by filename
+prefix, and isolate a review-lane test case from interference by an external
+tool installation on the host machine. Put that verdict into the roster
+without changing a word.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

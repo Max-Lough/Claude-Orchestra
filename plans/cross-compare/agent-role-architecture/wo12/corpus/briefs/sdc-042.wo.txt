@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Stamp .claude/hooks/package.json so hooks survive a "type": "module" target (v1.9.1)
 
 ORDER:
 Stamp a package.json declaring commonjs type into the installed hooks

@@ -5,10 +5,11 @@ CLAIMS:
 Rev-parse show-toplevel runs from the project and the candidate, and git's
 answers are compared. Both call sites were converted, the pre-creation
 validation of a configured scratch root and the post-creation check on the
-runner's directory; a grep of the runner finds the string helper referenced
+runner's directory. A grep of the runner finds the string helper referenced
 exactly once, as its fallback, and a hand run on a short-name path had both
-gates refuse. The sweep counts a directory it deregistered or removed, and
-the isolation control names itself inconclusive where it cannot reproduce.
+of the 2 gates refuse. The sweep counts a directory it deregistered or
+removed, and the isolation control names itself inconclusive where it cannot
+reproduce.
 
 Verify the diff on its own merits.
 

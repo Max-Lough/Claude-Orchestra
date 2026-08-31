@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Restrict the review warmup to pinned checkouts; sync docs
 
 ORDER:
 Restrict the review warmup to pinned checkouts and sync the docs. A warmup

@@ -3,12 +3,13 @@ STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthr
 produced this change.
 
 CLAIMS:
-We traced the silent agent-load failure to a bare colon-space sequence. That
-sequence sits inside an unquoted description field in each file. The
-harness's frontmatter repair pass cannot fix it under a Windows-line-ending
-checkout. A one-word rewording in each of the exactly 3 affected files
-removes the bare colon. That same change restores parseability, with three
-lines added and three removed, leaving every other line unchanged. We
-verified that the frontmatter now parses for all three agent definitions.
+The silent agent-load failure was traced to a bare colon-space sequence
+sitting inside an unquoted description field in each of the 3 files. The
+harness's own frontmatter repair pass cannot fix it under a Windows
+line-ending checkout, so a one-word rewording in each file removes the bare
+colon directly and cleanly. That same change restores parseability, with 3
+lines added and 3 removed in total, and every other line stays unchanged.
+The frontmatter was then verified to parse for all three agent definitions,
+so the fix holds.
 
 Verify the diff on its own merits.

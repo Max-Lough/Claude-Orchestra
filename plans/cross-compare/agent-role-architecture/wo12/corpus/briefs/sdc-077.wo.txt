@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-8 round 5f: pre-add records as a hard prerequisite; residual strand self-healing pinned
 
 ORDER:
 Fix a finding where a pre-add snapshot failure, combined with an alias being

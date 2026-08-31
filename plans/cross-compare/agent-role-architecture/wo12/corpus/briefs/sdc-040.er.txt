@@ -7,8 +7,8 @@ request id to its run and a cancelled run having its whole process tree
 taken down on both platforms. The reply to the cancelled request states that
 the working tree may be half-finished and unaudited. Id matching is guarded
 so a spent id cannot reach a live run, and teardown drains whatever is still
-in flight. Verified by running the lane suite with node
-tests/mcp-lane.test.js, which reports OK with 68 passed.
+in flight. Verified by running the lane suite at tests/mcp-lane.test.js,
+which reports OK with 68 passed.
 
 Verify the diff on its own merits.
 

@@ -2,23 +2,22 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-10 construction band, part 2: Runner, Data Engineer, Interface Artisan, Spatial Specialist, Doc Writer
 
 ORDER:
-Ship the remaining five construction-band domain seats — Runner, Data
-Engineer, Interface Artisan, Spatial Specialist, and Doc Writer — completing
-the ten-seat band partly staffed. Build each file to match the final plan's
-seat list, cross-checked against the router's casting and charter tables.
-Spatial Specialist supersedes the legacy modeler file, exactly as the
-router's alias entry names it. Data Engineer carries its declared no-mirror
-exception for irreversible actions byte-identical to the plan text. All five
-files ship under plain names, with no collision against the top-level agent
-files — a rename is required wherever a plain name would collide. The
-router's own files stay untouched for this work; record any casting or lint
-gaps as open items instead of papering over them. Before calling the band
-done, the full roster lint should report only the already-known gaps and
-nothing new, both install-script lint modes come back clean, and every
-required test suite passes in full.
+Ship the remaining five domain seats to complete the construction band.
+Runner, Data Engineer, Interface Artisan, Spatial Specialist, and Doc Writer
+each ship as a file matching the final plan's seat list, checked against the
+router's casting and charter tables. Spatial Specialist supersedes the
+legacy modeler file exactly as the router's alias entry names it, and Data
+Engineer carries its declared no-mirror exception for irreversible actions
+unchanged from the plan text, but the router's own files stay untouched for
+this work. All five files ship under plain names, so a rename is required
+wherever a plain name would collide with a top-level agent file. Record any
+casting or lint gap as an open item instead of smoothing it over, since two
+seats already carry a known gap. Before calling the band done, the full
+roster lint must report only the already-known gaps, while both
+install-script lint modes stay clean and every required test suite passes in
+full.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

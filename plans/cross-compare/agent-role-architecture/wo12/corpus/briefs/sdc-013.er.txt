@@ -10,6 +10,6 @@ junction on Windows and a symlink elsewhere, skips where links are
 unavailable, fails without the fix and passes with it. The structural
 ownership guard came through this change untouched — own basename plus the
 parent's own basename prefix, still structural, with no substring matching
-anywhere. The full suite reports 97 passed and 0 failed.
+anywhere. The full suite reports 97 passed and zero failed.
 
 Verify the diff on its own merits.

@@ -2,14 +2,14 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We recorded the four cross-platform runner faults found in early testing.
-Continuous integration surfaced them during its first hour, and this release
-fixed each one. We also noted the one negative control that reports
-inconclusive under one platform's shell. A field-validation line was added
-for the shim case integration testing can prove. That case cannot be staged
-on a real user's PATH directly. The change was documentation only, affecting
-three files, adding fifty-four lines and removing ten. Check counts were
-synced from 94 to exactly 96, matching the suite's current total.
+The four cross-platform runner faults found in early testing were recorded,
+and continuous integration surfaced them within its first hour so this
+release could fix each one in turn. The one negative control that reports
+inconclusive under one platform's shell was noted as well, so it is never
+mistaken for a passing proof. A field-validation line was added, and it
+documents the shim case that integration testing can prove but cannot stage
+on a real user's own path directly, and the change stayed documentation only
+throughout.
 
 Verify the diff on its own merits.
 

@@ -5,11 +5,12 @@ CLAIMS:
 Leftover identification is now structural — a candidate qualifies when its
 basename is checkout and its parent's basename carries the module's
 temporary-directory prefix, and that parent alone is ever removed. The main
-worktree is skipped, and the live-checkout exemption is untouched. Both
-reproducer shapes are pinned as regressions, and the re-review verdict and
+worktree is skipped, while the live-checkout exemption stays untouched. Both
+reproducer shapes are pinned as regressions, then the re-review verdict and
 its dispositions are recorded. Nothing outside the sweep's identification
 and removal rule was altered. The verifier suite reports 96 passed, the
-router suite 135, the registry suite 31.
+router suite comes back green behind it, and the registry suite closes at
+31.
 
 Verify the diff on its own merits.
 

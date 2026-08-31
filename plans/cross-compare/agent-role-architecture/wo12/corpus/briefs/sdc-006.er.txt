@@ -6,9 +6,10 @@ Canonical identity is captured at creation and compared by the live set; no
 sweep-time re-resolution remains on that path, and the alias-removal probe
 is pinned as a standing regression. The termination branch now waits out the
 registration window; three baseline runs and two post-fix runs of the
-review-lane suite came back green at 114 checks each. Suites are green —
-verifier 98, router 135, registry 31 — with the full integration-equivalent
-pass and the pull request's nine checks all passing.
+review-lane suite came back green at one hundred fourteen checks each.
+Suites are green — verifier ninety-eight, router 135, registry thirty-one —
+with the full integration-equivalent pass and the pull request's nine checks
+all passing.
 
 Verify the diff on its own merits.
 

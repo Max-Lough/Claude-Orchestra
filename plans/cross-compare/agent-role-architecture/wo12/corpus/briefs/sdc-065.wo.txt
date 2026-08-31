@@ -2,23 +2,21 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-14: alias layer and roster kill switch, before any rename
 
 ORDER:
 Build the alias layer and the roster kill switch before any rename. In the
-aliases file, declare every retired name's role and rung pair, the legacy
-identity it keeps while the old roster is installed, and its ledger
+aliases file, declare every retired name's role and rung pair, plus the
+legacy identity it keeps while the old roster is installed and its ledger
 deprecation line. Have the seat resolver evaluate the roster flag per order,
 so legacy returns the installed legacy agent unchanged while new goes
-through the casting tables and the degradation machine, with the declarative
-default at legacy as the kill-switch home position, so rollback is a flag
-flip with no reload. Load the map under the same fail-closed discipline the
-other tables get, so an unknown role, a rung the named role does not have, a
-missing legacy identity, or a bad roster default must each refuse
-construction. Prove it, with old-name orders dispatching under both flag
-values, the flip demonstrated mid-session on one instance, every
-retired-name resolution emitting its deprecation line, and a tampered map
-failing the load closed.
+through the casting tables and the degradation machine. The declarative
+default sits at legacy as the kill-switch home position, so rollback is a
+flag flip with no reload. Load the map under the same fail-closed discipline
+the other tables get. An unknown role, a rung the named role does not have,
+a missing legacy identity or a bad roster default must each refuse
+construction. Old-name orders dispatch under both flag values, the flip is
+demonstrated mid-session on one instance, every retired-name resolution
+emits its deprecation line, and a tampered map fails the load closed.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

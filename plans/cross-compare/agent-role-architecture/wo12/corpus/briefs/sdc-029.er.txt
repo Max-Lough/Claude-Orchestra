@@ -2,13 +2,14 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We applied the four seat re-castings across the plan document. We also
-closed the three deferred audit items in the same pass. The work spans three
-files — STATUS.md, the plan itself, and the probe runbook. It adds 134 lines
-and removes 76 across that small file set. STATUS.md was updated to record
-the rulings and the completed lab-port work. The handoff-drill line was
-relabeled to match the new casting choice. Each recast was checked clause by
-clause against the guardrail it must protect.
+The four seat re-castings were applied across the plan document, and the
+three deferred audit items were closed in the same pass. The work spans
+three files, the status file, the plan itself, and the probe runbook, adding
+134 lines and removing seventy-six across that small set. The status file
+was updated to record the rulings and the completed lab-port work, and the
+handoff-drill line was relabeled to match the new casting choice. Each
+recast was then checked clause by clause against the guardrail it has to
+protect.
 
 Verify the diff on its own merits.
 

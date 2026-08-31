@@ -4,12 +4,12 @@ produced this change.
 
 CLAIMS:
 The touches lint now compares elements in place of a collision-prone comma
-join; the glob matcher replicates the retired regular expression's
-line-terminator classes exactly; checkout startup sweeps abandoned worktrees
+join, and the glob matcher replicates the retired regular expression's
+line-terminator classes exactly. Checkout startup sweeps abandoned worktrees
 still on disk, since pruning alone only clears missing-directory
-registrations, while exempting live in-process checkouts; and future review
-orders enumerate every commit in their pinned range. That verdict now sits
-inside the roster, unaltered. Verifier closed at 94 passed, and registry and
-router both hold clean on the same local run.
+registrations, while exempting live in-process checkouts. Future review
+orders now enumerate every commit in their pinned range, and that verdict
+sits inside the roster, unaltered. Verifier closed at 94 passed, and
+registry and router both hold clean on the same local run.
 
 Verify the diff on its own merits.

@@ -2,14 +2,14 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We shipped a compact deterministic module and a matching test suite of 152
-checks, all against temp-directory fixtures — the real project data files
-are never touched. Interop was proven against the live router: a green state
-dispatches end to end, a below-reserve reading fires the reserve gate, an
-unconfirmed arm fires and a recorded confirmation lifts it, a hard throttle
-takes the exhaustion recast, and an exhausted bucket forces mandatory review
-to not close. CI now runs the suite directly after the router's, and the
-runtime files stay out of version control.
+A compact deterministic module shipped alongside a matching suite of 152
+checks, run against temp-directory fixtures so the project data files are
+never touched. Interop was proven against the live router: a green state
+dispatches end to end, a below-reserve reading fires the reserve gate, and
+an unconfirmed arm fires while a recorded confirmation lifts it again. A
+hard throttle takes the exhaustion recast, and an exhausted bucket keeps
+mandatory review from closing. The pipeline now runs this suite right after
+the router's, and the runtime files stay out of version control.
 
 Verify the diff on its own merits.
 

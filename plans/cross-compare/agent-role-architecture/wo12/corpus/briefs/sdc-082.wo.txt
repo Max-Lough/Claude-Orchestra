@@ -2,23 +2,22 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-8 round 5: structural sweep guard — the CRITICAL both CI and R0-EX5 caught
 
 ORDER:
-Fix a critical finding in the abandoned-worktree sweep. Its prefix guard
-currently classifies any worktree path merely containing the checkout prefix
-as a leftover and removes its parent directory outright; on macOS and
-Windows continuous-integration runners that parent turns out to be the
-operating system's own temporary root when the fixture repository's own
-temp-directory name happens to match, and the same class reproduces
-independently for a legitimate worktree nested under a prefix-matching
-ancestor directory. Replace the substring classification with a structural
-check: identification must match exactly the tmp-root, prefix, and checkout
-shape, not a mere substring; skip the main worktree outright in every case;
-and remove only the literal prefix-named parent — no broader deletion is
-ever performed. Pin both reproducer shapes as regressions, and record the
-review verdict verbatim in the roster, keeping the tranche marked open
-pending the next review pass.
+Fix a critical finding in the abandoned-worktree sweep itself. Its prefix
+guard classifies any worktree path merely containing the checkout prefix as
+a leftover, and removes its parent directory outright, so on macOS and
+Windows continuous-integration runners that parent can be the operating
+system's temporary root when the fixture repository's temp-directory name
+happens to match. The same class reproduces independently for a legitimate
+worktree nested under a prefix-matching ancestor directory. Replace the
+substring classification with a structural check, where identification must
+match exactly the tmp-root, prefix, and checkout shape, not a mere
+substring. Skip the main worktree outright in every case, and remove only
+the literal prefix-named parent, since no broader deletion is ever
+performed. Pin both reproducer shapes as regressions, and record the review
+verdict verbatim in the roster, but keep the tranche marked open pending the
+next review pass.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

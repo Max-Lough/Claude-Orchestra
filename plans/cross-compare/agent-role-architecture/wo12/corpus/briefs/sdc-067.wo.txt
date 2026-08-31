@@ -2,24 +2,22 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Draw the WO-7b synthetic corpus and pre-register the misroute-recovery gates
 
 ORDER:
 Draw the synthetic corpus for the misroute-recovery study and pre-register
-its gates. Build twenty-four items — thirteen misroutes and eleven correctly
-routed — whose true classes are an authorial fact of construction, covering
-both reserved edges: the persisted-generated-output horn, with an accepted
+its gates. Build twenty-four items, thirteen misroutes and eleven correctly
+routed, whose true classes are an authorial fact of construction, covering
+both reserved edges — the persisted-generated-output horn, with an accepted
 control and a baited misroute, and the values-only horn likewise. Register
 three gates, all of them fixed before any model runs: every constructed
-misroute must be caught by the receiving seat's charter filter; no misroute
+misroute must be caught by the receiving seat's charter filter. No misroute
 may cross a mandatory review, tier or third-stage gate, with gate relevance
 computed mechanically from the router's own review-policy and
-required-question fields under assigned versus true class; and
-reclassification must stay within one hop at the ninety-fifth percentile.
-Keep one-shot classifier agreement, false bounces and recommended-class
-accuracy as non-gating telemetry. Add a mechanical scorer that exits zero or
-one on the gates, running recovery through the router's reclassification
-path.
+required-question fields under assigned versus true class. Reclassification
+must stay within one hop at the 95th percentile. Keep one-shot classifier
+agreement, false bounces and recommended-class accuracy as non-gating
+telemetry. Add a mechanical scorer that exits zero or one on the gates,
+running recovery through the router's reclassification path.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

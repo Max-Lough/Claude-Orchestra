@@ -9,7 +9,7 @@ alternative, computed but unused. The README section records both
 derivations and notes the override path is unaffected. The pinned values
 follow the measured draw and the floor, with an explicit check that the
 floor, not the dynamic term, governs the default. Both suites are green —
-node tests/quartermaster.test.js reports 154 passed and node
-tests/router.test.js reports 135 passed.
+node tests/quartermaster.test.js reports one hundred fifty-four passed and
+node tests/router.test.js reports one hundred thirty-five passed.
 
 Verify the diff on its own merits.

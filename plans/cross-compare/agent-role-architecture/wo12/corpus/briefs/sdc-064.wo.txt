@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Add heavy executor tier: two-tier execution for the Opus 5 era
 
 ORDER:
 Split execution into two tiers, mirroring the recon split between the

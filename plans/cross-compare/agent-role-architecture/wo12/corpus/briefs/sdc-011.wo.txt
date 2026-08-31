@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      guard: allow the Director to write plan files (.claude/plans/*.md)
 
 ORDER:
 Add a narrow carve-out to the guard hook so the Director may write its own

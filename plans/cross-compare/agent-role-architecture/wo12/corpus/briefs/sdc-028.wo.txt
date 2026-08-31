@@ -2,23 +2,22 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-9 round 2: fix all R0 review findings (runner semantics, incident narrative, report contracts)
 
 ORDER:
-Fix every finding from the prior review round without exception. Replace the
-copied-over runner semantics in the research seat's brief with the tool's
-real behavior. That behavior means a live working tree, no sandbox pinning,
-and no automatic retries. Each order gets just one call, with unavailability
-escalated to the coordinating role. Reconcile the write-capable runner with
-the read-only plan across three briefs. Every order carries that same
-restriction in its own order text. It also must pass the forbid parameter,
-described as a brief-level prohibition instruction rather than a sandboxed
-block. Rewrite the earlier incident narrative into its evidence-supported
-account instead. Withdraw the unsupported claim entirely rather than merely
-softening it. Correct two exercise reports whose dispatch-time details were
-dropped or wrong. Clear the minor findings too, including stale status rows
-and a wrong tool count. Also fix an unjustified omission, an unexplained
-repeated log line, and a misattributed casting rule.
+This pass fixes every finding from the prior round. It starts by replacing
+the copied-over runner semantics in the research seat's brief with the
+tool's real behavior, meaning a live working tree, no sandbox pinning, and
+no automatic retries, so each order gets just one call while unavailability
+escalates to the coordinating role instead of retrying silently. The
+write-capable runner then gets reconciled with the read-only plan across
+three briefs, so every order carries that same restriction in its own text
+and also passes the forbid parameter, described accurately as a brief-level
+prohibition rather than a sandboxed block. The earlier incident narrative
+gets rewritten into its evidence-supported account, and the unsupported
+claim gets withdrawn entirely rather than merely softened. Two exercise
+reports whose dispatch-time details were dropped or wrong get fixed as well.
+The minor findings get cleared too, including stale status rows, a wrong
+tool count, and an unjustified omission.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-11: P0 R4 default forecast corrected to WO-2 measured draw; floor governs
 
 ORDER:
 Correct the Quartermaster's default review-draw forecast under ruling R4.

@@ -2,12 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-Both files now state the same stop-grinding rule inline: bounded
-implement-verify cycles, then stop and report a partial result rather than
-force a degraded done. The change lands across 2 files total —
-agents/executor.md and agents/specialists/_TEMPLATE.md — one inserted line
-apiece, no removed lines, no other lines touched. Verified by reading both
-files side by side to confirm the wording matches and by checking the diff
-stat shows no unrelated changes.
+Both files now state the identical stop-grinding rule inline, worded the
+same way. The change lands across 2 files altogether, the executor's role
+file and the specialist template, one inserted line apiece and no removed
+lines, so the diff stays a pure addition. Verified by reading both files
+side by side to confirm the wording matches, and by checking that the diff
+stat carries no unrelated line. No other line in either file changed, and
+the wording carries no ambiguity at all.
 
 Verify the diff on its own merits.

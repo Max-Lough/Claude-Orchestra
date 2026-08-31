@@ -2,23 +2,22 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Apply the 2026-08-28 second-session lineup rulings to the plan record
 
 ORDER:
-Record the second planning session's rulings into the plan document. Close
-the three deferred audit items raised during that session. The first item is
-superseded by a seat re-cast recorded elsewhere. The second is adopted as a
-conscious trade-off. Dropping one model from rotation moves exhaustion
-handling to the human sooner. The third item is adopted as a
-concentration-risk watch, with a proposed rotation trigger. Apply exactly
-four seat re-castings throughout the plan document. Recast the interactive
-coordinating seat as the session's own model, with a matched mirror. Its
-core function is direct user dialogue, and the prior casting's prose was
-observed degrading. The deep-work seat loses its user-dialogue duty entirely
-and moves to goal-directed work alone. Set the architecture seat's default,
-along with its ambiguous-goal and exhaustion fallbacks. Make one casting the
-preferred choice for bounded, fully specified orders. Outside these four
-re-castings, nothing changes about the never-under-specified guardrail.
+This pass records the second planning session's rulings into the plan
+document. It closes the three deferred audit items raised in that session:
+the first is superseded by a seat re-cast recorded elsewhere, and the second
+is adopted as a conscious trade-off, since dropping one model from rotation
+moves exhaustion handling to the human sooner. The third item is adopted as
+a concentration-risk watch, with a proposed rotation trigger attached to it,
+and exactly four seat re-castings then get applied throughout the plan
+document. The interactive coordinating seat gets recast as the session's own
+model, with a matched mirror alongside it, because its core function is
+direct user dialogue and the prior casting's prose was observed weakening.
+The deep-work seat loses its user-dialogue duty entirely and moves to
+goal-directed work alone, while the architecture seat's default, along with
+its ambiguous-goal and exhaustion fallbacks, gets set so one casting becomes
+preferred for bounded orders.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

@@ -2,21 +2,20 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      executor: add stop-grinding rule (bounded implement-verify cycles, PARTIAL over degraded DONE)
 
 ORDER:
-Add a stop-grinding rule to the executor role and to the specialist template
-that inherits its structure, so an agent stops looping indefinitely trying
-to force a task to a finished state. Touch only agents/executor.md and
-agents/specialists/_TEMPLATE.md, confining the change to one line each.
-Outside that, nothing changes, and the diff should read as plain added
-lines, not a rewrite of the surrounding text. State the rule as a bounded
-number of implement-verify cycles: once that bound is reached without a
-clean pass, the agent must stop and report a partial result rather than push
-out a degraded status dressed up as done. PARTIAL never gets silently
-upgraded to DONE just because the cycle budget ran out. Keep the wording
-short enough to sit inline with the existing role text, and make sure both
-files carry the same rule, worded the same way.
+Add a stop-grinding rule to the executor's role file. Carry the same rule
+into the specialist template that inherits the executor's structure, so
+every seat built from it inherits the identical guardrail too. State the
+rule as a bounded number of implement-verify cycles that ends in a
+stop-and-report step once the bound is reached without a clean pass, but the
+agent must never quietly upgrade a degraded result into a falsely finished
+done. Touch just those two files, confining each edit to one inserted line,
+so the diff reads as plain added lines rather than a rewrite of the
+surrounding text. Nothing outside those two files changes, and the diff must
+read as an addition, never as a rewrite. Keep the wording short enough to
+sit inline with the existing role text, and make sure both files state the
+rule identically.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

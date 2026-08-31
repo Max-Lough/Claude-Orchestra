@@ -2,13 +2,12 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-Both documents went in as wholly new material under roster/, one hundred
-nineteen lines between them; nothing outside that pair was touched anywhere
-else. The earlier fix commit and the one that follows it anchor this pass
-from end to end. The runner's locked-worktree, single-force sweep limitation
-was set down as its own follow-on note for that runner's lane, carrying no
-weight against this pass's verdict, which the file records as what the pair
-of orders sitting in revise needs to move past that status.
+Both documents went in as wholly new material under the roster directory
+today. They add up to one hundred nineteen lines between them, and no file
+outside that pair was touched anywhere in the rest of the tree. The earlier
+fix commit and the one that follows it anchor this pass from end to end, so
+nothing before that pair matters. The runner's locked-worktree, single-force
+sweep limitation was set down as its own follow-on note for that lane.
 
 Verify the diff on its own merits.
 

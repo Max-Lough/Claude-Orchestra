@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Record the R0-EX6 verdict; draw up R0-EX7 for the round-5b fix
 
 ORDER:
 Handle two things in one single pass this round. Close out the sixth verdict

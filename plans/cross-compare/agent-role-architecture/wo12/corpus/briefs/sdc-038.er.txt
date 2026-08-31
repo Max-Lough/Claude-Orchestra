@@ -6,9 +6,9 @@ CLAIMS:
 A live-tree review no longer runs the warmup — the preflight states the
 refusal and names the flag that restores it, and the warmup now runs inside
 the throwaway pinned checkout. The changelog, both readme files and the
-field-validation notes were updated to match. Two new cases in the
-review-lane suite cover it, one confirming the refusal is reported and one
-confirming the file the warmup would have created does not appear in the
-project afterwards. No other behaviour of the review runner was changed.
+field-validation notes were updated to match. 2 new cases in the review-lane
+suite cover it, one confirming the refusal is reported and one confirming
+the file the warmup would have created does not appear in the project
+afterwards. No other behaviour of the review runner was changed.
 
 Verify the diff on its own merits.

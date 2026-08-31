@@ -2,22 +2,21 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-11: P0 Quartermaster substrate — readings-based pool state, fail-closed, router-interop proven
 
 ORDER:
-Build the Quartermaster's deterministic P0 substrate: recorded allowance
-readings in, the router's bucket-state shape out. Give the module zero
-dependencies and keep it CommonJS, mirroring the existing verifier and
-router substrates. State must derive only from real recorded readings across
-both vendors — never fabricate a denominator — and leave ledger attribution
-out of scope entirely; it is impossible today and stays a registered
-follow-on. Keep allGreen() exported as a test affordance, and keep the
-router's wo7b score module untouched. Leave modelAssist unused in this
-version; the substrate stays deterministic. Add no registry schema — the
-entry contract lives in this module's own README and nowhere else. Gitignore
-the two new runtime data files and keep them out of every commit. Prove
-interop end to end against the real router and wire the new suite into CI
-directly after the router suite.
+This work builds the Quartermaster's own deterministic P0 substrate.
+Recorded allowance readings go in, and the router's bucket-state shape comes
+out, so the module has to carry zero dependencies and stay plain CommonJS,
+mirroring the existing verifier and router substrates that are already fully
+in place. Its state must derive only from real recorded readings across both
+vendors, never a fabricated denominator, while ledger attribution stays out
+of scope entirely, since it is impossible today and remains a registered
+follow-on. The allGreen function stays exported as a test affordance, and
+the router's own scoring module stays untouched, so nothing downstream has
+to change. No registry schema gets added, since the entry contract belongs
+in this module's own file and nowhere else, and the two new runtime data
+files get ignored so they stay out of every commit. Interop then gets proven
+end to end against the real router, wired into the pipeline right after it.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

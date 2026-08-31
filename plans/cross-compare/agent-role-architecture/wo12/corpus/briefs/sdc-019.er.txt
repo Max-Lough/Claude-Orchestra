@@ -4,12 +4,12 @@ STATUS: DONE. The change is the commit at HEAD. An executor produced this change
 CLAIMS:
 The rename landed across the harness, with the roundabout hook file and
 every identifier it carried moved over, along with the skill directory, its
-frontmatter, headings and verdict token; the installer copies and uninstalls
-the new filename; and the planner agent file, the orchestration document and
-the README converted. The bundled-skill roster in the status skill now names
-deep-plan. A case-insensitive repository-wide grep for the old name returns
-0 matches at head, and the installer run lists deep-plan among the bundled
-skills.
+frontmatter and its headings and verdict token. The installer copies and
+uninstalls the new filename, while the planner agent file, the orchestration
+document and the README converted too. The bundled-skill roster in the
+status skill now names deep-plan. A case-insensitive repository-wide grep
+for the old name returns 0 matches at head, and the installer run lists
+deep-plan among the bundled skills.
 
 Verify the diff on its own merits.
 

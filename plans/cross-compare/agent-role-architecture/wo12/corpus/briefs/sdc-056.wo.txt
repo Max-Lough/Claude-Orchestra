@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Draw up R0-EX4: delta re-review order for the round-3 fixes
 
 ORDER:
 Earlier rounds already carry their own closed verdicts, so this fourth

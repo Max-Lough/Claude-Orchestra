@@ -2,22 +2,21 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      Record the Sol cross-vendor REVISE on PR #27 and apply its dispositions
 
 ORDER:
-Record the outcome of the cross-vendor review of the open pull request.
-Apply its findings to the plan in full. Run the review fresh, scoped to the
-diff between the base and the prior scoring commit alone, and expect it to
-confirm every prior score, gate, and commit-order claim while returning a
-small number of significant findings; apply all of them, not a subset. Amend
-one discriminator so that displayed values are treated as data rather than
-presentation, codify the merge/redraw trigger to count scored cross-pass
-disagreements alone, scope the prior redraw's validation claim precisely,
-and correct the related-pull-request index. Adopt the process change going
-forward: the owner's blind pass must be committed and pushed before the
-sealed corpus file is opened, with no exception. Preserve the verdict
-verbatim, together with its dispositions, in a dedicated review record file,
-left exactly as delivered.
+Record the outcome of a fresh cross-vendor review of the pull request. Run
+it scoped only to the diff against the prior commit, and expect it to
+confirm every earlier tally, gate, and commit-order claim while returning a
+small number of significant findings; apply every one of them in full. Amend
+the relevant rule so that displayed values count as data rather than
+presentation, and set a clear trigger for any additional border pass, keyed
+only on disagreements that both independent passes actually tallied. Sharpen
+the earlier redraw's validation claim so it states precisely what was
+tested, and correct the related pull-request index once that gap is
+confirmed. The owner's blind pass must be committed and pushed before anyone
+opens the sealed file, with no exception granted for convenience, from this
+point forward. Preserve the verdict exactly as delivered, together with
+every disposition it produced, inside one dedicated review record.
 
 Audit the diff between base and head against the order above: correctness,
 unexplained changes, and concrete failure scenarios.

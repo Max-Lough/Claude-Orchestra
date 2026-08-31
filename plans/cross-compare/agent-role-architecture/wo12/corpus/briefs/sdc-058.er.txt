@@ -2,15 +2,14 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-We ran the probe against the pinned corpus and gates, where the catch-rate
-gate caught every one of the constructed misroutes under fresh-context,
-charter-only classification; the mandatory-gate-crossing check found zero
-crossings among the four gate-relevant misroutes across all 24 items; the
-hop-count gate's slowest measured case still landed in exactly one hop, with
-zero escalations. Telemetry showed zero false bounces on the control set out
-of eleven checked, and full classifier agreement against the construction
-key on every item. Both reserved edge cases recovered clean, with nothing to
-flag.
+The probe ran against the pinned corpus and gates without incident. The
+catch-rate condition caught 13 of 13 constructed misroutes under
+fresh-context, charter-only classification, and the mandatory-gate-crossing
+check found zero crossings among the four gate-relevant misroutes across all
+twenty-four items. The hop-count condition's slowest measured case still
+landed in exactly one hop, with zero escalations, so the gate held
+throughout. Telemetry showed zero false bounces on the control set out of
+eleven checked, and both reserved edge cases recovered clean.
 
 Verify the diff on its own merits.
 

@@ -8,7 +8,8 @@ The residual strand is proven self-healing by a new regression test that
 asserts an alias-created, never-active registration and its directory are
 both reclaimed by the following checkout. The round's verdict is recorded
 verbatim in the roster alongside the fix. The battery is green, with
-verifier at 101, router at 135, registry at 31, and the review lane at 116.
+verifier at one hundred one, router at one hundred thirty-five, registry at
+31, and the review lane at one hundred sixteen.
 
 Verify the diff on its own merits.
 

@@ -3,12 +3,12 @@ STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthr
 produced this change.
 
 CLAIMS:
-Added .gitattributes, which gains 5 new lines of rules for sh/js/md files,
-and set install.sh's executable bit; no other file content changed. This
+A new file was added, gaining 5 lines of rules for three extensions. Shell,
+JavaScript, and Markdown files are covered, and install.sh's executable bit
+was set, while no other file content changed anywhere in the tree. This
 keeps a checkout on any platform from corrupting the installer's shebang
-line, since git now normalizes those extensions to LF regardless of the
-checking-out machine's default line-ending setting. Verified by inspecting
-the diff: install.sh's own diff carries no content change at all, only the
-mode flip.
+line, since normalization now applies to those extensions regardless of the
+machine's own setting. The diff was inspected line by line, and install.sh's
+own diff carries no content change at all, only the mode flip.
 
 Verify the diff on its own merits.

@@ -2,15 +2,15 @@ EXECUTOR REPORT:
 STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
 
 CLAIMS:
-The reserve gate now evaluates the requested rung so a degradation recast
-never silently satisfies a stop, with restrictions disclosed on every
-fallback-served turn; glob matching moved to a token-based matcher after the
-collapsed regex broke on separated wildcard runs; redaction now runs before
-tail truncation; Windows installs the trappable signal set, with startup
-pruning documented as the recovery path there; and the stray NUL bytes are
-gone from the router source. The roster now holds that verdict, unaltered,
-verifier finished at 92 passed, and router and registry both stayed clean on
-this run too.
+The reserve gate evaluates the requested rung, so a degradation recast never
+silently satisfies a stop, with restrictions disclosed on every
+fallback-served turn. Glob matching moved to a token-based matcher after the
+collapsed regex broke on separated wildcard runs, and redaction now runs
+before tail truncation. Windows installs the trappable signal set, with
+startup pruning as the recovery path, and the stray NUL bytes are gone from
+the router source. The roster holds that verdict, unaltered, and verifier
+finished at 92 passed, while router and registry both stayed clean on this
+run.
 
 Verify the diff on its own merits.
 

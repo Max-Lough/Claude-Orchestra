@@ -2,7 +2,6 @@ REVIEW PACKET — review a completed, already-merged change.
 
 Change under review: the commit checked out at HEAD in this checkout,
 compared against its parent.
-Commit subject:      WO-8 round 4: fix all four R0-EX4 findings; record the R0-EX4 verdict
 
 ORDER:
 Fix all four findings from the latest cross-vendor review round and record
@@ -15,7 +14,7 @@ whose directories are still on disk, since pruning alone clears only the
 registrations whose directory has already gone missing, and keep the
 checkouts this process is actively using exempt from that sweep. Correct the
 wording future review orders use, so an order enumerates every commit inside
-its pinned range instead of describing that range as a single commit. Record
+its pinned range and never describes that range as a single commit. Record
 the review verdict verbatim in the roster, hold the tranche at REVISE
 pending the next round, and leave the suites green.
 

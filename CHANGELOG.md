@@ -9,6 +9,83 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.4.0 — WO-12 round 8: the stopping standard enforced, not described; the review runner made observable
+
+What prompted this release is a verdict, not a feature request. The first
+cross-vendor pair of delta reviews on the WO-12 tooling (Anthropic rounds 6–7,
+OpenAI rounds 3–7 — the latter after two VOID attempts, see below) converged
+blind on the same four defects and then each added its own. The Anthropic
+lane applied the protocol's own stopping standard and found it unmet: a
+style-only classifier at 85.7% precision under leave-one-out CV, and a
+nine-rule list of absolute thresholds that labels 58 of 84 packets with zero
+errors. Round 7 had gated every *mean* the previous review named; the tails
+were untouched, and a floor of 8 words minted the rule "shortest sentence is
+exactly 8 → control" on 15 packets.
+
+- **New: arm (8), single-threshold purity.** `assemble-key.js` now scans 15
+  derived features (sentence counts, mean/min/max/sd sentence length, commas,
+  semicolons, colons, dashes, "and", connectives and digits per 100 words)
+  at every observed value in both directions and fails any rule that fires on
+  ≥5 artifacts of one population and 0 of the other, printing per failing rule
+  the artifacts it fires on. This is the generic test that would have caught
+  the round-3 length tails, the round-5 sentence shapes and every rule in the
+  reviewer's list with one gate; it is the in-tool proxy for amendment
+  (xii)'s classifier arm (protocol amendment xiii).
+- **New: `SEAL:` verdict.** `--check-only` now prints the whole distribution
+  report and exits 1 when briefs drift from generation, a purity rule fires,
+  or `corpus/blind-read.json` — amendment (vi)'s acceptance evidence — is
+  absent, stale against a content hash, or above the 65% ceiling. The
+  standard was rendered before; it is enforced now. `--no-seal` for interim
+  content work.
+- **Fixed: the identity gate was writable by its subject.** `served_model`
+  was parsed out of the reviewed model's own transcript, so the only reachable
+  PASS for gate 5 was a line the model wrote; a contradicting line failed it.
+  `run-lane.js` now honours the field only from the runner's header block
+  before a literal `=== ENGINE OUTPUT ===` delimiter.
+- **Fixed: the FINDINGS window terminator, from both directions.** The
+  round-7 rule ended the window at any heading, any `---` and any `--flag`
+  continuation, so a correctly cited CRITICAL under a `### CRITICAL` subhead
+  scored MISS with no warning (Anthropic); it also did not end at a
+  Title-case bare label such as `Verification rerun:`, so a re-run block could
+  mint a hit (OpenAI). Now: same-or-higher headings, named sections, bare
+  labels, and the literal runner delimiters end it; severity subheads,
+  rules and flags do not.
+- **Fixed: what the lane's checkout revealed.** Run clones were directories
+  named `sdc-NNN`, and the seeded id blocks are published in this repository;
+  `--run-clone-root` inside the repository let a clone reach the live key by
+  relative path. Clones are now named by an opaque per-run token with an
+  id↔token map beside the results, and a root inside the repository or any
+  worktree is refused.
+- **Fixed: the `Commit subject:` line.** Round 6 removed the sha half of the
+  reused-base pair oracle and left the subject half — ten byte-identical
+  lines, each pair one seed and one control. VARIANTS v4 prints no subject;
+  the reviewer has `git log` in the clone.
+- **Fixed, smaller:** unigram exclusivity now covers two-letter words,
+  stopwords and bare numbers (`we` was 0 seeded / 13 control under the old
+  exclusions); sentences split unconditionally with an abbreviation list and
+  the shortest-sentence range is gated, not just its mean; resume keeps the
+  absolute run index so gate 6's streak survives a crash; gate 3 is not
+  ready while a run is dead; hex lint floor 6 with a `0x` boundary; label
+  lint zero-tolerance; blind draws backtrack before reporting a shortfall and
+  are stored verbatim; `.gitattributes` `-text` on the JSON evidence files.
+  Suite 815 → 983 checks.
+- **Found: a review runner can silently run the test stub.** An OpenAI-lane
+  attempt returned `VERDICT: APPROVE` — the literal output of
+  `tests/fixtures/stub-codex.js`, run because `CODEX_BIN` was set in the
+  invoking environment; the runner logged no resolved engine, so nothing but
+  the fixture's prose exposed it. The next attempt died under a 10-minute
+  foreground cap the dispatch itself imposed. Both ruled VOID and charged.
+  `orchestra-review.js` now prints `ENGINE BIN: <path> sha256=<hex>` in its
+  header, ends the header with the `=== ENGINE OUTPUT ===` delimiter
+  (occurrences inside engine output are neutralised, so the engine cannot
+  forge a header), and refuses a fixture engine unless
+  `ORCHESTRA_ALLOW_STUB_ENGINE=1`. It emits no `served_model:` because
+  codex-cli 0.151.0 exposes none — gate 5 reads LIMITED on codex lanes
+  honestly until the CLI reports one.
+- **Content round 8** re-authors both populations against the purity gate's
+  targets; blind test #4 and the rounds-8 delta reviews follow and are
+  recorded in STATUS.md.
+
 ## 2.3.0 — WO-12 trial substrate: a pre-registered protocol, a sealed seeded-defect corpus, and the lanes to run it; the codex sandbox fault root-caused
 
 The plan's paired-casting trials (WO-12) exist as runnable, pre-registered

@@ -681,7 +681,15 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   plausible cause), worth pinning once the helper is repaired; (iii) the sdc-039
   seeder independently rediscovered the round-4 `sweepAbandoned` main-worktree
   rm-rf (R0-EX5's CRITICAL, fixed at `ceeaabc`) — a confirmation of the record, not a
-  live defect.
+  live defect; (iv) **review-runner engine observability** — the OpenAI-lane round-3
+  delta's third attempt (`roster/wo12-r0-review-openai-4.md`) returned the
+  `tests/fixtures/stub-codex.js` fixture's APPROVE as if it were a codex verdict;
+  `CODEX_BIN` was set in the invoking environment (source undetermined). Ruled VOID.
+  `orchestra-review.js` must print the resolved engine path + hash in every verdict
+  header and refuse an engine under `tests/fixtures/` outside an explicit test mode.
+  The OpenAI-lane delta of tooling rounds 3–7 is OUTSTANDING (two REVIEW_UNAVAILABLE
+  at the 30-min cap, one VOID); the re-attempt pins `CODEX_BIN` to the real binary and
+  quotes the environment in the record.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

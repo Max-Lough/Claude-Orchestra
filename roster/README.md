@@ -67,6 +67,9 @@ runners, per the field-tested cross-vendor lane.
 | Construction | `interface-artisan.md` | E5 primary — Sol · med–high via Codex CLI, browser/screenshot loop | DEGRADED-ACCEPTED — all 3 files delivered and independently verified; pre-registered render-loop gap unexercised (see band record) |
 | Construction | `spatial-specialist.md` | E6 primary — Opus 5 · high | PASS — 15-check validator, negative control proves non-vacuity, byte-identical regeneration (see band record) |
 | Construction | `doc-writer.md` | D0 primary — Sonnet 5 · medium | PASS — 28 citations, mechanical checker fails closed (see band record) |
+| Orchestration | `conductor.md` | O0 primary — Fable 5 · owner-set effort, the interactive session model itself (no bootstrap layer; not a dispatchable subagent charter — see band record) | pending (WO-11 stage 2) |
+| Orchestration | `architect.md` | A0 primary — Sol · xhigh via Codex CLI (owner ruling 2026-08-28; WO-13 transport migration unclosed — see band record) | pending (WO-11 stage 2) |
+| Orchestration | `synthesizer.md` | A1 primary — Fable 5 · xhigh, in-harness, max-reserved once-per-project seat | pending (WO-11 stage 2) |
 
 Exercise records and the review dispositions they produced (assurance band):
 `wo8-review-dispositions.md`. **The tranche's mandatory cross-vendor review
@@ -82,3 +85,10 @@ mirror-or-declared-exception gaps (Test Designer, Interface Artisan) — later
 closed by Director ruling, see the record's Dispositions section — and the
 stage-2 exercise record (8/10 seats PASS or DEGRADED-ACCEPTED, 2 seats
 BLOCKED-PENDING-ENVIRONMENT by the codex sandbox fault): `wo10-band-record.md`.
+
+Orchestration band (WO-11) staffing record — Conductor, Architect, Synthesizer;
+the Conductor's standing-contract-not-subagent-charter shape, the Synthesizer's
+plan-silence flags (Rationale/Strengths/Escalation), the Architect's
+WO-13-transport-unclosed honesty note, naming/rung decisions, and the P0
+Quartermaster substrate note (built by a separate order, not staffed here):
+`wo11-band-record.md`.

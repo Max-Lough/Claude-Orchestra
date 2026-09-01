@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Compose the sixth review in this series for the round-5 sweep fix. Confine
+this one strictly to the sweep-guard fix itself, bounded by the two commits
+marking where round 4 ends and round 5 begins. Write the review order
+together with what its executor reported, since neither document exists yet,
+and shape both to match the pattern the other passes in this sequence
+already use, while never rewriting anything already sitting in the roster
+directory. None of the earlier round's findings are back in play for this
+review, because the earlier round's own write-up already resolved its own
+questions in its own earlier pass, but this pass still confines its scope to
+the boundary pair alone. Say once, plainly, that only a clear verdict on
+that boundary pair lets the standing orders shed their revise status for
+good, and nothing softer changes that outcome. Nothing less counts toward
+that outcome, whatever the round number seems to suggest.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

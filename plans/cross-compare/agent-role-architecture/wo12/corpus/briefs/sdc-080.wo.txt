@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Fix a sharper edge left in the stable-alias fix itself. When the alias a
+live checkout was created through is later removed, sweep-time path
+re-lookup falls back to the lexical alias spelling while git's own listed
+path stays canonical, and that mismatch causes the sweep to remove the live
+canonical checkout. Capture the canonical identity exactly once, at creation
+time, when every path component is guaranteed to exist, and have the
+live-set comparison use that identity instead of a sweep-time re-lookup. Pin
+a regression for the alias-removal case, and confirm it fails without the
+fix. Diagnose and fix an intermittent review-lane test failure, since git
+holds a newly created worktree locked for the whole checkout while it is
+already visible in the list. A kill in that window leaves the worktree
+locked forever, and a removal command cannot clear a locked worktree, so the
+terminate-signal branch must wait out the registration window exactly as the
+kill-signal branch does.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

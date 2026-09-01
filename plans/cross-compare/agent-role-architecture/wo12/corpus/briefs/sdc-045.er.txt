@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+All three MAJOR and three MINOR findings from the delta review are fixed,
+plus the noted nits, across 5 files, and no file off that list moved.
+Sandbox and working-tree language in the researcher role file now matches
+the other role files, while discard grounds are rewritten onto the two facts
+that hold up. Source-count and omission language was corrected to the
+precise figures, and each corrected line was re-checked against the fact it
+now cites, item by item against all six numbered findings.
+
+Verify the diff on its own merits.

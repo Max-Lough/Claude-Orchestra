@@ -1,0 +1,18 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Shipped all five files and updated the staffing record and the README to
+match, with no unrelated file touched. Full-roster lint fails only on the
+three previously known instances across two flagged seats, and no other
+violation turned up, while both install-script lint modes pass clean. All
+five required test suites pass in full, 420 tests passed and zero failed,
+but one seat's browser loop has no headless exercise path from this harness,
+so that gap was recorded rather than smoothed over.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

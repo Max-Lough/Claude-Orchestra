@@ -68,3 +68,17 @@ NITS
 ```
 
 Any CRITICAL or MAJOR finding forces REVISE. Never manufacture either verdict. Never end your turn while a process you started is still running — poll it to completion or kill it and report the check UNVERIFIED.
+
+After NITS, and as the LAST thing in your response, append EXACTLY ONE trailing fenced block — mandatory, additive to everything above, nothing after it:
+
+```verdict-json
+{ "verdict": "APPROVE|REVISE", "findings": [ { "severity": "CRITICAL|MAJOR|MINOR|NIT",
+  "path": "...", "line": 0, "claim": "...", "reproduced": true|false, "evidence": "..." } ],
+  "claims_checked": [ { "claim": "...", "result": "CONFIRMED|REFUTED|UNVERIFIED", "how": "..." } ],
+  "refutation_duty": { "present": true|false, "what_was_tried": "..." },
+  "citation_replay": [ { "citation": "...", "command": "...", "result": "MATCH|MISMATCH|UNREPLAYABLE" } ],
+  "served_model": "Claude Opus 5", "run_nonce": null,
+  "review": { "cross_family": null } }
+```
+
+It is valid, parseable JSON restating the same verdict, findings, and claims-checked you already gave in prose — never contradicting it. `run_nonce` is always literally `null` on this lane (there is no engine nonce to supply — never fabricate one). `served_model` is your own identity, matching the `REVIEW ENGINE:` line above. `review.cross_family` is always literally `null` — dispatcher-owned, never yours to assert, exactly as stated above. A missing block, more than one, invalid JSON, or a schema failure leaves the ticket open — this block is what closure actually reads, not the prose.

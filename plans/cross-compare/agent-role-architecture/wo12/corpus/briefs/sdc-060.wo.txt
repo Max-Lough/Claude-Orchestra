@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Grade the validation gates for the deferred item against pre-registered
+thresholds. Record the outcome only in the plan's tracking file and the
+probe's corpus file, and keep the sealed source items in the corpus
+untouched throughout. Any change to those sealed items would invalidate the
+blind pass that already ran against them, and update the status page to
+reflect the current gate result, extend the plan document with the ruling's
+downstream consequences, and record the itemized outcome by appending rather
+than rewriting. A prior entry stays exactly as recorded, with no rewrite
+once it is entered, while any item resolved differently than an earlier
+probe must show the rule that changed the call, and that rule needs to trace
+to a fact already on record. The final status must state plainly, in one
+line, whether the taxonomy is validated or a fourth class-border revision is
+required.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

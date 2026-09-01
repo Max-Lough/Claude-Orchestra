@@ -1,0 +1,15 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+All four items are done, with createCheckout resolving the canonical path
+itself and refusing the checkout on failure, and the poisoned-realpath
+regression pinned. Both kill branches, SIGTERM and SIGKILL, poll the new
+waitWorktreesUnlocked helper instead of sleeping a duration, and each
+asserts the checkout finished registering before its signal goes out; both
+new lock-condition checks pass. The records now name the PR-head run and the
+superseded run's true outcome. Suites ran green, with review-lane reporting
+116 across two runs.
+
+Verify the diff on its own merits.

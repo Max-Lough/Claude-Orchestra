@@ -1,0 +1,19 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Canonical identity is captured at creation and compared by the live set; no
+sweep-time re-resolution remains on that path, and the alias-removal probe
+is pinned as a standing regression. The termination branch now waits out the
+registration window; three baseline runs and two post-fix runs of the
+review-lane suite came back green at one hundred fourteen checks each.
+Suites are green — verifier ninety-eight, router 135, registry thirty-one —
+with the full integration-equivalent pass and the pull request's nine checks
+all passing.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

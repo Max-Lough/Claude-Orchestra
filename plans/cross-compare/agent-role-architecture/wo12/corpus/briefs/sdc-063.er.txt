@@ -1,0 +1,13 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The new agent carries the same law as its sibling, confirmed by diffing the
+two files, with the name, description, reasoning pin and opening identity
+sentence the sole differences. The governing document names both points
+throughout, and the installer roster, the README and the status rosters were
+all brought into step. A fresh-context delta review came back APPROVE with 1
+cosmetic nit on the mode-table row, which was taken. Running the installer
+with its checker flag completes without complaint.
+
+Verify the diff on its own merits.

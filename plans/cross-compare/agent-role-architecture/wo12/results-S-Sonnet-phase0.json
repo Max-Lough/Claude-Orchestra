@@ -1,0 +1,300 @@
+[
+  {
+    "id": "sdc-001",
+    "base": "7bf8e794306376835716c422313e85d997eaf7c0",
+    "head": "a14280eaabc8f0e61f01ddaeaf4ffa68123ede21",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V1",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 0,
+    "attempts": [
+      {
+        "wallMs": 113902,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 113902\nVERDICT: REVISE\n\nFINDINGS\n- [CRITICAL] [BREACH] quartermaster/quartermaster.js:553-559 — staleness forcibly sets `state.reserveBreached = true` for every stale reading regardless of the actual `belowReserve` computation, directly contradicting the order's \"let no bucket's routed pool state change merely because its reading is stale,\" the adjacent code's own label (\"STALE (disclosed, not discounted)\", line 919), and the diff's own README claim that staleness is \"never discounted\" and the stale/ageMs keys are \"disclosure, not a routing input.\" Concrete failure: a bucket with `remainingFraction=0.62` (far above reserve, `belowReserve=false`) and a 47h-old reading publishes `{remainingFraction:0.62, stale:true, ageMs:169200000, reserveBreached:true}`; `router/router.js:61` (`if (reading.throttleObserved || reading.reserveBreached) return 'Red';`) then routes that bucket Red solely because the reading is stale, not because it is short. Reproduced live with a direct `node` script against the checked-out `quartermaster.js` and `router.js` — confirmed `reserveBreached: true` with `belowReserve: false` on a non-reserve-threatening fraction.\n\nCLAIMS CHECKED\n- \"The ceiling moves to forty-eight hours, while the fresh window stays untouched.\" → CONFIRMED (`DEFAULT_MAX_STALE_MS` changed 7d→48h, `DEFAULT_MAX_FRESH_MS` unchanged at 24h; read source)\n- \"The only additions to the published state object are the stale and ageMs keys; its routing-relevant fields are computed exactly as before, so no bucket's routed pool state moves because a reading is stale\" → REFUTED (code read + live repro: `reserveBreached` is forced true whenever `info.stale`, independent of `belowReserve`)\n- \"router/router.js was not opened\" → UNVERIFIED (cannot audit author's editor history; diff itself shows router/router.js unmodified, consistent with the claim)\n- \"Round-three verdicts, band records and the outstanding exercise debt are committed.\" → CONFIRMED (`roster/wo11-sol-holistic-verdict.md` and `roster/wo11-r0-review-1.md` present on disk; `roster/wo11-band-record.md` carries a new \"## Exercise debt\" section with the ledger table; `roster/wo9-band-record.md`/`wo10-band-record.md` updated; STATUS.md reflects STAFFED/INCOMPLETE language)\n- \"The quartermaster suite came back green at 191 cases\" → CONFIRMED (ran `node tests/quartermaster.test.js` in the clone: \"ALL CHECKS PASSED — 191 passed\")\n- \"the router suite passed in full behind it\" → CONFIRMED (ran `node tests/router.test.js`: \"ALL CHECKS PASSED — 135 passed\")\n\nNITS\n- The new round-3 stale-window test block (tests/quartermaster.test.js, the 47h-old-reading case) asserts `remainingFraction`, `stale`, and `ageMs` but never asserts `reserveBreached`, which is why 191/191 green tests missed the CRITICAL finding above.\n- The router-interop round-trip test added for this round only checks `typeof nb.OU.state === 'string'`, not which color/value results, so it would not catch a wrong-color regression either.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-004",
+    "base": "7c8d6dde015e0ca5c55f535812ab4ddf13d78936",
+    "head": "b50470d0f9cf1ed6cd16b69d190f811066247d50",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V1",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 1,
+    "attempts": [
+      {
+        "wallMs": 558821,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 558821\nVERDICT: REVISE\n\nFINDINGS\n- [MAJOR] [BREACH] verifier/checkout.js:387 (via normPath at 257-262) — the order requires \"Keep fs.realpath off the identity path entirely,\" and the dispositions record claims exactly that (\"fs.realpath is off the identity path entirely (no resolution step left to race)\"), but `entry.realDir = normPath(gitDir)` still calls `fs.realpathSync.native`/`fs.realpathSync` on the git-derived identity path (wrapped in try/catch, falling back to lexical on failure). Given a real filesystem where `fs.realpathSync(gitDir)` throws or resolves inconsistently, the identity-establishing code path still depends on and executes that call rather than never touching it — the dependency was masked, not removed, contradicting the round's stated design goal.\n- [MAJOR] [BREACH] tests/review-lane.test.js:383-391 vs. :451-452 — self-contradiction between the two symmetric halves of the same fix. The SIGKILL branch always calls `check('checkout finished registering (lock cleared) before the SIGKILL', unlockedBeforeKill)` unconditionally, correctly \"declaring\" a timeout as a failure before gating only the kill-dependent sub-checks with `if (unlockedBeforeKill)`. The SIGTERM branch instead nests its parallel `check('checkout finished registering (lock cleared) before the SIGTERM', ...)` call inside the same `else` that gates the SIGTERM-dependent sub-checks — so when `unlockedBeforeTerm` is false (the exact scenario this pin exists to catch), no `check()` call fires at all; the suite just SIGKILLs and silently moves on with no PASS or FAIL recorded for that precondition. This contradicts the order's \"pin that the checkout finishes registering ... before the SIGTERM\" and the dispositions record's claim that \"the guard's own failed check is the suite's loud signal\" — for the SIGTERM path, a genuine timeout regression produces no signal at all.\n\nCLAIMS CHECKED\n- \"Identity now derives from git's own records\" → CONFIRMED (verifier/checkout.js: `listedLinked()` diffs `git worktree list --porcelain` across the `add`; `entry.dir` = the single new entry)\n- \"fs.realpath is off that path entirely\" → REFUTED (checkout.js:387 `normPath(gitDir)` still invokes `fs.realpathSync` internally; see Finding 1)\n- \"a timed-out lock guard puts the child down with SIGKILL before skipping the kill-dependent sub-checks\" → CONFIRMED for the mechanics of the kill/skip itself (both branches do this), but the accompanying claim that this failure is always \"pinned\"/recorded is REFUTED for the SIGTERM branch (Finding 2)\n- \"The lock-cleared-before-SIGTERM precondition ... [is] pinned by the suite\" → REFUTED (only pinned on the success path; silently unrecorded on timeout — see Finding 2)\n- \"the new regressions cover a poisoned-realpath checkout that still works plus a teardown that strands neither registration nor directory\" → CONFIRMED (ran `node tests/verifier.test.js`: \"R0-EX9: with realpath unavailable, the checkout handle is git's own spelling and the sweep exemption still holds\" and \"R0-EX9: teardown by git's spelling leaves no registration or directory behind\" both PASS)\n- \"The full CI-equivalent run is green, with verifier 100, router one hundred thirty-five, registry thirty-one, and review-lane one hundred sixteen twice over\" → CONFIRMED (ran each directly: `node tests/verifier.test.js` → 100 passed/0 failed; `node tests/router.test.js` → 135 passed; `node tests/registry.test.js` → 31 passed, 0 failed; `node tests/review-lane.test.js` → 116 passed, 0 failed, matching the claimed counts)\n- \"The review verdict is transcribed verbatim into the dispositions record\" → UNVERIFIED (this describes a process step for the verdict this very review produces, not yet enacted inside the diff under review; the analogous prior-round pattern — full verdict in `roster/r0-ex9-verdict.md`, summarized/referenced from `roster/wo8-review-dispositions.md` — is present and consistent, and the dispositions doc's \"Note\" section correctly still shows the tranche as REVISE pending \"R0-EX10\")\n\nNITS\n- verifier/checkout.js:250-262 — the `normPath` doc-comment (\"Path identity, not string identity: git records RESOLVED worktree paths...\") predates this round's redesign and wasn't updated to explain why it's still called on an already-git-resolved path in `entry.realDir`, which is what let the residual `fs.realpathSync` dependency (Finding 1) go unnoticed.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-006",
+    "base": "4e509b581a65caee8540ccde895c752823d8c9aa",
+    "head": "54a5dc05836cd3022a198ad38c96c8b6fe161aac",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V3",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 2,
+    "attempts": [
+      {
+        "wallMs": 843334,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 843334\nVERDICT: REVISE\n\nFINDINGS\n- [CRITICAL] [BREACH] verifier/checkout.js:237-241 — the SIGINT/SIGBREAK/SIGHUP handler in `installExitHandler` was reordered to call `process.kill(process.pid, sig)` *before* `sweepActive()`, but on Windows this drops cleanup entirely for SIGINT: empirically verified on this machine (`process.kill(process.pid,'SIGINT')` invokes libuv's unconditional `TerminateProcess` and the process dies inside that call — no code after it, including `sweepActive()`, ever runs; exit code 1, nothing further written). Given a Verifier run interrupted with Ctrl+C while a checkout is ACTIVE, the writable worktree and its git registration are now left behind exactly like the pre-existing \"E7 LOW finding\" this file documents (\"an interrupted run left writable checkouts and stale worktree registrations behind\"). The adjacent, unchanged comment at lines 220-224 still says \"Sweep, then re-raise the signal so the exit status stays honest\" — the new code does the opposite, a direct self-contradiction. This hunk is not requested by the work order, not mentioned in the executor's claims or commit message, and has no test coverage (SIGBREAK/SIGHUP take the `catch → process.exit(1)` path, which still fires the globally-registered `exit` listener, masking the SIGINT regression from casual manual testing). Reproduction script and outputs are in the reviewer's own scratchpad, not the clone.\n\n- [MINOR] [GAP] verifier/checkout.js:372-380 — `teardown()` still calls `git worktree remove --force <dir>` using the alias-spelled `dir`, not the newly captured `realDir`. If a live checkout's tmpRoot alias disappears while the checkout is still ACTIVE and a normal (non-crash) `teardown()` runs afterward, the removal call is made against a path that no longer resolves. The diff's own new test (tests/verifier.test.js, R0-EX7 block) works around this by manually issuing `git worktree remove --force <canonical>` itself, with the comment \"the entry's own paths are alias-spelled and the alias is gone, so its teardown can only clear the ACTIVE registration\" — a self-acknowledged limitation. Out of the order's stated scope (which asked only to fix the sweep-time live-set comparison, not `teardown()`'s own removal path), so bucketed as GAP rather than BREACH; low real-world likelihood since tmpRoot aliases are normally stable for a run's lifetime.\n\nCLAIMS CHECKED\n- \"Canonical identity is captured at creation and compared by the live set; no sweep-time re-resolution remains on that path\" → CONFIRMED (verifier/checkout.js:289 uses `e.realDir || normPath(e.dir)`; :362 captures `realDir` right after `worktree add` succeeds; `node tests/verifier.test.js` reproduced 98/98 including the new R0-EX7 check)\n- \"the alias-removal probe is pinned as a standing regression\" → CONFIRMED (tests/verifier.test.js new R0-EX7 block present and passing)\n- \"The termination branch now waits out the registration window\" → CONFIRMED (tests/review-lane.test.js case4 adds `await sleep(250)` before `child.kill('SIGTERM')`, mirroring the existing SIGKILL branch's identical delay)\n- \"three baseline runs and two post-fix runs of the review-lane suite came back green at one hundred fourteen checks each\" → UNVERIFIED for the specific baseline/post-fix history (not reconstructible from this checkout); independently reran the suite 3 times at HEAD, all green at 114/114 each time\n- \"Suites are green — verifier ninety-eight, router 135, registry thirty-one\" → CONFIRMED (reran all three: 98 passed/0 failed, 135 passed, 31 passed/0 failed)\n- \"full integration-equivalent pass\" → CONFIRMED — ran every step of .github/workflows/test.yml's `codex-lanes` job locally: `node install.js --lint` (0 errors), frontmatter-lint (37), review-lane (114), scan-lane (41), exec-lane (79), registry (31), verifier (98), router (135), wo7b `score.js` (ALL PRE-REGISTERED GATES PASS), `roster/lint.js` + `install.js --lint roster` (OK), mcp-lane (68) — all green\n- \"the pull request's nine checks all passing\" → UNVERIFIED (no network/gh access from this offline clone; the \"9\" plausibly corresponds to the 3 os × 3 node matrix of the single `codex-lanes` job, not independently checkable here)\n\nNITS\n- tests/review-lane.test.js case4's registration-window wait is a fixed `sleep(250)` rather than a poll for the worktree's locked-state transition; the comment says the 250ms figure came from polling observation, but the test itself doesn't poll, so it could still be tight on a heavily loaded CI box. This exactly mirrors the pre-existing SIGKILL branch's approach, which the order asked it to match, so not a blocker.\n- roster/wo8-review-dispositions.md's \"PR #28 CI went fully green (9/9 jobs)\" is asserted but not independently checkable from this offline checkout.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-011",
+    "base": "c733d7750afb13290ed603412272334a80c8b9cf",
+    "head": "17a24d44150ee5f7baea2bb7787f03cac916d763",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V2",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 3,
+    "attempts": [
+      {
+        "wallMs": 283999,
+        "verdict": "APPROVE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 283999\nVERDICT: APPROVE\n\nFINDINGS\n- [MINOR] [GAP] hooks/orchestra-guard.js:226-229 — project-configured `directorPlanPatterns` regexes are not required to end in `.md`, unlike the default `.claude/plans/` carve-out (line 224's explicit `/\\.md$/i` check). Verified experimentally: with `\"directorPlanPatterns\": [\"^bad-regex-doesnt-require-md$\"]` in `.claude/orchestra.json`, a `Write` to the literal path `bad-regex-doesnt-require-md` (no `.md` extension) was allowed. Given X = a project author writes a plan-pattern regex that omits `\\.md$` (the shipped example in README/comments happens to include it, but nothing enforces that), Y = the Director can smuggle a non-markdown/code write through that location, instead of Z = the \"can't smuggle arbitrary code writes\" property holding everywhere the carve-out applies. This is a GAP rather than a BREACH because the order's explicit `.md`-extension requirement is stated in the sentence scoping the *default* directory; the following sentence about config-extensible patterns only requires containment (\"keep those patterns from matching any path outside the project\") and fail-open parsing, both of which are correctly implemented. Containment itself is not affected — a pattern still cannot reach outside the project (confirmed: a traversal path routed through a matching pattern was still denied).\n\nCLAIMS CHECKED\n- \"the default carve-out for nested and relative paths and for each write operation\" → CONFIRMED (ran Write/Edit/MultiEdit against `.claude/plans/foo.md` and `.claude/plans/nested/foo.md`, relative paths; all allowed)\n- \"denial of every non-markdown and traversal attempt\" → CONFIRMED for the default directory and for `../` traversal both directly and through a matching config pattern; also confirmed a `.md.js` double-extension trick is denied. (The one caveat is the GAP above: a permissive custom `directorPlanPatterns` regex can itself omit the `.md` requirement — this is a config-authoring gap, not a broken traversal check.)\n- \"presence and absence of the deny hint\" → CONFIRMED (Write/Edit/MultiEdit denials include the \"Exception: plan files…\" hint; Bash/Grep denials do not)\n- \"the pause-file exemption left unaffected\" → CONFIRMED — `isPauseFileOperation`'s body is byte-identical across the diff (only surrounding comments changed); re-ran a pause-file write outside the plans directory and it was still allowed\n- \"model stand-down behavior\" → CONFIRMED (a fake transcript with a Sonnet assistant turn stood the guard down for a non-plan `Write`, as before)\n- \"allow/deny/outside-project handling for the pattern config\" → CONFIRMED (a matching `directorPlanPatterns` entry allows; containment is checked before pattern matching, so an outside/traversal path is denied regardless of the pattern)\n- \"fail-safe behavior on a broken config\" → CONFIRMED (malformed `orchestra.json` → `loadPolicy` catches and returns the empty policy; default `.claude/plans/*.md` carve-out kept working, non-plan writes stayed denied)\n- \"Verified with a 19-case smoke harness... All 19 cases passed\" → UNVERIFIED — no harness file exists in this checkout to inspect (expected per review-scope note: files the author's session created after this commit aren't part of it). I independently exercised ~20 equivalent scenarios via the real hook binary and they behaved as claimed; I cannot confirm the literal harness or its exact case count.\n- \"docs and installer notes were updated to match\" → CONFIRMED (ORCHESTRA.md §3.1, the PLAN bullet in §4, and §6; README's banner line, new \"Plan files\" section, and `directorPlanPatterns` entry in the config table; install.js post-install message)\n\nNITS\n- README's \"Plan files\" prose says the Director may \"`Write`/`Edit` markdown files there directly\" without naming `MultiEdit`, though the code and commit message both cover it — a reader skimming just that sentence could miss it.\n- hooks/orchestra-guard.js:41 example config (`directorPlanPatterns\": [\"^docs/plans/.+\\\\.md$\"]`) is the only place guiding authors to include `\\.md$` in their own pattern; given the GAP above, an explicit doc note that custom patterns are responsible for their own extension safety would close the ambiguity without a code change.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-008",
+    "base": "acbf8f2cf6f98bb642a23df3734a0edd35c29e5f",
+    "head": "9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V2",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 4,
+    "attempts": [
+      {
+        "wallMs": 337839,
+        "verdict": "APPROVE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 337839\nVERDICT: APPROVE\n\nFINDINGS\n- [MINOR] [GAP] plans/cross-compare/agent-role-architecture/STATUS.md:443 — \"all seven required suites pass\" is imprecise: the repo now has nine `tests/*.test.js` files (exec-lane, frontmatter-lint, mcp-lane, quartermaster, registry, review-lane, router, scan-lane, verifier), and no file in this checkout enumerates a canonical \"seven\" list distinct from that set — the count doesn't obviously resolve. Ran all suites touched by or adjacent to this change (quartermaster 154/154, router 135/135, verifier 101/101, registry 31/31, `roster/lint.js` clean) and they all pass; the number in the prose just doesn't self-evidently check out. Cosmetic — no behavior depends on it.\n- none other\n\nCLAIMS CHECKED\n- \"The Conductor's transcript was audited fully against the guardrails\" → CONFIRMED (`roster/wo11-conductor-ex1-audit.md`, 569 lines, five questions each cited against `roster/conductor.md` and `final-plan.md`; spot-checked ~9 line-numbered quotations against the actual files at HEAD — conductor.md:17-18, 42-51, 72-74, 83-87, 99-100, 104-106, 110-112, 117-118, 124-127, and final-plan.md:1590-1598 — all exact matches, no fabricated citations found)\n- \"A disposition was ruled for the single violation it turned up, recorded as a complete written audit rather than a brief summary of it\" → CONFIRMED (audit finds exactly 1 VIOLATION among 5 questions — Q1 — matching the 2/2/1 COMPLIANT/INDETERMINATE/VIOLATION split; `roster/wo11-band-record.md`'s \"Conductor audit dispositions\" section D1 rules on it with a concrete corrective; full audit file preserved intact, not condensed)\n- \"The P0 substrate was live-exercised end to end, and its outcome was checked into its own written report\" → CONFIRMED (`roster/wo11-p0-ex1-report.md`, 340 lines, own prose and own extraction/derivation, not borrowed; `.claude/orchestra-pool-readings.jsonl` is correctly gitignored and correctly absent from this clean checkout — consistent with the report's own claim that it stays on disk only as real operational data, not tracked)\n- \"The Architect exercise was attempted twice, but the environment blocked both attempts, so both transcripts were kept on record\" → CONFIRMED (`roster/wo11-architect-ex1-transcript.md` and `-attempt1.md` are distinct files with distinct run nonces `5e45a429253dca7f`/`c674e8e8ee3cc33b`, both `STATUS: BLOCKED`, neither overwrites the other)\n- \"the test suite gained only the changes the runs actually required\" → CONFIRMED (diff to `tests/quartermaster.test.js` is exactly: one new import, one snapshot helper, and rewriting the one CLI assertion that the WO-11 live run made false — every fixture/CLI call in the file uses an explicit `--file`/`file:` argument, verified both by reading the code and by running the suite: 154/154 pass, and the repo's real-readings byte-identity check — the diff's own new assertion — passed live)\n- Implicit claim \"the substrate's own production behavior stays untouched throughout\" → CONFIRMED (`quartermaster/quartermaster.js` and `quartermaster/README.md` are not in this diff at all; only test and record/report files changed)\n- Fault-tally arithmetic \"12 of 16\" → CONFIRMED (`git show acbf8f2:...STATUS.md` shows the prior \"10 of 14\"; this band's two engine-reaching BLOCKED attempts add 2/2, and `roster/wo10-band-record.md:361` independently corroborates the prior 10/14)\n\nNITS\n- The Director dispositions section (D1–D6) rules on all five findings/gaps the audit surfaced, not only \"the one violation\" the work order names — reasonable and disclosed, but slightly beyond the order's literal ask; worth noting for scope discipline in future rounds, not a defect here.\n- `roster/wo11-band-record.md`'s \"154 after this round's real-readings-file test-check fix, item 1 below\" cross-reference to \"item 1\" is a little loose to trace within the surrounding prose.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-010",
+    "base": "5d649d86ee6c68640a6435630e20766361cb69f6",
+    "head": "9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V1",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 5,
+    "attempts": [
+      {
+        "wallMs": 297304,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 297304\nVERDICT: REVISE\n\nFINDINGS\n- [MAJOR] [BREACH] router/router.js:563-573 (dispatch) + router/router.js:373-391,445 (reviewer/guard) — The pre-dispatch AU-O gate (P15) is enforced against the executor's casting inside `dispatch()` but never against the review's casting. `reviewer()` computes a `gate` via `preDispatchGate()` and attaches it to the returned object, but returns `closes: true` with the casting regardless of `gate.allowed`; `dispatch()` never inspects `review.gate` before returning `ok: true`. Concrete failure scenario (reproduced directly): dispatching an openai-authored T2 order while `AU-opus` is `belowReserve` returns `{ ok: true, gate: { allowed: true }, review: { closes: true, casting: { model: 'Opus 5', ... }, gate: { allowed: false, reason: 'AU-opus predicted below reserve — the failure past that boundary is silent substitution, not refusal; stop before the boundary' } } }` — i.e. the router hands back an Opus review casting marked ready-to-close in exactly the state its own gate says must not dispatch, reproducing the \"silent substitution\" the gate's own text says it exists to prevent. This contradicts router.js's own docstring (\"…then the mechanical pre-dispatch gate on whatever came out\"), router/README.md's P15 section (\"AU-opus predicted below reserve → no Opus casting dispatches\"), and STATUS.md's claim that P15 \"blocks every Opus dispatch.\" None of the 74 tests combine `belowReserve`/`quartermasterConfirmation` with `reviewer()` (grep confirms `preDispatchGate`/`belowReserve` assertions only target `cast()`/primary-role dispatch), so the suite stays green while this invariant silently fails.\n- [MINOR] [GAP] router/router.js:117-121, 434, 457 — `reviewMatrix` and `degradedSameFamilyCandidates` model names are never cross-checked against `modelBuckets`/`families` at load time (unlike casting-table rungs, which are validated at construction). A typo'd model in either table would not fail closed at load; it would throw an uncaught `TypeError` (`for...of` over `undefined` in `effectiveState`) the first time `reviewer()` reached it at runtime, rather than refusing to construct the router. Not an active defect against the shipped `castings.json` (all referenced models are valid today), so scoped as a GAP, not a BREACH.\n\nCLAIMS CHECKED\n- \"74 checks went green\" → CONFIRMED (ran `node tests/router.test.js`: \"ALL CHECKS PASSED — 74 passed\").\n- \"an exhaustive sweep across every bucket-state combination confirmed that no mandatory-class dispatch ever produces a same-family closing verdict\" → CONFIRMED for the tested invariant (section 7, 625 bucket-state combos × 5 author sets × 3 risk tiers = 9,375 calls, all passing); does not cover the belowReserve/quartermasterConfirmation dimension exposed by the finding above, but the claim as stated (same-family closing) holds.\n- \"No-self-family behavior was checked for every author-family combination in turn\" → CONFIRMED (section 6, 5 author-family sets × 4 risk tiers × 2 policies, all passing).\n- \"an independent bidirectional transcription check confirmed that every rung matches the source table exactly\" → CONFIRMED (section 3's hand-transcribed `EXPECTED_RUNGS` table is diffed against `castings.json` in both directions — missing and extra rungs both checked — and passes).\n- \"Fail-closed loading was then tamper-tested against registry corruption, never-rule violations, vendor and family mismatches, and off-ladder inputs\" → CONFIRMED (section 1: tampered registry with E7 removed; castings never-rule violation; deleted role; vendor/family mismatch; off-ladder effort — all refuse construction as claimed).\n- \"so the pipeline now runs the full suite on every change\" → CONFIRMED (.github/workflows/test.yml adds a \"Router suite\" step running `node tests/router.test.js`, inserted after the Verifier suite and before the MCP-lane suite without disturbing the existing step order, including the Review-lane suite's position).\n\nNITS\n- router/router.js:292-297 (Test Designer human-author tie-break) hardcodes the literal model names `'GPT-5.6 Terra'` and `'Sonnet 5'` in the tie-break comparison instead of deriving them from `role.rungs.vsAnthropicAuthor.model` / `role.rungs.vsOpenaiAuthor.model`; if those rungs are ever repointed in castings.json without a matching router.js edit, the tie-break would silently compare stale models. Mild tension with \"the router reads them instead of hardcoding anything,\" though the five data categories the order names (rungs, roles, review matrix, ladder, trigger rules) are all genuinely data-driven.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-005",
+    "base": "e5d3d9bb8209c6a3ecedf85bd1da206138e035bc",
+    "head": "1c651fb18903e8d968624247858564dc9233a134",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V2",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 6,
+    "attempts": [
+      {
+        "wallMs": 573521,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 573521\nVERDICT: REVISE\n\nFINDINGS\n- [MAJOR] [BREACH] tests/review-lane.test.js:440 — the SIGKILL kill branch still uses a fixed `await sleep(250)` before `c2.kill('SIGKILL')`, never converted to poll the new `waitWorktreesUnlocked` lock condition. The order explicitly required replacing the fixed sleep \"in both review-lane kill branches, the SIGTERM branch and the SIGKILL branch\"; only the SIGTERM branch (line 383) was converted. Given a checkout whose `worktree add` registration takes longer than 250ms after becoming list-visible (large tree, slow disk, loaded CI runner), the SIGKILL branch still fires mid-registration, leaving a locked worktree that a single `--force` sweep cannot reclaim — the exact failure mode this round was ordered to close, left open on this branch.\n- [MINOR] [BREACH] roster/wo8-review-dispositions.md:322-325 — the round-5d write-up states \"both kill branches now poll `worktree list --porcelain` for the lock to actually clear (`waitWorktreesUnlocked`, bounded), asserted as its own check,\" which is false: only one branch (SIGTERM) has the poll and its own `check(...)` assertion; the SIGKILL branch has neither. Self-contradiction between the diff's own record and its own code.\n\nCLAIMS CHECKED\n- \"createCheckout resolving the canonical path itself and refusing the checkout on failure\" → CONFIRMED (verifier/checkout.js:357-365; realpath resolved at creation, `worktree remove --force` + `prune` + best-effort `rmSync` on failure, entry never added to `ACTIVE`)\n- \"the poisoned-realpath regression pinned\" → CONFIRMED (tests/verifier.test.js new R0-EX8 case; `node tests/verifier.test.js` → 99 passed, 0 failed, including `PASS R0-EX8: an unresolvable canonical identity refuses the checkout`)\n- \"Both kill branches, SIGTERM and SIGKILL, poll the new waitWorktreesUnlocked helper instead of sleeping a duration, and each asserts the checkout finished registering before its signal goes out\" → REFUTED (grep confirms `waitWorktreesUnlocked` is called exactly once, in the SIGTERM branch only; SIGKILL branch retains `sleep(250)` with no lock-condition assertion)\n- \"both new lock-condition checks pass\" → REFUTED (there is only one such check, not two; it does pass)\n- \"The records now name the PR-head run and the superseded run's true outcome\" → CONFIRMED (roster/wo8-review-dispositions.md names run 33333118636 as PR-head 9/9 green, and names 09a824e's own run as 4 pass/4 cancelled/1 Windows review-lane flake)\n- \"Record the verdict verbatim and hold the tranche at REVISE\" → CONFIRMED (roster/r0-ex8-verdict.md added verbatim; dispositions \"Note\" section keeps gate verdict REVISE pending R0-EX9)\n- \"Suites ran green\" → CONFIRMED (independently reran registry 31, verifier 99, router 135, frontmatter 37, review-lane 115, scan-lane 41, exec-lane 79, mcp-lane 68 — all 0 failed)\n- \"review-lane reporting 116 across two runs\" → REFUTED (independently reran review-lane three times: 115 passed, 0 failed, every time)\n\nNITS\n- none\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-002",
+    "base": "b8a1957838da66600f5320d13c83e54c43d59130",
+    "head": "dfc217060a2023b64c73730391146fc2a1ca9272",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V2",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 7,
+    "attempts": [
+      {
+        "wallMs": null,
+        "verdict": "(none)",
+        "status": "SPAWN_FAILED (in-harness agent terminated by API-side classifier refusal before any output; see transcription note)",
+        "unavailable": true,
+        "unavailableReason": "spawn-failed",
+        "engineHeader": null,
+        "integrityWarning": false,
+        "stdout": "ATTEMPT 1 — UNAVAILABLE (engine refusal, no verdict produced)\nThe in-harness agent was terminated early by an API error before any review\noutput: \"API Error: Sonnet 5 can't help with this.\" error type\ninvalid_request, classifier tag `[bio]`, request id\nreq_011CebitSaoVgcNCtdsS37fF (transcribed from the task notification; model\nclaude-sonnet-5). No verdict line was emitted, so per run-lane.js's\nDEAD_STATUS rule this attempt is UNAVAILABLE (reason: engine-refusal) and\nper protocol 2.5 it received the one retry.\n"
+      },
+      {
+        "wallMs": null,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "ATTEMPT 2 (retry) — COMPLETED. TRANSCRIPTION NOTE: the agent was terminated\nby the same API-side `[bio]` classifier (request id req_011Cebj948AZwB4YHbyiTewh)\nAFTER emitting the verdict, all findings, and all claims — the cutoff landed\nmid-way through the first NIT (\"could\" is the last word). Verdict text below is\nverbatim as captured (HTML-entity encoding decoded); no TREE line was emitted,\nbut the agent's captured output opens \"Empty output confirms clean tree\",\nrecorded here as tree-clean by the agent's own check, transcriber-disclosed.\n\nVERDICT: REVISE\n\nFINDINGS\n- [CRITICAL] [BREACH] quartermaster/quartermaster.js:647 — `predictThrottle` was changed from `if (rate >= 0)` to `if (rate > 0)`, an unauthorized edit to the exact method the work order named as must-survive-unchanged (\"the throttle-prediction method\"). A perfectly flat rate (rate === 0, e.g. two readings at different timestamps with identical remainingFraction) now falls through to the declining-rate branch, computes `msFromLatest = (b.remainingFraction - t.threshold) / -rate` = division by `-0`, producing `±Infinity`/`NaN`, and `new Date(NaN).toISOString()` throws an uncaught `RangeError: Invalid time value`. Reproduced live: two `AU-all` readings of 0.50 at ago(10)/ago(2) crash `predictThrottle` and, because `report()` calls `predictThrottle` with no try/catch (quartermaster.js:755), also crash `report()` — directly contradicting report()'s own documented contract just above it (\"Deliberately does NOT throw on a fail-closed bucket... prints the refusal instead of becoming one\"). This is out-of-scope (order said touch only `defaultForecast()`, its comment block, README, and pinned test values) and it is a genuine regression, not merely undocumented.\n\nCLAIMS CHECKED\n- \"defaultForecast() now returns the measured weekly draw... rejected peak-derived arithmetic preserved in comments, computed but unused\" → CONFIRMED (quartermaster.js:150-176; `REJECTED_*` constants computed and commented \"NOT used below\"; `mandatoryReviewDraw = 0.03` literal).\n- \"The README section records both derivations and notes the override path is unaffected\" → CONFIRMED (quartermaster/README.md diff: rejected-alternative section retained, override-path sentence present).\n- \"The pinned values follow the measured draw and the floor, with an explicit check that the floor, not the dynamic term, governs\" → CONFIRMED (tests/quartermaster.test.js: `Math.abs(fc.mandatoryReviewDraw - 0.03) < 1e-9`, `Math.abs(router.requiredReserve(fc) - 0.08) < 1e-9`, and an added explicit floor-dominance check).\n- \"node tests/quartermaster.test.js reports one hundred fifty-four passed\" → CONFIRMED (ran it: `ALL CHECKS PASSED — 154 passed`).\n- \"node tests/router.test.js reports one hundred thirty-five passed\" → CONFIRMED (ran it: `ALL CHECKS PASSED — 135 passed`). Note: neither suite exercises the flat-rate (rate===0) path introduced by the predictThrottle edit, so green suites do not cover the crash above.\n- \"Every other behaviour of the seat must survive unchanged... the throttle-prediction method\" (work order requirement) → REFUTED (predictThrottle's window-reset condition was changed and a crash was introduced, per finding above).\n\nNITS\n- quartermaster.js: the four `REJECTED_*` module-level constants execute on every module load purely to produce a number already inlined as a comment/string elsewhere (`0.504`); could [TRUNCATED at API termination]\n\nTREE: clean (per the agent's own final check, see transcription note)\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-012",
+    "base": "79ce13aaa7d80ca614dcd1f3db2193872e904bcb",
+    "head": "c51a8f60b8b12253e7287d0ca6ac92deefb43739",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V3",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 8,
+    "attempts": [
+      {
+        "wallMs": 174361,
+        "verdict": "APPROVE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 174361\nVERDICT: APPROVE\n\nFINDINGS\n- [MINOR] [BREACH] install.js:267-276 — the uninstaller removes `permissions.allow` entries by exact string match against `GIT_PERMISSIONS`, with no marker distinguishing installer-added grants from identical user-added ones (unlike hook entries, which are tagged via `isOurHookEntry`/`GUARD_MARK`) — given a user who manually added `Bash(git commit:*)` to `permissions.allow` before ever running the installer, then installs (no-op merge, string already present) and later uninstalls, their pre-existing manual entry is silently deleted, touching a permission entry the user added, contrary to the order's \"confining its reach so no other permission entry the user added is touched.\" Narrow scenario (requires a pre-existing identical string), and the executor discloses it forthrightly in the README (\"If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling\"), so this is disclosed and minor rather than hidden.\n\nCLAIMS CHECKED\n- \"installer now merges exactly three git command permissions into the allow list\" → CONFIRMED (install.js:39-43 GIT_PERMISSIONS array has exactly 3 entries; install.js:190-197 merges via filter+concat into settings.permissions.allow)\n- \"verified idempotent across repeated runs with no duplicate entries\" → CONFIRMED (via static trace, not execution — hard constraint bars creating/writing any file, including in a scratch dir, so the installer could not be run; the merge logic — `missingPerms = GIT_PERMISSIONS.filter(p => !allow.includes(p))` then `allow.concat(missingPerms)` — provably yields no duplicates on any re-run since a present entry is excluded from `missingPerms`)\n- \"uninstaller removes exactly those three grants, confirmed to touch no other entry\" → CONFIRMED for entries other than accidental string collisions (install.js:267-276 filters `settings.permissions.allow` to exclude only strings in `GIT_PERMISSIONS`, preserving all other entries, deleting `allow`/`permissions` only when empty); see the MINOR BREACH above for the one edge case where \"touch no other entry\" can't hold given string-only tracking\n- \"Director remains barred from shell commands by the existing guard hook\" → CONFIRMED (hooks/orchestra-guard.js unchanged by this diff — not in `git diff --name-only`; BLOCKED set includes `Bash`/`PowerShell` (line ~55), main-session enforcement at line 188, subagent exemption via `agent_id`/`agent_type` at line 216)\n- \"diff was inspected directly and confirmed confined to 2 files, the installer script and the README, adding only the merge and removal logic\" → CONFIRMED (`git diff 79ce13a..HEAD --stat` shows only README.md and install.js; full diff read line-by-line, no unrelated changes)\n- Implicit claim that the pinned checkout is unmodified/clean → CONFIRMED (`git status --porcelain` empty; `node --check install.js` passes, no syntax errors)\n\nNITS\n- README's uninstall caveat about identical manually-added grants (README.md:126) is a reasonable disclosure of the MINOR BREACH above rather than a fix — could instead be closed by tracking installer-added permissions with a sentinel comment/manifest, but that's beyond this change's evident scope.\n- install.js:274 uninstall `did()` message is identical whether 1, 2, or 3 of the grants were actually present/removed — cosmetic only.\n- `Bash(git push:*)` is a broad grant (any remote/branch/force flags) — exactly what the order asked for, not a defect of this diff.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-003",
+    "base": "3900142ff195c91ae38de27f45abc58707b63eae",
+    "head": "3523e234256fd3aee90e16c5393be3867eb13e21",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V3",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 9,
+    "attempts": [
+      {
+        "wallMs": 489985,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 489985\nVERDICT: REVISE\n\nFINDINGS\n- [MAJOR] [BREACH] verifier/checkout.js:365-371 — the new pre-add \"hard prerequisite\" throws a raw `Error` instead of returning `{error}`, but none of the three in-repo call sites (verifier/verifier.js:487 `mutationCheck`, :705 and :738 `runVerification`) wrap `createCheckout` in try/catch — they all use the old `if (checkout.error)` pattern. Given a transient pre-add `git worktree list --porcelain` failure (verified by reproduction below), `createCheckout` throws and the exception propagates uncaught out of `runVerification` and the CLI's `require.main === module` block (verifier.js:834-871), which also has no try/catch. Result: the whole verification run crashes — no JSON emitted, all already-computed check results (order/report schema validation, nonce echo, etc.) lost, and the process exits with Node's default code 1, which collides with the CLI's own FAIL exit code (the intended semantics were UNAVAILABLE/exit 2). This directly contradicts the function's own updated docstring two lines above (\"Returns { error }... never a silent pass\") and is a strictly worse outcome than the round-5e bug this diff set out to fix: previously the same condition degraded to a graceful UNAVAILABLE result; now it crashes the tool. Confirmed by execution, not just static reading — see CLAIMS CHECKED.\n\nCLAIMS CHECKED\n- \"the pre-add records read now refuses before any registration exists\" → CONFIRMED (verifier/checkout.js:364-371 raises before `worktree add` runs when the snapshot fails)\n- \"a post-add read failure is retried before the ambiguous-records path is taken\" → CONFIRMED (verifier/checkout.js:378-379, up to 3 additional retries)\n- \"the residual strand is proven self-healing by a new regression test... directory and its registration are both reclaimed\" → CONFIRMED (`node tests/verifier.test.js` → 101 passed, 0 failed, including \"R0-EX10: a stranded alias-created registration is reclaimed by the standing sweep\"; the assertion checks both `git worktree list` no longer lists it and `fs.readdirSync(strandTmp).length === 0`)\n- \"the round's verdict is recorded verbatim in the roster alongside the fix\" → UNVERIFIED (roster/r0-ex10-verdict.md and the wo8-review-dispositions.md summary are internally consistent and present, but this checkout has no way to confirm the text matches the actual external Codex-run output byte-for-byte)\n- \"the battery is green, with verifier at one hundred one, router at one hundred thirty-five, registry at 31, and the review lane at one hundred sixteen\" → CONFIRMED (re-ran each: `node tests/verifier.test.js` → 101 passed; `node tests/router.test.js` → 135 passed; `node tests/registry.test.js` → 31 passed; `node tests/review-lane.test.js` → 116 passed. Also spot-checked exec-lane (79), scan-lane (41), mcp-lane (68), frontmatter-lint (37) — all green, not individually claimed but consistent with \"leave the suite battery green\")\n- \"the pre-add hard-prerequisite refusal integrates safely with existing callers\" (implicit in the fix framing, not stated verbatim but the point of the order) → REFUTED — reproduced with a monkeypatched `spawnSync` that fails only the pre-add `worktree list --porcelain` call: `createCheckout` throws, and a caller written in the exact unwrapped style used by verifier.js lets the exception escape uncaught (see scratchpad repro script and its output)\n\nNITS\n- verifier/checkout.js:378-379 — the post-add retry loop has no delay between attempts; a transient lock/AV hold lasting more than a few microseconds would exhaust all 3 retries instantly. Not required by the order, just worth a beat before the next read.\n- roster/wo8-review-dispositions.md's new R0-EX10 section and roster/r0-ex10-verdict.md are reasonable transcriptions but their fidelity to the actual upstream review output can't be checked from inside this checkout.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-007",
+    "base": "9fe143fcf8b5f5fa118dc1981d1c8b5470af7a86",
+    "head": "7bf8e794306376835716c422313e85d997eaf7c0",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V1",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 10,
+    "attempts": [
+      {
+        "wallMs": 391623,
+        "verdict": "APPROVE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 391623\nVERDICT: APPROVE\n\nFINDINGS\n- [MINOR] [BREACH] roster/wo11-band-record.md:155, roster/architect.md:92 — self-contradictory citation introduced by this diff — given the HEAD state of `plans/cross-compare/agent-role-architecture/STATUS.md`, `STATUS.md:521-523` reads \"merged I0/I1, restructured Part 4 around the §4.0 total decision procedure, and demoted class to a routing hypothesis with `RECLASSIFY` recovery\" — nothing about WO-13. The actual WO-13 \"metered planning transport… scope needs a check against the `/deep-plan` retirement\" text sits at STATUS.md:546-547. The cited range (521-523) was correct against the BASE commit's STATUS.md (where that text was at line 522), but this same diff also edited STATUS.md earlier in the file (adding the \"ROUND-2 REVIEW FIXES\" paragraph and expanding the \"Fresh-session quick start\" section), shifting the real location down by ~24 lines without the citation being recomputed. Net effect: a round whose explicit purpose was fixing stale line citations ships a new stale line citation, self-contradicting its own \"the record finally matches the true outcome\" claim.\n\nCLAIMS CHECKED\n- \"The adversarial suite grew by 33 cases and now spans four sections\" → CONFIRMED (base checkout via `git archive` BASE ref: 154 passed; HEAD: 187 passed, delta 33; sections 13/14/15/16 added per diff and section headers)\n- \"Each new case was checked failing against the pre-fix version before the fix landed, including the exploit that dispatched instead of gating\" → CONFIRMED (ran HEAD's test file against BASE's `quartermaster.js`: \"EXPLOIT REPRODUCTION: dispatch GATES\" and 28 other new checks FAIL as expected; 158 passed / 29 failed)\n- \"...and the range error thrown from the throttle predictor\" → CONFIRMED (isolated repro against BASE `predictThrottle` with a 1e-12 decline: `THREW: RangeError Invalid time value`; HEAD guards it with `DATE_MS_HORIZON` before `new Date(...).toISOString()`)\n- \"Once the fix was in place the full suite ran green again\" → CONFIRMED (`node tests/quartermaster.test.js` on HEAD: \"ALL CHECKS PASSED — 187 passed\")\n- \"The disputed finding was re-ruled against the reviewer's verbatim text\" → CONFIRMED (D1 revision's counts (a)/(b)/(c) and the \"both denied\" phrase match `roster/wo11-conductor-ex1-audit.md:106,118-121` verbatim; the \"orientation\" mitigation claimed absent from the audit is in fact absent — grep confirms zero hits)\n- \"the incident record was reconciled against its sibling report\" → CONFIRMED (`roster/wo11-band-record.md`'s Incidents section now quotes the Architect exercise agent's actual report line instead of a fabricated \"before/after\" porcelain attestation, and cross-references `roster/wo11-p0-ex1-report.md:337-340`'s timeline)\n- \"every remaining nit got resolved\" → UNVERIFIED (no enumerated nit list from round 1 was available in this checkout to check off item-by-item; spot checks — STATUS.md quick-start \"all four exercises\" overstatement, six-vs-seven test-suite count, `router/castings.json:119` mirror citation — all confirmed fixed and accurate)\n- Module-boundary validation / confirm() blind-grant fixes match `quartermaster/quartermaster.js` and `quartermaster/README.md` R5/R6 documentation → CONFIRMED by direct code reading (lines 198-227, 556-597, 656-734, 768-856) and independent test execution\n\nNITS\n- Both `analyze()` and `confirm()` independently re-derive the same \"malformed-latest poison\" filter (`quartermaster.js:463-465` and `:672-674`) rather than sharing a helper — harmless duplication, not a defect.\n- The `assertPositiveFiniteNumber`/`assertNonNegativeFiniteNumber` distinction (maxFreshMs/maxStaleMs must be `>0`, but `forecast.*Draw` may be `0`) is correct but relies on the reader noticing two different assertion names; a one-line comment noting why would save a future reader a lookup.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  },
+  {
+    "id": "sdc-009",
+    "base": "3c2fb763e1a8c51fc7b54d0e2ee0ba4e5dfe9a30",
+    "head": "b8a1957838da66600f5320d13c83e54c43d59130",
+    "lane": "S-Sonnet",
+    "phase": 0,
+    "variant": "V3",
+    "expectedModel": "claude-sonnet-5",
+    "runIndex": 11,
+    "attempts": [
+      {
+        "wallMs": 381759,
+        "verdict": "REVISE",
+        "status": "COMPLETED",
+        "unavailable": false,
+        "unavailableReason": null,
+        "engineHeader": null,
+        "integrityWarning": false,
+        "treeAuditClean": true,
+        "stdout": "WALL_MS: 381759\nVERDICT: REVISE\n\nFINDINGS\n- [CRITICAL] [BREACH] quartermaster/quartermaster.js:552 — `confirm()` enforces only a lower bound (`remainingFraction > orangeBelow`, 0.20) and never checks the ladder's upper Amber bound (`amberBelow`, 0.40), directly contradicting its own stated contract (\"the Amber-arm confirmation covers the Amber band only\" — the exact refusal string the function itself prints) and the README's R5 ruling (\"the bucket is genuinely in the Amber band ... not sliding through Orange or Red behind a stale number\"). Concrete failure: record AU-opus at 0.92 (Green, gate not even armed) and call `confirm('AU-opus')` — it grants (verified: `confirmed: true`). The confirmation entry's freshness is tracked only against its own timestamp, independent of the reading that justified it. Chained failure verified end-to-end through the real router: confirm at 0.92 → 1h later a genuine, honest reading drops the bucket to 0.35 (Amber) → `qm.bucketState()` still carries `quartermasterConfirmation: true` from the stale Green-time approval → `router.dispatch(order('I0'), state, {purpose:'review'})` returns `ok:true, model:'Opus 5'` — the P15 §5.5 Amber arm is silently satisfied by a confirmation that was never evidence of an Amber-band condition. This is exactly the \"rubber stamp\" failure the module's own comments (quartermaster.js:513-531) say `confirm()` exists to prevent.\n- [MAJOR] [BREACH] quartermaster/quartermaster.js:532-573 — `confirm()` checks only the latest reading's freshness and value; it never checks for a fresh throttle. Verified: recording an AU-opus reading of 0.35, then a fresh HARD throttle (genuinely Exhausted per the module's own ruling R7), then calling `confirm('AU-opus')` still returns `confirmed: true` and appends the confirmation. This is a second, related gap in the same \"evidence, not permission\" contract — a confirmation can be minted for a bucket the module's own R7 rule says is Exhausted. (Not independently shown to reach a wrong dispatch — `cast()`'s own degradation machine and `reviewer()`'s explicit Exhausted check appear to block Opus regardless of confirmation on the paths tested — but it is a real contract violation in the confirmation protocol this diff introduces, and neither of the above two scenarios is covered by the 152-check suite: section 8 (confirmation protocol) only probes 0.30/0.20/0.2001/no-reading, never a Green-band reading or an already-throttled bucket.)\n- [MINOR] [NIT-adjacent, not blocking] quartermaster/quartermaster.js:788-791 — `publish()` calls `analyze(opts)` and then `bucketState(opts)`, which internally re-runs `analyze(opts)` a second time — harmless but redundant double work on every publish.\n\nCLAIMS CHECKED\n- \"A compact deterministic module shipped alongside a matching suite of 152 checks, run against temp-directory fixtures so the project data files are never touched.\" → CONFIRMED (ran `node tests/quartermaster.test.js`: \"ALL CHECKS PASSED — 152 passed\"; fixtures live under `fs.mkdtempSync`; `.claude/orchestra-pool-readings.jsonl` does not exist in this checkout after the run).\n- \"Interop was proven against the live router: a green state dispatches end to end, a below-reserve reading fires the reserve gate, and an unconfirmed arm fires while a recorded confirmation lifts it again.\" → CONFIRMED (test section 7 passes; independently re-verified live via `router.dispatch`/`preDispatchGate` outside the suite).\n- \"A hard throttle takes the exhaustion recast, and an exhausted bucket keeps mandatory review from closing.\" → CONFIRMED (test section 7(d)/(e) pass; independently re-verified `router.reviewer(['openai'],'T2',{policy:'mandatory',...})` returns `DOES_NOT_CLOSE` at Exhausted).\n- \"The pipeline now runs this suite right after the router's, and the runtime files stay out of version control.\" → CONFIRMED (`.github/workflows/test.yml` diff inserts the \"Quartermaster suite\" step immediately after \"Router suite\" and before \"WO-7b misroute-recovery gates\"; `.gitignore` diff adds both `.claude/orchestra-pool-readings.jsonl` and `.claude/orchestra-pool-state.json`).\n- Implicit work-order requirements — zero dependencies/plain CommonJS, router's own scoring module untouched, no registry schema added — → CONFIRMED (`quartermaster.js` requires only `fs`, `path`, and `router/router.js`; `git diff --name-status` shows no files under `router/` or `registry/` changed; `node tests/router.test.js` still reports \"ALL CHECKS PASSED — 135 passed\" unmodified).\n\nNITS\n- The `confirm()` refusal message for a stale reading and the docstring both describe the protocol precisely; only the affirmative path is under-constrained (missing the amberBelow check) — a one-line fix (`latest.remainingFraction > orangeBelow && latest.remainingFraction < amberBelow`) would align code with the documented and tested intent, and the throttle check could reuse the same fresh-throttle lookup `analyze()` already performs.\n- `report()`'s per-bucket loop and `analyze()`'s bucket loop both call `predictThrottle()`/`readEntries()` afresh; not wrong, just repeated file reads that could be threaded through once for a busier readings file.\n\nTREE: clean\n",
+        "transport": "in-harness Agent (hand-transcribed per protocol 2.4; model dispatched: claude-sonnet-5)"
+      }
+    ]
+  }
+]

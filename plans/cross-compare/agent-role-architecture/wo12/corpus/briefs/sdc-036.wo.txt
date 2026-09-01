@@ -1,0 +1,21 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Clean up the small residual items left after the approve verdict. Add a
+ledger that tracks review rounds going forward inside the same record file,
+so the history of rounds stays visible alongside the findings it tracks.
+Touch just 4 files the prior rounds already reference, the status page, the
+researcher role file, the band record and the second search-log report,
+since no new file is created and no role definition outside the researcher
+file's single residual line is touched. Keep the overall change small, and
+confine each edit to the specific loose end still open after approval, while
+leaving every earlier finding's own wording exactly as the gate approved it,
+rather than a broader rewrite of the record's existing findings. Every
+already-approved finding's wording must stay unchanged, since this pass
+corrects residuals and never relitigates what the gate already cleared.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

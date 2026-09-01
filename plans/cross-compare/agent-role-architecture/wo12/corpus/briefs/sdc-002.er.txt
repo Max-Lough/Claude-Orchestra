@@ -1,0 +1,15 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+defaultForecast() now returns the measured weekly draw, and the rejected
+peak-derived arithmetic is preserved in the comments as the cautionary
+alternative, computed but unused. The README section records both
+derivations and notes the override path is unaffected. The pinned values
+follow the measured draw and the floor, with an explicit check that the
+floor, not the dynamic term, governs the default. Both suites are green —
+node tests/quartermaster.test.js reports one hundred fifty-four passed and
+node tests/router.test.js reports one hundred thirty-five passed.
+
+Verify the diff on its own merits.

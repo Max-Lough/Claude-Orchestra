@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Closed the residual items across the four listed files and added a
+review-round ledger section to the evidence-band record. The diff stayed
+deliberately small, touching only the status page, the researcher role file,
+the band record, and the search-log report, matching the four files named in
+the order exactly, and nothing beyond that was touched. Each file was
+re-read end to end to confirm the residual items referenced in the prior
+round are actually closed, not just noted, and every already-approved
+finding's wording was left standing as it was.
+
+Verify the diff on its own merits.

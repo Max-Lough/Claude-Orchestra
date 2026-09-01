@@ -1,0 +1,480 @@
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+index be9317a..c2380a1 100644
+--- a/.github/workflows/test.yml
++++ b/.github/workflows/test.yml
+@@ -71,7 +71,9 @@ jobs:
+       - name: Frontmatter-lint suite
+         # Exercises the linter against the unparseable class, the installer's
+         # refusal to stamp a failing source, LF normalization of installed
+-        # markdown, and the stamped .claude/.gitattributes.
++        # markdown, the stamped .claude/.gitattributes, and the stamped
++        # .claude/hooks/package.json that keeps hook scripts CommonJS under a
++        # "type": "module" target.
+         run: node tests/frontmatter-lint.test.js
+ 
+       - name: Review-lane suite
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 2df39cb..f224bbc 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,56 @@ touches.
+ Entries name the failure that prompted the change. A harness that only records
+ *what* it changed teaches nobody why the old way looked reasonable.
+ 
++## 1.9.1 — hooks stop crashing under a "type": "module" target
++
++All hook scripts — the core `orchestra-guard.js` and the codex pack's
++`orchestra-review.js` / `orchestra-exec.js` / `orchestra-deepplan.js` — are
++CommonJS (`require(...)`), and the installer copies them verbatim into a
++target's `.claude/hooks/`. A target whose own root `package.json` declares
++`"type": "module"` makes Node treat every `.js` file it loads by path as ESM
++by default — including these — so `require` is undefined at module scope and
++every one of them dies immediately: `ReferenceError: require is not defined
++in ES module scope` (hit for real at `orchestra-review.js:208`). That kills
++the pack self-check, `--doctor`, and every agent invocation of every hook —
++a latent bomb in any project that adopts ESM at the root, silent until the
++first hook actually runs.
++
++- **The installer now stamps `.claude/hooks/package.json` with
++  `{"type":"commonjs"}`** on every install, right after the core guard is
++  copied — before any pack hooks land, since it applies to all of them
++  alike. Node resolves a script's module type from the package.json nearest
++  the *script*, so this one scoping file pins `.claude/hooks/` to CommonJS
++  regardless of what the target's root declares. No hook renames, no
++  reference updates. Idempotent: a re-run over unchanged content is silent;
++  content that drifted (edited or replaced out of band) is restamped with a
++  single one-line notice. `--uninstall` removes it along with the other hook
++  files. The comparison is CRLF-tolerant — a byte-identical stamp checked out
++  under `core.autocrlf=true` still parses to the same JSON and is left alone
++  rather than "repaired" on every future run — and the stamped
++  `.claude/.gitattributes` now pins `*.json text eol=lf` too, alongside
++  `*.md`/`*.js`, so a fresh checkout doesn't need that tolerance in the first
++  place. (Widened from `package.json` to `*.json` so `.claude/settings.json`
++  and `.claude/orchestra-install.json` get the same protection.)
++- **`--uninstall`'s `.claude/.gitattributes` removal is now a shape match, not
++  a byte-exact compare against the current `GITATTRIBUTES_CONTENT`.** The
++  `*.json` widening above is exactly the kind of edit that constant will keep
++  taking, and a byte-exact compare would stop recognizing every
++  `.gitattributes` a prior version had stamped — silently leaving it behind on
++  every future `--uninstall`, forever, for every project already using the
++  harness. `isOurGitattributes()` instead requires the installer's header
++  comment line and that every other non-empty, non-comment line is a plain
++  `<pattern> text eol=lf` rule, so it recognizes the file whichever version of
++  the harness wrote it. A genuinely user-edited file still fails that shape
++  and is left alone, exactly as before.
++- New coverage in `tests/frontmatter-lint.test.js`: an install into a target
++  whose `package.json` declares `"type": "module"`, asserting the scoping
++  file is written, the installed `orchestra-guard.js` and
++  `orchestra-review.js --doctor` no longer crash at module scope, the drift
++  and creation notices never double up, and a CRLF-mangled stamp is left
++  untouched — plus `--uninstall` removing a simulated pre-1.9.1, two-pattern
++  `.gitattributes` (the shape-match regression this exists to prevent) while
++  still leaving a user-edited one in place.
++
+ ## 1.9.0 — two silent lies, made loud: unloadable frontmatter and replayed exec reports
+ 
+ Two field incidents from one downstream project (2026-08-19), both of the
+diff --git a/README.md b/README.md
+index 2b34c09..a6e1c0d 100644
+--- a/README.md
++++ b/README.md
+@@ -215,7 +215,7 @@ Orchestra/
+ │   ├── review-lane.test.js ← the cross-vendor review lane, end to end
+ │   ├── exec-lane.test.js   ← the cross-vendor execution lane, end to end
+ │   ├── scan-lane.test.js   ← install.js --scan / --update, against real installs
+-│   ├── frontmatter-lint.test.js ← install.js --lint + LF stamping + .gitattributes
++│   ├── frontmatter-lint.test.js ← install.js --lint + LF stamping + .gitattributes + hooks CJS scoping
+ │   └── fixtures/           ← a stub Codex CLI that reports what the engine saw
+ └── packs/                  ← OPTIONAL modules, installed only when named (--packs)
+     ├── README.md           ← the pack contract
+@@ -287,7 +287,7 @@ node install.js --lint            # lint every .md with frontmatter in this mast
+ node install.js --lint <dir>      # ...or in any directory
+ ```
+ 
+-Errors are frontmatter a strict YAML parse rejects (the silent-drop class, including a missing `name:` in agents/specialists/SKILL.md); warnings are values that parse today but lose text (`" #"` comment truncation) or lean on the CRLF-fragile repair pass. Lint mode is strict — warnings fail it too — and CI runs it over the whole repository on every platform. Every install runs the same check over everything it is about to copy and **refuses before copying anything** on an error. Installed `.md` files are additionally normalized to LF, and a scoped `.claude/.gitattributes` (`*.md`/`*.js text eol=lf`) is stamped when the project has none, so a downstream `autocrlf` re-checkout cannot re-break what the lint approved.
++Errors are frontmatter a strict YAML parse rejects (the silent-drop class, including a missing `name:` in agents/specialists/SKILL.md); warnings are values that parse today but lose text (`" #"` comment truncation) or lean on the CRLF-fragile repair pass. Lint mode is strict — warnings fail it too — and CI runs it over the whole repository on every platform. Every install runs the same check over everything it is about to copy and **refuses before copying anything** on an error. Installed `.md` files are additionally normalized to LF, and a scoped `.claude/.gitattributes` (`*.md`/`*.js`/`*.json text eol=lf`) is stamped when the project has none, so a downstream `autocrlf` re-checkout cannot re-break what the lint approved. The install also stamps `.claude/hooks/package.json` (`{"type":"commonjs"}`) so every hook script keeps CommonJS semantics even when the project's own root `package.json` declares `"type": "module"` — without it Node treats the hooks as ESM and `require` throws before the guard ever runs.
+ 
+ What it does *not* do is as deliberate as what it does:
+ 
+diff --git a/VERSION b/VERSION
+index f8e233b..9ab8337 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.9.0
++1.9.1
+diff --git a/install.js b/install.js
+index 00fa16b..881b282 100644
+--- a/install.js
++++ b/install.js
+@@ -513,6 +513,16 @@ function copyDir(src, dest) {
+ }
+ const GUARD = 'orchestra-guard.js';
+ const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
++
++// Every hook script (core guard, pack hooks) is CommonJS (`require(...)`).
++// Node resolves a script's module type from the package.json NEAREST the
++// script, so this one scoping file pins .claude/hooks/ to CommonJS
++// regardless of the target project's own root "type" field — without it, a
++// project with "type": "module" at its root makes Node treat every .js file
++// under .claude/hooks/ as ESM, and every hook crashes with "require is not
++// defined in ES module scope" (hit for real at orchestra-review.js:208).
++const HOOKS_PACKAGE_JSON = 'package.json';
++const HOOKS_PACKAGE_JSON_CONTENT = '{"type":"commonjs"}\n';
+ const STATE_FILE = 'orchestra-install.json'; // records the pack/specialist selection
+ const BEGIN = '<!-- ORCHESTRA:BEGIN (managed by the Orchestra installer - do not edit between markers) -->';
+ const END = '<!-- ORCHESTRA:END -->';
+@@ -555,6 +565,35 @@ function fail(msg) {
+   process.exit(1);
+ }
+ 
++// See HOOKS_PACKAGE_JSON_CONTENT above for why this file exists. Idempotent:
++// a file that already carries the right content is left alone, silently, so
++// a plain re-run stays quiet; a file that exists with something ELSE gets
++// overwritten (the hooks must stay CommonJS) with a notice, since that is a
++// state worth knowing about.
++function stampHooksPackageJson(dirPath) {
++  const p = path.join(dirPath, HOOKS_PACKAGE_JSON);
++  const existing = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
++  if (existing === null) {
++    fs.writeFileSync(p, HOOKS_PACKAGE_JSON_CONTENT, 'utf8');
++    did('.claude/hooks/package.json stamped (hooks stay CommonJS even when the project is "type": "module")');
++    return;
++  }
++  // Compared CRLF-normalized: GITATTRIBUTES_CONTENT pins this file to LF on
++  // fresh checkouts, but a checkout that predates that line (or any
++  // core.autocrlf=true re-checkout before .gitattributes is picked up) can
++  // still hand back the identical JSON with \r\n line endings. Node parses
++  // that JSON exactly the same either way, so treat it as unchanged rather
++  // than "fixing" a file nobody actually edited on every single run.
++  if (existing === HOOKS_PACKAGE_JSON_CONTENT) {
++    return;
++  }
++  fs.writeFileSync(p, HOOKS_PACKAGE_JSON_CONTENT, 'utf8');
++  did(
++    '.claude/hooks/package.json existed with different content — overwritten ' +
++      '(it must stay {"type":"commonjs"} or the hooks stop loading)'
++  );
++}
++
+ function readJson(file) {
+   if (!fs.existsSync(file)) return {};
+   const raw = fs.readFileSync(file, 'utf8').trim();
+@@ -1001,8 +1040,12 @@ const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
+ const pauseFile = path.join(dotClaude, 'orchestra.pause');
+ const gitattributesFile = path.join(dotClaude, '.gitattributes');
+ 
+-// Exactly what the installer stamps into .claude/.gitattributes — and, on
+-// --uninstall, the only content it will remove (anything else is the user's).
++// Exactly what the installer stamps into .claude/.gitattributes today. Never
++// compare a file against this constant byte-for-byte to decide ownership
++// (see isOurGitattributes below) — it changes shape across versions (this
++// revision alone added, then widened, its third pattern line), and a
++// byte-exact check would stop recognizing every install a prior version
++// wrote.
+ const GITATTRIBUTES_CONTENT = [
+   '# Written by the Orchestra installer. Keep installed files LF on disk:',
+   "# Claude Code's frontmatter repair pass cannot match lines with a trailing",
+@@ -1010,9 +1053,25 @@ const GITATTRIBUTES_CONTENT = [
+   '# YAML would need that repair. Delete only if you manage line endings here.',
+   '*.md text eol=lf',
+   '*.js text eol=lf',
++  '*.json text eol=lf',
+   '',
+ ].join('\n');
+ 
++// Recognizes ANY installer-authored .claude/.gitattributes, past or future —
++// not a specific version of GITATTRIBUTES_CONTENT. A file is ours if it opens
++// with our header comment and every other non-empty, non-comment line is a
++// plain "<pattern> text eol=lf" rule; anything that fails that shape
++// (hand-authored, or genuinely edited) is left alone, same as a byte-exact
++// match would have left it. CRLF-normalized first so a file re-checked-out
++// under core.autocrlf=true still matches.
++function isOurGitattributes(raw) {
++  const lines = raw.replace(/\r\n/g, '\n').split('\n');
++  if (lines[0] !== '# Written by the Orchestra installer. Keep installed files LF on disk:') {
++    return false;
++  }
++  return lines.every((line) => line === '' || line.startsWith('#') || /^\S+ text eol=lf$/.test(line));
++}
++
+ // What the last install selected. Lets a plain re-run refresh the same packs
+ // and specialists instead of silently leaving them stale or dropping them.
+ const priorState = readJson(stateFile);
+@@ -1111,6 +1170,10 @@ if (!uninstall) {
+   if (skills.length) did('skills: ' + skills.join(', ') + ' -> .claude/skills/');
+   fs.copyFileSync(path.join(SRC, 'hooks', GUARD), path.join(hooksDir, GUARD));
+   did('hook script -> .claude/hooks/' + GUARD);
++  // Scope .claude/hooks/ to CommonJS now — before any pack hooks are copied
++  // below, since it applies to all of them equally and the core install
++  // always runs this path.
++  stampHooksPackageJson(hooksDir);
+ 
+   // 1b. Packs — opt-in modules. Deselected packs from a previous install are
+   // removed first, so `--no-packs` (or dropping a name) actually takes effect.
+@@ -1173,7 +1236,7 @@ if (!uninstall) {
+   // absent: an existing file is the user's, and is never edited.
+   if (!fs.existsSync(gitattributesFile)) {
+     fs.writeFileSync(gitattributesFile, GITATTRIBUTES_CONTENT, 'utf8');
+-    did('.claude/.gitattributes stamped (*.md and *.js stay LF — autocrlf cannot re-break frontmatter)');
++    did('.claude/.gitattributes stamped (*.md, *.js, *.json stay LF — autocrlf cannot re-break frontmatter)');
+   } else if (!/eol=lf/.test(fs.readFileSync(gitattributesFile, 'utf8'))) {
+     console.log(
+       '  ! .claude/.gitattributes exists but pins no LF endings — left untouched (it is ' +
+@@ -1347,7 +1410,7 @@ if (!uninstall) {
+       did('removed .claude/agents/' + a);
+     }
+   }
+-  const hookFiles = [GUARD].concat(packHooks).map((h) => path.join(hooksDir, h));
++  const hookFiles = [GUARD, HOOKS_PACKAGE_JSON].concat(packHooks).map((h) => path.join(hooksDir, h));
+   for (const f of hookFiles.concat([orchestraMd, pauseFile, stateFile])) {
+     if (fs.existsSync(f)) {
+       fs.unlinkSync(f);
+@@ -1355,12 +1418,15 @@ if (!uninstall) {
+     }
+   }
+ 
+-  // The stamped .gitattributes is removed only when it is byte-for-byte ours —
+-  // a file the user edited (or wrote themselves) is theirs to keep.
++  // The stamped .gitattributes is removed only when it matches OUR shape —
++  // any version we've ever written, not just today's GITATTRIBUTES_CONTENT
++  // (see isOurGitattributes) — so a project stamped by an older installer
++  // still gets cleaned up. A file the user edited (or wrote themselves) is
++  // theirs to keep.
+   try {
+     if (
+       fs.existsSync(gitattributesFile) &&
+-      fs.readFileSync(gitattributesFile, 'utf8') === GITATTRIBUTES_CONTENT
++      isOurGitattributes(fs.readFileSync(gitattributesFile, 'utf8'))
+     ) {
+       fs.unlinkSync(gitattributesFile);
+       did('removed .claude/.gitattributes (installer-stamped, unedited)');
+diff --git a/tests/frontmatter-lint.test.js b/tests/frontmatter-lint.test.js
+index 5f83ec4..0be6712 100644
+--- a/tests/frontmatter-lint.test.js
++++ b/tests/frontmatter-lint.test.js
+@@ -10,13 +10,18 @@
+  * whose descriptions carried an unquoted "launcher: it runs"; a bare ": "
+  * makes the whole YAML block unparseable, and Claude Code's repair pass is
+  * defeated by CRLF checkouts, so the bug was invisible on LF platforms).
+- * These tests pin three layers of defence:
++ * These tests pin four layers of defence:
+  *
+  *   1. `node install.js --lint` — the standalone check CI runs over the repo.
+  *   2. The installer's refusal to copy anything when a source file fails.
+  *   3. LF normalization of installed .md files plus the stamped
+  *      .claude/.gitattributes, so a downstream re-checkout cannot re-arm the
+  *      CRLF interaction.
++ *   4. .claude/hooks/package.json ({"type":"commonjs"}), stamped so every
++ *      hook script keeps CJS semantics even when a target's own root
++ *      package.json declares "type": "module" — without it Node treats every
++ *      .js file under .claude/hooks/ as ESM and `require` throws at module
++ *      scope, killing the guard and every pack hook outright.
+  *
+  * Same conventions as the other suites: no dependencies, exit-code discipline
+  * enforced by an exit handler, and a suite that ran no checks fails.
+@@ -219,10 +224,16 @@ function case6() {
+   check('an installed agent carries no CR bytes', !/\r/.test(agent), 'CR found in executor.md');
+   check('the installed protocol carries no CR bytes', !/\r/.test(protocol), 'CR found in ORCHESTRA.md');
+   const ga = path.join(target, '.claude', '.gitattributes');
++  const gaContent = fs.existsSync(ga) ? fs.readFileSync(ga, 'utf8') : '';
+   check(
+     '.claude/.gitattributes is stamped with LF rules',
+-    fs.existsSync(ga) && /\*\.md text eol=lf/.test(fs.readFileSync(ga, 'utf8')),
+-    fs.existsSync(ga) ? fs.readFileSync(ga, 'utf8') : '(missing)'
++    fs.existsSync(ga) && /\*\.md text eol=lf/.test(gaContent) && /\*\.js text eol=lf/.test(gaContent),
++    gaContent || '(missing)'
++  );
++  check(
++    '.claude/.gitattributes pins *.json too (covers settings.json / orchestra-install.json, not just the hooks stamp)',
++    /\*\.json text eol=lf/.test(gaContent),
++    gaContent || '(missing)'
+   );
+ 
+   // A user-owned .gitattributes is never replaced...
+@@ -238,7 +249,10 @@ function case6() {
+     (r2.stdout || '').slice(-600)
+   );
+ 
+-  // ...and uninstall removes only the byte-for-byte installer-stamped one.
++  // ...and uninstall removes only the installer's own shape (isOurGitattributes:
++  // our header line + every other non-empty, non-comment line a plain
++  // "<pattern> text eol=lf" rule) — not a byte-exact match against today's
++  // GITATTRIBUTES_CONTENT specifically. See the two regression checks below.
+   const u1 = install(target, ['--uninstall']);
+   check(
+     'uninstall removes the installer-stamped .gitattributes',
+@@ -251,6 +265,165 @@ function case6() {
+     u2.status === 0 && fs.existsSync(path.join(target2, '.claude', '.gitattributes')),
+     'status=' + u2.status
+   );
++
++  // Regression: a byte-exact compare against GITATTRIBUTES_CONTENT stops
++  // recognizing anything the moment that constant's pattern list changes —
++  // exactly what just happened (package.json -> *.json) — silently orphaning
++  // every pre-1.9.1 project's stamped file on every future --uninstall,
++  // forever. Simulate the file a 1.9.0 installer actually wrote: our header,
++  // but only the two-pattern *.md/*.js body (no *.json line).
++  const legacyTarget = tmpdir('orchestra-lint-target-');
++  fs.mkdirSync(path.join(legacyTarget, '.claude'), { recursive: true });
++  const legacyGa = path.join(legacyTarget, '.claude', '.gitattributes');
++  fs.writeFileSync(
++    legacyGa,
++    [
++      '# Written by the Orchestra installer. Keep installed files LF on disk:',
++      "# Claude Code's frontmatter repair pass cannot match lines with a trailing",
++      '# CR, so a CRLF re-checkout (core.autocrlf) can silently drop agents whose',
++      '# YAML would need that repair. Delete only if you manage line endings here.',
++      '*.md text eol=lf',
++      '*.js text eol=lf',
++      '',
++    ].join('\n'),
++    'utf8'
++  );
++  const legacyUninstall = install(legacyTarget, ['--uninstall']);
++  check(
++    '--uninstall recognizes and removes a pre-1.9.1, two-pattern .gitattributes',
++    legacyUninstall.status === 0 && !fs.existsSync(legacyGa),
++    'status=' + legacyUninstall.status + ', exists=' + fs.existsSync(legacyGa)
++  );
++
++  // ...but a file that is ours PLUS one hand-added line still fails the shape
++  // (an extra non-"pattern text eol=lf" line breaks the every() check) and is
++  // correctly left alone — the shape match is not a rubber stamp.
++  const editedTarget = tmpdir('orchestra-lint-target-');
++  const rEdited = install(editedTarget, ['--no-packs', '--no-specialists']);
++  check(
++    'fixture install for the edited-file case succeeds',
++    rEdited.status === 0,
++    (rEdited.stdout || '') + (rEdited.stderr || '')
++  );
++  const editedGa = path.join(editedTarget, '.claude', '.gitattributes');
++  const originalGa = fs.readFileSync(editedGa, 'utf8');
++  const editedContent = originalGa + '*.png binary\n';
++  fs.writeFileSync(editedGa, editedContent, 'utf8');
++  const editedUninstall = install(editedTarget, ['--uninstall']);
++  check(
++    '--uninstall leaves a genuinely user-edited .gitattributes (extra custom line) in place',
++    editedUninstall.status === 0 &&
++      fs.existsSync(editedGa) &&
++      fs.readFileSync(editedGa, 'utf8') === editedContent,
++    'exists=' + fs.existsSync(editedGa)
++  );
++}
++
++function case7() {
++  section('7. Hooks stay CommonJS even under a "type": "module" target (.claude/hooks/package.json)');
++
++  // The field failure: a target whose ROOT package.json declares ESM makes
++  // Node treat every copied .js hook the same way, and `require(...)` blows
++  // up at module scope before the hook's own logic ever runs.
++  const target = tmpdir('orchestra-lint-target-');
++  fs.writeFileSync(
++    path.join(target, 'package.json'),
++    JSON.stringify({ name: 'esm-target', type: 'module' }, null, 2) + '\n',
++    'utf8'
++  );
++  const r = install(target, ['--packs', 'codex']);
++  check('the install succeeds', r.status === 0, 'status=' + r.status + '\n' + (r.stdout || '') + (r.stderr || ''));
++
++  const scoping = path.join(target, '.claude', 'hooks', 'package.json');
++  check(
++    '.claude/hooks/package.json is stamped with {"type":"commonjs"}',
++    fs.existsSync(scoping) && fs.readFileSync(scoping, 'utf8') === '{"type":"commonjs"}\n',
++    fs.existsSync(scoping) ? fs.readFileSync(scoping, 'utf8') : '(missing)'
++  );
++  check(
++    'the install log reports the stamp',
++    /\.claude\/hooks\/package\.json stamped/.test(r.stdout || ''),
++    (r.stdout || '').slice(-800)
++  );
++
++  // The actual regression: spawning the installed hooks as plain `node
++  // <file>` must not crash at module scope. `--doctor` may legitimately
++  // report a missing/unauthenticated Codex CLI (this CI has none) — that is
++  // a normal doctor finding, not the bug under test.
++  const guardRun = spawnSync(
++    process.execPath,
++    [path.join(target, '.claude', 'hooks', 'orchestra-guard.js')],
++    { encoding: 'utf8', timeout: 30000, input: '{}' }
++  );
++  const guardAll = (guardRun.stdout || '') + (guardRun.stderr || '');
++  check(
++    'orchestra-guard.js does not crash with "require is not defined"',
++    !/ReferenceError: require is not defined/.test(guardAll),
++    'status=' + guardRun.status + '\n' + guardAll
++  );
++
++  const doctorRun = spawnSync(
++    process.execPath,
++    [path.join(target, '.claude', 'hooks', 'orchestra-review.js'), '--doctor'],
++    { encoding: 'utf8', timeout: 60000, cwd: target }
++  );
++  const doctorAll = (doctorRun.stdout || '') + (doctorRun.stderr || '');
++  check(
++    'orchestra-review.js --doctor does not crash with "require is not defined"',
++    !/ReferenceError: require is not defined/.test(doctorAll),
++    'status=' + doctorRun.status + '\n' + doctorAll
++  );
++
++  // Idempotency + drift repair: a plain re-run over unmodified content is
++  // silent; content someone else changed is overwritten with exactly ONE
++  // notice line (not the notice PLUS a separate "stamped" line — that line is
++  // for first creation only).
++  const again = install(target, ['--packs', 'codex']);
++  check(
++    'a plain re-run over unmodified content prints no stamp notice',
++    again.status === 0 && !/\.claude\/hooks\/package\.json (stamped|existed with different content)/.test(again.stdout || ''),
++    (again.stdout || '').slice(-800)
++  );
++  fs.writeFileSync(scoping, '{"type":"module"}\n', 'utf8');
++  const repaired = install(target, ['--packs', 'codex']);
++  const repairedOut = repaired.stdout || '';
++  check(
++    'content changed out-of-band is overwritten, with a notice',
++    repaired.status === 0 &&
++      fs.readFileSync(scoping, 'utf8') === '{"type":"commonjs"}\n' &&
++      /existed with different content — overwritten/.test(repairedOut),
++    repairedOut.slice(-1000)
++  );
++  check(
++    'the drift repair logs exactly ONE line, not the notice plus a separate "stamped" line',
++    (repairedOut.match(/\.claude\/hooks\/package\.json (stamped|existed with different content)/g) || []).length === 1,
++    repairedOut.slice(-1000)
++  );
++
++  // A CRLF-mangled copy of the SAME JSON (e.g. a core.autocrlf=true
++  // re-checkout from before package.json also carried eol=lf) parses
++  // identically to Node — it must be left alone, silently, not "repaired"
++  // into a false-alarm notice on every single future run.
++  fs.writeFileSync(scoping, '{"type":"commonjs"}\r\n', 'utf8');
++  const crlfRun = install(target, ['--packs', 'codex']);
++  check(
++    'a CRLF-mangled but byte-equivalent stamp triggers no notice and is not rewritten',
++    crlfRun.status === 0 &&
++      // compare CRLF-normalized, the same way the installer does: \r\n and \n
++      // spellings of this JSON are the same file as far as Node is concerned.
++      fs.readFileSync(scoping, 'utf8').replace(/\r\n/g, '\n') === '{"type":"commonjs"}\n',
++    (crlfRun.stdout || '').slice(-800) + '\ncontent now: ' + JSON.stringify(fs.readFileSync(scoping, 'utf8'))
++  );
++  // Restore the canonical LF stamp so the uninstall check below is unaffected.
++  fs.writeFileSync(scoping, '{"type":"commonjs"}\n', 'utf8');
++
++  // --uninstall removes the scoping file along with the other hook files.
++  const u = install(target, ['--uninstall']);
++  check(
++    'uninstall removes .claude/hooks/package.json',
++    u.status === 0 && !fs.existsSync(scoping),
++    'status=' + u.status + ', exists=' + fs.existsSync(scoping)
++  );
+ }
+ 
+ // ------------------------------------------------------------------ driver
+@@ -274,6 +447,7 @@ try {
+   case4();
+   case5();
+   case6();
++  case7();
+ } catch (e) {
+   check('the suite ran to completion', false, (e && e.stack) || e);
+ }

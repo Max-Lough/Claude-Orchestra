@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Fix continuous-integration failures on macOS and Windows that appeared
+following the structural sweep guard change. Git records canonical worktree
+paths, but a live checkout's own handle may be spelled through a symlink or
+a short alias path, so a lexical comparison inside the sweep's live-set
+exemption misses the match, and the sweep removes a live checkout
+mid-verification. The path-normalization function looks up real paths first,
+falling back to a lexical comparison only for paths that are already gone,
+and never for a path still on disk. Pin a regression using an aliased
+temporary-root reproducer, such as a junction or symlink, that must fail on
+every platform before the fix lands, and skip cleanly where links cannot be
+created. Confine the fix narrowly to the normalization function and the
+live-set comparison. The sweep's other classification logic stays exactly as
+it was.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

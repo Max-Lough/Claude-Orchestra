@@ -1,0 +1,11 @@
+{
+  "name": "record-validator",
+  "version": "1.3.0",
+  "private": true,
+  "description": "Validates inbound records against the shipped field schema.",
+  "scripts": {
+    "test": "node test.js",
+    "gen": "node scripts/gen-fields.js"
+  },
+  "license": "MIT"
+}

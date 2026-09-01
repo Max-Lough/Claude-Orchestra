@@ -1,0 +1,4 @@
+{
+  "prefixes": ["svc", "job", "api", "db"],
+  "labels": ["alpha", "beta", "gamma", "delta", "epsilon"]
+}

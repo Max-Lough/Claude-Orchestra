@@ -1,0 +1,18 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The runner, the launcher and the skill document are in place, and the
+roundabout logs its verdicts plus dispositions to the plan file. Every
+failure path degrades to an unavailable verdict rather than a fake approval.
+The installer gained the new agent name, the runner copy and its uninstall
+entry; no other change was made. The checker's dry pass clears the new
+runner and the installer, then a round-trip into a fresh temporary directory
+installed all four skills and the runner.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

@@ -1,0 +1,13 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The round-four delta verdict was committed, and round five closed out as a
+records-limited pass across exactly six files. The pass carries 82 added
+lines and six removed lines, with zero source or router files changed
+anywhere in it. The band record and the status file were checked against the
+newly recorded verdict entry by entry, so nothing was left to guesswork. The
+written record now matches the reviewed outcome in every detail, closing the
+round out clean.
+
+Verify the diff on its own merits.

@@ -46,6 +46,11 @@ const STATE_ORDER = { Green: 0, Amber: 1, Orange: 2, Red: 3, Exhausted: 4 };
 const FAMILIES = ['anthropic', 'openai'];
 const AUTHOR_FAMILIES = ['anthropic', 'openai', 'human'];
 
+// WO-14b readiness-repair tranche: twelve roles retired from castings.json,
+// merged into Builder/Investigator or (A1) a documented workflow. Their
+// roster/*.md files are deleted, and (WO-14b leg 2 fix round, finding 8)
+// their router/charters.json entries are deleted too — the charter
+// cross-check below is strict: exactly the 11 live roles, no tolerance list.
 // ---------------------------------------------------------------------------
 // Pool-state machine (§5.5). Pure: one Quartermaster reading in, one state
 // out. Reserve breach and observed throttle force Red regardless of the
@@ -76,6 +81,17 @@ function requiredReserve(forecast, reserveCfg) {
   const i = (forecast && forecast.incidentDraw) || 0;
   const dynamic = (m + i) * (1 + cfg.uncertaintyBuffer);
   const floor = Math.max(cfg.floorFractionOfBucket, cfg.twoGateClassReviewsCostFraction);
+  // KNOWN PARITY (finding C, report-only — a calibration decision reserved
+  // to the owner, not changed here): under the WO-2 default forecast, the
+  // dynamic term (0.03 + 0) × 1.3 ≈ 0.039 sits below floorFractionOfBucket
+  // (0.08), so the floor governs and requiredReserve(defaultForecast()) ===
+  // poolStateLadder.thresholds.redBelow exactly. belowReserve then fires
+  // (quartermaster.js: remainingFraction < requiredReserve) at precisely the
+  // same boundary poolState() already calls Red — the reserve gate carries
+  // NO independent signal past what the pool-state ladder already gives,
+  // under the default forecast. The reserve gets a genuine lead over
+  // redBelow only under an override forecast busy enough to push the
+  // dynamic term above the floor (see requiredReserve.test pin).
   return Math.max(dynamic, floor);
 }
 
@@ -83,7 +99,13 @@ function fnv1a(str) {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
-    h = (h * 0x01000193) >>> 0;
+    // Math.imul, not `h * 0x01000193`: the plain float64 multiply can reach
+    // ~7.2e16 (0xffffffff * 0x01000193), 8000x past 2^53 — every digest is
+    // wrong past the point float64 can no longer represent the integer
+    // product exactly, which is effectively every digest (finding H). imul
+    // does the multiply in true 32-bit integer arithmetic and truncates by
+    // construction, matching the FNV-1a spec's implicit mod 2^32.
+    h = Math.imul(h, 0x01000193) >>> 0;
   }
   return h >>> 0;
 }
@@ -126,6 +148,33 @@ function createRouter(opts) {
   const familyOf = (model) => familyByModel.get(model) || null;
   const bucketsFor = (model) => (hasOwn(castings.modelBuckets, model) ? castings.modelBuckets[model] : null);
 
+  // A single per-casting-row validator (finding F): castings.roles used to
+  // be the ONLY table this cross-check covered — a hand-edited reviewMatrix
+  // or degradedSameFamilyCandidates row (unknown model, vendor/family
+  // mismatch, off-ladder effort) loaded clean and only surfaced when
+  // reviewer() actually reached that row at call time. Every casting-shaped
+  // row this file trusts — a role's rung, a review-matrix lane, a degraded
+  // candidate — now goes through the SAME checks. Returns the row's model
+  // family (or null if the row is incomplete or names an unknown model), so
+  // a caller that needs it (the same-family cross-check below) doesn't
+  // re-derive it.
+  function validateCastingRow(label, row) {
+    if (!row || !row.vendor || !row.model || !row.effort) { fail(label + ' incomplete'); return null; }
+    const fam = familyOf(row.model);
+    if (!fam) fail(label + ' names unknown model ' + row.model);
+    else if (fam !== row.vendor) fail(label + ' vendor ' + row.vendor + ' disagrees with model family ' + fam);
+    if (!bucketsFor(row.model)) fail(label + ' model has no bucket mapping: ' + row.model);
+    const ladder = (castings.effortLadders || {})[row.vendor] || [];
+    const specials = (castings.effortLadders || {}).specials || [];
+    const parts = String(row.effort).split('–'); // en-dash range
+    for (const p of parts) {
+      if (!ladder.includes(p) && !specials.includes(p)) {
+        fail(label + ' effort ' + JSON.stringify(row.effort) + ' is off the ' + row.vendor + ' ladder');
+      }
+    }
+    return fam;
+  }
+
   // ---- cross-check castings against the registry ------------------------
   const activeById = new Map(registry.classes.map((c) => [c.id, c]));
   const roles = castings.roles || {};
@@ -147,27 +196,50 @@ function createRouter(opts) {
     }
     const never = new Set(role.never || []);
     for (const [rungName, rung] of Object.entries(role.rungs || {})) {
-      if (!rung.vendor || !rung.model || !rung.effort) { fail(name + '.' + rungName + ' incomplete'); continue; }
-      const fam = familyOf(rung.model);
-      if (!fam) fail(name + '.' + rungName + ' names unknown model ' + rung.model);
-      else if (fam !== rung.vendor) fail(name + '.' + rungName + ' vendor ' + rung.vendor + ' disagrees with model family ' + fam);
-      if (never.has(rung.model)) fail(name + '.' + rungName + ' violates the role’s own never-rule: ' + rung.model);
-      if (!bucketsFor(rung.model)) fail(name + '.' + rungName + ' model has no bucket mapping: ' + rung.model);
-      const ladder = (castings.effortLadders || {})[rung.vendor] || [];
-      const specials = (castings.effortLadders || {}).specials || [];
-      const parts = String(rung.effort).split('–'); // en-dash range
-      for (const p of parts) {
-        if (!ladder.includes(p) && !specials.includes(p)) {
-          fail(name + '.' + rungName + ' effort ' + JSON.stringify(rung.effort) + ' is off the ' + rung.vendor + ' ladder');
-        }
-      }
+      const label = name + '.' + rungName;
+      if (!rung.vendor || !rung.model || !rung.effort) { fail(label + ' incomplete'); continue; }
+      validateCastingRow(label, rung);
+      if (never.has(rung.model)) fail(label + ' violates the role’s own never-rule: ' + rung.model);
     }
     if (!role.computed && !role.substrate && Object.keys(role.rungs || {}).length === 0) {
       fail('role ' + name + ' has no rungs and is neither computed nor a substrate');
     }
   }
+  // ---- WO-14b merged classes: a class may be routed by a mergedClasses
+  // entry instead of owned by a role — a retired-workflow class (A1) names a
+  // `workflow` and no role; a merged-into-a-role class (N0/N1/N2/M0 →
+  // Investigator, E0/E1/E3/E5/E6/E8/D0 → Builder) names the target role, an
+  // optional default `tier` (Builder-tiered targets only) and the `mode`
+  // (the former class id) dispatch() reports. A class owned by BOTH a role
+  // and mergedClasses, or neither, fails closed — drift still refuses.
+  const mergedClasses = castings.mergedClasses || {};
+  for (const id of Object.keys(mergedClasses)) {
+    if (id === '$comment') continue;
+    const m = mergedClasses[id];
+    if (classToRole.has(id)) fail('class ' + id + ' is both owned by a role and listed in mergedClasses');
+    if (m.workflow !== undefined) continue;
+    if (!m.role || !hasOwn(roles, m.role)) { fail('mergedClasses.' + id + ' targets unknown role ' + JSON.stringify(m.role)); continue; }
+    if (m.tier !== undefined && !((roles[m.role].tiers || {})[m.tier])) {
+      fail('mergedClasses.' + id + ' names tier ' + JSON.stringify(m.tier) + ' that ' + m.role + ' does not have');
+    }
+    // Findings 6/7 (WO-14b leg 2 fix round): contextShapesOnly is an exact
+    // replacement set (never additive with contextShapesAllowed on the same
+    // entry — that would make the "only" a lie), and every shape named by
+    // either must be a real contextShapes value.
+    if (m.contextShapesOnly !== undefined && m.contextShapesAllowed !== undefined) {
+      fail('mergedClasses.' + id + ' declares both contextShapesOnly and contextShapesAllowed — pick one (only replaces, allowed widens)');
+    }
+    for (const shape of [].concat(m.contextShapesOnly || [], m.contextShapesAllowed || [])) {
+      if (!castings.contextShapes.includes(shape)) fail('mergedClasses.' + id + ' names unknown context shape ' + JSON.stringify(shape));
+    }
+    if (m.unavailable !== undefined && (typeof m.unavailable !== 'object' || Array.isArray(m.unavailable))) {
+      fail('mergedClasses.' + id + '.unavailable must be an object map of medium -> reason');
+    }
+  }
   for (const c of registry.classes) {
-    if (!classToRole.has(c.id)) fail('active class has no casting-table entry: ' + c.id);
+    if (classToRole.has(c.id)) continue;
+    if (hasOwn(mergedClasses, c.id)) continue;
+    fail('active class has no casting-table entry: ' + c.id);
   }
   const q0cfg = castings.q0Triggers || {};
   for (const id of [].concat(q0cfg.classes || [], q0cfg.sourceChangeClasses || [], (q0cfg.calibrationSample || {}).classes || [])) {
@@ -197,6 +269,54 @@ function createRouter(opts) {
   for (const fam of ['anthropic', 'openai', 'human']) {
     if (!rm[fam]) fail('review matrix missing the ' + fam + ' author row');
   }
+  // Every reviewMatrix[fam][tier] row — including the nested
+  // .qualified/.untilQualified (anthropic T1) and .secondOpinion (human T3)
+  // shapes — through the same validator as a role's rung (finding F), plus
+  // the no-self-family invariant checked in the TABLE, not only defensively
+  // at reviewer()'s return: an anthropic-author row naming an anthropic
+  // model (or an openai-author row naming an openai model) is a same-family
+  // row baked into the source of truth, which no runtime re-check catches
+  // until reviewer() happens to be called for that exact lane.
+  for (const fam of ['anthropic', 'openai', 'human']) {
+    const famRows = rm[fam] || {};
+    for (const [tier, row] of Object.entries(famRows)) {
+      const label = 'reviewMatrix.' + fam + '.' + tier;
+      const subRows = row && (row.qualified || row.untilQualified)
+        ? [['qualified', row.qualified], ['untilQualified', row.untilQualified]]
+        : [[null, row]];
+      for (const [subName, subRow] of subRows) {
+        const subLabel = subName ? label + '.' + subName : label;
+        const rowFam = validateCastingRow(subLabel, subRow);
+        if ((fam === 'anthropic' || fam === 'openai') && rowFam === fam) {
+          fail(subLabel + ' names a same-family (' + fam + ') model ' + subRow.model + ' — the review matrix must never table a same-family row');
+        }
+      }
+      if (row && row.secondOpinion) validateCastingRow(label + '.secondOpinion', row.secondOpinion);
+    }
+  }
+  const degradedCandidates = rm.degradedSameFamilyCandidates || {};
+  for (const fam of Object.keys(degradedCandidates)) {
+    const list = Array.isArray(degradedCandidates[fam]) ? degradedCandidates[fam] : [];
+    list.forEach((cand, i) => {
+      const label = 'reviewMatrix.degradedSameFamilyCandidates.' + fam + '[' + i + ']';
+      const rowFam = validateCastingRow(label, cand);
+      // Finding F (MAJOR, fixed): validateCastingRow alone only checks a
+      // row's OWN internal consistency (vendor agrees with ITS OWN model's
+      // family) — it never checked the row against the KEY it is filed
+      // under. An `anthropic` key holding valid, internally-consistent
+      // OpenAI/Terra fields (vendor: 'openai', model: 'GPT-5.6 Terra')
+      // constructed cleanly under the old check, and degradedPath() trusts
+      // the outer key as the reviewer's family without re-deriving it from
+      // the model actually served — an unattributed preferred review then
+      // returned Terra while reporting reviewerFamily:'anthropic' and
+      // review_cross_family:false: false metadata. A row whose model names
+      // an unknown model, or is otherwise incomplete, is already reported by
+      // validateCastingRow above (rowFam is null) — nothing further to add.
+      if (rowFam && rowFam !== fam) {
+        fail(label + ' is filed under degradedSameFamilyCandidates.' + fam + ' but names a ' + rowFam + ' model (' + cand.model + ') — a degraded-candidate\'s actual family must equal the key it is filed under');
+      }
+    });
+  }
   const redTeam = roles['Red Team'];
   if (redTeam && !(redTeam.never || []).includes('Fable 5')) fail('Red Team must carry the never-Fable hard route-filter');
   const conductor = roles['Conductor'];
@@ -220,6 +340,11 @@ function createRouter(opts) {
       }
     }
     for (const name of Object.keys(charters.charters || {})) {
+      // WO-14b leg 2 fix round (finding 8): the retired roles' charter
+      // entries are deleted from charters.json itself now — no tolerance
+      // list. Any name that is not a live role (an extra, or a stale
+      // retired-role leftover) fails closed, same as a missing charter does
+      // above.
       if (!roles[name]) fail('charter names unknown role ' + name);
     }
   }
@@ -234,7 +359,7 @@ function createRouter(opts) {
     'modeler', 'architect-claude', 'architect-claude-xhigh', 'architect-claude-max',
     'architect-codex', 'planner-gpt', 'plan-synthesizer',
   ];
-  const ALIAS_PINS = { 'detective': 'read-only' }; // §6.6: detective → Investigator(read-only pinned)
+  const ALIAS_PINS = { 'detective': 'read-only', 'scout': 'read-only' }; // §6.6: detective → Investigator(read-only pinned); WO-14b: scout → Investigator(N0 mode, read-only pin carried)
   let seatAliases;
   try {
     seatAliases = JSON.parse(fs.readFileSync(options.aliasesFile || path.join(path.dirname(castingsFile), 'aliases.json'), 'utf8'));
@@ -262,13 +387,23 @@ function createRouter(opts) {
         legacyAgents.add(a.legacy.agent);
       }
       const n = a.new || {};
-      if (!n.role || !hasOwn(roles, n.role)) fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
-      else if (!n.computed && (!n.rung || !hasOwn(roles[n.role].rungs || {}, n.rung))) {
-        fail('alias ' + name + ' names rung ' + JSON.stringify(n.rung) + ' that ' + n.role + ' does not have');
+      if (n.retiredWorkflow) {
+        // WO-14b: plan-synthesizer's target is A1's retired workflow — no
+        // role, no casting; the note IS the target.
+        if (!n.workflow) fail('alias ' + name + ' declares retiredWorkflow with no workflow note');
+        if (n.role || n.rung || n.tier || n.computed) fail('alias ' + name + ' declares retiredWorkflow alongside a role/rung/tier/computed target');
+      } else if (!n.role || !hasOwn(roles, n.role)) {
+        fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
       } else if (n.computed && !roles[n.role].computed) {
         fail('alias ' + name + ' claims a computed casting but ' + n.role + ' is not computed');
-      } else if (n.computed && n.rung) {
-        fail('alias ' + name + ' declares a rung on a computed casting — the lane is computed, not pinned');
+      } else if (n.computed && (n.rung || n.tier)) {
+        fail('alias ' + name + ' declares a rung/tier on a computed casting — the lane is computed, not pinned');
+      } else if (!n.computed) {
+        if (n.tier) {
+          if (!((roles[n.role].tiers || {})[n.tier])) fail('alias ' + name + ' names tier ' + JSON.stringify(n.tier) + ' that ' + n.role + ' does not have');
+        } else if (!n.rung || !hasOwn(roles[n.role].rungs || {}, n.rung)) {
+          fail('alias ' + name + ' names rung ' + JSON.stringify(n.rung) + ' that ' + n.role + ' does not have');
+        }
       }
       // The pin carries a safety law (§6.6) — unvalidated, it could be
       // silently dropped or rewritten by a bad merge. Enum + required where
@@ -288,6 +423,15 @@ function createRouter(opts) {
 
   const aliasById = new Map(registry.aliases.map((a) => [a.id, a.resolvesTo]));
   const ladderCfg = castings.poolStateLadder;
+
+  // ---- WO-14b seat toggles: an owner-set manifest override map, merged
+  // over castings.json's per-role defaultEnabled (true when unset). cast(),
+  // dispatch() and resolveSeat() on a disabled seat all return a typed
+  // DISABLED outcome — never a silent recast.
+  const seatFlags = {};
+  for (const name of roleNames) seatFlags[name] = roles[name].defaultEnabled !== false;
+  Object.assign(seatFlags, options.seats || {});
+  const seatEnabled = (name) => hasOwn(seatFlags, name) ? seatFlags[name] : true;
 
   // ---- buckets normalization --------------------------------------------
   // Input: { 'AU-all': X, 'AU-opus': X, 'AU-fable': X, 'OU': X } where X is a
@@ -334,7 +478,10 @@ function createRouter(opts) {
     throw new Error('unknown class identifier: ' + JSON.stringify(id));
   }
   function route(id) {
-    return classToRole.get(resolveClass(id));
+    const cls = resolveClass(id);
+    if (classToRole.has(cls)) return classToRole.get(cls);
+    const m = mergedClasses[cls];
+    return m && m.role ? m.role : undefined; // A1's retired workflow routes to no role
   }
 
   // ---- the pre-dispatch AU-O gate (P15) ---------------------------------
@@ -383,6 +530,77 @@ function createRouter(opts) {
     return { allowed: true };
   }
 
+  // ---- WO-14b Builder ladder: tier walk + override-only entries ---------
+  // castOpts.tier picks the tier (order tier; else the caller-passed
+  // default, else 'standard' for Builder); the preferred casting is walked
+  // first, then the tier's ordered substitute list, under the same
+  // purposesAllowedOnBucket ladder every other degradation uses;
+  // `requested` is always the tier's PREFERRED casting, per the order.
+  // Override-only entries (Sol at dense/deep) are reachable only through
+  // castOpts.override = {rung|model, reason}; a Sol override additionally
+  // requires castOpts.reserveCheck === 'passed' (Quartermaster-set, leg 4) —
+  // absent, a typed FORBIDDEN, never a silent walk onto Sol.
+  function castTiered(roleName, role, nb, o, purpose) {
+    const tierName = o.tier || (roleName === 'Builder' ? 'standard' : role.defaultTier);
+    const tierDef = (role.tiers || {})[tierName];
+    if (!tierDef) {
+      return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'unknown tier ' + JSON.stringify(tierName) + ' for ' + roleName };
+    }
+    const preferredRungName = tierDef.preferred;
+    const preferredRung = role.rungs[preferredRungName];
+    const requested = { model: preferredRung.model, rung: preferredRungName };
+
+    if (roleName === 'Builder' && preferredRungName === 'preferredBounded' && o.underSpecified) {
+      return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'Luna never receives under-specified work — the guardrail survives the promotion; route the order to the Sonnet lane or back to A0' };
+    }
+
+    if (o.override) {
+      const overrideOnly = tierDef.overrideOnly || [];
+      let overrideRungName = o.override.rung;
+      if (!overrideRungName && o.override.model) {
+        overrideRungName = overrideOnly.find((rn) => role.rungs[rn].model === o.override.model);
+      }
+      if (!overrideRungName || !overrideOnly.includes(overrideRungName)) {
+        return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'override target is not a declared override-only entry for the ' + tierName + ' tier', requested };
+      }
+      const overrideRung = role.rungs[overrideRungName];
+      if (overrideRung.model === 'GPT-5.6 Sol' && o.reserveCheck !== 'passed') {
+        return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'FORBIDDEN: Sol override requires the review-reserve check', requested };
+      }
+      const state = effectiveState(overrideRung.model, nb);
+      const allowed = ladderCfg.purposesAllowedOnBucket[state];
+      if (!allowed.includes(purpose)) {
+        return { ok: false, outcome: 'WAIT', role: roleName, rung: overrideRungName, reason: 'override casting ' + overrideRung.model + ' bucket at ' + state + ' — no lawful casting', requested };
+      }
+      return {
+        ok: true, role: roleName, rung: overrideRungName,
+        casting: { vendor: overrideRung.vendor, model: overrideRung.model, effort: overrideRung.effort },
+        note: overrideRung.note, bucketState: state, requested,
+        override: true, overrideReason: (o.override && o.override.reason) || null,
+      };
+    }
+
+    const chain = [preferredRungName].concat(tierDef.substitutes || []);
+    for (const rn of chain) {
+      const rg = role.rungs[rn];
+      const state = effectiveState(rg.model, nb);
+      const allowed = ladderCfg.purposesAllowedOnBucket[state];
+      if (allowed.includes(purpose)) {
+        const preferredState = effectiveState(preferredRung.model, nb);
+        const extra = rn === preferredRungName ? {} : { recastFrom: preferredRungName, recastReason: preferredRung.model + ' bucket at ' + preferredState + ' — ' + ladderCfg.behavior[preferredState] };
+        return Object.assign({
+          ok: true, role: roleName, rung: rn,
+          casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
+          note: rg.note, bucketState: state, requested,
+        }, extra);
+      }
+    }
+    return {
+      ok: false, outcome: 'WAIT', role: roleName, rung: preferredRungName, requested,
+      reason: 'no lawful casting on the ' + tierName + ' tier ladder: ' + chain.map((rn) => role.rungs[rn].model + ' @ ' + effectiveState(role.rungs[rn].model, nb)).join(', '),
+    };
+  }
+
   // ---- cast(role, bucket_state) → (vendor, model, effort) ---------------
   // The degradation machine: Green dispatches the requested rung; Amber
   // re-casts authoring to the healthy pool's mirror; Orange suspends
@@ -392,6 +610,9 @@ function createRouter(opts) {
   function cast(roleName, buckets, castOpts) {
     const o = castOpts || {};
     if (!hasOwn(roles, roleName)) throw new Error('unknown role: ' + JSON.stringify(roleName));
+    if (!seatEnabled(roleName)) {
+      return { ok: false, outcome: 'DISABLED', role: roleName, reason: 'seat disabled by the owner-set manifest toggle' };
+    }
     const role = roles[roleName];
     if (role.computed) throw new Error(roleName + ' casting is computed from the author family set — use reviewer(), never cast()');
     if (role.substrate) {
@@ -412,12 +633,31 @@ function createRouter(opts) {
       return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'Terra is permitted only for reversible T1 sub-work — ' + role.noMirrorFor.irreversible };
     }
 
+    // The WO-14b Builder ladder: a tiered role (Builder only, today), when
+    // no explicit rung is requested, picks its tier (castOpts.tier; default
+    // 'standard' for Builder) and walks that tier's preferred casting then
+    // its ordered substitute list under the bucket ladder — never the
+    // override-only entries, reachable solely through castOpts.override. An
+    // explicit o.rung bypasses the ladder and falls through to the ordinary
+    // single-rung path below (unchanged), so every existing direct-rung call
+    // keeps its documented behavior.
+    if (role.tiers && !o.rung) {
+      return castTiered(roleName, role, nb, o, purpose);
+    }
+
     // Rung selection.
     let rungName = o.rung;
     if (!rungName && roleName === 'Test Designer') {
       const fam = o.implementationAuthorFamily;
       if (!fam || !AUTHOR_FAMILIES.includes(fam)) {
-        throw new Error('Test Designer casting needs implementationAuthorFamily (anthropic|openai|human) — Q0 is Director-created and cast opposite the author');
+        // A Q0 order dispatched with no attributable implementation author
+        // family cannot be cast (Test Designer is cast OPPOSITE the author,
+        // by construction — there is no lawful default). This is a typed
+        // refusal, not a throw (finding D): dispatch()'s own createQ0Order()
+        // output — or any hand-built Q0 order missing author_family — must
+        // fail closed through the ordinary ok:false path, never crash the
+        // dispatcher uncaught.
+        return { ok: false, rejected: 'implementationAuthorFamily', role: roleName, reason: 'Test Designer casting needs implementationAuthorFamily (anthropic|openai|human) — Q0 is Director-created and cast opposite the author' };
       }
       if (fam === 'anthropic') rungName = 'vsAnthropicAuthor';
       else if (fam === 'openai') rungName = 'vsOpenaiAuthor';
@@ -439,20 +679,27 @@ function createRouter(opts) {
     if (roleName === 'Builder' && rungName === 'preferredBounded' && o.underSpecified) {
       return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'Luna never receives under-specified work — the guardrail survives the promotion; route the order to the Sonnet lane or back to A0' };
     }
-    if (roleName === 'Architect' && o.securitySensitive && familyOf(rung.model) === 'anthropic') {
-      return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: role.securityRouteFilter };
-    }
 
     const state = effectiveState(rung.model, nb);
     // `requested` records the rung selected BEFORE degradation: the reserve
     // gate (P15) is evaluated against this, not the recast output — a
-    // degraded recast must never silently satisfy a reserve stop.
-    const result = (rg, name, extra) => Object.assign({
-      ok: true, role: roleName, rung: name,
-      casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
-      note: rg.note, bucketState: state,
-      requested: { model: rung.model, rung: rungName },
-    }, extra || {});
+    // degraded recast must never silently satisfy a reserve stop. The
+    // security route-filter is the same shape of guardrail and belongs in
+    // the same choke-point (both `result()` call sites — the direct grant
+    // AND the §5.5 mirror fallback): checking only the REQUESTED rung let a
+    // degraded recast (Amber → mirror) silently smuggle a security-sensitive
+    // order onto the Fable lane the filter exists to block (probe A2d).
+    const result = (rg, name, extra) => {
+      if (roleName === 'Architect' && o.securitySensitive && familyOf(rg.model) === 'anthropic') {
+        return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: role.securityRouteFilter };
+      }
+      return Object.assign({
+        ok: true, role: roleName, rung: name,
+        casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
+        note: rg.note, bucketState: state,
+        requested: { model: rung.model, rung: rungName },
+      }, extra || {});
+    };
 
     // Ceiling rungs defer from Orange down (AU-fable stops first, §5.5).
     if (rung.ceiling && STATE_ORDER[state] >= STATE_ORDER.Orange) {
@@ -652,8 +899,13 @@ function createRouter(opts) {
     const risk = normalizeRisk(order.risk);
     const cfg = castings.q0Triggers;
     if (cfg.classes.includes(cls)) return { required: true, reason: 'every ' + cls + ' change (class trigger)' };
+    // Gated on sourceChangeClasses exactly like the tier trigger below
+    // (finding G): a read-only/doc class (N0, D0, I0, N1, M0, S0, …) makes
+    // no source change for an independent test oracle to cover, so a touch
+    // area recorded on it (carried for the security-review triggers, which
+    // DO apply to every class) must not also hard-block on a missing Q0.
     const touches = order.touches || [];
-    const hit = touches.find((t) => cfg.touchAreas.includes(t));
+    const hit = cfg.sourceChangeClasses.includes(cls) ? touches.find((t) => cfg.touchAreas.includes(t)) : undefined;
     if (hit) return { required: true, reason: hit + ' change regardless of nominal tier (touch trigger)' };
     // An unrecognized risk tier fails closed to the highest gated tier, so a
     // malformed tier cannot dodge the tier trigger.
@@ -689,7 +941,19 @@ function createRouter(opts) {
         class: 'Q0',
         risk: implOrder.risk,
         requested_casting: castResult.ok ? castResult.casting : null,
+        // author_family is the Q0 ORDER'S OWN family — the family that will
+        // actually author the test-oracle work (the casting result above,
+        // opposite the implementation by construction). It must never be
+        // confused with the implementation's family below (finding D): a
+        // caller re-dispatching this order (dispatch() seeding
+        // castOpts.implementationAuthorFamily) needs the IMPLEMENTATION's
+        // family, not the Q0's own, or the re-cast lands same-family as the
+        // implementation and Q0 independence is defeated.
         author_family: castResult.ok ? familyOf(castResult.casting.model) : null,
+        // implementation_author_family: the PARENT implementation's author
+        // family — what the Q0 casting was chosen opposite of. This is the
+        // field dispatch() must read when re-dispatching a Q0 order.
+        implementation_author_family: authorFamily,
         co_author_families: [],
         goal: 'Independent test oracle for ' + implOrder.task_id + ': black-box tests drafted before or parallel to implementation, diff withheld where practical',
         acceptance_criteria: ['mutation check: inverted assertion or reverted fix goes red (Verifier, contractual)', 'flake check passes'],
@@ -731,26 +995,117 @@ function createRouter(opts) {
       order.touches = [...new Set([].concat(order.touches || [], flagTouches))];
     }
 
-    const roleName = classToRole.get(cls);
+    // WO-14b merged classes: a retired-workflow class (A1) dispatches to no
+    // role at all — a typed refusal naming the documented workflow.
+    const merge = mergedClasses[cls];
+    if (merge && merge.workflow !== undefined) {
+      return { ok: false, outcome: 'RETIRED_WORKFLOW', class: cls, order, reason: merge.workflow };
+    }
+
+    // A merged class (N0/N1/N2/M0 → Investigator, E0/E1/E3/E5/E6/E8/D0 →
+    // Builder) routes through its target role, carrying the class UNCHANGED
+    // (it still carries its own review row — E3/E4 etc. mandatory), the
+    // target role, a default tier (Builder-tiered targets only, overridden
+    // by an explicit order.tier), and `mode` — the former class id, read by
+    // the served seat's own logic (e.g. N0's read-only pin).
+    const roleName = merge ? merge.role : classToRole.get(cls);
     const role = roles[roleName];
+    const mode = merge ? merge.mode : undefined;
+    const mergedDefaultTier = merge ? merge.tier : undefined;
+
+    if (!seatEnabled(roleName)) {
+      const disabled = { ok: false, outcome: 'DISABLED', role: roleName, class: cls, order, reason: 'seat disabled by the owner-set manifest toggle' };
+      if (cls === 'S0') {
+        return Object.assign(disabled, { fallback: 'verifier-census', reason: disabled.reason + ' — the Conductor\'s chain-final step falls to the Verifier\'s census re-run' });
+      }
+      if (cls === 'A0') {
+        return Object.assign(disabled, { fallback: 'conductor-self-plan', reason: disabled.reason + ' — the Conductor plans in its own voice, disclosure recorded on the order' });
+      }
+      return disabled;
+    }
+
+    // WO-14b leg 2 fix round (finding 6): merging M0 into Investigator
+    // dropped the raw video/audio UNAVAILABLE capability boundary the
+    // retired Archivist role declared (noMirrorFor.videoAudio) — restored
+    // generically here: any mergedClasses entry may declare
+    // `unavailable: { <medium>: reason }`; a request naming that medium is
+    // refused typed UNAVAILABLE before a role/rung is ever consulted.
+    //
+    // Fix round 2 (finding 3, MAJOR): review #2 found this guard unreachable
+    // through the public contract — dispatch-request.schema.json rejected
+    // `medium` as an additional property, so only an internal castOpts
+    // injection could ever trigger it. order.schema.json and
+    // dispatch-request.schema.json now both carry an optional `medium` enum
+    // (documents/images/videoAudio); the guard reads BOTH order.medium (the
+    // schema-validated public path a Conductor actually reaches through
+    // orchestra_dispatch) and castOpts.medium (explicit caller/internal
+    // intent, unchanged) — either one naming the unavailable medium refuses.
+    // Never inferred from context_packet or any other free-text field.
+    if (merge && merge.unavailable) {
+      for (const medium of [order.medium, o.castOpts && o.castOpts.medium]) {
+        if (medium !== undefined && hasOwn(merge.unavailable, medium)) {
+          return { ok: false, outcome: 'UNAVAILABLE', class: cls, role: roleName, order, reason: merge.unavailable[medium] };
+        }
+      }
+    }
 
     // Context shape is dispatcher-enforced (§2.0): a shape the seat may not
-    // be handed is rejected outright, not truncated.
+    // be handed is rejected outright, not truncated. A merged class may
+    // widen the target role's maximum shapes (E8 → Builder: repo/haystack)
+    // or, WO-14b leg 2 fix round (finding 7), NARROW them to an exact set
+    // via contextShapesOnly (E1 → Builder: packet only) — the merged
+    // class's own ceiling replaces the target role's, rather than adding to
+    // it, so a class that used to be the "hardest constraint in the roster"
+    // (E1/Runner, packet-only) stays that way after the merge.
+    const allowedShapes = (merge && merge.contextShapesOnly)
+      ? merge.contextShapesOnly
+      : role.contextShapes.concat((merge && merge.contextShapesAllowed) || []);
     if (order.context_shape !== undefined) {
       if (!castings.contextShapes.includes(order.context_shape)) {
         return { ok: false, rejected: 'context-shape', reason: 'unknown context shape ' + JSON.stringify(order.context_shape) };
       }
-      if (!role.contextShapes.includes(order.context_shape)) {
-        return { ok: false, rejected: 'context-shape', reason: roleName + ' (' + cls + ') may not be handed ' + JSON.stringify(order.context_shape) + ' — maximum shapes: [' + role.contextShapes.join(', ') + ']' };
+      if (!allowedShapes.includes(order.context_shape)) {
+        return { ok: false, rejected: 'context-shape', reason: roleName + ' (' + cls + ') may not be handed ' + JSON.stringify(order.context_shape) + ' — maximum shapes: [' + allowedShapes.join(', ') + ']' };
       }
     }
 
     const policy = reviewPolicy(cls, order.risk, Object.assign({}, o.flags, { touches: order.touches || [] }));
 
-    // Casting for the executor, through the degradation machine…
+    // securitySensitive is derived from the canonical order.touches against
+    // the SAME securityTriggerList the load-time cross-check ties to the
+    // order schema (line ~183) — never left for the caller to remember to
+    // set. A caller-supplied o.castOpts.securitySensitive can only ADD to
+    // this (a caller who knows more than the touches list can still flag
+    // it); it can never suppress a touch-derived true, which is why the OR
+    // is applied AFTER spreading o.castOpts rather than merged into it.
+    const securitySensitive =
+      (order.touches || []).some((t) => castings.securityTriggerList.includes(t)) ||
+      !!(o.castOpts && o.castOpts.securitySensitive);
+
+    // Casting for the executor, through the degradation machine… Test
+    // Designer (Q0) needs implementationAuthorFamily to pick its
+    // opposite-family rung; a Q0 order dispatched directly (createQ0Order()'s
+    // own output, or any hand-built Q0 order) rarely repeats it in castOpts,
+    // so it is seeded from the order's own implementation_author_family —
+    // the PARENT IMPLEMENTATION's author family, exactly the field
+    // createQ0Order() stamps for this purpose. Finding D (MAJOR, fixed):
+    // this used to fall back to order.author_family, which on a Q0 order is
+    // the Q0's OWN family (already opposite the implementation) — feeding
+    // that back in as "the implementation's family" re-cast the Q0 opposite
+    // ITSELF, landing same-family as the original implementation and
+    // defeating Q0 independence. order.author_family must never be read
+    // here. Harmless for every non-Test-Designer role, which never reads
+    // this key.
     let casting = role.computed
       ? null
-      : cast(roleName, buckets, Object.assign({ risk: order.risk, purpose: o.purpose || 'authoring' }, o.castOpts));
+      : cast(roleName, buckets, Object.assign(
+          { risk: order.risk, purpose: o.purpose || 'authoring', tier: order.tier || mergedDefaultTier },
+          o.castOpts,
+          {
+            securitySensitive,
+            implementationAuthorFamily: (o.castOpts && o.castOpts.implementationAuthorFamily) || order.implementation_author_family,
+          }
+        ));
 
     // …then the mechanical pre-dispatch gates on what came out — BEFORE Q0
     // creation, so the companion is cast opposite the family that will
@@ -797,7 +1152,21 @@ function createRouter(opts) {
       }
     }
     if (casting && !casting.ok) {
-      return { ok: false, outcome: casting.outcome, role: roleName, class: cls, order, reason: casting.reason };
+      return { ok: false, outcome: casting.outcome, rejected: casting.rejected, role: roleName, class: cls, order, reason: casting.reason };
+    }
+
+    // Stale-family fix (cycle-2 MAJOR, router.js:895): a Q0 order's
+    // author_family is the family of the SERVED Q0 casting at THIS dispatch
+    // — after any recast — never the family recorded when the order was
+    // first created. A human-authored implementation's Q0, created while
+    // both pools are Green (tie → Anthropic/Sonnet), re-dispatched after
+    // AU-all turns Amber and now serves OpenAI/Terra, must report
+    // author_family:"openai" here, not the stale "anthropic" the order
+    // arrived with. implementation_author_family is the PARENT
+    // implementation's family and is never touched — it is what the casting
+    // was chosen opposite of, not what this order's own author_family means.
+    if (cls === 'Q0' && casting && casting.ok && !casting.substrate) {
+      order = Object.assign({}, order, { author_family: familyOf(casting.casting.model) });
     }
 
     // Automatic Q0: created with the implementation order, cast opposite the
@@ -827,15 +1196,37 @@ function createRouter(opts) {
     }
 
     // Prospective review of the artifact this order will produce, computed
-    // from the family that will author it (plus recorded co-authors).
-    const authorFams = role.computed
-      ? (o.reviewOf && o.reviewOf.authorFamilies)
-      : [familyOf(casting.casting.model)].concat(order.co_author_families || []);
-    const review = policy === 'none'
-      ? { closes: true, policy: 'none', reason: 'provably inert — lint + targeted checks; inertness verified from the diff first' }
-      : reviewer(authorFams, order.risk, { policy, buckets, terraT1Qualified: o.terraT1Qualified, authorModel: casting && casting.ok ? casting.casting.model : undefined, unattributed: o.flags && o.flags.unattributed });
+    // from the family that will author it (plus recorded co-authors). A
+    // substrate casting (V0 Verifier, P0 Quartermaster) is deterministic
+    // code — never a model-authored artifact — so this MUST branch before
+    // authorFams is even computed (finding I): familyOf('deterministic') is
+    // null, and feeding that into reviewer() falls into the
+    // unattributed-authorship path, which fabricates a degraded same-family
+    // Opus review of code that has no author family to review at all. The
+    // mandatory-gated branch (policy === 'mandatory', or T2/T3 nominal tier —
+    // the exact condition reviewer()'s own unattributed check applies)
+    // reuses that same reviewer() call so its DOES_NOT_CLOSE outcome is
+    // byte-for-byte the prior behavior, unchanged.
+    let review;
+    if (casting && casting.ok && casting.substrate && policy !== 'none' && !(policy === 'mandatory' || tier === 'T2' || tier === 'T3')) {
+      review = {
+        closes: true, substrate: true, casting: null,
+        requirement: 're-execution / Verifier confirms deterministic substrate behavior — no model casting is a review target',
+        reason: 'deterministic substrate (' + roleName + ') — code first; not a model-authored artifact requiring cross-family review',
+      };
+    } else {
+      const authorFams = role.computed
+        ? (o.reviewOf && o.reviewOf.authorFamilies)
+        : [familyOf(casting.casting.model)].concat(order.co_author_families || []);
+      review = policy === 'none'
+        ? { closes: true, policy: 'none', reason: 'provably inert — lint + targeted checks; inertness verified from the diff first' }
+        : reviewer(authorFams, order.risk, { policy, buckets, terraT1Qualified: o.terraT1Qualified, authorModel: casting && casting.ok ? casting.casting.model : undefined, unattributed: o.flags && o.flags.unattributed });
+    }
 
-    return { ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion, order };
+    const mergedFields = merge
+      ? Object.assign({ mode: mode }, mergedDefaultTier !== undefined ? { tier: order.tier || mergedDefaultTier } : {}, mode === 'N0' && merge.pin ? { pin: merge.pin } : {})
+      : {};
+    return Object.assign({ ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion, order }, mergedFields);
   }
 
   // ---- RECLASSIFY hop machinery (Part 4 error stance, WO-4 encoding) ----
@@ -884,7 +1275,24 @@ function createRouter(opts) {
     }
     const roster = o.roster === undefined ? seatAliases.rosterDefault : o.roster;
     if (!hasOwn(seatAliases.aliases, name)) {
-      if (hasOwn(roles, name)) return { roster, alias: false, target: { kind: 'role', role: name } };
+      if (hasOwn(roles, name)) {
+        // WO-14b leg 2 fix round (finding 3): a direct role name (no alias
+        // indirection) used to skip the seat-toggle check entirely and hand
+        // back a usable role target even for a disabled seat. Same typed
+        // DISABLED shape cast()/dispatch() return — including the S0/A0
+        // fallback disclosure — never a usable role target.
+        if (!seatEnabled(name)) {
+          const disabled = { ok: false, outcome: 'DISABLED', role: name, reason: 'seat disabled by the owner-set manifest toggle' };
+          if (name === 'Sweeper') {
+            return Object.assign(disabled, { fallback: 'verifier-census', reason: disabled.reason + ' — the Conductor\'s chain-final step falls to the Verifier\'s census re-run' });
+          }
+          if (name === 'Architect') {
+            return Object.assign(disabled, { fallback: 'conductor-self-plan', reason: disabled.reason + ' — the Conductor plans in its own voice, disclosure recorded on the order' });
+          }
+          return disabled;
+        }
+        return { roster, alias: false, target: { kind: 'role', role: name } };
+      }
       return { roster, alias: false, error: 'unknown seat name: ' + JSON.stringify(name), target: null };
     }
     const a = seatAliases.aliases[name];
@@ -895,13 +1303,21 @@ function createRouter(opts) {
     if (a.new.computed) {
       return { roster, alias: true, ledger, target: { kind: 'computed-reviewer', role: a.new.role, laneNote: a.new.laneNote } };
     }
-    // The alias's declared rung ALWAYS wins over caller castOpts — a caller
-    // override here would silently re-cast a §6.6 mapping while the ledger
-    // records the alias's rung (the silent-substitution failure, P15/§7.1).
+    if (a.new.retiredWorkflow) {
+      return { roster, alias: true, ledger, target: { kind: 'retired-workflow', workflow: a.new.workflow, note: a.new.downgradeNote || null } };
+    }
+    // The alias's declared rung/tier/override ALWAYS wins over caller
+    // castOpts — a caller override here would silently re-cast a §6.6
+    // mapping while the ledger records the alias's own mapping (the
+    // silent-substitution failure, P15/§7.1).
     if (o.buckets === undefined) {
       throw new Error('new-roster resolution requires bucket_state — fail closed, not Green (P15)');
     }
-    const castOpts = Object.assign({}, o.castOpts, { rung: a.new.rung });
+    const forced = {};
+    if (a.new.tier) { forced.tier = a.new.tier; forced.rung = undefined; }
+    else if (a.new.rung) { forced.rung = a.new.rung; forced.tier = undefined; }
+    if (a.new.override) forced.override = a.new.override;
+    const castOpts = Object.assign({}, o.castOpts, forced);
     if (o.purpose !== undefined) castOpts.purpose = o.purpose;
     let c = cast(a.new.role, o.buckets, castOpts);
     let gate = { allowed: true };
@@ -917,7 +1333,7 @@ function createRouter(opts) {
     }
     return {
       roster, alias: true, ledger,
-      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung, pin: a.new.pin || null, cast: c, gate, note: a.new.downgradeNote },
+      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung || null, tier: a.new.tier || null, pin: a.new.pin || null, cast: c, gate, note: a.new.downgradeNote },
     };
   }
 

@@ -1,0 +1,12 @@
+{
+  "id": "e-01",
+  "category": "broken build script",
+  "title": "the built bundle throws before verification can run",
+  "check_display": "node build.js && node verify.js",
+  "check_steps": [["node", "build.js"], ["node", "verify.js"]],
+  "scope": ["build.js"],
+  "audit_ignore": ["dist/"],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

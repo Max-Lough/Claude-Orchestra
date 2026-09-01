@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This pass fixes every finding from the prior round. It starts by replacing
+the copied-over runner semantics in the research seat's brief with the
+tool's real behavior, meaning a live working tree, no sandbox pinning, and
+no automatic retries, so each order gets just one call while unavailability
+escalates to the coordinating role instead of retrying silently. The
+write-capable runner then gets reconciled with the read-only plan across
+three briefs, so every order carries that same restriction in its own text
+and also passes the forbid parameter, described accurately as a brief-level
+prohibition rather than a sandboxed block. The earlier incident narrative
+gets rewritten into its evidence-supported account, and the unsupported
+claim gets withdrawn entirely rather than merely softened. Two exercise
+reports whose dispatch-time details were dropped or wrong get fixed as well.
+The minor findings get cleared too, including stale status rows, a wrong
+tool count, and an unjustified omission.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

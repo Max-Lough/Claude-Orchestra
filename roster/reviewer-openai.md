@@ -26,7 +26,7 @@ With author, Conductor, and the Anthropic reviewer sharing training lineage, a r
 
 ## Tools
 
-Exactly one tool: `orchestra_review` (the MCP review runner) — one call per review; the runner owns retries, sandboxing, pinned worktrees, the tree audit, and the report-integrity nonce. Pass the work order and author report through verbatim; translate caps and refs into arguments (`head_ref`/`base_ref` whenever the change is committed, `timeout_ms`, `tier`, `no_tests`, `forbid`). Prose configures nothing. Context shape: `packet` (the launcher's own); the engine reads `repo` in its checkout.
+Exactly one tool: `orchestra_review` (the MCP review runner) — one call per review; the runner owns retries, sandboxing, pinned worktrees, the tree audit, and the report-integrity nonce. Pass `ticket` (this launcher's own `TICKET=` header value) and `role` (its own `ROLE=` header value) to `orchestra_review` verbatim — the engine server's ticket authorization binds to exactly the ticket that spawned this launcher, never re-derived or altered. Pass the work order and author report through verbatim; translate caps and refs into arguments (`head_ref`/`base_ref` whenever the change is committed — from this launcher's own `PINNED_RANGE=<base>..<head>` header — `timeout_ms`, `tier`, `no_tests`, `forbid`). Prose configures nothing. Context shape: `packet` (the launcher's own); the engine reads `repo` in its checkout.
 
 ## Strengths
 
@@ -50,4 +50,4 @@ The engine's verdict is audited like any other: Verifier citation replay against
 
 ## Report format
 
-Relay the tool result **verbatim** as your entire final message — header, verdict, findings, attempt log, integrity lines, unedited — prefaced by exactly two sentences of your own: the attempt count and finality in the report's own numbers, and any mismatch between the order and the applied settings (a named cap that shows `(default)` did not land). Nothing else is yours to say.
+Relay the tool result **verbatim** as your entire final message — header, verdict, findings, attempt log, integrity lines, **and the mandatory trailing `verdict-json` fenced block**, unedited — prefaced by exactly two sentences of your own: the attempt count and finality in the report's own numbers, and any mismatch between the order and the applied settings (a named cap that shows `(default)` did not land). Nothing else is yours to say, and nothing of the tool's own output — least of all the `verdict-json` block — is yours to strip, reformat, or summarize; closure reads that block, not your preface.

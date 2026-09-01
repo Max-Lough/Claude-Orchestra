@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The independent pass agreed with the primary pass on 16 of 20 items with
+zero ambiguity flags, missing the eighteen-of-twenty full-gate threshold, so
+the downstream work order stays blocked. The sealed subset drawn for the
+second class redraw graded nine of ten, passing its own gate and validating
+that redraw. The three misses outside the subset drove a narrow third
+redraw: one classifier's evidence object was sharpened, the diagnosis
+corollary's threshold was defined, and exactly one new classifier was added,
+while the other three stayed unchanged.
+
+Verify the diff on its own merits.

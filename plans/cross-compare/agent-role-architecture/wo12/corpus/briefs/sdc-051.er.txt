@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+Both new documents for this pass went into the roster directory today. They
+add up to one hundred three lines, thirty-seven in the write-up and
+sixty-six in the order, with no line removed anywhere in the rest of the
+tree. That newer commit and the one just before it anchor the whole review
+from start to finish, and nothing outside that pair is touched. The write-up
+records that a clean verdict against that exact pair, and only that, lets
+the two open work orders shed revise status.
+
+Verify the diff on its own merits.

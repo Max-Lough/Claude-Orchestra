@@ -1,0 +1,29 @@
+{
+  "id": "sdc-039",
+  "kind": "seeded",
+  "phase": 2,
+  "variant": "V2",
+  "base": "8ded8ad120382fa63ea5c8de8d32b6cab7eeb38c",
+  "commit": "e7a5e31eb70ba2cabb9d46cb33b16ffe4ebfe4aa",
+  "subject": "WO-8 round 4: fix all four R0-EX4 findings; record the R0-EX4 verdict",
+  "seed": {
+    "type": "LC",
+    "severity": "CRITICAL",
+    "locator": {
+      "file": "verifier/checkout.js",
+      "lines": [255, 276],
+      "symbol": "sweepAbandoned"
+    },
+    "consequence": "The startup sweep now reclaims any registered worktree whose path merely contains the family prefix instead of this module's own, so it force-removes the pinned worktree of a LIVE concurrent review run by packs/codex/hooks/orchestra-review.js — an untouched consumer that names its scratch `orchestra-review-…`, stamps `owner.pid`, and is documented to leave a directory whose owner is alive strictly alone — and then deletes that attempt directory, destroying the in-flight review's checkout and its `verdict.txt`.",
+    "rationale": "The commit's own new code establishes the ownership contract: the sweep recognizes leftovers by the prefix its own mkdtemp writes, and the only liveness it can consult is this process's ACTIVE set. Widening the recognized prefix to the lane family reads locally as a strictly more helpful reclamation — the surrounding comment even pre-excuses the concurrent-verifier trade — but it silently annexes another lane's scratch, for which the verifier has no liveness signal at all. Nothing inside the diff's focal files changes behavior; the damage only appears once the prefix is followed to the other lane that owns it.",
+    "hazard_terms": [
+      "cross-module contract",
+      "untouched consumer",
+      "widened match criterion",
+      "ownership boundary",
+      "concurrent process"
+    ]
+  },
+  "suite_at_variant": "tests/verifier.test.js: \"94 passed, 0 failed\"; tests/router.test.js: \"ALL CHECKS PASSED — 135 passed\"",
+  "design_note": "The injection sits in the round-4 sweep the commit adds, changing one recognition constant from `orchestra-verifier-` to `orchestra-` behind a comment that argues for family-wide reclamation. Both touched suites stay green because every fixture and the R0-EX4 abandoned-worktree case already live under the narrower prefix, and no suite stands up a second lane's worktree while a checkout is created. A contained probe confirmed the break: with a live `orchestra-review-…/attempt-1/wt` registered and `owner.pid` naming a running process, the real commit leaves the worktree and its verdict file intact while the variant removes both."
+}

@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Add continuous integration that runs the review-lane suite,
+tests/review-lane.test.js, on Linux, Windows and macOS across three
+supported runtime majors, for every push and pull request. Windows is the
+reason this job exists — every field failure in this lane has happened
+there, the suite exited zero with failing cases, and no session on this repo
+runs Windows. Fix in the same change the two Windows facts the matrix forces
+open — the runner cannot CreateProcess a .js file, so the tests hand it a
+.cmd shim, while Windows kill('SIGTERM') is really TerminateProcess, so the
+honest expectation is SIGKILL. Every leg of the matrix has to run to
+completion and report its own result; a red leg may never cancel or hide the
+others, since seeing which platforms disagree is the whole point. No build,
+bundle or publish step is required, and no linter job or new dependency is
+added either — only the runtime and git on the box.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

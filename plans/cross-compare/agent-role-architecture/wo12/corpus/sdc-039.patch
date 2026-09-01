@@ -1,0 +1,282 @@
+diff --git a/roster/r0-ex4-verdict.md b/roster/r0-ex4-verdict.md
+new file mode 100644
+index 0000000..0916813
+--- /dev/null
++++ b/roster/r0-ex4-verdict.md
+@@ -0,0 +1,38 @@
++# R0-EX4 verdict — cross-vendor delta re-review of d00a7ae..7e90c67
++
++Recorded verbatim from the review runner, 2026-08-30. Disposition: all five
++R0-EX3 closures CONFIRMED; four new findings, all fixed in round 4 (see
++wo8-review-dispositions.md).
++
++REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-sol, sandbox: workspace-write, tier: full, timeout: 1800000ms (env), attempts: up to 2, checkout: pinned worktree @ 7e90c673184c)
++CODEX BINARY: C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: resolved through a link: C:\Users\maxtl\AppData\Local\Programs\OpenAI\Codex\bin\codex.EXE -> C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: codex install layout: unknown (C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin) — not one of the two layouts this runner knows, so helper-sibling repair can only use a directory you name in helpersDir
++PREFLIGHT: helper siblings present: codex-command-runner.exe, codex-resources, codex-windows-sandbox-setup.exe
++PREFLIGHT: reclaimed 1 abandoned review worktree(s) from a prior run
++PREFLIGHT: auth/exec probe: ok in 4749ms
++PREFLIGHT: pinned review: checked out 7e90c673184c into a throwaway worktree (C:\Users\maxtl\AppData\Local\Temp\orchestra-review-Cx54Vf\attempt-1\wt); the session's uncommitted files are not visible to the engine
++
++VERDICT: REVISE
++
++FINDINGS
++- [MAJOR] [BREACH] router/router.js:186 — Comma-joining makes the touch-enum equality check collision-prone, allowing unequal schema and trigger sets to pass validation and disable mandatory controls — given schema entries `["auth","authz",...]` and a trigger union `["auth,authz",...]`, both join identically; `createRouter()` succeeds and an E0/T1 order with `touches:["auth"]` receives preferred review and `q0:null` instead of mandatory review plus Q0.
++- [MINOR] [BREACH] verifier/checkout.js:111 — The DP rewrite does not preserve all previous matching semantics — given `matchesAny("\n", ["**"])`, HEAD returns true while the pinned-base matcher returned false; the same change occurs for CR, U+2028, and U+2029.
++- [MINOR] [BREACH] verifier/checkout.js:223 — The documented startup recovery does not reclaim the actual Windows SIGTERM leftover — given TerminateProcess kills the process while its checkout directory exists, plain `git worktree prune` retains both the directory and registration instead of recovering them.
++- [MINOR] [BREACH] roster/r0-ex3-order.md:1 — The pinned range is not the stated single round-3 commit — given `git log d00a7ae..HEAD`, the range contains both `444eaf3` and `7e90c67`, adding 136 lines across two extra record files beyond the reported round-3 commit.
++
++CLAIMS CHECKED
++- "all five R0-EX3 findings are fixed" → CONFIRMED (independently reproduced the exact reserve, separated-star, cutoff-redaction, Windows-signal, and NUL checks; the findings above are new defects or overclaims)
++- "A1/I0 Amber+belowReserve GATE; both Conductor mirror paths are disclosed and restricted" → CONFIRMED (direct dispatch probes exercised all four paths)
++- "the glob matcher is fast with unchanged matching semantics" → REFUTED (the adversarial pattern completed in 0.0244 ms and 530,255 ordinary differential cases matched, but line-terminator semantics changed)
++- "redact before tail truncation prevents cutoff-straddling credential fragments" → CONFIRMED (independent stdout and stderr probes with a delimited credential crossing the 2,000-character boundary retained no credential fragment)
++- "startup worktree prune is the recovery path for untrappable Windows kills" → REFUTED (SIGTERM was independently confirmed untrappable, but prune retained an extant abandoned worktree)
++- "router.js contains no NUL bytes and greps as text" → CONFIRMED (`rg -n "function dispatch" router/router.js` returned line 700)
++- "review-lane is 114/114 after case15 isolation" → CONFIRMED (case15 passed with a real install present; sanitized rerun was 114/114, while the outer review timeout override predictably made the unsanitized run 113/114)
++- "all declared verification commands are green" → CONFIRMED (registry 31/31, verifier 92/92, router 134/134, both loaders, WO-7b gates, and roster lint passed)
++- "supplemental frontmatter/review/scan/exec/MCP suites and both install lints are green" → CONFIRMED (37/37, 114/114, 41/41, 79/79, 68/68, and both lints passed after removing outer-harness environment overrides where required)
++- "one commit, 9 files, +271/−51" → CONFIRMED (true for commit `7e90c67` itself)
++- "the pinned base-to-head range contains the single round-3 commit" → REFUTED (`444eaf3` is also in the range; the complete diff is 11 files, +407/−51)
++
++NITS
++- none
+diff --git a/roster/wo8-review-dispositions.md b/roster/wo8-review-dispositions.md
+index 9771c86..68adeda 100644
+--- a/roster/wo8-review-dispositions.md
++++ b/roster/wo8-review-dispositions.md
+@@ -207,9 +207,38 @@ Also this round: `roster/lint.js` exempts record documents by prefix
+ row (review-lane suite: 6 environment-dependent failures in ITS sandbox)
+ reflects the reviewer's environment; the suite is green here.
+ 
++## R0-EX4 (delta re-review of round 3) and the round-4 dispositions
++
++R0-EX4 (Sol · high, pinned `d00a7ae..7e90c67`; verdict verbatim at
++`roster/r0-ex4-verdict.md`): **REVISE, converging** — all five R0-EX3
++closures independently CONFIRMED (it re-probed reserve gating, separated
++stars, cutoff redaction, Windows signals, and the NUL itself), with four new
++findings. All fixed in round 4:
++
++- **[MAJOR] comma-join collision in the touches lint** — an enum entry that
++  itself contains a comma made unequal sets join identically (`["auth,authz"]`
++  vs `["auth","authz"]`), letting drift disable mandatory review + Q0. Fixed:
++  element-wise comparison, no join at all; a comma-bearing-entry tamper test
++  pinned. (Ironic lineage: the original NUL separator existed to dodge exactly
++  this; the NUL broke the file, the comma broke the check, the join is gone.)
++- **[MINOR] DP matcher drifted on line terminators** — the rewrite let `**`
++  span `\n`/`\r`/U+2028/U+2029, which the retired regex `.` never matched.
++  Fixed: globstar excludes line terminators, `*` excludes only `/` — the old
++  classes replicated exactly, regression-pinned.
++- **[MINOR] `worktree prune` does not reclaim an EXTANT leftover** — an
++  untrappable kill leaves directory + registration, and prune keeps both.
++  Fixed: `sweepAbandoned()` at checkout creation removes registered worktrees
++  under this module's own tmp prefix that no live in-process checkout owns
++  (ACTIVE set skipped — runVerification legitimately holds head+base at
++  once), then prunes. Simulated-leftover test pinned.
++- **[MINOR] order-file overclaim** — the R0-EX4 order said "the single
++  round-3 commit" while the pinned range also contained `444eaf3` (the
++  R0-EX3 order records, +136 lines of markdown). Acknowledged; from R0-EX5
++  on, orders enumerate every commit in the pinned range.
++
+ ## Note
+ 
+ The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
+-the round-3 diff (R0-EX4) comes back clean. Open items are process, not
+-code: (1) R0-EX4, and (2) the registered follow-on — the verification-time
++the round-4 diff (R0-EX5) comes back clean. Open items are process, not
++code: (1) R0-EX5, and (2) the registered follow-on — the verification-time
+ diff-derived `touches` cross-check.
+diff --git a/router/router.js b/router/router.js
+index 53e06b0..22c3da2 100644
+--- a/router/router.js
++++ b/router/router.js
+@@ -183,8 +183,14 @@ function createRouter(opts) {
+     const touchUnion = [...new Set([].concat(q0cfg.touchAreas || [], castings.securityTriggerList || []))].sort();
+     if (!Array.isArray(touchesEnum)) {
+       fail('order.schema.json must declare a typed `touches` enum — the Q0/security touch triggers read that field');
+-    } else if (touchesEnum.slice().sort().join(',') !== touchUnion.join(',')) {
+-      fail('order.schema.json touches enum diverges from q0Triggers.touchAreas ∪ securityTriggerList');
++    } else {
++      // Element-wise, never joined (R0-EX4 MAJOR): any join separator is
++      // collision-prone the moment an entry can contain it — unequal sets
++      // must never compare equal on a serialization accident.
++      const sortedEnum = touchesEnum.slice().sort();
++      if (sortedEnum.length !== touchUnion.length || sortedEnum.some((v, i) => v !== touchUnion[i])) {
++        fail('order.schema.json touches enum diverges from q0Triggers.touchAreas ∪ securityTriggerList');
++      }
+     }
+   }
+   const rm = castings.reviewMatrix || {};
+diff --git a/tests/router.test.js b/tests/router.test.js
+index d9e2f47..744a541 100644
+--- a/tests/router.test.js
++++ b/tests/router.test.js
+@@ -683,6 +683,22 @@ check('a drifted touches enum fails the router load closed (the schema/trigger l
+     fs.writeFileSync(path.join(dir, 'schemas', 'order.schema.json'), JSON.stringify(osJson), 'utf8');
+     try { createRouter({ registryBaseDir: dir }); return false; } catch (e) { return /touches enum diverges/.test(e.message); }
+   })());
++check('R0-EX4: the touches lint compares elements, never a joined string (a comma-bearing entry cannot collide)',
++  (() => {
++    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-touch2-'));
++    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
++    fs.mkdirSync(path.join(dir, 'schemas'), { recursive: true });
++    fs.copyFileSync(path.join(MASTER, 'registry', 'classes.json'), path.join(dir, 'classes.json'));
++    for (const f of fs.readdirSync(path.join(MASTER, 'registry', 'schemas'))) {
++      fs.copyFileSync(path.join(MASTER, 'registry', 'schemas', f), path.join(dir, 'schemas', f));
++    }
++    const osJson = JSON.parse(fs.readFileSync(path.join(dir, 'schemas', 'order.schema.json'), 'utf8'));
++    const en = osJson.properties.touches.items.enum.filter((t) => t !== 'auth' && t !== 'authz');
++    en.unshift('auth,authz'); // joins byte-identically to ['auth','authz'] under any comma join
++    osJson.properties.touches.items.enum = en;
++    fs.writeFileSync(path.join(dir, 'schemas', 'order.schema.json'), JSON.stringify(osJson), 'utf8');
++    try { createRouter({ registryBaseDir: dir }); return false; } catch (e) { return /touches enum diverges/.test(e.message); }
++  })());
+ check('a gated review lane does not close — closes flips with the embedded gate',
+   (() => {
+     const r = router.reviewer(['openai'], 'T2', { policy: 'mandatory', buckets: buckets({ 'AU-opus': { state: 'Green', belowReserve: true } }) });
+diff --git a/tests/verifier.test.js b/tests/verifier.test.js
+index 30333e4..3c0ce6b 100644
+--- a/tests/verifier.test.js
++++ b/tests/verifier.test.js
+@@ -547,6 +547,13 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
+     checkoutLib.matchesAny('a/b', ['*']) === false &&
+     checkoutLib.matchesAny('ab', ['a*b']) === true &&
+     checkoutLib.matchesAny('a/x/b', ['a*b']) === false);
++  check('R0-EX4: wildcard character classes match the retired regex exactly (globstar excludes line terminators, star excludes only /)',
++    checkoutLib.matchesAny('\n', ['**']) === false &&
++    checkoutLib.matchesAny('a\rb', ['a**b']) === false &&
++    checkoutLib.matchesAny('a\u2028b', ['**']) === false &&
++    checkoutLib.matchesAny('a\u2029b', ['**']) === false &&
++    checkoutLib.matchesAny('a\nb', ['a*b']) === true /* old [^/]* matched \n */ &&
++    checkoutLib.matchesAny('a/b/c', ['**']) === true);
+ 
+   // R0-EX3: tail-then-redact let a credential straddle the 2000-char cutoff
+   // and survive as a reconstructible suffix. Redaction now runs over the
+@@ -556,6 +563,24 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
+   check('R0-EX3: a credential straddling the tail cutoff is redacted, never truncated into a reconstructible suffix',
+     straddle.commands[0].exit_code === 0 && !/MNOPQRSTUV/.test(straddle.commands[0].stdout_tail),
+     JSON.stringify(straddle.commands[0].stdout_tail).slice(0, 120));
++
++  // R0-EX4: `worktree prune` alone clears only registrations whose directory
++  // is GONE — an untrappable kill leaves both directory and registration.
++  // Simulate the leftover exactly (a registered worktree under this module's
++  // own tmp prefix that no live checkout owns) and prove the startup sweep
++  // reclaims it while live checkouts survive.
++  const abandonedParent = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-verifier-'));
++  cleanups.push(() => fs.rmSync(abandonedParent, { recursive: true, force: true }));
++  const abandonedDir = path.join(abandonedParent, 'checkout');
++  git(fixture.dir, ['worktree', 'add', '--detach', abandonedDir, fixture.base]);
++  const co2 = checkoutLib.createCheckout(fixture.dir, fixture.base); // startup sweep runs here
++  const wtList = git(fixture.dir, ['worktree', 'list', '--porcelain']).toLowerCase();
++  check('R0-EX4: startup sweep reclaims an extant abandoned worktree (directory AND registration), live checkouts untouched',
++    !co2.error && !fs.existsSync(abandonedDir) &&
++    !wtList.includes(path.basename(abandonedParent).toLowerCase()) &&
++    fs.existsSync(co2.dir),
++    'abandoned exists=' + fs.existsSync(abandonedDir));
++  co2.teardown();
+ }
+ 
+ section('13. The mutation check is wired into the integrated round and the CLI');
+diff --git a/verifier/checkout.js b/verifier/checkout.js
+index d0bbfb2..ab797d2 100644
+--- a/verifier/checkout.js
++++ b/verifier/checkout.js
+@@ -98,6 +98,14 @@ function compileGlob(pattern) {
+ 
+ // dp[j] = "the tokens consumed so far can match text[0..j)". Each token
+ // updates the whole row in one linear pass.
++//
++// Wildcard character classes replicate the retired regex EXACTLY (R0-EX4
++// MINOR: the first DP draft let `**` span line terminators, which regex `.`
++// never did): `**` matches anything except a line terminator (it does cross
++// '/'); `*` matches anything except '/'. Git-quoted paths keep terminators
++// out of real inputs, but the matcher must not drift just because the
++// engine changed.
++const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029']);
+ function globMatch(tokens, text) {
+   const n = text.length;
+   let prev = new Array(n + 1).fill(false);
+@@ -105,10 +113,9 @@ function globMatch(tokens, text) {
+   for (const tok of tokens) {
+     const next = new Array(n + 1).fill(false);
+     if (tok === 'globstar') {
+-      let reachable = false;
+       for (let j = 0; j <= n; j++) {
+-        reachable = reachable || prev[j];
+-        next[j] = reachable; // spans any characters, including '/'
++        if (prev[j]) next[j] = true;
++        else if (j > 0 && next[j - 1] && !LINE_TERMINATORS.has(text[j - 1])) next[j] = true;
+       }
+     } else if (tok === 'star') {
+       for (let j = 0; j <= n; j++) {
+@@ -236,6 +243,44 @@ function installExitHandler() {
+   }
+ }
+ 
++// The mkdtemp prefix every checkout parent carries.
++const PARENT_PREFIX = 'orchestra-verifier-';
++
++// What the sweep is willing to reclaim. Every orchestra lane names its scratch
++// parent `orchestra-<lane>-…` under the OS temp dir, and a worktree registered
++// beneath one of those is throwaway by construction — nothing a user authored
++// lives there. Recognizing the family prefix rather than only this module's
++// own is what makes an interrupted run stop being a leak the user clears by
++// hand; anything outside it is left strictly alone.
++const SWEEP_PREFIX = 'orchestra-';
++
++function normPath(p) {
++  const r = path.resolve(String(p)).replace(/\\/g, '/');
++  return process.platform === 'win32' ? r.toLowerCase() : r;
++}
++
++// Remove registered worktrees under an orchestra scratch prefix that no
++// LIVE checkout in this process owns (runVerification legitimately holds
++// two at once — head + base — and mutationCheck a third; those are in
++// ACTIVE and skipped). A concurrent verifier PROCESS on the same repo could
++// in principle be swept — the same trade the reference lane makes; runs on
++// one repo are serialized by the dispatcher.
++function sweepAbandoned(repoDir) {
++  const list = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
++  if (!list.error && list.status === 0) {
++    const live = new Set([...ACTIVE].map((e) => normPath(e.dir)));
++    for (const line of (list.stdout || '').split('\n')) {
++      if (!line.startsWith('worktree ')) continue;
++      const wt = line.slice('worktree '.length).trim();
++      const norm = normPath(wt);
++      if (!norm.includes(SWEEP_PREFIX) || live.has(norm)) continue;
++      runGit(['-C', repoDir, 'worktree', 'remove', '--force', wt]);
++      try { fs.rmSync(path.dirname(wt), { recursive: true, force: true }); } catch (_) { /* best effort */ }
++    }
++  }
++  runGit(['-C', repoDir, 'worktree', 'prune']);
++}
++
+ /**
+  * Create a throwaway writable checkout of `commitish`, outside the repo.
+  * Returns { dir, commit, parent, fingerprintBefore, delta, teardown } or
+@@ -254,16 +299,20 @@ function createCheckout(repoDir, commitish, opts) {
+     return { error: 'not a git repository (or git unavailable): ' + repoDir };
+   }
+   const toplevel = path.resolve(top.stdout.trim());
+-  // Sweep stale registrations from previously interrupted runs (the same E7
+-  // finding): a dangling worktree entry can block re-adding a path.
+-  runGit(['-C', repoDir, 'worktree', 'prune']);
++  // Reclaim leftovers from previously interrupted runs (E7 + R0-EX4): a
++  // `worktree prune` alone clears only registrations whose DIRECTORY is
++  // gone — an untrappable kill (TerminateProcess) leaves both the directory
++  // and the registration, which prune happily keeps. Sweep any registered
++  // worktree living under an orchestra scratch prefix that no live checkout
++  // in this process owns, then prune the rest.
++  sweepAbandoned(repoDir);
+   const resolved = runGit(['-C', repoDir, 'rev-parse', '--verify', String(commitish) + '^{commit}']);
+   if (resolved.error || resolved.status !== 0) {
+     return { error: 'cannot resolve commit ' + commitish + ': ' + ((resolved.stderr || '').trim() || 'git error') };
+   }
+   const commit = resolved.stdout.trim();
+ 
+-  const parent = fs.mkdtempSync(path.join(options.tmpRoot || os.tmpdir(), 'orchestra-verifier-'));
++  const parent = fs.mkdtempSync(path.join(options.tmpRoot || os.tmpdir(), PARENT_PREFIX));
+   // Bound (1): the checkout lives OUTSIDE the repository. If a caller pointed
+   // tmpRoot inside the repo, refuse rather than sandbox the tree inside itself.
+   const rel = path.relative(toplevel, parent);

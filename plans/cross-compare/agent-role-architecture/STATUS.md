@@ -502,6 +502,344 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   the P15 reserve gate; D1 re-ruled in full (above); STATUS.md's false
   "all four Band A exercises" quick-start line corrected. Next:
   **WO-12**.
+- **WO-13 DISPOSED — no target (2026-08-31):** the metered lane WO-13 was written to
+  migrate (`orchestra-deepplan.js` → `api.openai.com/v1/responses` with
+  `OPENAI_API_KEY`, the `planner-gpt` launcher, `OPENAI_BASE_URL`) was deleted
+  outright in v2.0.0 with the `/deep-plan` retirement (CHANGELOG 2.0.0); a repo-wide
+  scan finds no live code path calling `api.openai.com` — every remaining
+  `OPENAI_API_KEY` mention is Codex-CLI auth documentation, a CLI-transport
+  diagnostic string, or a test of that diagnostic. Every cross-vendor lane already
+  runs on the subscription Codex CLI. The proof clause ("a full planning round
+  completed with `OPENAI_API_KEY` unset") is evidenced only partially: the A0
+  Architect exercise ran with the variable unset (`roster/wo11-a0-exercise-ex3.md`)
+  but did not complete a planning round because of the sandbox fault below; it
+  completes with the A0 exercise. Nothing to migrate; the order closes on that
+  proof.
+- **Codex sandbox fault ROOT-CAUSED (2026-08-31):** the "intermittent
+  `unsupported protocol version 6`" fault carried since WO-9 (now 23 engine-reaching
+  attempts, 18 faults) is a stale helper in the owner's codex install: the
+  `codex-command-runner.exe` inside the 0.151.0 release directory is byte-identical
+  to 0.147.0's and rejects the 0.151.0 CLI's spawn protocol v6 on the unified-exec
+  tool path; the legacy shell path works, so "intermittency" is which exec tool the
+  model picks on a turn. The Conductor's cwd hypothesis was REFUTED by a
+  fresh-context Investigator (historical faults at the repo root; live probes 5/5
+  faults across repo root, `%TEMP%`, `Projects\`), and the per-invocation disable
+  (`-c features.unified_exec=false`) was REFUTED 3/3. Record verbatim:
+  `roster/wo11-codex-fault-investigation-2026-08-31.md`. **Owner action: repair the
+  helper (replace with the newer runner already on disk, hash `8e47f597…`) or
+  reinstall codex 0.151.0.** Until then every Codex-side dispatch that must spawn a
+  shell — the owed E8/E1/A0 exercises (re-attempted today: 2 clean engine reaches,
+  6 faults; records `roster/wo10-e8-exercise-ex3.md`, `roster/wo10-e1-exercise-ex3.md`,
+  `roster/wo11-a0-exercise-ex3.md`) and the WO-12 X-Sol/X-Terra review lanes — is
+  blocked; this is the campaign's critical path. Debt rows re-attributed in
+  `roster/wo11-band-record.md` § Exercise debt.
+- **WO-12 IN PROGRESS (2026-08-31) — protocol pre-registered, corpora under
+  construction, NO trial pass run:** `wo12/wo12-protocol.md` (committed `68e2e97`
+  before any pass, WO-7b precedent) fixes decision rules for 12a/12c/12d/12e/12f/12h
+  and defers 12b to WO-15 with its rule stated. The shared **seeded-defect corpus**
+  (12d/12f/12h): 84 artifacts = 30 seeds (6 complementarity types × 5; 6 CRITICAL /
+  18 MAJOR / 6 MAJOR-preferred) + 54 controls drawn from this repository's history;
+  `corpus/base-pool.json` + control briefs committed at `135ea82` before seeding;
+  seeds are produced by fresh-context Opus seeders (one seed each, never shown the
+  key) as `P → C'` patches with a sealed `key.json`. Tooling: `build-corpus.js`
+  (reproducible variant materialization in a throwaway clone), `run-lane.js`
+  (P0-gated lane driver, `--yes`/`--dry-run`, one retry, verbatim results),
+  `score.js` (mechanical hits, Wilson intervals, 12f gate table, 12d union table);
+  `tests/wo12-tooling.test.js` in CI. 12a (8 bounded Builder orders + fixture), 12e
+  (12 hard-environment tasks + fixtures + scope-audited checker), 12c reduced form
+  (6 static-component orders + `check.js` with the WO-10 contrast algorithm) built
+  as pre-registered corpora. **Runs are gated twice:** P0 must show OU usable (owner
+  `/status` readings — all four buckets fail closed as of this date) and the codex
+  helper must be repaired (above). Phase 0 = 12-artifact pilot, 24 Codex reviews.
+  **Review chain (tooling commit `e14232d`, gate-class):** OpenAI lane attempt 1
+  `REVIEW_UNAVAILABLE` (Sol at capacity, vendor-side — recorded, not entered as a P0
+  throttle: a model-capacity refusal is not an allowance signal); Anthropic fallback
+  lane (disclosed `cross_family=false`) **REVISE — 4 CRITICAL, 12 MAJOR, 8 MINOR**
+  (`roster/wo12-r0-review-anthropic-1.md`): the P0 gate failed OPEN on any
+  quartermaster failure that was not the literal refusal string; the seeded variant's
+  commit metadata identified it at 100%; the answer key was reachable from the
+  reviewer's clone via `.git`; 14/30 seeded briefs were structurally distinguishable
+  from controls. OpenAI lane re-attempt 2 **REVISE — 3 CRITICAL, 10 MAJOR**
+  (`roster/wo12-r0-review-openai-2.md`, suites run), converging on the same lines.
+  Round 2 (pre-run, before any pass): protocol amendments committed at `10f44cb`
+  (real-commit metadata on variants; sanitized review clones with refs/reflogs removed
+  and objects pruned; briefs generated from per-artifact content files under one
+  structure; hazards from a closed kind-vocabulary; strict-path hits). **Round 2
+  applied:** every finding from both verdicts closed with a pinning test (tooling suite
+  368 checks); 84 content files authored (54 controls from commit bodies; 30 seeds by
+  type-grouped authors preserving each seed's constraint/scope/claim); the corpus
+  re-assembled and re-sealed — 1 work-order skeleton and 1 report skeleton per variant
+  across all 84, sanitized run clones identical in shape for seeds and controls (0
+  refs, key unreachable), 0 leakage/vendor findings, order-prose bands overlapping
+  (seeds 144±12, controls 128±18 words), idempotent to the byte, all suites green. KIND
+  declared pool-wide as `code`; phases run in a deterministic interleaved order.
+  Incident recorded: a builder agent's own `rm -rf` wiped 54 untracked content files
+  (rewritten; now impossible in-tool; batches are committed on arrival). CI on the
+  round-2 commit caught a real cross-platform defect (5/9 red): the nested-clone guard
+  was inoperative on macOS/Windows because a not-yet-existing clone path cannot be
+  realpath'd and the comparison went one-sided — fixed at `1ff2730` (nearest-existing-
+  ancestor resolution, segment-wise `path.relative`, case-folded on win32/darwin; every
+  spelling pair pinned; 406 checks). **Round-2 delta verdicts:** Anthropic lane
+  REVISE — 0 CRITICAL, 5 MAJOR, 6 MINOR (`roster/wo12-r0-review-anthropic-2.md`; all 7
+  round-1 CRITICALs confirmed closed by a live 9-case gate matrix and a sweep of all 84
+  sanitized clones; new: a residual blinding tell — seeds' ORDER prose is harder and
+  longer than controls', a fresh evaluator separated 10/12 briefs at 83% — plus a
+  suffix-tier path over-match, no-verdict runs scoring as 0-hit completions, unscoped
+  adjudication promotions, no resume); OpenAI lane REVISE — 4 CRITICAL, 2 MAJOR
+  (`roster/wo12-r0-review-openai-3.md`; adds an unchecked-id delete path, per-finding
+  false-blocker completeness, an identity-mismatch case, a non-persistent phase-0 stop
+  counter). **Round 3 (pre-run) in progress:** tooling closures for every item; control
+  ORDER/CLAIMS prose re-authored to the seeds' register; a population-balance lint
+  (length and hardness) and a fresh-evaluator blind classification re-run after every
+  content change; the 10 base-reused controls stay (history pool exhausted) and are
+  disclosed. macOS CI: one case-fold check being made empirical (probe, not platform).
+  **Round 3 applied:** every item of both delta verdicts closed with a pinning test
+  (533 checks); all 54 control ORDER/CLAIMS re-authored to the seeds' register and
+  calibrated to the seeds' measured hardness (first drafts overshot 4–16 hits vs the
+  seeds' 2.3 and would have flipped the tell); population-balance lint passes at
+  Δ3.2 / Δ1.8 words and hardness ratio 1.00. Registered limit: the 12f identity gate
+  rests on the runner echoing the requested model (`echoed-request`) until
+  `orchestra-review.js` surfaces a served model — follow-on before 12f is scored.
+  Round 3 committed (`8152b34` corpus, `5c65946` tooling) after independent
+  verification. **Blind test, round 3** (`wo12/corpus/BLIND-TEST-round3.md`): a fresh
+  evaluator over 24 briefs scored **10/24 (41.7%)** — at/below chance, against 83% in
+  round 2; the ≤65% target is met. Residual hook found and opened as round 4: the five
+  OO seeds carried literal `IN SCOPE:` / `Constraint:` labels no control had (their
+  three highest-confidence hits) — being rewritten as prose, with a label-tell lint
+  added and a second blind test on a different draw. CI on `5c65946`: 9/9 green
+  including macOS. **Round 4 applied** (`a908c12`): the label tell turned out to be
+  general — 15 distinct sentence-initial labels across 21 content files, every one
+  carried by a single population (e.g. `Verification:` in seeds, `Suites:` in
+  controls) — so the lint forbids inline labels outright and all 21 files were
+  rewritten as prose with every fact preserved (561 checks). **Round-3 delta verdict,
+  Anthropic lane: REVISE — 0 CRITICAL, 5 MAJOR, 5 MINOR** (`roster/wo12-r0-review-
+  anthropic-3.md`): its fresh blind reader scored exactly chance (50%), but a
+  corpus-level classifier still separates 25 artifacts at 100% precision on
+  distribution tails the balance lint's three means do not see — controls had been
+  authored into 135–160 / 65–95-word bands while seeds kept 121–159 / 57–99;
+  backticks in 10 seeded orders and no control; two idioms in 15 controls and no
+  seed — plus four scorer/driver fixes landing on the named path but not its
+  neighbour. **Round 5 opened** (protocol amendment x): both populations to the same
+  bands, backticks forbidden, a distribution lint (range floors/ceilings, sd ratio,
+  digit density, 3-gram exclusivity, watched idioms), and the adjacent-path closures;
+  content passes on all 84 files complete (final means: ORDER 150.3 vs 147.5, CLAIMS
+  79.9 vs 78.0, ranges 136–159 vs 135–160 and 66–90 vs 66–93, backticks 0, watched
+  idioms balanced or absent). Round-5 tooling committed (`5379751`, 642 checks):
+  every round-3 delta finding closed on its adjacent path; the distribution lint's
+  3-gram rule was re-scoped to content-word 3-grams in ≥6 documents after the first
+  cut flagged 133 connective phrases, and what survived (53) was not topic but one
+  author's boilerplate repeated across consecutive control files — being varied;
+  the genuine topic asymmetry (docs/records commits exist only among controls; every
+  seeded base is a code commit) is disclosed in CONSTRUCTION.md as a corpus-level
+  property that gives a per-packet reviewer nothing. The stray `p0-overrides.log` was
+  the tooling suite's own SIGTERM-interrupted run — the ledger now lives beside the
+  results file and a guard test asserts the repo stays clean. The first round-5
+  `--check-only` on the varied content left three residues — digit density (controls
+  5.39 vs seeds 3.40 per 100 words, from stacked suite counts and short shas one
+  author had added), one more shared control phrase ("the status file", 6 files), and
+  the last "leave … alone" — all being cleared by per-file caps (≤3 numerals, no
+  shas) and phrase variation — the digit fix first over-corrected (controls 1.11 vs
+  seeds 3.40, the seed mean carried by one order at 30 digits/100 words) and was
+  rebalanced from both sides (three seed outliers capped; every zero-numeral control
+  given one genuine figure): final 2.10 vs 1.25. CI on `f992947`: 9/9 green. **Content
+  sealed at `88b5cec`; `assemble-key.js --check-only` passes every lint.** Round-5
+  corpus re-sealed and independently verified at `044b85e` (1,445 checks; CI 9/9
+  green). **Blind test #2** (`wo12/corpus/BLIND-TEST-round5.md`): **24/24** — but
+  through commit-sha linkage across packets (a control's head quoted as another
+  packet's base; reused-base pairs showing one subject under two heads), not review
+  content, which the evaluator itself put at ~6 confident calls. A single-packet
+  reviewer cannot chain packets; the blind-test instrument can. **Round 6 opened**
+  (protocol amendment xi): shas leave the brief text, a hex-token lint, pair-aware
+  blind draws — tooling landed at `e3dde34` (711 checks). **Rounds-4–5 delta verdict,
+  Anthropic lane: REVISE — 1 CRITICAL, 4 MAJOR, 6 MINOR** (`roster/wo12-r0-review-
+  anthropic-4.md`): its fresh blind reader scored **33%** (below chance — the best
+  human-facing result yet), but the identity classifier could return MATCHED on an
+  engine line whose served model contradicts it (CRITICAL), the FINDINGS extractor
+  stopped only at two headers, and a style-only classifier still reached 90%
+  precision on sentence shape (seeds' shortest sentences — "Done." — vs controls') and
+  diff-stat vocabulary ("deletions", "insertions", "touching" only in controls); the
+  head-sha resolvability oracle it named was already closed by round 6. **Round 7**
+  (protocol amendment xii): the identity and extractor fixes, a sentence floor and a
+  unigram-exclusivity gate, a content pass on all 84 files, and a stated stopping
+  standard — every gated feature passes and the delta reviewer's best ungated style
+  classifier stays under 80% precision; the human-facing standard (≤65%) has been
+  met since round 3. Round-7 content (all 84 files) sealed at `34098ce` and tooling at
+  `54b6eeb` (809 checks): on the sealed content every gate passes — sentence floor 0
+  failures, shortest-sentence means 10.9 vs 9.6 (Δ1.3, limit 3), unigram exclusivity 0
+  at df≥8, plus all earlier gates. The identity gate now parses `served_model` first
+  (a contradiction fails gate 5; absence reads LIMITED; only an explicit match is
+  evidence). **Round-7 corpus regenerated and committed `fb20e44`** (168 briefs,
+  idempotent, zero sha-like tokens, sanitized run clones re-verified; CI 9/9 green).
+  **Blind test #3 (`corpus/BLIND-TEST-round7.md`): 8/24 = 33%** — a fresh Opus reader
+  over an isolated copy of the 24-packet seeded draw called the V3 hazard-checklist arm
+  "the seeding taxonomy" (4/11 precision) and read the V2 author line as a control
+  marker (3 of its 4 packets were seeds); its one content-only call was wrong.
+  Human-facing accuracy is at or below chance on both content-only reads (41.7%,
+  33.3%). **Rounds-6–7 delta (Anthropic, `wo12-r0-review-anthropic-5.md`): REVISE —
+  2 CRITICAL / 6 MAJOR / 4 MINOR, all accepted; round 8 opened.** The label-informed
+  arm of the stopping standard fails: a style-only classifier reaches 85.7% precision
+  under leave-one-out CV and a nine-rule threshold list labels 58 of 84 with zero
+  errors (`and` ≥ 13, zero digits, commas ≤ 4.02/100w, mean ORDER sentence ≤ 22.14,
+  both shortest-sentence tails). Also: gate 5's `served_model` is parsed from the
+  engine's own transcript (spoofable both ways); the FINDINGS terminator drops
+  findings under `### CRITICAL` subheads or after a `---` rule; `we` 0S/13C and `md`
+  sit under the unigram gate's exclusions; the `Commit subject:` line still pairs the
+  reused bases; run clones are named by artifact id; the round-7 draw seed does not
+  reproduce (record corrected). Round 8 = a generic single-threshold purity gate over
+  a feature family + the specific fixes, then content re-authored against its report,
+  blind test #4 with the draw stored verbatim, and a rounds-8 delta. Ships as 2.4.0.
+  OpenAI lane: attempts 4 (stub engine) and 5 (foreground cap, Conductor dispatch
+  error) VOID; **attempt 6 (`wo12-r0-review-openai-6.md`, engine verified) REVISE —
+  1 CRITICAL / 4 MAJOR / 3 MINOR, accepted.** Four of its findings converge with the
+  Anthropic lane's, reached blind (identity spoof, FINDINGS terminator from the
+  opposite direction, id-named clone dir, lowercase splitter). New from it: an unchecked
+  `--run-clone-root` inside the repository reaches the live key; the stopping standard
+  is rendered but unenforced; resume resets the run index so gate 6's streak can be
+  split. All folded into round 8. Rounds 3–7 now carry a cross-vendor verdict.
+  **Round-8 tooling landed `20145a5`** (983 checks, CI 9/9): arm (8) single-threshold
+  purity over 15 derived features with content targets; `SEAL:` verdict on
+  `--check-only` (drift / purity / absent-or-stale `blind-read.json` → exit 1); served
+  model honoured only before `=== ENGINE OUTPUT ===`; terminator reconciled; VARIANTS
+  v4 (no subject line); opaque clone tokens + refused in-repo clone roots; absolute run
+  index; protocol amendment (xiii). On round-7 content the gate refuses: 13 pure rules
+  (the `sdc-024–032` control cluster fires on six; ten seeds carry no digit; nine seeds
+  over-use "and"; both shortest-sentence tails pure). Content round 8 in flight in four
+  disjoint groups against shared target bands. Version 2.4.0 cut (`a473588`).
+  **Incidental findings registered during corpus construction (follow-ons, own
+  lanes):** (i) `tests/verifier.test.js:556` — the redaction-before-truncation
+  assertion (`!/MNOPQRSTUV/`) is near-vacuous on this platform: the surviving leak
+  under the buggy order begins one character later, so the test passes with or
+  without the fix it pins (found by the sdc-041 seeder while surveying; not used as a
+  seed); (ii) `tests/review-lane.test.js`'s helper-sibling repair and orphan-sweep
+  sections flicker 5–7 failures on this host at historical commits while the current
+  HEAD runs 116/116 green — environment-dependent (the stale codex helper is the
+  plausible cause), worth pinning once the helper is repaired; (iii) the sdc-039
+  seeder independently rediscovered the round-4 `sweepAbandoned` main-worktree
+  rm-rf (R0-EX5's CRITICAL, fixed at `ceeaabc`) — a confirmation of the record, not a
+  live defect; (iv) **review-runner engine observability** — the OpenAI-lane round-3
+  delta's third attempt (`roster/wo12-r0-review-openai-4.md`) returned the
+  `tests/fixtures/stub-codex.js` fixture's APPROVE as if it were a codex verdict;
+  `CODEX_BIN` was set in the invoking environment (source undetermined). Ruled VOID.
+  `orchestra-review.js` must print the resolved engine path + hash in every verdict
+  header and refuse an engine under `tests/fixtures/` outside an explicit test mode.
+  **Closed at `5f83486`:** the runner prints `ENGINE BIN: <path> sha256=<hex>` in its
+  header block, ends that block with a literal `=== ENGINE OUTPUT ===` delimiter
+  (occurrences inside engine output are neutralised), and refuses a fixture engine
+  unless `ORCHESTRA_ALLOW_STUB_ENGINE=1`. It emits no `served_model:` — codex-cli
+  0.151.0 exposes no served-model field (the `--json` stream carries none; the rollout
+  log echoes the request) — so gate 5 reads LIMITED honestly on every codex lane until
+  the CLI reports one. The OpenAI-lane delta itself was delivered on attempt 6.
+- **WO-12 DE-SCOPED AND BOUNDED (2026-08-31) — amendments xiv + xv; 12f WITHDRAWN:**
+  after the round-4–8 blinding arms race was called out as scope creep (10+ hr
+  session postmortem, owner concurrence), the owner directed a hard turn to live
+  pilot testing and dropped Terra as a reviewer candidate outright ("attempting to
+  find cheaper reviewers is unnecessary"). A session scope oracle (Fable fork, full
+  context) ratified a bounded close-out and authored the stopping rule, adopted
+  verbatim as **protocol amendment xiv**: at most one completion pass (the 20
+  residue ids from the 2026-08-31 `--check-only` report) + one repair pass; blind
+  test #4 (one administration, one scoped fix + one re-administration max, then
+  owner); the pre-registered rounds-8 delta review is STRUCK (the treadmill
+  itself); no further content/lint/gate/tooling changes regardless of later
+  classifier findings — disclosures only; anything beyond needs a new owner order.
+  **Amendment xv withdraws 12f**: X-Terra struck from every phase, phase 0 = X-Sol
+  + in-harness 12d arms only, the served-model identity follow-on closes as moot
+  (gate 5 LIMITED = disclosure, gates nothing). The corpus's consumers are 12d
+  (needs ground truth; live telemetry cannot measure missed defects) and 12h
+  (exploratory). Oracle facts that forced the shape: round-8 content was never
+  materialized (on-disk briefs are round-7), `--check-only` refuses on 3 findings
+  naming exactly the 20 residue ids, and no override path exists — so "accept
+  as-is" was unreachable and one completion batch is the cheapest consistent end
+  state. Close-out sequence: amendment committed first → completion batch →
+  regenerate + reseal → blind #4 (draw stored verbatim) → SEAL PASS transcript
+  committed → `run-lane.js --dry-run` (X-Sol only) → STOP at the two owner gates.
+  Oracle cadence is standing policy: a high-effort oracle reviews scope every few
+  rounds; stopping rules are oracle-authored, never worker-authored.
+- **WO-12 PRE-TRIAL WORK CLOSED — SEAL: PASS (2026-08-31, v2.4.1):** the full
+  amendment-xiv sequence executed same-day. Batch G5 (`bd88222`) cleared all three
+  residue findings on the 20 ids (Sonnet agent, one pass, fact-preservation
+  spot-checked); corpus regenerated idempotently and resealed (`61bda5c`); blind
+  test #4 drawn verbatim (`blind-draw-round8.json`, seed round8-blind4), read by a
+  fresh-context Opus evaluator over an isolated packet copy, scored mechanically —
+  **25% precision / 25% accuracy, below chance** (`check-only-transcript-round8.txt`
+  committed; raw evaluator output + the sub-chance disclosure, recorded-not-gated
+  per xiv, in `corpus/BLIND-TEST-round8.md`); `run-lane.js --lane X-Sol --phase 0
+  --dry-run` clean end-to-end. Human-facing reads across generations: 41.7% → 33%
+  → 25%, all at or below chance. Nothing further is permitted on WO-12 pre-trial
+  work without a new owner order. **The codex fault is CLEARED (2026-08-31 evening,
+  addendum 2 in `roster/wo11-codex-fault-investigation-2026-08-31.md`):** `codex
+  update` was a no-op (0.151.0 is still latest stable; the defect is inside the
+  0.151.0 package itself) and the last flag lead was refuted (every spelling
+  collapses to `features.unified_exec`, refuted 3/3; on 0.151.0 the runner sits
+  under the plain exec path too, so no flag routes around it). The repair: the
+  `codex-command-runner.exe` from npm `@openai/codex@0.152.0-alpha.7-win32-x64`
+  (published 2026-08-31; sha256 `f0cbcc339587…`), owner-swapped into both helper
+  locations with backups; the re-probe spawned a shell cleanly (nonce
+  `6ce1ec298f174b72`) — the first clean spawn on this path since WO-9. Standing
+  state: 0.151.0 CLI + alpha.7 helper; a future `codex update` to 0.152.0 stable
+  supersedes the swap wholesale. **The trial now waits on ONE owner action:
+  record the four P0 readings
+  (`node quartermaster/quartermaster.js --record <AU-all|AU-opus|AU-fable|OU>
+  <remaining-fraction> --source "..."`). Then: phase-0 pilot with `--yes`, the
+  in-harness 12d arms, and the owed E8/E1/A0 exercises.**
+- **WO-12 STOPPED AT PHASE 0; campaign re-aimed (2026-08-31 → 09-01):** the phase-0
+  pilot ran on all three lanes (X-Sol 5/6 seeds, 1 UNAVAILABLE; S-Sonnet 6/6; S-Opus
+  6/6; no cross-family complementarity on the subset) — `wo12/PHASE0-PILOT-NOTE.md`,
+  raw results committed. An open-ended second-pass scope oracle (Sol·xhigh,
+  `roster/wo12-scope-oracle-2-2026-08-31.md`, after the owner rejected the first
+  oracle order's pre-cut options) ruled: phases 1–3 are an optional research asset,
+  not a gate; the S-lane control reviews' live router/quartermaster findings are
+  READINESS BLOCKERS; and the campaign's largest gap is **activation** — nothing
+  installed calls `dispatch()`, `install.js` still installs the legacy core. Binding
+  path (owner-ratified): readiness-repair tranche → activation bridge → E8/E1/A0
+  through the working path → WO-15. **Readiness-repair tranche executed and STOPPED
+  TO OWNER** (`roster/readiness-repair-tranche-2026-09-01.md`): 11 confirmed
+  defects fixed and pinned (router 135→153 checks, quartermaster 195→216), incl. the
+  auth-touch→Fable dispatch and the future-dated-throttle fail-open; two cross-vendor
+  review cycles (cycle 1: 2 MAJOR, fixed — one was an inverted Q0 family fix the
+  Conductor's ambiguous pin spec let through; cycle 2: 1 new MAJOR on human-authored
+  Q0 re-dispatch under pool transition + 1 MINOR) — the oracle's two-cycle cap halts
+  it here. **Adversarial roster review (Sol·max)** recorded with the Conductor's
+  full refutation pass (`roster/roster-adversarial-review-2026-09-01.md`,
+  `roster/roster-review-refutations-2026-09-01.md`): keep 5 seats + 2 substrates,
+  16 files demote/merge/ditch; Red Team and Sweeper premises refuted (WO-8 exercises
+  the reviewer never saw), Data Engineer contested. **Owner rulings 2026-09-01 (all
+  three recorded):** (1) tranche residuals ACCEPTED as registered follow-ons — the
+  human-authored-Q0 stale-family MAJOR is fixed inside the activation bridge before any
+  shadow (oracle's rule), tranche CLOSED; (2) reserve calibration LEFT at parity
+  (`floorFractionOfBucket` 0.08 == redBelow); (3) roster: KEEP Red Team, Data Engineer,
+  Architect (**toggleable** — owner-settable enable flag, typed `DISABLED` when off,
+  Conductor self-plans with disclosure; mechanism built in the bridge); BENCH Sweeper
+  (file kept, same toggle, default OFF; re-enable on a missed-site escape in the first
+  live tests); DITCH every other non-KEEP file. Launch roster = 9 active seats + 1
+  benched + 2 substrates (`roster/roster-review-refutations-2026-09-01.md` § Owner
+  rulings). **Builder ladder — ruled, to build in the bridge:** the Conductor selects
+  Luna / Terra / Sonnet / Sol / Opus for Builder work by task shape and per-vendor
+  availability. Today Builder has four rungs and pool state can only step to `mirror`;
+  no Opus or Sol implementation rung exists on E2 (Opus was Principal's, absorbed here).
+  Adopted shape: a `tier` on the order (bounded / standard / dense / deep) mapping to a
+  preferred casting plus an ordered cross-vendor lawful-substitute list walked under the
+  bucket ladder with `recastFrom` disclosed; guardrails preserved (Luna never
+  under-specified; Opus behind P15 + Amber arming; review computed from the served author
+  family); **`deep` defaults to Opus·high**, Conductor override to Sol·high only after the
+  Quartermaster's review-reserve check (Sol-authored mutation is mandatory-review by flag
+  and draws down the review reserve — a deliberate choice, never a degradation target).
+  The file retirements, both toggles, the stale-family MAJOR fix, and the ladder all land
+  in the bridge tranche so `roster/lint.js` and `install.js --lint` move once.
+  **WO-14b activation bridge — DRAFTED, ORACLE-RULED, IN PROGRESS (2026-09-01):** v1
+  draft (`9bfc021`) refused by the third scope-oracle pass (Sol·xhigh,
+  `roster/wo14b-oracle-verdict.md`): right tranche and right basic mechanism (ticketed
+  dispatch), but an Agent-only gate leaves raw `orchestra_exec`/`orchestra_review`
+  bypasses, no ticket lifecycle, casting records cannot be truthfully written at dispatch,
+  the dispatch input contradicts `order.schema.json`, the review runner is prose-only
+  against structured verdict/audit schemas, and a synthetic canary could pass with a
+  harness that blocks every spawn. Reshaped into seven sequential bounded legs
+  (`roster/wo14b-activation-bridge-order.md` v2): 1 host lifecycle proof (can stop the
+  tranche) → 2 contracts + ruled migration → 3 installer/guard → 4 activation state
+  machine (tickets gate Agent AND raw engine tools; stop hook) → 5 two-stage closure with
+  structured verdict + audit → 6 deterministic installed acceptance → 7 live installed
+  canary in both vendor directions. Oracle-authored stopping rules and gate are in the
+  order; progress file `roster/wo14b-activation-bridge-progress.md`; 80-tool-call leg
+  ceiling; branch `claude/wo14b-bridge`.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 
@@ -521,7 +859,176 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-31, WO-11 executed)
+## Fresh-session quick start (as of 2026-09-01 22:20Z — WO-14b SHAKEDOWN, order #5 **CLOSED**)
+
+**READ THIS FIRST — the shakedown's primary goal is met.** Live order #5 (adopt-and-verify
+`33a03539` on `feat/nameplate-range-200`, Fable helm) reached **CLOSED at 22:15:40Z** — the
+first order ever to do so — and wrote the first honest telemetry: under
+`<target>/.claude/orchestra/ledger/` (per-TICKET dirs, not per-task): `tkt-9a0eaadf126a4d01/`
+(builder: `verifier.json` COVERAGE_GAP lint-only + 6/6 claims MATCH; `casting-record.json`
+Sonnet 5 ↔ `claude-sonnet-5`, mismatch:false, AU-all, scoped) and `tkt-964f21751a8aced3/`
+(reviewer: `casting-record.json` GPT-5.6 Sol ↔ `gpt-5.6-sol`, mismatch:false, OU, APPROVE;
+`verdict-audit.json` PASS, 4 citations MATCHES + the gdUnit run UNREPLAYABLE). Two independent
+Sol rounds both said APPROVE / no findings for the nameplate change. The close needed five
+same-day fixes (PL-20…PL-24: DIVERGES-only citation rule + not-found → UNREPLAYABLE; quoted
+porcelain paths in the tree audit; `filter.lfs.*` carried into the runner's scratch gitconfig;
+canonical model-name comparison for `served_model_mismatch`; bucket/context_shape from the
+casting/envelope), shipped to the target as `b23782ef` and proven by replaying close #2 with
+`ppp-call` — the helm itself never saw CLOSED (it had stopped after the second refusal; its
+live MCP server still caches the old bridge until restart). Design note the owner asked about:
+the Haiku `reviewer-openai` launcher is by design — the ticket spine binds every role turn to
+an Agent launch (consume → launch → resolve, served model captured), the launcher runs the
+10–30 min synchronous codex runner off the helm's clock, holds exactly one tool, and keeps the
+verdict out of the Conductor's context; the engine server records `engine_result` on the ticket
+itself, so closure never reads the launcher's relay.
+
+**Next, in order:** (1) owner decides whether to merge `feat/nameplate-range-200` (APPROVE ×2,
+verified 41/41 by the builder; the reviewer could not run gdUnit — PL-22, fixed but unproven
+live); (2) PL-9 (guard must require the gate script to exist), PL-11 (installer `.gitignore`
+for runtime state), PL-10 (recon close path), PL-25 (one Conductor line: never restate the
+builder's report template — it cost four builder rounds); (3) the next codex-lane review on the
+target proves PL-22 (expect Sol's gdUnit claim CONFIRMED, far less `--import` churn). The
+previous "job" list still applies to every future order read-back:
+
+**Your job when the owner pastes the transcript / says it finished:**
+1. Read the ledger dir for the order's task_id (`ls` the newest `rt-*`): `envelope.json`,
+   `verifier.json`, `casting-record*.json`, `verdict-audit*.json`. That's the telemetry the
+   whole work order exists for — read it critically and summarize for the owner.
+2. Cross-check the helm's claims against ground truth — NEVER trust a helm's "harness bug"
+   claim (twice it recalled stale bugs from old session memory): the ticket store is
+   `<target>/.claude/orchestra/tickets/tickets.json` (+ `tickets.events.jsonl` WAL,
+   `routing.events.jsonl`), and `tools/shakedown/ppp-call.js "<target>" <tool> '<json>'`
+   replays any tool (incl. `orchestra_close`) against the INSTALLED server from any session.
+3. New gaps → fix same-day if small (the owner has approved log-and-fix each time), punch-list
+   row + progress-log line + this section + session memory, commit master AND ship to the
+   target (copy or reinstall — then ALWAYS verify: `gate hooks: 4` in target settings.json,
+   `ppp-doctor` → `roster=new` gen 3, `--verify-pin` MATCH). A live helm session caches the
+   old bridge in its MCP process — bridge changes need a helm restart to take effect.
+4. If CLOSED landed: the shakedown's primary goal is met. Remaining post-shakedown fixes, in
+   order: PL-9 (guard must require the gate script to exist), PL-11/PL-9 installer
+   `.gitignore` for runtime state, PL-10 recon close path. Then the owner decides whether to
+   merge `feat/nameplate-range-200` (review verdict permitting) and close WO-14b out.
+
+State pins: target local `main` = `b23782ef` (harness shipped for PL-20…24, NOT pushed; `origin/main` = `54f0c3c9`; readings recorded
+2026-09-01 15:14Z expire ~15:14Z 2026-09-02 — re-record before any NEW order:
+`node quartermaster/quartermaster.js --file "<target>/.claude/orchestra-pool-readings.jsonl" --record <bucket> <0..1> --source "..."`,
+buckets AU-all/AU-fable/AU-opus/OU). Master repo branch `claude/wo14b-bridge` @ the PL-20…24 commit (after `69acd9d`).
+History of orders #1–#4 and every PL detail: below, plus `roster/wo14b-shakedown-punch-list.md`
+and the last lines of `roster/wo14b-activation-bridge-progress.md`.
+
+**OWNER RULING 2026-09-01 ~21:00Z — SHIP TO SHAKEDOWN.** "Keep your goals VERY bounded… KISS,
+YAGNI, DRY and get this project closed out. The only important aspects are telemetry for
+monitoring performance… usable in our actual projects ASAP… fine tune during our shakedown
+cruise/first live tests." The plan's steps 4–5 (Sol integrated review + correction + recheck;
+Opus pre-live audit) are CUT. Non-spine findings go to `roster/wo14b-shakedown-punch-list.md`
+(PL-1…PL-11), never to a repair round. Do not add verification steps the owner did not order.
+
+**Where it is.** Leg 6 merged (`1967b6e`, acceptance 90/0). The harness is INSTALLED LIVE in
+`E:\Godot Projects\PiratePartyPals` (v2.4.1, `--roster new --packs codex`, generation 1;
+install committed there as `0c8549e6`, runtime state gitignored `073dfe3e`, merged + pushed
+`c096ef08` so `origin/main` carries it). Readings recorded 2026-09-01 15:14Z (AU-all 0.85,
+AU-fable 0.88, AU-opus 0.85 = all-models figure, OU 0.60) — **they expire after 24h; re-record
+before the next order** (`node quartermaster/quartermaster.js --file <target>/.claude/orchestra-pool-readings.jsonl --record <bucket> <remaining 0..1> --source "..."`).
+
+**Live orders so far.** #1 (DM nametag colours) — spine proven through dispatch → envelope →
+ticketed Opus investigator → RESOLVED → Stop blocked while LAUNCHED → replay refused; recon
+found the feature already shipped, so no builder ran; recon tickets cannot close (PL-10, no
+telemetry for recon-only orders). #2 (mortar explosion VFX +30%) — reached the builder, then the
+builder's `checkout -B … origin/main` removed the local-only harness under the session (PL-11);
+target repaired (`tools/shakedown/` + `roster/wo14b-activation-bridge-progress.md` last lines),
+push done. #2 re-run (2026-09-02, Fable helm) — spine through investigator → builder (Sonnet 5,
+DONE, 3180/3180 green) → RESOLVED, then stuck: the classifier denied the builder's Bash
+`git checkout -b`, so the bound report names no commit and close #1 can never pass (PL-13); the
+helm then tried to review by dispatching class R0 and crashed the server (PL-12). Both fixed the
+same day (typed `COMPUTED_CASTING`; installer grants `git checkout -b:*` / `git switch -c:*`),
+PL-7 docs rewritten, and PL-14 found+fixed while reinstalling (a plain `install.js` re-run
+downgraded the target to legacy — always verify `gate hooks: 4` / doctor `roster=new` after any
+reinstall). The mortar change is committed by hand as `843a29d5` on `feat/mortar-vfx-scale` and
+was reviewed out-of-band (Opus, APPROVE, 5 NITs) — its telemetry is lost. #3 (env-var guard,
+2026-09-01 fresh Fable helm) — Q0 companion enforced, codex EXEC_UNAVAILABLE escalated cleanly
+to Sonnet, work delivered green (`902ed9e2`+`904aa036` on `fix/bkw5a-explosion-scale-guard`,
+out-of-band Opus review APPROVE, 1 MINOR: missing test `.gd.uid`), but its telemetry is ALSO
+lost: the builder's branch checkout made the manifest untrusted exactly when the report arrived
+(PL-15, bound a housekeeping reply), plus Stop-block spam (PL-16), stale-base commits that can
+never pass the claimed-changes replay (PL-17), and a codex-lane 400 (PL-18 — RESOLVED
+2026-09-02: a fresh `codex login` fixed it, stale token; Sol/Terra/Luna all probe ok, so the
+cross-family review lane is live). PL-15/16 fixed in code, PL-17 in builder.md + conductor rule.
+#4 (nameplate range +25%, 2026-09-01) delivered 33a03539 on feat/nameplate-range-200 (41 tests
+green) but close #1 refused on FOUR more integration gaps, all fixed same-day as PL-19/a/b/c
+(tolerant Band-C parsing + claim normalization; NONCE= in the Claude-lane header with host-bound
+substitution at close; COVERAGE_GAP proceeds to review; lint-only verifier.manifest committed to
+the target and pinned, 54f0c3c9). **No order has reached CLOSED yet — every miss was a close-path
+integration gap, never the spine.** **Next: (1) owner merges `feat/mortar-vfx-scale` then
+`fix/bkw5a-explosion-scale-guard` into target main (+ commit the test's `.gd.uid`); (2) owner
+RESTARTS the helm (the live session caches the old bridge) and re-issues the nameplate order as
+an adopt-and-verify of 33a03539.**
+Expected: builder branches from the dispatch-time HEAD, commits → close #1 → Verifier →
+ticketed reviewer → close #2 → CLOSED, and the FIRST `casting-record` + `verdict-audit` under
+`<target>/.claude/orchestra/ledger/<task_id>/`. Read them; anything off → punch list.
+
+**Tools for the next session** (`tools/shakedown/`): `ppp-doctor.js <project>` (stdio probe:
+tools/list + orchestra_doctor of the INSTALLED server), `ppp-call.js <project> <tool> '<json>'`
+(call any installed tool; `schema` prints input schemas). The ticket store is
+`<target>/.claude/orchestra/tickets/tickets.json` (plain JSON; `tickets.events.jsonl` is the WAL).
+
+**Hazards learned the hard way this session.** (1) The owner's pasted transcripts sometimes run as
+`!` commands in THIS repo — check `git status` here after any odd paste. (2) Never `git stash -u`
+or `git restore --source=<tree> -- .` in the target: the first swept the harness (PL-9 fail-open:
+Claude Code treats a MISSING gate script as a non-blocking hook error and Agent launches proceed
+unticketed), the second removed 4,477 tracked files (restore matches the pathspec to the source
+tree). Recovery is always from HEAD/stash — nothing was lost. (3) PL-7 FIXED: `ORCHESTRA.md` §1
+now says roster:new enforces every model and names the dispatch loop — a fresh helm should no
+longer open with an unticketed `scout`. (4) `enableAllProjectMcpServers: true` in the
+target's `settings.local.json` means no MCP approval prompt (PL-8). (5) Remaining post-shakedown
+fixes: #1 = PL-9 (guard must require the gate script to exist); #2 = PL-11 installer
+`.gitignore`; #3 = PL-10 recon close path. PL-12/13/14 are done. (6) Reinstalling into the
+target: `node install.js <target>` now inherits roster:new (PL-14), but still verify after any
+reinstall: `gate hooks: 4` in `settings.json`, `ppp-doctor` says `roster=new`, `--verify-pin`
+MATCH. A reinstall bumps the generation (all open tickets INVALIDATED) — do it between orders.
+(7) Never dispatch class R0 from the helm: reviewer tickets come only from `orchestra_close`.
+
+Branch **`claude/wo14b-bridge`** (off `claude/wo12-trials`). Read, in this order, and nothing else
+first:
+
+1. `roster/wo14b-activation-bridge-progress.md` — one line per event; the last lines say exactly
+   where the bridge is and what is in flight.
+2. `roster/wo14b-finish-plan.md` — **the plan of record** (Sol · max, owner-ordered "asap / KISS /
+   YAGNI / DRY"): three cuts to the repairs, leg 6 = four installed scenarios, ONE Sol integrated
+   review (+ one correction + one recheck), then the live gate with the Opus audit folded in;
+   YAGNI/DRY/KISS rulings (what is frozen, what is deferred as a documented limit, what stays
+   duplicated through the gate); binding stopping rules.
+3. The orders to execute, in order: `roster/wo14b-repair-A-order.md` + `wo14b-repair-B-order.md`
+   (owner-approved 17:50Z; amended per the plan; if the progress file's last line says they are
+   merged, skip) → `roster/wo14b-leg6-order.md` → the integrated Sol review over the exact
+   post-leg-6 commit (framing: property review of the whole installed path incl. leg 3R; declared
+   verification = every suite) → `roster/wo14b-leg7-order.md` (owner present).
+4. Context only if needed: `roster/wo14b-session-oracle-verdict.md` (why the per-leg loops were
+   stopped), `roster/wo14b-leg3-oracle-verdict.md` (the guard's closed regime),
+   `roster/wo14b-oracle-verdict.md` (the seven-leg ruling and gate).
+
+Rules a fresh session inherits: the 80-tool-call ceiling is a hard `CHECKPOINT` (eleven builders
+breached it; builder self-counts are wrong — trust the harness); orders plan ≤40 calls; no
+mid-round folding; no new trust layers / telemetry / schemas / seats; component-suite green is not
+installed proof; `CODEX_BIN` pinned to codex-cli 0.151.0 (sha256 `cf68265…`), runners in the
+background, review runner on its own pinned worktree; create worktrees by hand (the Agent tool's
+`isolation: worktree` provisions from `main`); security-flavoured review orders to Sol trip the
+OpenAI cyber classifier — spec-conformance framing for R0, the Opus mirror for E7; write runner
+inputs with the Write tool, not shell heredocs.
+
+Owner actions the live gate needs: record Quartermaster readings into the disposable target; approve
+the engine server in its `.mcp.json`; be present for accept-or-stop.
+
+## Historical: fresh-session quick start (as of 2026-08-31, WO-12 in progress)
+
+0. **Read the three 2026-08-31 entries above first** (WO-13 disposed; codex fault
+   root-caused AND CLEARED — alpha.7 runner swap, addendum 2; WO-12 protocol +
+   corpora built, no pass run). The one owner action that gates everything
+   downstream: record `/status` readings per bucket
+   (`node quartermaster/quartermaster.js --record …`, once per
+   24h). Then: WO-12 phase-0 pilot
+   (`node wo12/run-lane.js --lane X-Sol --phase 0 --dry-run` first), the owed
+   E8/E1/A0 exercises (orders in the band-record appendices), and the exercise-debt
+   ledger in `roster/wo11-band-record.md`.
 
 1. **WO-4–WO-8 are DONE. WO-9–WO-11 are STAFFED; exercise contract
    INCOMPLETE** (round 3, applying the owner-requested Sol·max holistic

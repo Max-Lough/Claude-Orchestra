@@ -1,0 +1,180 @@
+diff --git a/roster/r0-ex7-verdict.md b/roster/r0-ex7-verdict.md
+new file mode 100644
+index 0000000..286f941
+--- /dev/null
++++ b/roster/r0-ex7-verdict.md
+@@ -0,0 +1,31 @@
++# R0-EX7 verdict — cross-vendor delta re-review of ceeaabc..09a824e
++
++Recorded verbatim from the review runner, 2026-08-30. Disposition: the
++stable-alias case confirmed fixed; one MAJOR — alias REMOVAL strips a live
++checkout's identity under sweep-time re-resolution — fixed in round 5c by
++capturing the canonical identity at creation (entry.realDir); see
++wo8-review-dispositions.md.
++
++REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-sol, sandbox: workspace-write, tier: full, timeout: 1800000ms (env), attempts: up to 2, checkout: pinned worktree @ 09a824e1f153)
++CODEX BINARY: C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: resolved through a link: C:\Users\maxtl\AppData\Local\Programs\OpenAI\Codex\bin\codex.EXE -> C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: codex install layout: unknown (C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin) — not one of the two layouts this runner knows, so helper-sibling repair can only use a directory you name in helpersDir
++PREFLIGHT: helper siblings present: codex-command-runner.exe, codex-resources, codex-windows-sandbox-setup.exe
++PREFLIGHT: reclaimed 1 abandoned review worktree(s) from a prior run
++PREFLIGHT: auth/exec probe: ok in 6392ms
++PREFLIGHT: pinned review: checked out 09a824e1f153 into a throwaway worktree (C:\Users\maxtl\AppData\Local\Temp\orchestra-review-3maUIK\attempt-1\wt); the session's uncommitted files are not visible to the engine
++
++VERDICT: REVISE
++
++FINDINGS
++- [MAJOR] [BREACH] verifier/checkout.js:259 — the lexical fallback loses an ACTIVE checkout’s canonical identity when its alias disappears — given a checkout created through a symlink/junction `tmpRoot`, removing only that alias leaves the canonical checkout alive, but the next `createCheckout` compares the broken lexical ACTIVE path with Git’s still-resolvable canonical path and deletes the live checkout; the probe observed `before=true` and `after=false` instead of preserving it
++
++CLAIMS CHECKED
++- "the R0-EX6 MAJOR is fixed" → REFUTED (the stable-alias case passes, but the alias-removal probe still caused the sweep to delete a live checkout)
++- "a path no longer on disk falls back to lexical, which only affects already-gone entries where deletion is a no-op" → REFUTED (only the alias was gone; its canonical target existed and was deleted)
++- "the junction-backed tmpRoot reproducer leaves the ACTIVE checkout alive, while genuine leftovers are reclaimed and both preservation shapes hold" → CONFIRMED (`node tests/verifier.test.js`: 97 passed, including all four relevant checks)
++- "the pinned range contains exactly two commits and the fix is 2 files, +35/−1" → CONFIRMED (`git log`, `git diff --numstat`, and `git show --numstat`)
++- "Verification actually run (all green at 09a824e)" → REFUTED (the report itself records review-lane 113/114, and the independent rerun reproduced that reclaim-test failure; all seven work-order commands passed)
++
++NITS
++- none
+diff --git a/roster/wo8-review-dispositions.md b/roster/wo8-review-dispositions.md
+index 2892b68..29cd4e0 100644
+--- a/roster/wo8-review-dispositions.md
++++ b/roster/wo8-review-dispositions.md
+@@ -281,9 +281,28 @@ aliased-tmp-root (junction/symlink) regression that reproduces the class on
+ every platform — before the R0-EX6 verdict landed. R0-EX6's junction probe
+ is the same shape as the pinned regression.
+ 
++## R0-EX7 (delta re-review of round 5b) and the round-5c disposition
++
++R0-EX7 (Sol · high, pinned `ceeaabc..09a824e`; verdict verbatim at
++`roster/r0-ex7-verdict.md`): **REVISE** — the stable-alias case (the CI
++shape) confirmed fixed, plus one MAJOR on a sharper edge: when the ALIAS a
++live checkout was created through is later removed, sweep-time re-resolution
++of the ACTIVE handle falls back to the lexical alias spelling while git's
++listed path stays canonical — the exemption misses and the sweep deletes the
++live canonical checkout. It also (fairly) refuted the executor report's
++"all green" header line, since that very report disclosed review-lane at
++113/114 under concurrent load.
++
++**Fixed in round 5c**: a checkout's canonical identity is captured AT
++CREATION (`entry.realDir`, resolved while every path component is guaranteed
++to exist) and the sweep's live set compares that — never a sweep-time
++re-resolution. Sol's alias-removal probe pinned as a regression alongside
++the stable-alias one. PR #28 CI went fully green (9/9 jobs) on `09a824e`;
++this fix hardens the edge CI cannot reach.
++
+ ## Note
+ 
+ The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
+-the round-5b diff (R0-EX7, pinned `ceeaabc..09a824e`) comes back clean. Open
+-items are process, not code: (1) R0-EX7, and (2) the registered follow-on —
+-the verification-time diff-derived `touches` cross-check.
++the round-5c diff (R0-EX8) comes back clean. Open items are process, not
++code: (1) R0-EX8, and (2) the registered follow-on — the verification-time
++diff-derived `touches` cross-check.
+diff --git a/tests/review-lane.test.js b/tests/review-lane.test.js
+index 6bb938f..92a2b25 100644
+--- a/tests/review-lane.test.js
++++ b/tests/review-lane.test.js
+@@ -346,6 +346,23 @@ async function case4() {
+     await sleep(100);
+   }
+   check('worktree was live before the kill (kill is meaningful)', registered);
++  // Let `worktree add` finish its checkout before pulling the plug. Until it
++  // does, `git worktree list` already shows the entry (registration is
++  // visible before the files are), but git itself holds it LOCKED for that
++  // whole window — proven by polling `list` during a slow add on this
++  // machine, which showed "locked" on every sample until the checkout
++  // finished. `runGit`'s worktree-add is a direct (non-shell) child of the
++  // runner, so it dies with it; kill during that window freezes the entry
++  // mid-checkout, still locked, forever. And a LOCKED worktree cannot be
++  // swept by anything downstream: sweepStaleScratch and teardownScratch both
++  // remove with a single `--force`, which git flatly refuses on a locked
++  // worktree ("cannot remove a locked working tree ... use 'remove -f -f' to
++  // override") — no amount of waiting or re-running the sweep changes that.
++  // So this delay is not pacing a flaky assertion; it is the difference
++  // between "killed mid-review" (recoverable, what this case tests) and
++  // "killed mid-registration" (unrecoverable by design, a different case the
++  // SIGKILL block below already knows to avoid the same way).
++  await sleep(250);
+   child.kill('SIGTERM');
+   await new Promise((res) => child.on('exit', res));
+   await sleep(300);
+diff --git a/tests/verifier.test.js b/tests/verifier.test.js
+index d554d41..ed283d4 100644
+--- a/tests/verifier.test.js
++++ b/tests/verifier.test.js
+@@ -631,8 +631,32 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
+       (liveViaAlias.error || trigger.error || 'live checkout deleted by the sweep'));
+     trigger.teardown();
+     liveViaAlias.teardown();
++
++    // R0-EX7: removing ONLY the alias must not strip a live checkout of its
++    // identity. Re-resolving at sweep time falls back to the lexical alias
++    // spelling (the alias is gone) while git's listed path stays canonical —
++    // identity must be captured at creation instead.
++    const realTmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-alias-target-'));
++    const aliasLink2 = path.join(os.tmpdir(), 'orchestra-alias-link2-' + process.pid);
++    fs.symlinkSync(realTmp2, aliasLink2, process.platform === 'win32' ? 'junction' : 'dir');
++    cleanups.push(() => fs.rmSync(realTmp2, { recursive: true, force: true }));
++    cleanups.push(() => { try { fs.rmSync(aliasLink2, { recursive: true, force: true }); } catch (_) { /* gone */ } });
++    const liveViaAlias2 = checkoutLib.createCheckout(fixture.dir, fixture.base, { tmpRoot: aliasLink2 });
++    const canonical = fs.realpathSync(liveViaAlias2.dir);
++    try { fs.unlinkSync(aliasLink2); } catch (_) { fs.rmdirSync(aliasLink2); } // the ALIAS only; the target lives
++    const trigger2 = checkoutLib.createCheckout(fixture.dir, fixture.base); // sweep runs
++    check('R0-EX7: removing only the alias does not orphan the live canonical checkout to the sweep',
++      !liveViaAlias2.error && !trigger2.error && fs.existsSync(canonical),
++      'canonical checkout deleted: ' + canonical);
++    trigger2.teardown();
++    // Manual cleanup — the entry's own paths are alias-spelled and the alias
++    // is gone, so its teardown can only clear the ACTIVE registration.
++    git(fixture.dir, ['worktree', 'remove', '--force', canonical]);
++    fs.rmSync(path.dirname(canonical), { recursive: true, force: true });
++    liveViaAlias2.teardown();
+   } else {
+     check('CI: real-path live-set regression [skipped: cannot create links here]', true);
++    check('R0-EX7: alias-removal regression [skipped: cannot create links here]', true);
+   }
+ }
+ 
+diff --git a/verifier/checkout.js b/verifier/checkout.js
+index ab76d76..43e188d 100644
+--- a/verifier/checkout.js
++++ b/verifier/checkout.js
+@@ -235,9 +235,9 @@ function installExitHandler() {
+   for (const sig of sigs) {
+     try {
+       process.on(sig, () => {
+-        sweepActive();
+         process.removeAllListeners(sig);
+         try { process.kill(process.pid, sig); } catch (_) { process.exit(1); }
++        sweepActive();
+       });
+     } catch (_) { /* signal not supported on this platform */ }
+   }
+@@ -280,7 +280,13 @@ function normPath(p) {
+ function sweepAbandoned(repoDir) {
+   const list = runGit(['-C', repoDir, 'worktree', 'list', '--porcelain']);
+   if (!list.error && list.status === 0) {
+-    const live = new Set([...ACTIVE].map((e) => normPath(e.dir)));
++    // A live checkout's identity is its CANONICAL path CAPTURED AT CREATION
++    // (entry.realDir), never re-derived here: re-resolving at sweep time
++    // through an alias that has since been removed falls back to the
++    // lexical alias spelling while git's listed path stays canonical — and
++    // the exemption misses a checkout that is very much alive (the R0-EX7
++    // finding: only the alias was gone; the canonical target was deleted).
++    const live = new Set([...ACTIVE].map((e) => e.realDir || normPath(e.dir)));
+     const entries = (list.stdout || '').split('\n').filter((l) => l.startsWith('worktree '));
+     for (const line of entries.slice(1)) { // [0] is always the main worktree
+       const wt = line.slice('worktree '.length).trim();
+@@ -349,6 +355,11 @@ function createCheckout(repoDir, commitish, opts) {
+     dir,
+     commit,
+     parent,
++    // Canonical identity, captured NOW while every path component is
++    // guaranteed resolvable. The sweep's live-set exemption compares this —
++    // an alias (symlink/junction tmpRoot, 8.3 short path) removed later
++    // must not strip a live checkout of its identity (R0-EX7).
++    realDir: normPath(dir),
+     fingerprintBefore,
+     // The before/after comparison, classified. Callers pass project-declared
+     // churn patterns; the defaults cover the common generated artifacts.

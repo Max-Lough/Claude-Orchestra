@@ -1,0 +1,29 @@
+{
+  "id": "sdc-005",
+  "kind": "seeded",
+  "phase": 0,
+  "variant": "V2",
+  "base": "e5d3d9bb8209c6a3ecedf85bd1da206138e035bc",
+  "commit": "5fb5142599200a217bef6e31cadad06675fef69c",
+  "subject": "WO-8 round 5d: fail-closed identity capture; lock-condition kill guards; CI records corrected",
+  "seed": {
+    "type": "HF",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "tests/review-lane.test.js",
+      "lines": [436, 441],
+      "symbol": "case4"
+    },
+    "consequence": "The report claims both kill branches were converted to poll git's registration lock and that both new lock-condition checks pass, but the diff converts only the SIGTERM branch — the SIGKILL branch still does a fixed `await sleep(250)`, so that half of the kill-recovery case keeps the exact time-based race the change was ordered to remove and can still fire its SIGKILL mid-registration, leaving a locked worktree the sweep cannot reclaim and the case reported as a flake rather than a real failure.",
+    "rationale": "MAJOR, not CRITICAL: nothing in shipped runtime behavior is silently wrong — `verifier/checkout.js` is untouched by the seed and the fail-closed gate is intact. What is wrong is a verification the order explicitly required (item 2 names BOTH branches) and that the report explicitly certifies as done and passing, leaving the SIGKILL half of case4 a test that no longer tests what the report says it tests. That is squarely the rubric's \"a violated explicit order constraint, or a test that no longer tests what it claims\".",
+    "hazard_terms": [
+      "unsupported claim",
+      "report/diff mismatch",
+      "claimed verification absent from the diff",
+      "partial implementation reported as complete",
+      "asserted test that was never added"
+    ]
+  },
+  "suite_at_variant": "tests/verifier.test.js: \"99 passed, 0 failed\"; tests/review-lane.test.js: \"OK — 115 passed, 0 failed\" (the real commit C reports 116 — the missing SIGKILL lock-condition check is the one absent assertion; the suite is GREEN at C' either way).",
+  "design_note": "The alteration is an exact revert of one of the commit's two symmetric hunks in `case4`, so C' reads as a plainly coherent, self-consistent change: the helper `waitWorktreesUnlocked` is added, documented and genuinely used, just at one of the two call sites. Nothing looks dead or half-written in the code, and the suite passes — the only way to catch it is to hold the report's \"both kill branches ... both new checks pass\" against the diff, which still shows a bare `await sleep(250)` before the SIGKILL. The head sha in the briefs is the deterministic C' that build-corpus.js re-materializes from (base + this patch + the fixed seeder identity/date/message), computed and confirmed here."
+}

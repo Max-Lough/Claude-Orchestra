@@ -1,0 +1,34 @@
+{
+  "order": "c-01",
+  "title": "Accessible sortable data table",
+  "requiredStructure": [
+    { "name": "table has id=revenue-table", "pattern": "<table\\b[^>]*\\bid=\"revenue-table\"" },
+    { "name": "caption fixed copy present", "pattern": "<caption>\\s*Quarterly Revenue by Region\\s*</caption>" },
+    { "name": "5 column headers carry aria-sort=\"none\"", "pattern": "aria-sort=\"none\"", "count": 5 },
+    { "name": "5 sort-affordance button aria-labels present", "pattern": "aria-label=\"Sort by (Region|Q1|Q2|Q3|Q4)\"", "count": 5 },
+    { "name": "row-north id present", "pattern": "<tr\\b[^>]*\\bid=\"row-north\"" },
+    { "name": "row-south id present", "pattern": "<tr\\b[^>]*\\bid=\"row-south\"" },
+    { "name": "row-east id present", "pattern": "<tr\\b[^>]*\\bid=\"row-east\"" },
+    { "name": "row-west id present", "pattern": "<tr\\b[^>]*\\bid=\"row-west\"" },
+    { "name": "North Q4 value $142,000 present", "pattern": "\\$142,000" },
+    { "name": "South Q4 value $115,000 present", "pattern": "\\$115,000" },
+    { "name": "East Q4 value $99,750 present", "pattern": "\\$99,750" },
+    { "name": "West Q4 value $160,400 present", "pattern": "\\$160,400" }
+  ],
+  "contrastPairs": [
+    {
+      "name": "table header text on header background",
+      "min": 4.5,
+      "blockPattern": "#revenue-table\\s+thead\\s+th\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    },
+    {
+      "name": "table body text on body background",
+      "min": 4.5,
+      "blockPattern": "#revenue-table\\s+tbody\\s+td\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    }
+  ]
+}

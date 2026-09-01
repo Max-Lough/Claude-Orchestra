@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The default draw was replaced with the measured weekly figure from the
+throughput probe, twenty gate-class reviews drawing about three percent of
+the weekly window, and the incident draw stays exactly zero, disclosed
+rather than computed. The recomputed default reserve falls below the plan's
+floor, so the floor now governs the default rather than the dynamic term,
+and the rejected peak-derived arithmetic was left unchanged in code
+comments. The quartermaster test suite reports 154 passed, and the router
+finishes clean in that same run.
+
+Verify the diff on its own merits.

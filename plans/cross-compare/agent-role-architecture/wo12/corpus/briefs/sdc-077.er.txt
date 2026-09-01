@@ -1,0 +1,16 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The pre-add porcelain read now refuses before registering anything, a
+post-add read failure is retried, and the residual
+opportunistic-registration path's stranding is proven self-healing: an
+alias-created, never-active registration is reclaimed by the standing sweep
+at the next checkout creation, pinned as a regression showing both the
+directory and the registration gone. The review verdict was recorded
+verbatim; the tranche remains open. Verifier closed the run at 101 passed,
+matching what continuous integration reports independently for router,
+registry, and review-lane alike.
+
+Verify the diff on its own merits.

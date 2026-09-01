@@ -1,0 +1,16 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+Both briefs now encode the same contract, and the unavailable path routes to
+the primary reviewer instead of degrading. Running the installer's lint in
+check mode clears it and its three supporting scripts, and the agent
+manifest reports 4 of 4 present with none missing. The primary brief's
+frontmatter parses with its model line intact, and the runner smoke test
+prints its usage line plus the REVIEW_UNAVAILABLE verdict on the
+missing-binary path as designed. Independent re-verification stays pinned by
+the restored rule itself. Every check available at this commit still reports
+green.
+
+Verify the diff on its own merits.

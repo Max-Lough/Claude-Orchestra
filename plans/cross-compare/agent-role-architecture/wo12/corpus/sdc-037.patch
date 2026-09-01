@@ -1,0 +1,380 @@
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+new file mode 100644
+index 0000000..5c647a1
+--- /dev/null
++++ b/.github/workflows/test.yml
+@@ -0,0 +1,65 @@
++name: tests
++
++# Why this exists, and why it is this small:
++#
++# Every field failure the cross-vendor review lane has produced happened on
++# WINDOWS — and the suite that is supposed to catch them used to exit 0 there
++# even when cases failed, so a broken suite looked green through two rounds of
++# real failures. No session working on this repo has a Windows machine. A
++# windows-latest runner is the only thing that closes that gap.
++#
++# Everything else is deliberately absent. There is no build, no bundle, and no
++# publish step: the harness is distributed by `git pull` + `node install.js`, so
++# there is nothing to deploy. There is no linter or formatter job either — this
++# repository has zero dependencies and no package.json, and importing a
++# toolchain larger than the project it guards would cost more than it catches.
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  # A newer push to the same branch makes the older run's answer irrelevant.
++  group: tests-${{ github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  review-lane:
++    name: review lane · ${{ matrix.os }} · node ${{ matrix.node }}
++    runs-on: ${{ matrix.os }}
++    timeout-minutes: 10
++    strategy:
++      matrix:
++        os: [ubuntu-latest, windows-latest, macos-latest]
++        node: ['20', '22', '24']
++
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: actions/setup-node@v4
++        with:
++          node-version: ${{ matrix.node }}
++
++      - name: Identify the environment under test
++        shell: bash
++        run: |
++          node --version
++          git --version
++
++      - name: Give git an identity (the suite builds fixture repositories)
++        shell: bash
++        run: |
++          git config --global user.email "orchestra-ci@users.noreply.github.com"
++          git config --global user.name "Orchestra CI"
++          git config --global init.defaultBranch main
++
++      - name: Review-lane suite
++        # The suite drives the real runner against a stub Codex and asserts on
++        # what the engine was handed. It needs no install step: plain node, plain
++        # git, no dependencies.
++        run: node tests/review-lane.test.js
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 91a77ce..1fcdea9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -110,6 +110,24 @@ attribution wording for signal-class vs runner-enforced kills, the retry chain
+ repair from a sibling version, integrity classification, warmup ordering and its
+ refusal to run in a live tree, and the mandatory scratch root.
+ 
++### CI
++
++`.github/workflows/test.yml` runs the suite on Linux, Windows, and macOS across
++Node 20/22/24, for every push and pull request. Windows is the reason it exists:
++every field failure in this lane has happened there, the exit-code bug above hid
++there, and no session working on this repo has a Windows machine. Two platform
++truths the matrix forced into the open — Windows cannot `CreateProcess` a `.js`
++file (so the tests hand the runner a `.cmd` shim for the stub engine), and
++`kill('SIGTERM')` there is `TerminateProcess`, which runs no handler, so on
++Windows the next run's sweep is the *only* thing that reclaims an orphaned
++worktree. Both are now asserted rather than assumed. There is no CD: the harness
++ships by `git pull` + `node install.js`.
++
++`ORCHESTRA_CODEX_HELPER_SIBLINGS` was added alongside, for config symmetry —
++every other `codex` setting already had an environment form, and a machine whose
++Codex install legitimately differs should not need an edit to a project's
++committed config.
++
+ ### Scope
+ 
+ Codex-internal faults are not patched here — see "What this harness cannot fix"
+diff --git a/README.md b/README.md
+index 40d53f2..8528a1d 100644
+--- a/README.md
++++ b/README.md
+@@ -100,7 +100,7 @@ node install.js /path/to/project --packs codex
+ | `ORCHESTRA_REVIEW_PROBE` | `authProbe` | `1` / `true` | Stage-a `codex exec` echo before the real attempt, so a dead or unauthenticated install fails in seconds. `probeTimeoutMs` caps it (90 s). |
+ | `ORCHESTRA_REVIEW_WARMUP_CMD` | `worktreeWarmupCmd` | — | Command run inside the fresh checkout *before* the integrity baseline — for engines that import assets on first open. Pinned reviews only (it writes). `worktreeWarmupTimeoutMs` caps it. |
+ | — | `integrityIgnore` | built-in list | Paths counted as expected build/engine churn rather than reviewer mutation. `integrityIgnoreDefaults: false` drops the built-ins. |
+-| — | `helperSiblings` / `requireHelperSiblings` | Windows: `codex-command-runner.exe`, `codex-resources` | Files the Codex install must carry next to its executable; verified and repaired each run. |
++| `ORCHESTRA_CODEX_HELPER_SIBLINGS` | `helperSiblings` / `requireHelperSiblings` | Windows: `codex-command-runner.exe`, `codex-resources` | Files the Codex install must carry next to its executable; verified and repaired each run. The env form is comma-separated and wins over project config — for a machine whose install legitimately differs. |
+ | — | `doNotRun` | — | Commands the reviewer is forbidden to run. Also `--forbid` / `--no-tests`. |
+ | `ORCHESTRA_REVIEW_ARGS` | — | — | Extra args appended to `codex exec` (escape hatch for flag drift / tuning). |
+ | `CODEX_BIN` | — | `codex` | Path to the Codex executable (resolved through symlinks/junctions automatically). |
+@@ -127,7 +127,7 @@ The worktree root is deliberately outside the repo (OS temp dir by default; `wor
+ 
+ **Field-hardening.** Six further failure modes the runner handles mechanically: it **resolves `CODEX_BIN` to its real path** (a symlink or Windows junction breaks Codex's own sibling-file resolution); it **restores missing files** into the Codex install from `helpersDir` before each run (a Codex self-update can silently strip them); it **enforces command prohibitions as hard constraints** that explicitly outrank the brief's "re-run the tests" rule, requiring the affected claims to return as `UNVERIFIED (prohibited: …)` so a narrowed review reports itself as narrowed; it **refuses to review a moving tree**, sampling the working tree twice and returning `REVIEW_UNAVAILABLE: working tree is not idle` if another executor, build, or watch task is still writing; it **isolates git's global config** for every git the review touches, its own and the engine's, because a sandboxed process often cannot read the user's real one and git then complains on *every* invocation (`unable to access '<home>/.config/git/ignore'`) — noise an agentic reviewer treats as a lead; and it **fails honestly on a bad ref** rather than silently falling back to the live tree. Two more since: it **names the Codex install layout** it found and **verifies the helper files that must sit next to the resolved binary**, repairing them from any locatable known-good copy and naming exactly what is missing when it cannot (Codex relocated its install once already, which silently invalidated a repair recipe written for the old layout); and a **`worktreeRoot` you set is honoured or refused, never swapped** — an unwritable configured root fails the review with the `mkdir` error attached, because falling back to the temp dir would undo the very setting that exists to prevent cross-run collisions.
+ 
+-**Tested, not asserted.** `node tests/review-lane.test.js` in the master exercises the lane end to end against a stub Codex that reports what the engine actually saw — 94 checks. Each fix is checked twice — once showing the failure mode reproduces, once showing it's gone — including worktree teardown after a successful run, after `SIGTERM`, and after `SIGKILL` (where the next run's sweep is what reclaims the orphan). The suite's own exit code is pinned three ways (a failure sets it immediately, an `exit` handler enforces it, and a suite that recorded no cases fails on that basis), because it previously exited 0 on Windows even with failing cases: the verdict was printed from deep inside an async chain that a throw or a hang simply skipped, and a green run that proves nothing is worse than no suite at all.
++**Tested, not asserted.** `node tests/review-lane.test.js` in the master exercises the lane end to end against a stub Codex that reports what the engine actually saw — 94 checks. Each fix is checked twice — once showing the failure mode reproduces, once showing it's gone — including worktree teardown after a successful run, after `SIGTERM`, and after `SIGKILL` (where the next run's sweep is what reclaims the orphan). The suite's own exit code is pinned three ways (a failure sets it immediately, an `exit` handler enforces it, and a suite that recorded no cases fails on that basis), because it previously exited 0 on Windows even with failing cases: the verdict was printed from deep inside an async chain that a throw or a hang simply skipped, and a green run that proves nothing is worse than no suite at all. CI runs it on **Linux, Windows, and macOS** across Node 20/22/24 for every push and pull request (`.github/workflows/test.yml`) — Windows above all, because that is where every field failure in this lane has happened and where the exit-code bug hid, and no session working on this repo has a Windows machine to check by hand.
+ 
+ **Tiered review (`--tier`).** Every review runs at full depth by default — the reviewer re-runs the tests itself. For a round the Director declares **inert** (docs/comments/formatting with zero behavior impact), the review order states `TIER: inert` and the launcher appends `--tier inert`; the runner then instructs the reviewer to *verify the inertness claim from the diff first* — any behavior-bearing line is itself a critical finding and forces a full-depth review — and only a proven-inert diff skips the suite. Effectiveness is never traded for speed: the tier narrows verification only where narrowing provably cannot matter, and the prover is whoever reviews — the Opus `reviewer`, the Codex engine, or the protocol's last-resort fallback — never the author. The tier appears in the `REVIEW ENGINE` header of both engines so every verdict is auditable for the depth it ran at. The tier and the `verification` manifest are engine-agnostic review *policy* (`ORCHESTRA.md` §8.3); the Opus `reviewer` enforces them through its own rules, this runner implements them for the Codex engine, and the §5 fallback applies them by hand.
+ 
+diff --git a/packs/codex/README.md b/packs/codex/README.md
+index 9b869e9..0b7d514 100644
+--- a/packs/codex/README.md
++++ b/packs/codex/README.md
+@@ -201,6 +201,7 @@ loudly when it does.
+ | `ORCHESTRA_REVIEW_WARMUP_CMD` | — | Command run in the checkout before the integrity baseline. |
+ | `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `300000` | Cap for the warmup. |
+ | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
++| `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
+ | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |
+ | `CODEX_BIN` | `codex` | Codex executable path. |
+ | `ORCHESTRA_DEEPPLAN_MODEL` | `gpt-5.6-sol` | Deep-plan counterpart model. |
+diff --git a/packs/codex/hooks/orchestra-review.js b/packs/codex/hooks/orchestra-review.js
+index 1dd661a..291e5c8 100644
+--- a/packs/codex/hooks/orchestra-review.js
++++ b/packs/codex/hooks/orchestra-review.js
+@@ -176,6 +176,14 @@
+  *                               Codex install directory before each run. A
+  *                               Codex self-update can silently drop files a
+  *                               working install needs; this restores them.
++ *   ORCHESTRA_CODEX_HELPER_SIBLINGS
++ *                               Comma-separated names the Codex install must
++ *                               carry NEXT TO its executable (default on
++ *                               Windows: codex-command-runner.exe,
++ *                               codex-resources; none elsewhere). Empty string
++ *                               expects none. Overrides the project config, so
++ *                               a machine whose install legitimately differs
++ *                               does not need a committed-config edit.
+  *   ORCHESTRA_REVIEW_ARGS       Extra args appended to `codex exec`, space-split
+  *                               (escape hatch for flag drift / tuning).
+  *   CODEX_BIN                   Codex executable (default "codex"). Resolved to
+@@ -267,7 +275,14 @@ const CONFIG = {
+   warmupTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS, 300000),
+   integrityIgnore: [],
+   integrityIgnoreDefaults: true,
+-  helperSiblings: DEFAULT_HELPER_SIBLINGS.slice(),
++  // Env override exists for the same reason every other setting here has one:
++  // the machine, not the project, is what varies. A shared box or a CI image
++  // whose Codex install legitimately ships different files should be fixable
++  // without editing a project's committed config. Empty string = expect none.
++  helperSiblings:
++    process.env.ORCHESTRA_CODEX_HELPER_SIBLINGS != null
++      ? process.env.ORCHESTRA_CODEX_HELPER_SIBLINGS.split(',').map((s) => s.trim()).filter(Boolean)
++      : DEFAULT_HELPER_SIBLINGS.slice(),
+   requireHelperSiblings: false,
+   // The directory the engine is actually pointed at: the project itself in LIVE
+   // mode, the pinned worktree in PINNED mode. Header-visible either way, so a
+@@ -684,6 +699,13 @@ function teardownScratch() {
+ // has to clean by hand, so cover every exit path a process can actually run
+ // code on. SIGKILL runs nothing, by definition — that case is covered by the
+ // next run's sweep, not by hope.
++//
++// WINDOWS: there are no POSIX signals there. `child.kill('SIGTERM')` becomes
++// TerminateProcess, which is SIGKILL's semantics — no handler runs, whatever
++// this registers. So on Windows EVERY kill is the SIGKILL case, and the next
++// run's sweep is the only mechanism that reclaims the worktree. That is not a
++// gap to fix here (nothing can run in a terminated process); it is a reason the
++// sweep exists and must keep working.
+ let signalsArmed = false;
+ function armTeardown() {
+   if (signalsArmed) return;
+@@ -1757,7 +1779,10 @@ function main() {
+   if (codexCfg.integrityIgnoreDefaults === false) CONFIG.integrityIgnoreDefaults = false;
+   CONFIG.integrityIgnore = (CONFIG.integrityIgnoreDefaults ? DEFAULT_INTEGRITY_IGNORE : [])
+     .concat(stringList(codexCfg.integrityIgnore).map((s) => s.trim()));
+-  if (Array.isArray(codexCfg.helperSiblings)) {
++  if (
++    process.env.ORCHESTRA_CODEX_HELPER_SIBLINGS == null &&
++    Array.isArray(codexCfg.helperSiblings)
++  ) {
+     CONFIG.helperSiblings = stringList(codexCfg.helperSiblings).map((s) => s.trim());
+   }
+   if (codexCfg.requireHelperSiblings === true) CONFIG.requireHelperSiblings = true;
+diff --git a/tests/review-lane.test.js b/tests/review-lane.test.js
+index c214830..959ef78 100644
+--- a/tests/review-lane.test.js
++++ b/tests/review-lane.test.js
+@@ -152,9 +152,13 @@ function runReview(fx, extraArgs, extraEnv, opts) {
+       process.env,
+       {
+         CLAUDE_PROJECT_DIR: fx.repo,
+-        CODEX_BIN: STUB,
++        CODEX_BIN: STUB_BIN,
+         ORCHESTRA_REVIEW_IDLE_MS: '0',
+         ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
++        // Expect no helper siblings unless a case says otherwise, so the same
++        // assertions hold on Windows (where the default list is non-empty) as
++        // everywhere else. Case 15 sets this explicitly and tests the machinery.
++        ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
+         STUB_CODEX_PROBE_PATH: '.claude/plans/toon-conversion-campaign.md',
+       },
+       extraEnv || {}
+@@ -177,6 +181,43 @@ function sleep(ms) {
+   return new Promise((res) => setTimeout(res, ms));
+ }
+ 
++// The runner spawns the engine binary DIRECTLY — no shell, deliberately, since
++// a shell would change quoting and argument handling. Windows cannot
++// CreateProcess a `.js` file, so there the "codex binary" handed to the runner
++// is a `.cmd` shim that invokes node on the stub. Everywhere else the stub is
++// executable and is handed over as-is. Same stub, same behaviour, one layer of
++// platform plumbing.
++function makeStubBin(dir, base) {
++  fs.mkdirSync(dir, { recursive: true });
++  if (process.platform !== 'win32') {
++    const dest = path.join(dir, base + '.js');
++    fs.copyFileSync(STUB, dest);
++    fs.chmodSync(dest, 0o755);
++    return dest;
++  }
++  const dest = path.join(dir, base + '.cmd');
++  fs.writeFileSync(
++    dest,
++    '@echo off\r\nnode "' + STUB + '" %*\r\nexit /b %ERRORLEVEL%\r\n',
++    'utf8'
++  );
++  return dest;
++}
++
++// The default engine binary for every test that doesn't build its own install.
++const STUB_BIN = (() => {
++  if (process.platform !== 'win32') return STUB;
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-stubbin-'));
++  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
++  return makeStubBin(dir, 'codex');
++})();
++
++// On Windows a "graceful" kill is not graceful: child.kill('SIGTERM') maps to
++// TerminateProcess, so no handler in the target runs, whatever it registered.
++// Every kill there is therefore the SIGKILL case, and the sweep — not the
++// runner's own teardown — is what reclaims the worktree.
++const KILL_RUNS_HANDLERS = process.platform !== 'win32';
++
+ // ---------------------------------------------------------------- the tests
+ 
+ function case1() {
+@@ -258,7 +299,7 @@ async function case4() {
+       cwd: fx.repo,
+       env: Object.assign({}, process.env, {
+         CLAUDE_PROJECT_DIR: fx.repo,
+-        CODEX_BIN: STUB,
++        CODEX_BIN: STUB_BIN,
+         ORCHESTRA_REVIEW_IDLE_MS: '0',
+         STUB_CODEX_SLEEP_MS: '60000',
+       }),
+@@ -277,11 +318,29 @@ async function case4() {
+   child.kill('SIGTERM');
+   await new Promise((res) => child.on('exit', res));
+   await sleep(300);
+-  check(
+-    'SIGTERM: git worktree list is clean',
+-    worktreeLines(fx.repo).length === 1,
+-    worktreeLines(fx.repo).join('\n')
+-  );
++  if (KILL_RUNS_HANDLERS) {
++    check(
++      'SIGTERM: the runner\'s own handler cleaned up — git worktree list is clean',
++      worktreeLines(fx.repo).length === 1,
++      worktreeLines(fx.repo).join('\n')
++    );
++  } else {
++    // Windows has no POSIX signals: kill('SIGTERM') is TerminateProcess, so no
++    // handler in the runner can possibly run. Asserting a clean list here would
++    // be asserting something the platform makes impossible; the honest property
++    // is that the orphan survives and the sweep (below) is what reclaims it.
++    check(
++      'SIGTERM on Windows terminates outright, leaving the orphan for the sweep',
++      worktreeLines(fx.repo).length > 1,
++      worktreeLines(fx.repo).join('\n')
++    );
++    const swept = runReview(fx, ['--head-ref', fx.head]);
++    check(
++      'and a later run reclaims it',
++      worktreeLines(fx.repo).length === 1,
++      (swept.stdout || '').slice(0, 400) + '\n' + worktreeLines(fx.repo).join('\n')
++    );
++  }
+ 
+   // SIGKILL runs no handler by design — the next run's sweep is what reclaims
+   // the orphan, so that is what gets tested.
+@@ -293,7 +352,7 @@ async function case4() {
+       cwd: fx2.repo,
+       env: Object.assign({}, process.env, {
+         CLAUDE_PROJECT_DIR: fx2.repo,
+-        CODEX_BIN: STUB,
++        CODEX_BIN: STUB_BIN,
+         ORCHESTRA_REVIEW_IDLE_MS: '0',
+         STUB_CODEX_SLEEP_MS: '60000',
+       }),
+@@ -717,14 +776,12 @@ function case15() {
+   const fx = makeDirtyRepo();
+   const binRoot = path.join(fx.root, 'AppData', 'Local', 'OpenAI', 'Codex', 'bin');
+   const installDir = path.join(binRoot, 'a1b2c3d4');
+-  fs.mkdirSync(installDir, { recursive: true });
+-  const fakeBin = path.join(installDir, 'codex-stub.js');
+-  fs.copyFileSync(STUB, fakeBin);
+-  fs.chmodSync(fakeBin, 0o755);
++  const fakeBin = makeStubBin(installDir, 'codex-stub');
+ 
+   writeProjectConfig(fx, { helperSiblings: ['codex-command-runner.exe', 'codex-resources'] });
+ 
+-  const missing = runReview(fx, ['--head-ref', fx.head], { CODEX_BIN: fakeBin });
++  const wantHelpers = { ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' };
++  const missing = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
+   const mout = missing.stdout || '';
+   check(
+     'the new install layout is detected and named',
+@@ -754,7 +811,7 @@ function case15() {
+   fs.writeFileSync(path.join(oldVersion, 'codex-command-runner.exe'), 'MZ fake\n');
+   fs.writeFileSync(path.join(oldVersion, 'codex-resources', 'r.dat'), 'resource\n');
+ 
+-  const repaired = runReview(fx, ['--head-ref', fx.head], { CODEX_BIN: fakeBin });
++  const repaired = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
+   const rout = repaired.stdout || '';
+   check(
+     'helpers are repaired from a sibling version of the same layout',
+@@ -767,7 +824,7 @@ function case15() {
+       fs.existsSync(path.join(installDir, 'codex-resources', 'r.dat')),
+     fs.readdirSync(installDir).join(', ')
+   );
+-  const after = runReview(fx, ['--head-ref', fx.head], { CODEX_BIN: fakeBin });
++  const after = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
+   check(
+     'a complete install reports the siblings as present',
+     /helper siblings present: codex-command-runner\.exe, codex-resources/.test(after.stdout || ''),
+@@ -777,15 +834,15 @@ function case15() {
+   // Projects that know they need the helpers can make it a hard stop.
+   const fx2 = makeDirtyRepo();
+   const installDir2 = path.join(fx2.root, 'OpenAI', 'Codex', 'bin', 'ffff0000');
+-  fs.mkdirSync(installDir2, { recursive: true });
+-  const fakeBin2 = path.join(installDir2, 'codex-stub.js');
+-  fs.copyFileSync(STUB, fakeBin2);
+-  fs.chmodSync(fakeBin2, 0o755);
++  const fakeBin2 = makeStubBin(installDir2, 'codex-stub');
+   writeProjectConfig(fx2, {
+     helperSiblings: ['codex-command-runner.exe'],
+     requireHelperSiblings: true,
+   });
+-  const hard = runReview(fx2, ['--head-ref', fx2.head], { CODEX_BIN: fakeBin2 });
++  const hard = runReview(fx2, ['--head-ref', fx2.head], {
++    CODEX_BIN: fakeBin2,
++    ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe',
++  });
+   check(
+     'requireHelperSiblings turns a missing helper into a refusal',
+     /VERDICT: REVIEW_UNAVAILABLE/.test(hard.stdout || '') &&
+@@ -796,10 +853,7 @@ function case15() {
+   // The old layout still resolves as a known layout, not as "unknown".
+   const fx3 = makeDirtyRepo();
+   const oldDir = path.join(fx3.root, '.codex', 'packages', 'standalone', 'current', 'bin');
+-  fs.mkdirSync(oldDir, { recursive: true });
+-  const oldBin = path.join(oldDir, 'codex-stub.js');
+-  fs.copyFileSync(STUB, oldBin);
+-  fs.chmodSync(oldBin, 0o755);
++  const oldBin = makeStubBin(oldDir, 'codex-stub');
+   const oldRun = runReview(fx3, ['--head-ref', fx3.head], { CODEX_BIN: oldBin });
+   check(
+     'the previous install layout is still recognised',

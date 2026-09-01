@@ -1,0 +1,24 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Apply the round-three findings from the owner-requested holistic review.
+First, strike the seven-day maxStaleMs ruled in round one, then replace it
+with a forty-eight-hour ceiling — a weekly allowance moves too fast for a
+week-old reading to count as evidence — while the twenty-four-hour
+maxFreshMs window stands as ruled. Second, carry the staleness disclosure
+onto the published bucket-state object by adding stale and ageMs keys, so a
+snapshot consumer or the dispatcher sees what the human report already
+shows. Third, ledger the outstanding exercise debt, then commit the
+round-three verdicts and the band records. Keep the disclosure purely
+additive, since staleness is disclosed rather than discounted, so publish
+the recorded fraction exactly as read, leave reserveBreached,
+throttleObserved and exhausted computed the way they are today, but let no
+bucket's routed pool state change merely because its reading is stale. Do
+not modify router/router.js, which keeps ownership of the ladder and the
+reserve formula.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

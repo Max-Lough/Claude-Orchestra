@@ -1,0 +1,23 @@
+{
+  "id": "sdc-003",
+  "kind": "seeded",
+  "phase": 0,
+  "variant": "V3",
+  "base": "3900142ff195c91ae38de27f45abc58707b63eae",
+  "commit": "e04005bb8a0b751bb26fbdd4755ee437af2cb240",
+  "subject": "WO-8 round 5f: pre-add records as a hard prerequisite; residual strand self-healing pinned",
+  "seed": {
+    "type": "LC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "verifier/checkout.js",
+      "lines": [365, 371],
+      "symbol": "createCheckout"
+    },
+    "consequence": "verifier/verifier.js — untouched by this commit — calls createCheckout in runVerification and in mutationCheck outside any try/catch and only tests `checkout.error`, so the new pre-add refusal now escapes as an uncaught exception and aborts the entire verification run (no checkout/mutation UNAVAILABLE result, no dispatcher-tree-audit, no verdict JSON, no exit-code 2) instead of the documented mapping to UNAVAILABLE.",
+    "rationale": "MAJOR, not CRITICAL: the failure is loud rather than silent — nothing is corrupted and no gate silently passes — but a documented error path reachable in ordinary use (git's worktree records momentarily unreadable, the exact condition this round exists to handle) produces a crashed run rather than the typed UNAVAILABLE outcome every caller and the CLI exit-code contract depend on. It is more than MINOR because the whole point of the round — fail closed and report it — is defeated at the reporting boundary.",
+    "hazard_terms": ["contract drift", "untouched caller", "thrown versus returned", "cross-file consequence", "error-path shape"]
+  },
+  "suite_at_variant": "verifier: 101 passed, 0 failed | router: ALL CHECKS PASSED — 135 passed | registry: 31 passed, 0 failed | review-lane: OK — 116 passed, 0 failed | exec-lane: OK — 79 passed, 0 failed | scan-lane: OK — 41 passed, 0 failed | mcp-lane: OK — 68 passed | frontmatter-lint: OK — 37 passed, 0 failed",
+  "design_note": "The commit's own message calls the pre-add records read a HARD prerequisite; an executor over-reading that word and escalating the refusal from a returned {error} to a thrown Error is a very ordinary drift, and the injected hunk is locally self-consistent because the function's JSDoc is updated to match. Nothing in the eight suites induces an unreadable pre-add porcelain read, so the defect escapes green — which is the realistic case. Detection requires leaving the two focal files and checking that the module's only production consumer honours the changed contract."
+}

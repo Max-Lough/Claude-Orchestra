@@ -17,7 +17,14 @@ Implement a well-scoped change behind a written spec — feature, fix, integrati
 
 ## Casting
 
-Split by order shape (owner ruling 2026-08-28). **Preferred:** OpenAI · GPT-5.6 Luna · xhigh–max for bounded, short-horizon, fully-specified, deterministically-verifiable orders only — promoted from a trial-gated budget casting on the owner's accumulated field data (cost/performance far above its weight class on exactly this shape). **This file's casting**, Anthropic · Claude Sonnet 5 · medium (the **dense** rung runs at high for unusually dense but bounded logic), for orders expected to run longer or whose spec is thinner than Luna's bar; **mirror** OpenAI · GPT-5.6 Terra · medium. Luna never receives under-specified work — that guardrail survives the promotion; live escape-rate monitoring (audit finding 5) keeps the entry trial honest in production.
+Split by order shape (owner ruling 2026-08-28), extended into a four-tier ladder by the WO-14b Builder ladder (owner-ruled 2026-09-01, adopted as proposed): the Conductor selects a `tier` on the order — **bounded** (preferred OpenAI · GPT-5.6 Luna · xhigh–max, for bounded, short-horizon, fully-specified, deterministically-verifiable orders only; substitutes Terra · med then Sonnet · med), **standard** (preferred **this file's casting**, Anthropic · Claude Sonnet 5 · medium, for orders expected to run longer or whose spec is thinner than Luna's bar; substitute Terra · med), **dense** (preferred Sonnet 5 · high for unusually dense but bounded logic; substitute Terra · high; override-only Sol · med), **deep** (preferred Opus 5 · high — absorbing the retired Principal seat's primary rung; no substitute; override-only Sol · high). Each tier walks its preferred casting then its ordered cross-vendor substitute list under the bucket ladder, `recastFrom` disclosed; override-only entries are reached solely through the Conductor's explicit override, and a Sol override additionally requires the Quartermaster's review-reserve check (`castOpts.reserveCheck === 'passed'`) — absent, a typed `FORBIDDEN`, never a silent walk onto Sol. Absent an explicit `tier`, an E2 order defaults to **standard**; merged classes (E0/E1/E3/E5/E6/E8/D0, retired-role work now dispatched through Builder) default per `router/castings.json`'s `mergedClasses` table. Luna never receives under-specified work — that guardrail survives the promotion and the ladder; live escape-rate monitoring (audit finding 5) keeps the entry trial honest in production. Opus (deep tier) stays behind the P15 reserve/Amber-arming gate like every other Opus casting in the roster.
+
+This file is the in-harness launcher for every **Anthropic-served** Builder rung
+(Sonnet 5 primary/dense, Opus 5 deepPrimary). Every OpenAI-served rung on the same
+ladder (Luna preferredBounded, Terra mirror/denseMirror, the override-only Sol rungs)
+spawns `roster/builder-openai.md` instead — the served casting picks the launcher file,
+never a fixed name (`bridge/runtime.js`'s `subagentTypeFor()`); that file is a thin
+relay carrying no judgment of its own, unlike this one.
 
 ## Rationale
 
@@ -65,7 +72,17 @@ DEVIATIONS
 
 CONCERNS
 - <risks, smells, or follow-ups the dispatcher should weigh — or "none">
+
+COMMIT
+- commit: <full 40-char hash> on <branch>
+
+REPORT INTEGRITY: <the NONCE= value from your prompt header, verbatim>
 ```
+
+Three mechanics of that report the closer depends on (order #3 lessons, 2026-09-01):
+- The hash line must read `commit: <hash>` — that exact label is what the closer parses; "Commit 1:" or a hash with no label does not close the ticket. Branch work starts from the dispatch-time HEAD (`git checkout -b <branch>` from where you were launched), never from an older unmerged branch — the Verifier replays your claimed changes against the base recorded at dispatch, and a stale base fails that replay.
+- The report is bound from the LAST message of the turn in which you finish — and only your FIRST finished turn binds. So the turn that completes the work must end with the full report above, nothing after it; if you are resumed for housekeeping afterward, the bound report does not change, so never move real results into a resumed turn.
+- Section labels are exact: `CONCERNS`, not "OPEN ISSUES"; `CHANGES` bullets are `path:line — prose`, not a pasted diff.
 
 For BLOCKED: state exactly what you need decided, what you found that caused the block, and leave the tree untouched or clearly note any partial changes made.
 

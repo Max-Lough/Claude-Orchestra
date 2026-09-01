@@ -1,0 +1,20 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+The fourth review already found that citing a commit span collectively left
+a reviewer unable to tell which line came from which fix, so this fifth
+review for the round four fixes anchors to the pair bounding round three and
+round four, cited as that exact pair rather than a single joined citation,
+never collapsed into one span, a rule that now carries forward to every
+review after this one. Write the pinning order and the executor's write-up
+together. Both land as new files, and nothing outside them is touched. Keep
+the audit itself strictly to only what changed across that bounding pair,
+setting aside the longer history behind it entirely. Set down, without
+hedging, that an unhedged verdict here, and nothing short of it, is what
+lets the orders held in revise move forward.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

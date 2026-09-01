@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Fix every finding raised in the delta review of the evidence-band record.
+Correct the researcher role file's working-tree description, dropping the
+inaccurate sandboxed-checkout phrase, and fix its sandbox-pinning line to
+match the archivist and LC-analyst wording precisely. Fix the status page's
+mis-stated pass or fail line for the two exercised seats, expand its
+deferred-item list to match the review record's fuller one precisely, and
+rewrite the discard grounds for the first incident onto the two facts that
+actually support discarding it. Leave the two unsupported grounds withdrawn
+rather than standing alongside the anchored ones, since every corrected line
+must trace back only to a fact the review already raised. Correct the
+source-count language in two files to the precise figures, and fix the one
+misattributed omission. Note the search log's own numbering mismatch, but
+introduce no new findings along the way.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

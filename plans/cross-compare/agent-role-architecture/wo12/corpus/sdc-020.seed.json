@@ -1,0 +1,29 @@
+{
+  "id": "sdc-020",
+  "kind": "seeded",
+  "phase": 1,
+  "variant": "V1",
+  "base": "ea5ef72cc7f829ec41d7e4c6a822e79d95276873",
+  "commit": "6d6df881785eb92a323793dfa027053547ec14c3",
+  "subject": "Add detective role: Opus-tier read-only recon for causal investigation",
+  "seed": {
+    "type": "RC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "agents/detective.md",
+      "lines": [13, 13],
+      "symbol": "## Rules — rule 1, \"Read-only, absolutely.\""
+    },
+    "consequence": "The new role's charter now tells the agent to launch the system under investigation as a detached background run and read its log or port \"while it comes up\", which both opens a read-before-ready window (evidence gathered from a half-started process) and, because nothing in the charter requires the run to be stopped, ends the agent's turn with that process still alive — holding its port, lock files and log handles against the next executor's build or test run in the same tree.",
+    "rationale": "The real commit's whole point is that the detective inherits the scout's read-only law, and the original rule closes the loop by classing execution-to-observe as executor work proposed under UNKNOWNS. Softening that one sentence into a background-run carve-out is exactly the plausible-looking charter edit a reviewer skims past: it keeps the read-only headline, keeps the artifact-writing prohibition, and reads like a pragmatic refinement — while removing the only clause that bounded a spawned process's lifetime to the Director's routing, and adding a wait-free read on top.",
+    "hazard_terms": [
+      "background process outliving the turn that started it",
+      "no teardown on the exit path",
+      "read before the resource is ready",
+      "unbounded process lifetime",
+      "orphaned handle holding a shared resource"
+    ]
+  },
+  "suite_at_variant": "node --check install.js / hooks/orchestra-guard.js / hooks/orchestra-review.js -> \"syntax OK\" 3/3; node install.js <tmp> -> \"Installing Orchestra v1.1.0 into: <tmp>\" ... \"* agents: scout.md, detective.md, executor.md, reviewer.md, reviewer-codex.md, planner-gpt.md -> .claude/agents/\" ... \"Done. Notes:\"; node install.js <tmp> --uninstall -> \"Done. The project is back to a standard Claude Code setup.\" (the repo carries no test suite and install.js has no --lint mode at this commit; the installer round-trip is the touched surface's verification)",
+  "design_note": "The commit touches only role charters (.md), the guard's denial hint, and the installer's stamped agent list, so the RC had to take its rule-level lifetime form: the defect lives in the new role's own charter rather than in code. It is a single-sentence replacement at the tail of rule 1 that converts \"running the code to observe it is still execution — propose it under UNKNOWNS\" into a licence to start a detached run and read it immediately, so the injected diff line still opens with the same bold \"Read-only, absolutely.\" and still forbids artifact-writing commands. Severity is MAJOR and not CRITICAL because the damage is a leaked process and an unsynchronised read reachable in ordinary root-cause use, not data loss or a crossed security boundary; the read-only law it undermines is a harness discipline the guard does not enforce inside subagents."
+}

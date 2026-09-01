@@ -1,0 +1,393 @@
+diff --git a/ORCHESTRA.md b/ORCHESTRA.md
+index 5a7eee4..749f23e 100644
+--- a/ORCHESTRA.md
++++ b/ORCHESTRA.md
+@@ -65,6 +65,7 @@ Creating `.claude/orchestra.pause` in the project (or setting env `ORCHESTRA_PAU
+ 
+ - **Specialist executors.** Recurring domain work (3D assets, DB migrations, shaders, …) deserves a domain-tuned executor: identical law to `executor`, plus preloaded playbooks via `skills:` frontmatter. Route matching work orders to the specialist instead of the generic executor. Masters live in the Orchestra repo under `agents/specialists/` (template: `_TEMPLATE.md`; install with `--specialists <name>`).
+ - **Skill routing (you, the Director).** Before invoking any skill, classify it. *Advisory or orchestration* skills — research, planning, review harnesses that inform decisions or spawn agents — run fine in your context. *Hands-on* skills — step-by-step tool playbooks (build pipelines, asset creation, deploys) — must NOT be invoked by you: their steps hit the guard, and the knowledge lands in the one head that can't use it. Route them instead, in order of preference: (a) a specialist with the skill preloaded; (b) a work order telling the executor to invoke the skill itself and follow it; (c) last resort, translate the skill's steps into work orders yourself.
++- **Bundled Orchestra skills.** The harness installs its own skills under `.claude/skills/` — `orchestra-status` (live harness state report), `orchestra-plan` (plan authoring into `.claude/plans/`), `orchestra-review` (on-demand adversarial review of existing changes). All are orchestration-class by construction — safe in your context, delegation-shaped inside — so invoke them directly when the user calls them (`/orchestra-status`, …) or their trigger fits; every other skill still goes through the classification above.
+ - **MCP that mutates is execution.** Any MCP tool that changes external state — scene graphs, databases, emails, cloud resources — counts as doing the work: delegate it (subagents inherit MCP tools). This holds whether or not the guard is configured to block it; `.claude/orchestra.json` `directorBlockedPatterns` makes it enforced rather than honored.
+ - **Iteration stays inside one order.** Produce→inspect→adjust loops (renders, tuning, migrations) belong INSIDE a single work order: "iterate until X or N rounds, report the best result." For long campaigns, keep one specialist warm via SendMessage instead of respawning it per round.
+ - **Non-text deliverables get evidence.** Producers emit inspectable artifacts — renders, screenshots, stats, logs — and report paths. You and the reviewer can Read images; verdicts and findings cite artifact paths where file:line doesn't exist.
+diff --git a/README.md b/README.md
+index bb92a7f..a585569 100644
+--- a/README.md
++++ b/README.md
+@@ -84,9 +84,14 @@ Orchestra/
+ │   └── specialists/       ← domain executors, installed on request (--specialists)
+ │       ├── _TEMPLATE.md   ← copy this to mint a new specialist
+ │       └── modeler.md     ← Sonnet · Blender/Godot 3D asset pipeline
+-└── hooks/
+-    ├── orchestra-guard.js  ← PreToolUse hook enforcing Director law
+-    └── orchestra-review.js ← cross-vendor review runner (drives Codex CLI)
++├── hooks/
++│   ├── orchestra-guard.js  ← PreToolUse hook enforcing Director law
++│   └── orchestra-review.js ← cross-vendor review runner (drives Codex CLI)
++└── skills/                 ← bundled skills, stamped into .claude/skills/
++    ├── _TEMPLATE/          ← copy this directory to mint a new bundled skill
++    ├── orchestra-status/   ← /orchestra-status · live harness state report
++    ├── orchestra-plan/     ← /orchestra-plan · §8-sized plans into .claude/plans/
++    └── orchestra-review/   ← /orchestra-review · on-demand adversarial review
+ ```
+ 
+ This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
+@@ -119,11 +124,12 @@ git clone https://github.com/Max-Lough/Claude-Orchestra.git && cd Claude-Orchest
+ The installer is **idempotent** — run it again anytime to update a project to the latest master. It:
+ 
+ 1. Copies `agents/*.md` → `<project>/.claude/agents/`
+-2. Copies `hooks/orchestra-guard.js` and `hooks/orchestra-review.js` → `<project>/.claude/hooks/`
+-3. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
+-4. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
+-5. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
+-6. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
++2. Copies each bundled skill `skills/<name>/` → `<project>/.claude/skills/<name>/` (stamped wholesale — local edits to those directories are overwritten on update; see "Bundled skills")
++3. Copies `hooks/orchestra-guard.js` and `hooks/orchestra-review.js` → `<project>/.claude/hooks/`
++4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
++5. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
++6. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
++7. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
+ 
+ **First launch after install:** Claude Code will ask you to approve the hook that project settings define — approve it once and it sticks. If teammates shouldn't inherit the harness, move the hook entry from `settings.json` to `settings.local.json` (git-ignored).
+ 
+@@ -135,7 +141,7 @@ The installer is **idempotent** — run it again anytime to update a project to
+ node install.js "C:\path\to\your\project" --uninstall
+ ```
+ 
+-Removes the copied files, the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else in your settings and CLAUDE.md is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
++Removes the copied files (agents, hooks, protocol, and the bundled `orchestra-*` skills), the hook entry, the git permission grants, and the CLAUDE.md marker block. Everything else — including skills you authored under other names — is left untouched. (If you had independently added identical `Bash(git …:*)` allow rules, re-add them after uninstalling.)
+ 
+ ## Using it
+ 
+@@ -145,6 +151,8 @@ Nothing to invoke — just start Claude Code in the project. The protocol loads
+ 
+ You'll see the Director narrate phase transitions and spawn agents; the agents' raw reports stay behind the curtain, and the Director gives you the synthesized picture with evidence (tests run, review verdicts).
+ 
++Three slash commands ship with the harness: `/orchestra-status` (live harness state), `/orchestra-plan` (a §8-sized plan written to `.claude/plans/`), and `/orchestra-review` (on-demand adversarial review of any diff) — see "Bundled skills".
++
+ ## Pausing the harness
+ 
+ Sometimes you want a plain session in an Orchestra project (quick one-liner fix, debugging the harness itself):
+@@ -203,6 +211,23 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
+ 
+ **Working rhythm for iterative pipelines** (also in §7): iteration loops live *inside* one work order ("iterate until it matches the ref or 4 rounds, report best"); long campaigns keep one specialist warm via SendMessage instead of respawning; renders/screenshots/logs are the review artifacts — both the Director and the reviewer can Read images; asset batches go to the reviewer as one checklist pass with one verdict.
+ 
++## Bundled skills
++
++The harness ships skills of its own and stamps them into `<project>/.claude/skills/` on every install — they ride the installer exactly like agents and hooks: installed automatically, updated by re-running the installer, removed by `--uninstall`. Claude Code discovers project skills from that directory, so they're live as slash commands (and as auto-triggered skills) with nothing else to configure.
++
++| Skill | Invoke | Does |
++|---|---|---|
++| `orchestra-status` | `/orchestra-status` — or ask "is the orchestra on?" | One compact report: mode, pause/enforcement state, review engine (+ Codex availability), company roster, policy, verification manifest, plans/ledger — plus one-line fixes for any inconsistency it finds. |
++| `orchestra-plan` | `/orchestra-plan` — or ask to plan before building | Walks the §8 sizing gate and writes a durable plan file — work orders with scope, acceptance criteria, verification tier, cadence clauses — to `.claude/plans/<slug>.md`, the one directory the Director may write itself. |
++| `orchestra-review` | `/orchestra-review` — or ask for a review / second opinion | Runs the loop's REVIEW phase on demand against arbitrary existing changes — working tree, branch, commit range — through the configured engine, with the standard verdict format. Works on changes the harness never authored. |
++
++Design constraints (these are also the rules for bundling your own — see `skills/_TEMPLATE/SKILL.md`):
++
++- **Orchestration-class only.** Bundled skills load into the main session — the Director, whom the guard blocks from editing, running commands, and searching. So their steps dispatch scouts, executors, and reviewers rather than assuming the session's own hands (ORCHESTRA.md §7). Hands-on playbooks belong to executors and specialists, never in the bundle.
++- **All modes.** Each skill forks once at the top: under a director model it delegates; in a dormant or paused session the same procedure runs directly. The skills stay useful in plain sessions.
++- **Stamped wholesale.** The installer replaces each `.claude/skills/orchestra-*/` directory completely on update, so stale files never linger — edit the master and re-run the installer rather than editing stamped copies. The `orchestra-` prefix is effectively the harness's namespace; skills under other names are yours, and the installer never touches them.
++- **To bundle a new skill:** copy `skills/_TEMPLATE/` to `skills/<name>/`, make the frontmatter `name` match the directory, re-run the installer per project. Supporting files beside `SKILL.md` are stamped too (the copy is recursive); underscore-prefixed directories are skipped. Fresh sessions pick up new skills at launch.
++
+ ## Sizing, cadence, and the verification tax
+ 
+ `ORCHESTRA.md` §8 governs how big a work order gets and what a long one owes the Director while it runs. The short version:
+diff --git a/install.js b/install.js
+index 7f7f0c3..56a7e99 100644
+--- a/install.js
++++ b/install.js
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ /**
+- * Orchestra installer — stamps the Orchestra harness into a target project.
++ * Orchestra installer — stamps the Orchestra harness (agents, hooks, the
++ * protocol, and bundled skills) into a target project.
+  *
+  *   node install.js [targetDir]                        install / update (idempotent)
+  *   node install.js [targetDir] --specialists a[,b]    also install domain specialists
+@@ -24,6 +25,33 @@ function availableSpecialists() {
+     .filter((f) => f.endsWith('.md') && f !== '_TEMPLATE.md')
+     .map((f) => f.slice(0, -3));
+ }
++
++const SKILLS_DIR = path.join(SRC, 'skills');
++
++// Bundled skills: every skills/<name>/ directory carrying a SKILL.md, minus
++// underscore-prefixed ones (the authoring template). Always installed — they
++// are part of the harness, not an opt-in like specialists.
++function availableSkills() {
++  if (!fs.existsSync(SKILLS_DIR)) return [];
++  return fs
++    .readdirSync(SKILLS_DIR)
++    .filter((d) => !d.startsWith('_'))
++    .filter((d) => {
++      const p = path.join(SKILLS_DIR, d);
++      return fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'SKILL.md'));
++    })
++    .sort();
++}
++
++function copyDir(src, dest) {
++  fs.mkdirSync(dest, { recursive: true });
++  for (const entry of fs.readdirSync(src)) {
++    const s = path.join(src, entry);
++    const d = path.join(dest, entry);
++    if (fs.statSync(s).isDirectory()) copyDir(s, d);
++    else fs.copyFileSync(s, d);
++  }
++}
+ const GUARD = 'orchestra-guard.js';
+ const GUARD_MARK = 'orchestra-guard.js'; // identifies our hook entries in settings
+ const REVIEW_RUNNER = 'orchestra-review.js'; // cross-vendor review runner (driven by the reviewer-codex agent)
+@@ -151,6 +179,7 @@ if (path.resolve(target) === path.resolve(SRC)) {
+ const dotClaude = path.join(target, '.claude');
+ const agentsDir = path.join(dotClaude, 'agents');
+ const hooksDir = path.join(dotClaude, 'hooks');
++const skillsDir = path.join(dotClaude, 'skills');
+ const settingsFile = path.join(dotClaude, 'settings.json');
+ const claudeMd = path.join(target, 'CLAUDE.md');
+ const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
+@@ -172,6 +201,15 @@ if (!uninstall) {
+     fs.copyFileSync(path.join(SPECIALISTS_DIR, s + '.md'), path.join(agentsDir, s + '.md'));
+   }
+   if (specialists.length) did('specialists: ' + specialists.join(', ') + ' -> .claude/agents/');
++  const skills = availableSkills();
++  for (const s of skills) {
++    const dest = path.join(skillsDir, s);
++    // Wholesale re-stamp: replace the whole directory so files removed from
++    // the master don't linger in projects.
++    fs.rmSync(dest, { recursive: true, force: true });
++    copyDir(path.join(SKILLS_DIR, s), dest);
++  }
++  if (skills.length) did('skills: ' + skills.join(', ') + ' -> .claude/skills/');
+   fs.copyFileSync(path.join(SRC, 'hooks', GUARD), path.join(hooksDir, GUARD));
+   did('hook script -> .claude/hooks/' + GUARD);
+   fs.copyFileSync(path.join(SRC, 'hooks', REVIEW_RUNNER), path.join(hooksDir, REVIEW_RUNNER));
+@@ -227,6 +265,13 @@ if (!uninstall) {
+   console.log(
+     '  - The Director may write plan files (.claude/plans/*.md) itself; everything else stays delegated.'
+   );
++  if (skills.length) {
++    console.log(
++      '  - Bundled skills installed: ' +
++        skills.map((s) => '/' + s).join(', ') +
++        ' (fresh sessions pick them up; see README "Bundled skills").'
++    );
++  }
+   console.log('  - Update later by re-running this installer; remove with --uninstall.');
+   const avail = availableSpecialists();
+   if (avail.length && specialists.length === 0) {
+@@ -254,6 +299,21 @@ if (!uninstall) {
+     }
+   }
+ 
++  // Bundled skills: remove master-known names only — skills the user authored
++  // under other names are theirs, not ours.
++  for (const s of availableSkills()) {
++    const dir = path.join(skillsDir, s);
++    if (fs.existsSync(dir)) {
++      fs.rmSync(dir, { recursive: true, force: true });
++      did('removed .claude/skills/' + s + '/');
++    }
++  }
++  try {
++    if (fs.existsSync(skillsDir) && fs.readdirSync(skillsDir).length === 0) fs.rmdirSync(skillsDir);
++  } catch (_) {
++    /* leave a non-empty or busy skills dir alone */
++  }
++
+   if (fs.existsSync(settingsFile)) {
+     const settings = readJson(settingsFile);
+     let settingsChanged = false;
+diff --git a/skills/_TEMPLATE/SKILL.md b/skills/_TEMPLATE/SKILL.md
+new file mode 100644
+index 0000000..ba86401
+--- /dev/null
++++ b/skills/_TEMPLATE/SKILL.md
+@@ -0,0 +1,35 @@
++---
++# ── Orchestra bundled-skill template ──────────────────────────────────────
++# Bundled skills ship with the harness: the installer stamps every
++# skills/<name>/ directory into <project>/.claude/skills/<name>/ on every
++# install (this template is skipped — the underscore prefix excludes it).
++# To mint one: copy this directory to skills/<your-name>/, make `name`
++# match the directory, fill every <slot>, and re-run the installer per
++# project. Supporting files placed beside SKILL.md (references, checklists)
++# are stamped too — the copy is recursive.
++# ───────────────────────────────────────────────────────────────────────────
++name: <skill-name>
++description: <What it does, one sentence. Then the trigger — "Use when …" with concrete conditions; this line is how the session decides to load the skill, so make it specific.>
++---
++
++# <Skill title>
++
++<One paragraph: what invoking this skill accomplishes.>
++
++Bundled skills load into the MAIN session. Under the Orchestra that is the **Director**, whom the guard blocks from editing files, running commands, and searching — so a bundled skill must be **orchestration-class** (ORCHESTRA.md §7): its steps advise, decide, and dispatch. They never assume the session's own hands.
++
++## Authoring rules
++
++1. **Delegation-shaped steps.** Filesystem facts → "dispatch a scout for …". Mutations → "send the executor a work order that …". Verdicts → the reviewer. The only direct file access a step may assume: Writes of markdown under `.claude/plans/`, and the Reads §3.1 explicitly permits (user-handed files, agent artifacts, `.claude/orchestra.json`).
++2. **Fork on mode once, at the top.** State that under a director model the steps run delegated, and that a dormant or paused session runs the same steps directly with its own tools. One procedure, written delegation-shaped — never two procedures.
++3. **Self-contained, like a work order.** Name exact paths, commands, formats, and the report shape; assume no conversation memory.
++4. **Hands-on playbooks don't belong here.** Step-by-step tool playbooks (builds, asset pipelines, deploys) are executor material: make them project skills the executor invokes by name inside a work order, or preload them into a specialist (`agents/specialists/`) — §7's routing rule. Bundling one would land it in the one context that can't use it.
++
++## Procedure
++
++1. <step>
++2. <step>
++
++## Report
++
++<The exact block or shape the skill renders back to the user.>
+diff --git a/skills/orchestra-plan/SKILL.md b/skills/orchestra-plan/SKILL.md
+new file mode 100644
+index 0000000..2fc62d3
+--- /dev/null
++++ b/skills/orchestra-plan/SKILL.md
+@@ -0,0 +1,64 @@
++---
++name: orchestra-plan
++description: Author a durable Orchestra plan — work orders sized, sequenced, and tiered per ORCHESTRA.md §8, with acceptance criteria and cadence clauses — written to .claude/plans/<slug>.md. Use when the user asks to plan work before building it, wants a plan or design saved to disk, or when a request is large enough that decomposition into work orders is itself the next deliverable.
++---
++
++# Orchestra plan
++
++Turn a goal into a plan file under `.claude/plans/` — the Director's own notebook: the guard permits the Director to Write markdown there directly (ORCHESTRA.md §3.1), so the plan is authored by you in both modes, never routed through an executor. Orchestration-class throughout; a dormant or paused session runs the same procedure with its own tools.
++
++## Procedure
++
++1. **INTAKE.** Restate the goal; write concrete done-criteria. Genuine ambiguity → AskUserQuestion now, not three phases in. (For large or risky work, plan mode and user sign-off still apply — this skill produces the durable artifact, not the approval.)
++2. **RECON — dispatch scouts, unless this session already mapped the exact territory.** Missions: the files/subsystems the work will touch, existing patterns to follow, test layout and protected suites, mechanical ceilings (lint caps, generated files, line counts), prior art. Independent missions launch together in one message. Under a director model you never explore yourself.
++3. **Probes for multi-subsystem work (§8.1.5).** Schedule as the plan's first orders: (a) a scout probe of mechanical ceilings on the files to be touched; (b) a risk-first micro-order that forces the scariest cross-system interaction first, alone.
++4. **Decompose into work orders (§8.1).** Every order passes this gate:
++   - **One deliverable kind** — author a tool | migrate consumers | rewrite a suite | fix a bug; pick one ("author + migrate" always splits).
++   - **≤ ~3 subsystems** touched; report format ≤ ~5 numbered sections.
++   - **Credibly one executor run** (~≤80 tool calls) and one review round — else split, or bundle deliberately WITH §8.2 cadence clauses (numbered parts, heartbeat file, tool-call budget). Bundling and cadence are a package, never separable.
++   - **Fan-out chains** (per-consumer migrations, per-file hardenings) → parallel orders in isolated worktrees, ending with an explicit sweep order ("find the consumers the sub-orders missed").
++   - **Tools refuse to emit garbage** — an order authoring a generator/migrator/pipeline requires built-in self-validation.
++5. **Tier and route review (§8.3).** Per order: `TIER: full` unless provably inert (docs/comments/formatting, zero behavior impact) → `TIER: inert`; when unsure, full. Note the engine from `.claude/orchestra.json` `reviewEngine` (Reading that one file is permitted — §3.1), and mark gate-class reviews (integration gates, a chain's final review) for a `reviewer-codex` second opinion.
++6. **Write `.claude/plans/<kebab-slug>.md` yourself**, in the template below.
++7. **Present.** Phases, order count, parallelism, risks, and where sign-off matters — a few plain beats plus the file path. Get sign-off before EXECUTE when the work is large or risky.
++
++## Plan file template
++
++```markdown
++# Plan: <title>
++Date: <date> · Status: DRAFT | APPROVED | IN FLIGHT | DONE
++
++## Goal
++<one paragraph>
++
++## Done-criteria
++- [ ] <observable criterion>
++
++## Recon summary
++- <fact the plan depends on> (path)
++
++## Orders
++
++### WO-1: <title>
++- **Kind:** <the one deliverable kind>
++- **Scope:** <exact paths / globs>
++- **Constraints:** <what must not change; house rules>
++- **Context to paste:** <prior findings the agent needs — agents share no memory>
++- **Acceptance criteria:** <how the executor knows it's done>
++- **Verification:** TIER: <full|inert> — <commands, or "per verification manifest">
++- **Cadence:** <heartbeat file · numbered parts · tool-call budget — or "short order: none">
++- **Depends on:** <WO-ids | none>
++
++## Sequencing
++- Parallel: <WO-ids on disjoint files (worktrees if they overlap)>
++- Serial: <chains>
++- Gates: <integration gate(s); the chain's sweep order>
++
++## Review routing
++- Engine: <opus|codex|dual> (from orchestra.json) · second opinion at: <gate-class WO-ids | none>
++
++## Risks
++- <risk → mitigation or probe order>
++```
++
++Keep the ledger habit (§8.3.5): as orders complete, record tool calls, parts, wall-clock, and verification runs in `.claude/plans/ledger.md` — it calibrates the next plan's sizing.
+diff --git a/skills/orchestra-review/SKILL.md b/skills/orchestra-review/SKILL.md
+new file mode 100644
+index 0000000..587ece1
+--- /dev/null
++++ b/skills/orchestra-review/SKILL.md
+@@ -0,0 +1,23 @@
++---
++name: orchestra-review
++description: Run an Orchestra-grade adversarial review of existing changes on demand — the working tree, staged changes, a branch, or a commit range — through the configured review engine (fresh-context Opus reviewer by default; Codex cross-vendor per orchestra.json or on request). Use when the user asks to review changes or a diff, wants a second opinion before merging, or when work reached the session without going through the harness's EXECUTE→REVIEW loop.
++---
++
++# Orchestra review (on demand)
++
++Give arbitrary existing changes the same adversarial review the loop gives its own (ORCHESTRA.md §4 REVIEW) — including changes the harness didn't author: a teammate's branch, pre-harness commits, the current working tree. Orchestration-class: authoring review orders and dispatching reviewers is Director work, and while the harness is active you never review-and-fix with your own hands. Dormant and paused sessions follow the same procedure — subagents are available to every session.
++
++## Procedure
++
++1. **Fix the scope.** Default: all uncommitted changes (staged + unstaged). The user may instead name a branch (review `<base>...<head>`), a commit range, or specific paths. Dispatch one scout for: `git status`, `git diff --stat` over the chosen scope, the merge-base if a branch was named, and the commit messages in scope — those messages are the claimed intent when no author report exists.
++2. **Pick the engine.** `reviewEngine` in `.claude/orchestra.json` (Reading that one file is permitted — §3.1): `opus` or absent → `reviewer`; `codex` → `reviewer-codex`, with `reviewer` as its unavailable-fallback; `dual` → both engines, and you arbitrate. An in-conversation user instruction overrides the config for this session.
++3. **Author the review order** — self-contained (§3.3), containing:
++   - **INTENT** — what the change claims to do, from the user's description and/or the commit messages. If neither exists, say so: intent unknown; review for coherence, correctness, and unexplained changes.
++   - **SCOPE** — the exact diff command(s): `git diff`, `git diff --staged`, or `git diff <base>...<head>`, plus in-scope paths.
++   - **AUTHOR REPORT** — the executor's report verbatim if one exists; otherwise exactly this framing: "No executor report — this change was authored outside the harness. The claims to check are the commit messages / description quoted above."
++   - **TIER** — full by default. Declare `TIER: inert` only for a claimed docs/comments/formatting-only diff; the reviewer verifies that claim from the diff first either way.
++   - **VERIFICATION** — the `verification` manifest from orchestra.json pasted in if present; else "no manifest — run the obviously relevant checks (affected tests, build, lint)".
++   - The standard Orchestra verdict format (the reviewer agents already carry it).
++4. **Dispatch.** `reviewer` takes the order directly. `reviewer-codex` takes the same single order, pasted verbatim — its **AUTHOR REPORT** section already carries the claim, so there is no second block to hand over (the launcher relays the runner's verdict untouched). `VERDICT: REVIEW_UNAVAILABLE` is not an approval: route that review to `reviewer` and note the cross-vendor pass didn't run. An `⚠ INTEGRITY WARNING` in a verdict → the tree is suspect until a scout confirms only the intended change remains.
++5. **Report.** VERDICT first; then blocking findings verbatim (severity, path:line, concrete failure scenario); then nits; then what the reviewer actually ran. Under `dual`, arbitrate disagreements explicitly — say which findings stand and why. Never soften a REVISE into "looks mostly fine".
++6. **On REVISE.** The natural next step is a fix: offer to dispatch the executor with the findings relayed verbatim (§3.3), then re-review the fix. Two REVISE cycles on the same change → stop and re-plan rather than send a third (§3.5). In a dormant or paused session you may apply fixes yourself — but only after reporting the verdict.
+diff --git a/skills/orchestra-status/SKILL.md b/skills/orchestra-status/SKILL.md
+new file mode 100644
+index 0000000..4ff0de0
+--- /dev/null
++++ b/skills/orchestra-status/SKILL.md
+@@ -0,0 +1,46 @@
++---
++name: orchestra-status
++description: Report the Orchestra harness's live state in this project — mode (director model or dormant), enforcement/pause state, review engine, guard wiring, installed agents, specialists and skills, verification manifest, plans and ledger. Use when the user asks whether the Orchestra is active, which mode or review engine the session is running, why a denial happened, what's installed, or for a general harness health check. Read-only; changes nothing.
++---
++
++# Orchestra status
++
++Produce one compact, factual report of the harness's state in this project. This skill is orchestration-class (ORCHESTRA.md §7): safe in the Director's context, because every filesystem fact below comes from one scout mission — never from the Director's own search tools.
++
++## Gather
++
++Mode first, no tools needed: §1 of the protocol — the "You are powered by the model named …" line in your system prompt. Fable → MODE A; Opus → MODE B; anything else → DORMANT.
++
++Then the facts. Under a director model, dispatch **one scout mission** carrying the checklist below verbatim; in a dormant or paused session, check the same list directly with your own tools.
++
++1. **Pause state** — does `.claude/orchestra.pause` exist? Is `ORCHESTRA_PAUSE=1` set in the environment?
++2. **Guard wiring** — does `.claude/settings.json` contain a PreToolUse entry whose command references `orchestra-guard.js`? Do `.claude/hooks/orchestra-guard.js` and `.claude/hooks/orchestra-review.js` exist?
++3. **Protocol** — does `.claude/ORCHESTRA.md` exist? Does `CLAUDE.md` contain the `<!-- ORCHESTRA:BEGIN` marker?
++4. **Company** — which of `scout.md`, `executor.md`, `reviewer.md`, `reviewer-codex.md` are present in `.claude/agents/`? List any other `.md` files there as specialists.
++5. **Skills** — which skill directories exist under `.claude/skills/`? (Bundled ones are prefixed `orchestra-`.)
++6. **Config** — from `.claude/orchestra.json` (absent = all defaults): `reviewEngine` (default `opus`), counts of `directorBlockedPatterns` and `directorPlanPatterns`, any `directorAllowedTools`, and whether a `verification` manifest exists (quote its `full` command if so).
++7. **Codex availability** — only if the engine is `codex` or `dual`: is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)?
++8. **Plans** — does `.claude/plans/` exist, how many `.md` files does it hold, and is `ledger.md` among them?
++
++## Report
++
++Render exactly this block (drop the Codex parenthetical unless it was checked), then stop — no advice unless something is broken:
++
++```
++ORCHESTRA STATUS
++Mode:         MODE A (Fable directs) | MODE B (Opus directs) | DORMANT (<model> at the helm)
++Enforcement:  active | paused (.claude/orchestra.pause) | paused (ORCHESTRA_PAUSE=1) | guard not wired
++Protocol:     .claude/ORCHESTRA.md <present|MISSING> · CLAUDE.md import <present|MISSING>
++Company:      scout <✓|✗> executor <✓|✗> reviewer <✓|✗> reviewer-codex <✓|✗> · specialists: <names | none>
++Skills:       <skill names | none>
++Engine:       opus (default) | opus (configured) | codex (Codex CLI <found|NOT FOUND>) | dual (Codex CLI <found|NOT FOUND>)
++Policy:       blocked-patterns <n> · allowed-tools <names | none> · plan-patterns <n>
++Verification: manifest present (full: <command>) | no manifest
++Plans:        <n> plan file(s) · ledger <present|none>
++```
++
++Below the block add a single `FINDINGS:` line ONLY for inconsistencies, each with its one-line fix:
++
++- Guard entry present but a hook file missing, or marker block without `.claude/ORCHESTRA.md` → re-run the installer.
++- DORMANT model yet the user reports denials → model detection failed: pause the harness (§6) and file a bug against the master.
++- Engine `codex`/`dual` with the Codex CLI missing → reviews fall back to the Opus `reviewer`; expected behavior, note it only.

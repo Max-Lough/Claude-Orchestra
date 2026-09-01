@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+The review runner is inherently the driver for one cross-vendor engine, but
+the inert tier and the verification manifest are review policy that must
+bind every review path, including the in-session fallback the Director runs
+when that engine is unavailable, and any future engine. In the protocol
+document's section 8.3, reword the tier as policy, so whoever reviews
+verifies the inertness claim from the diff, the runner enforces it
+automatically for the engine it drives, while a fallback review applies
+exactly the same rule by hand; declare the manifest the canonical command
+set for every verifier. In section 5, make the fallback review inherit the
+full policy, verifying tier claims from the diff, judging the executor's
+pasted verification against the manifest, and recording the tier and depth
+actually run. Document the split between policy and transport in the README
+plus the runner header.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

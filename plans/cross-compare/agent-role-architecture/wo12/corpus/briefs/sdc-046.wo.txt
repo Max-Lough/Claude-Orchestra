@@ -1,0 +1,21 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Exercise all five evidence-band seats and record the results fully. Run
+Scout and Investigator in-harness, and run Researcher, LC Analyst, and the
+documents lane of Archivist through the external runner used for that lane.
+If a run's own verification shows a problem with the run itself, such as a
+command runner that was down, that run must be discarded rather than
+accepted at face value, and re-run instead under a stricter integrity check
+before its result counts. Record every incident and follow-on that turns up
+across the exercises, including any transient tooling fault, rather than
+smoothing them over or leaving them out. Update the exercise log with the
+results table, the incidents, the follow-ons and each seat's order text
+worded as issued. Update the plan's status page too, so it reflects the
+stage this band has now reached.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

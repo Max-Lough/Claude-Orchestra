@@ -1,0 +1,18 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+All five findings were reproduced locally and fixed, and the verdict is
+recorded verbatim. The reserve gate now reads the requested rung, so a
+degradation recast cannot silently satisfy a reserve stop — the router check
+that names that property passes. The router suite reports one hundred
+thirty-four passing checks, and the verifier, registry, exec-lane,
+frontmatter-lint, mcp-lane and scan-lane suites all run green with nothing
+failed across the full CI-equivalent sweep.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

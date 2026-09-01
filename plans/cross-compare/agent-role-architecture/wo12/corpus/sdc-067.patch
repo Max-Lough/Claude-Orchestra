@@ -1,0 +1,251 @@
+diff --git a/plans/cross-compare/agent-role-architecture/wo7b/corpus.json b/plans/cross-compare/agent-role-architecture/wo7b/corpus.json
+new file mode 100644
+index 0000000..754ad8a
+--- /dev/null
++++ b/plans/cross-compare/agent-role-architecture/wo7b/corpus.json
+@@ -0,0 +1,52 @@
++{
++  "$comment": "WO-7b synthetic corpus — misroute recovery through the implemented router. Items are synthetic BY CONSTRUCTION (the unused-history pools are exhausted; the reserved B/W edges never occurred in real history), so true_class is an authorial fact of each item, not a scored judgment. dispatch_class is where the item is SEEDED — equal to true_class for controls, deliberately wrong for misroutes. The receiving seat's charter filter (router/charters.json, fresh-context agent) must catch the misroutes; recovery runs through router.processReclassify(). Drawn and pre-registered 2026-08-30, committed before any model pass ran.",
++  "version": "2026-08-30",
++  "preRegisteredGates": {
++    "G1_recovery": "Every seeded misroute is caught by the receiving seat's owns/must-not-receive filter: the hop-0 agent returns RECLASSIFY (any reasonable target class counts as caught; the recommended class is scored separately as telemetry). Gate: 13/13.",
++    "G2_no_gate_crossing": "No misroute crosses a mandatory review, tier, or T3 gate. Mechanically: for every gate-relevant misroute (one where dispatch under the seeded class carries weaker mandatory-review or Q0 obligations than under the true class, computed by score.js from the router itself), the filter caught it at hop 0. Tier-borne gates (T3 named-human, tier-triggered Q0 on source classes) must be provably identical under both dispatches for every item — asserted mechanically, zero exceptions.",
++    "G3_hops": "≤1 reclassification hop per order at P95 across the whole corpus: every caught misroute is ACCEPTed by the recommended seat at hop 1 (no second hop), allowing at most one order in the corpus to exceed one hop.",
++    "telemetry_nonGating": [
++      "Router-vs-construction agreement of a fresh-context classifier pass over the 24 requests (given final-plan.md Parts 2.0 and 4 only), reported for the record per the restated 7.2 — one-shot agreement is telemetry, not a gate; each reserved edge (B horn, W horn) reported separately.",
++      "False-bounce rate on the 11 controls (a charter filter RECLASSIFYing correctly-routed work): reported and ledgered as charter over-tightness; non-gating.",
++      "Recommended-class accuracy of caught misroutes vs true_class: reported; a catch with a defensible alternate target still counts for G1 and feeds the pair ledger.",
++      "Per-pair RECLASSIFY ledger entries from every hop, feeding the standing three-entry redraw/merge trigger."
++    ],
++    "outcomeRule": "A recovery failure (G1/G3) indicts the router implementation or a seat's charter filter, not the taxonomy — the fix is a charter or filter-prompt repair, re-run on the failed items. A gate crossing (G2) is an incident: the permitting path is a dispatcher defect. A per-pair pile-up feeds the ledger and can force a boundary redraw or merge through the standing residual-rule trigger, independent of these gates."
++  },
++  "method": {
++    "filterPass": "One fresh-context agent per receiving seat and hop, playing that seat's intake triage. Input: the seat's charter (router/charters.json entry verbatim), the reclassify protocol, the 23-class vocabulary (id, name, recall signals, primary role from registry/classes.json), and the seat's inbox of orders (id, one-line request, class-as-dispatched, risk). No tools, no repo access — the filter is answered from the order text and charter alone; the live triage budget (~15 tool calls) is honored by construction. Controls and misroutes are mixed in every inbox that has both so acceptance and rejection are both live options.",
++    "recoveryLoop": "A RECLASSIFY from hop 0 is processed by router.processReclassify() — hop counted, pair ledgered, re-dispatched to the recommended class — and the recommended seat's hop-1 agent triages the re-dispatched order. A hop-1 RECLASSIFY escalates at hop 2 (classification defect) per the error stance.",
++    "classifierPass": "One fresh-context agent classifies all 24 requests (randomized order, no other context) against final-plan.md Parts 2.0 and 4, as in the WO-7a probes. Telemetry only.",
++    "model": "Filter and classifier agents run on Claude Sonnet (fresh context each). The probe tests the charters' mechanical clarity, not any seat's cast model; one consistent competent model across all seats is the cleaner instrument. Stated here so the result is read accordingly.",
++    "buckets": "All dispatches run at all-Green with Quartermaster confirmation, isolating classification from pool-state effects (the degradation machine has its own 82-check proof in tests/router.test.js)."
++  },
++  "items": [
++    { "id": "C1", "kind": "control", "true_class": "E2", "dispatch_class": "E2", "risk": "T1", "request": "Add a --json flag to the export CLI so `report export` can emit machine-readable output; the flag semantics and output shape are written in the ticket.", "seed": "plain E2 control" },
++    { "id": "C2", "kind": "control", "true_class": "I0", "dispatch_class": "I0", "risk": "T2", "request": "Figure out why the release-notes generator emitted an empty section for 2.0 — the generated output and the inputs it ran from are committed under docs/releases/.", "seed": "RESERVED EDGE B (control): persisted-generated-output investigation accepted under the merged I0 with zero hops — the old I0/I1 boundary gone by construction" },
++    { "id": "C3", "kind": "control", "true_class": "N0", "dispatch_class": "N0", "risk": "T0", "request": "List every call site of parseConfig under src/, with file and line.", "seed": "plain N0 control" },
++    { "id": "C4", "kind": "control", "true_class": "E4", "dispatch_class": "E4", "risk": "T2", "request": "Add a migration giving users a nullable last_seen_at column and backfill it from the events table.", "seed": "plain E4 control" },
++    { "id": "C5", "kind": "control", "true_class": "E5", "dispatch_class": "E5", "risk": "T1", "request": "The settings drawer overlaps the footer below 400px viewport width; fix the layout so it clears at every breakpoint.", "seed": "plain E5 control (presentation defect, step 3a)" },
++    { "id": "C6", "kind": "control", "true_class": "D0", "dispatch_class": "D0", "risk": "T1", "request": "Write the 2.1.0 changelog entry from the merged-PR list attached to this order; every decision it records is already made.", "seed": "plain D0 control (settled content, disc. V)" },
++    { "id": "C7", "kind": "control", "true_class": "E0", "dispatch_class": "E0", "risk": "T1", "request": "The same commit builds clean locally but fails on the CI runner with a linker error — the runner image is the variable; fix the pipeline.", "seed": "plain E0 control (environment axis stated, disc. A)" },
++    { "id": "C8", "kind": "control", "true_class": "E8", "dispatch_class": "E8", "risk": "T2", "request": "Migrate every consumer of the retry(options) helper to the new deadline-based signature; wrappers renamed the option differently in places, so each site needs judgment.", "seed": "plain E8 control (judgment at N sites, disc. I)" },
++    { "id": "C9", "kind": "control", "true_class": "Q0", "dispatch_class": "Q0", "risk": "T2", "request": "Author black-box tests pinning the rate limiter's burst and refill behavior; the implementation diff is withheld from you.", "seed": "plain Q0 control" },
++    { "id": "C10", "kind": "control", "true_class": "E7", "dispatch_class": "E7", "risk": "T2", "request": "Assess the new file-upload endpoint for path traversal and archive-extraction abuse; findings ranked by exploitability and blast radius, no patches.", "seed": "plain E7 control" },
++    { "id": "C11", "kind": "control", "true_class": "E2", "dispatch_class": "E2", "risk": "T1", "request": "Change the uptime tile to display the 30-day figure instead of the 7-day one; layout, styling, and interaction stay exactly as they are.", "seed": "RESERVED EDGE W (control): values-only display change accepted at E2 — displayed values are data, not presentation" },
++    { "id": "M1", "kind": "misroute", "true_class": "I0", "dispatch_class": "N2", "risk": "T2", "request": "Work out why last week's batch exports contain truncated rows; the generated CSVs and the job's logs are archived under artifacts/exports/.", "seed": "RESERVED EDGE B (misroute): persisted-evidence causal question baited to N2 by the supplied-corpus surface; LC Analyst charter must bounce causality → I0 (disc. U)" },
++    { "id": "M2", "kind": "misroute", "true_class": "E2", "dispatch_class": "E5", "risk": "T1", "request": "The revenue dashboard should show median deal size instead of mean; no layout, styling, or interaction changes.", "seed": "RESERVED EDGE W (misroute): values-only change baited to E5 by the dashboard noun; Interface Artisan charter must bounce displayed-values-are-data → E2 (disc. W)" },
++    { "id": "M3", "kind": "misroute", "true_class": "E3", "dispatch_class": "E2", "risk": "T2", "request": "Introduce a cancellation token that the scheduler, the worker pool, and the RPC layer all have to honor together — partial adoption breaks in-flight jobs.", "seed": "E2/E3 (disc. G): named coupled contracts across ≥2 components; Builder must bounce split-resistant work → E3. GATE-RELEVANT: E3 review is class-mandatory while E2@T2 sits in the preferred band — computed by score.js from the router" },
++    { "id": "M4", "kind": "misroute", "true_class": "E2", "dispatch_class": "E3", "risk": "T1", "request": "Add an exportEpub lane by mirroring the existing exportPdf lane; the template to copy is named in this order and nothing else changes.", "seed": "E3/E2 reverse (disc. G): named template = separability; Principal must bounce routine orders → E2" },
++    { "id": "M5", "kind": "misroute", "true_class": "E4", "dispatch_class": "E8", "risk": "T2", "request": "Sweep every service to move user_id from int to UUID, including the migration for the stored rows.", "seed": "E8/E4 (disc. J trump): persisted data changes shape despite the sweep shape; Refactorer must bounce → E4. GATE-RELEVANT: E4's mandatory invariant-compare lane is class-borne" },
++    { "id": "M6", "kind": "misroute", "true_class": "E4", "dispatch_class": "E2", "risk": "T2", "request": "Store the new consent flags: widen the preferences table and update the write path — the code is trivial but the table shape changes.", "seed": "E2/E4 (step-4 trump): consequence outranks difficulty; Builder must bounce data migrations → E4. GATE-RELEVANT: as M5" },
++    { "id": "M7", "kind": "misroute", "true_class": "I0", "dispatch_class": "E0", "risk": "T1", "request": "The importer intermittently hangs mid-run; nothing points at the environment — find out what is going on.", "seed": "E0/I0 (disc. A): no stated environment axis; Operator must bounce the undiagnosed bug → I0 (E0 never absorbs one)" },
++    { "id": "M8", "kind": "misroute", "true_class": "E5", "dispatch_class": "I0", "risk": "T1", "request": "The nav dropdown flickers and misaligns on hover — a presentation defect; make it render correctly.", "seed": "I0/E5 (step 3a): the render loop is E5's diagnosis; Investigator must bounce presentation defects → E5" },
++    { "id": "M9", "kind": "misroute", "true_class": "E1", "dispatch_class": "E8", "risk": "T1", "request": "Replace every occurrence of log.warn( with logger.warning( across the repository — an exact token substitution, grep-verifiable, no site needs judgment.", "seed": "E8/E1 (disc. I): strictly uniform enumerable transform beats E8's signal words; Refactorer must bounce → E1" },
++    { "id": "M10", "kind": "misroute", "true_class": "N2", "dispatch_class": "D0", "risk": "T1", "request": "Produce the Q3 incident summary by reconciling the pager logs, the three postmortem drafts, and the support-ticket export — what it should say has to be recovered from that material.", "seed": "D0/N2 (disc. V): content must be recovered from a corpus; Doc Writer must bounce → N2" },
++    { "id": "M11", "kind": "misroute", "true_class": "E6", "dispatch_class": "E2", "risk": "T1", "request": "Generate procedural rock meshes for the canyon biome with a three-level LOD chain; acceptance is inspecting the rendered output.", "seed": "E2/E6 (step 5, disc. K): spatial acceptance; Builder must bounce → E6" },
++    { "id": "M12", "kind": "misroute", "true_class": "E7", "dispatch_class": "R0", "risk": "T2", "request": "Check whether the new session-token parser can be abused by a hostile client — how would an attacker use it?", "seed": "R0/E7 (disc. M): pure exploitability question; Reviewer must bounce → E7. GATE-RELEVANT: E7's mandatory security lane (never-Fable casting, human sign-off on critical) is class-borne" },
++    { "id": "M13", "kind": "misroute", "true_class": "A0", "dispatch_class": "E2", "risk": "T2", "request": "We need multi-tenant support; work out how auth, storage, and billing should be partitioned before anything is built.", "seed": "E2/A0 (step 1): authoring a design is planning; Builder must bounce unspecified work → A0 first" }
++  ],
++  "mechanicalItems": [
++    { "id": "X1", "note": "An order addressed to class I1 resolves to I0 and dispatches to the Investigator with zero hops — the merge dividend, asserted in tests/router.test.js and re-reported here for the ledger." }
++  ]
++}
+diff --git a/plans/cross-compare/agent-role-architecture/wo7b/score.js b/plans/cross-compare/agent-role-architecture/wo7b/score.js
+new file mode 100644
+index 0000000..6ca02ec
+--- /dev/null
++++ b/plans/cross-compare/agent-role-architecture/wo7b/score.js
+@@ -0,0 +1,187 @@
++#!/usr/bin/env node
++/**
++ * WO-7b mechanical scorer — misroute recovery through the implemented router.
++ *
++ *   node plans/cross-compare/agent-role-architecture/wo7b/score.js
++ *
++ * Inputs (same directory):
++ *   corpus.json              — items + pre-registered gates (committed first)
++ *   results-hop0.json        — per-item filter decisions from the seat inboxes
++ *   results-hop1.json        — filter decisions on re-dispatched orders
++ *   results-classifier.json  — the telemetry classification pass
++ *
++ * Everything judged here is judged BY THE ROUTER: gate relevance is computed
++ * from reviewPolicy()/q0Required() under the seeded vs true class, hops run
++ * through processReclassify(), and the per-pair ledger is emitted from its
++ * entries. Exit 0 iff G1+G2+G3 hold.
++ */
++'use strict';
++
++const fs = require('fs');
++const path = require('path');
++
++const HERE = __dirname;
++const MASTER = path.resolve(HERE, '..', '..', '..', '..');
++const { createRouter } = require(path.join(MASTER, 'router', 'router.js'));
++
++const router = createRouter();
++const corpus = JSON.parse(fs.readFileSync(path.join(HERE, 'corpus.json'), 'utf8'));
++const readJson = (f) => JSON.parse(fs.readFileSync(path.join(HERE, f), 'utf8'));
++const hop0 = fs.existsSync(path.join(HERE, 'results-hop0.json')) ? readJson('results-hop0.json') : {};
++const hop1 = fs.existsSync(path.join(HERE, 'results-hop1.json')) ? readJson('results-hop1.json') : {};
++const classifier = fs.existsSync(path.join(HERE, 'results-classifier.json')) ? readJson('results-classifier.json') : null;
++
++const buckets = router.allGreen();
++buckets['AU-opus'] = { state: 'Green', quartermasterConfirmation: true };
++
++const misroutes = corpus.items.filter((i) => i.kind === 'misroute');
++const controls = corpus.items.filter((i) => i.kind === 'control');
++
++function orderFor(item, cls) {
++  return {
++    task_id: item.id, parent_id: null, class: cls, risk: item.risk,
++    author_family: 'anthropic', co_author_families: [],
++    goal: item.request, acceptance_criteria: ['per request'],
++    review_policy: 'mandatory', integrity_nonce: 'wo7bwo7bwo7bwo7b',
++  };
++}
++
++// ---- gate relevance, computed from the router itself ----------------------
++function obligations(item, cls) {
++  return {
++    review: router.reviewPolicy(cls, item.risk, {}),
++    q0: router.q0Required(orderFor(item, cls)).required,
++  };
++}
++function gateRelevance(item) {
++  const t = obligations(item, item.true_class);
++  const s = obligations(item, item.dispatch_class);
++  const reasons = [];
++  if (t.review === 'mandatory' && s.review !== 'mandatory') reasons.push('mandatory review lost (' + item.true_class + ':' + t.review + ' → ' + item.dispatch_class + ':' + s.review + ')');
++  if (t.q0 && !s.q0) reasons.push('required Q0 lost');
++  return { relevant: reasons.length > 0, reasons, trueOb: t, seededOb: s };
++}
++
++// Tier-borne gates must be identical under both dispatches for every item —
++// risk rides on the order, so a misroute can never relax them. Asserted.
++let tierGateViolations = [];
++for (const item of corpus.items) {
++  if (item.risk === 'T3') {
++    // no T3 items in this corpus, but the assertion is written for them
++    const a = obligations(item, item.true_class).review;
++    const b = obligations(item, item.dispatch_class).review;
++    if (a !== 'mandatory' || b !== 'mandatory') tierGateViolations.push(item.id);
++  }
++}
++
++// ---- run the recovery loop through the router -----------------------------
++const rows = [];
++const ledger = [];
++let falseBounces = [];
++let escalations = [];
++
++for (const item of corpus.items) {
++  const d0 = hop0[item.id];
++  // The probe appends each seat inbox's hop-0 decision as that seat answers, so
++  // an item that is not in the file yet simply has not been decided on this
++  // pass; score what has landed and let the next run pick up the rest.
++  if (!d0) continue;
++  const seatRole = router.route(item.dispatch_class);
++  const row = { id: item.id, kind: item.kind, seeded: item.dispatch_class, true_class: item.true_class, seat: seatRole, hop0: d0.decision, hops: 0 };
++
++  if (d0.decision === 'ACCEPT') {
++    if (item.kind === 'misroute') row.caught = false;
++    else row.correctAccept = true;
++  } else if (d0.decision === 'RECLASSIFY') {
++    if (item.kind === 'control') falseBounces.push(item.id + ' (' + seatRole + ' → ' + d0.recommended_class + ': ' + (d0.evidence || '') + ')');
++    const rc = router.processReclassify(
++      orderFor(item, item.dispatch_class),
++      { status: 'RECLASSIFY', reclassify: { recommended_class: d0.recommended_class, evidence: d0.evidence || '(none)' } },
++      buckets
++    );
++    row.caught = item.kind === 'misroute';
++    row.recommended = router.resolveClass(d0.recommended_class);
++    row.recommendedCorrect = row.recommended === item.true_class;
++    row.hops = rc.hop;
++    ledger.push(rc.ledger);
++    const d1 = hop1[item.id];
++    if (d1) {
++      row.hop1 = d1.decision;
++      if (d1.decision === 'RECLASSIFY') {
++        const rc2 = router.processReclassify(rc.order, { status: 'RECLASSIFY', reclassify: { recommended_class: d1.recommended_class, evidence: d1.evidence || '(none)' } }, buckets);
++        row.hops = rc2.hop;
++        ledger.push(rc2.ledger);
++        if (rc2.escalated) escalations.push(item.id + ' (' + rc.order.class + ' → ' + d1.recommended_class + ')');
++      }
++    } else if (row.caught) {
++      console.error('missing hop-1 result for reclassified item ' + item.id);
++      process.exit(1);
++    }
++  }
++  if (item.kind === 'misroute') row.gate = gateRelevance(item);
++  rows.push(row);
++}
++
++// ---- gates ----------------------------------------------------------------
++const missed = rows.filter((r) => r.kind === 'misroute' && !r.caught);
++const g1 = missed.length === 0;
++
++const gateRelevant = rows.filter((r) => r.kind === 'misroute' && r.gate.relevant);
++const crossings = gateRelevant.filter((r) => !r.caught);
++const g2 = crossings.length === 0 && tierGateViolations.length === 0;
++
++const hopCounts = rows.map((r) => r.hops).sort((a, b) => a - b);
++const p95 = hopCounts[Math.ceil(0.95 * hopCounts.length) - 1];
++const landed = rows.filter((r) => r.caught && r.hop1 === 'ACCEPT');
++const g3 = p95 <= 1;
++
++// ---- report ---------------------------------------------------------------
++console.log('WO-7b — misroute recovery through the implemented router');
++console.log('corpus: ' + corpus.items.length + ' items (' + misroutes.length + ' seeded misroutes, ' + controls.length + ' controls)\n');
++
++console.log('Per-item:');
++for (const r of rows) {
++  const bits = [r.id, r.kind, r.seeded + '→' + r.seat, 'hop0:' + r.hop0];
++  if (r.recommended) bits.push('rec:' + r.recommended + (r.recommendedCorrect ? '' : ' (true:' + r.true_class + ')'));
++  if (r.hop1) bits.push('hop1:' + r.hop1);
++  bits.push('hops:' + r.hops);
++  if (r.kind === 'misroute') bits.push(r.caught ? 'CAUGHT' : 'MISSED');
++  if (r.gate && r.gate.relevant) bits.push('GATE-RELEVANT[' + r.gate.reasons.join('; ') + ']');
++  console.log('  ' + bits.join(' · '));
++}
++
++console.log('\nG1 recovery: ' + (g1 ? 'PASS' : 'FAIL') + ' — ' + (misroutes.length - missed.length) + '/' + misroutes.length + ' seeded misroutes caught' + (missed.length ? ' (missed: ' + missed.map((r) => r.id).join(', ') + ')' : ''));
++console.log('G2 no gate crossing: ' + (g2 ? 'PASS' : 'FAIL') + ' — ' + gateRelevant.length + ' gate-relevant misroutes, ' + crossings.length + ' crossed' + (crossings.length ? ' (' + crossings.map((r) => r.id).join(', ') + ')' : '') + '; tier-borne gates identical under both dispatches for all items: ' + (tierGateViolations.length === 0 ? 'yes' : 'NO — ' + tierGateViolations.join(', ')));
++console.log('G3 hops: ' + (g3 ? 'PASS' : 'FAIL') + ' — P95 hop count ' + p95 + ' (≤1 required); ' + landed.length + '/' + rows.filter((r) => r.caught).length + ' caught misroutes landed with hop-1 ACCEPT; escalations: ' + (escalations.length ? escalations.join(', ') : 'none'));
++
++console.log('\nTelemetry (non-gating):');
++console.log('  false bounces on controls: ' + falseBounces.length + '/' + controls.length + (falseBounces.length ? ' — ' + falseBounces.join('; ') : ''));
++const caught = rows.filter((r) => r.caught);
++const recRight = caught.filter((r) => r.recommendedCorrect);
++console.log('  recommended-class accuracy on caught misroutes: ' + recRight.length + '/' + caught.length);
++if (classifier) {
++  const agree = corpus.items.filter((i) => router.resolveClass(classifier[i.id]) === i.true_class);
++  console.log('  classifier pass agreement with construction key: ' + agree.length + '/' + corpus.items.length + ' (' + Math.round(100 * agree.length / corpus.items.length) + '%)');
++  for (const edge of [['B', ['C2', 'M1']], ['W', ['C11', 'M2']]]) {
++    const hits = edge[1].filter((id) => {
++      const item = corpus.items.find((i) => i.id === id);
++      return router.resolveClass(classifier[id]) === item.true_class;
++    });
++    console.log('  reserved edge ' + edge[0] + ' (classifier): ' + hits.length + '/' + edge[1].length + ' [' + edge[1].join(', ') + ']');
++  }
++} else {
++  console.log('  classifier pass: not yet run');
++}
++for (const edge of [['B', ['C2', 'M1']], ['W', ['C11', 'M2']]]) {
++  const rws = rows.filter((r) => edge[1].includes(r.id));
++  console.log('  reserved edge ' + edge[0] + ' (recovery): ' + rws.map((r) => r.id + '=' + (r.kind === 'misroute' ? (r.caught ? 'caught' : 'MISSED') : (r.correctAccept ? 'accepted' : 'BOUNCED')) + '@' + r.hops + 'h').join(', '));
++}
++
++console.log('\nPer-pair RECLASSIFY ledger feed (' + ledger.length + ' entries):');
++const byPair = {};
++for (const e of ledger) byPair[e.pair.join('/')] = (byPair[e.pair.join('/')] || 0) + 1;
++for (const [pair, n] of Object.entries(byPair).sort()) console.log('  ' + pair + ': ' + n);
++
++const allPass = g1 && g2 && g3;
++console.log('\n' + (allPass ? 'ALL PRE-REGISTERED GATES PASS' : 'GATE FAILURE — see above'));
++process.exitCode = allPass ? 0 : 1;

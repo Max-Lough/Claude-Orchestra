@@ -179,6 +179,40 @@ function redact(text) {
   return s;
 }
 
+// Requested castings are roster display names ("Sonnet 5", "GPT-5.6 Sol");
+// served identities are runtime model ids ("claude-sonnet-5", "gpt-5.6-sol",
+// "claude-opus-5[1m]", "claude-haiku-4-5-20251001"). The P15 detector asks
+// whether a DIFFERENT model served the turn, so both sides are reduced to one
+// canonical token before comparing: lower-case, vendor prefix and bracketed /
+// date suffixes dropped, letters and digits only. A served id may carry a
+// point release the roster name omits ("Fable 5" served as claude-fable-5-1),
+// so the served token may extend the requested one. Shakedown order #5
+// (PL-23): plain string equality flagged EVERY honest record as a P15 incident.
+function canonicalModelToken(name) {
+  let s = String(name || '').toLowerCase().trim();
+  s = s.replace(/\[[^\]]*\]/g, '');
+  s = s.replace(/^(anthropic|openai)[/:]/, '');
+  s = s.replace(/^(claude|gpt)[-_ ]?/, '');
+  s = s.replace(/[-_ .]?\d{8}$/, '');
+  return s.replace(/[^a-z0-9]/g, '');
+}
+function modelNamesMatch(requested, served) {
+  const a = canonicalModelToken(requested);
+  const b = canonicalModelToken(served);
+  if (!a || !b) return false;
+  return a === b || b.startsWith(a);
+}
+
+// The shell could not even find the command (sh: 127, cmd.exe: 9009, or the
+// shells' own not-found phrasing). Nothing was replayed, so nothing was
+// refuted — the reviewer's sandbox may carry tools the replaying host does
+// not (shakedown order #5: Sol cited `rg`, absent on the closing host).
+function commandNotFound(r) {
+  if (r.exit_code === 127 || r.exit_code === 9009) return true;
+  if (r.exit_code === 0) return false;
+  return /(?:^|\n)[^\n]*(?:: not found|command not found|is not recognized as an internal or external command)/i.test(r.stderr_tail || '');
+}
+
 function runShell(command, cwd, timeoutMs) {
   const started = Date.now();
   const effectiveTimeout = Math.max(MIN_TIMEOUT_MS, timeoutMs || DEFAULT_TIMEOUT_MS);
@@ -360,7 +394,7 @@ function validateArtifact(kind, value) {
     const requested = value.requested_casting && value.requested_casting.model;
     const served = value.served_model;
     if (typeof requested === 'string' && typeof served === 'string' && served !== 'UNKNOWN') {
-      const mismatch = served !== requested;
+      const mismatch = !modelNamesMatch(requested, served);
       if (value.served_model_mismatch === undefined ? mismatch : value.served_model_mismatch !== mismatch) {
         violations.push('$.served_model_mismatch: ' + (value.served_model_mismatch === undefined
           ? 'omitted while requested≠served — a P15 routing incident must be flagged'
@@ -612,6 +646,7 @@ function citationReplay(dir, citations) {
       const label = c.citation || c.command;
       const r = runShell(c.command, dir, c.timeout_ms);
       if (r.error || r.timed_out) return { citation: label, replayed: false, result: 'UNREPLAYABLE' };
+      if (commandNotFound(r)) return { citation: label, replayed: false, result: 'UNREPLAYABLE' }; // not found on the replaying host
       if (c.expect_count !== undefined) {
         const count = (r.stdout_tail || '').split('\n').filter((l) => l.trim()).length;
         return { citation: label, replayed: true, result: count === c.expect_count ? 'MATCHES' : 'DIVERGES' };
@@ -827,6 +862,7 @@ module.exports = {
   confine,
   redact,
   minimalEnv,
+  modelNamesMatch,
 };
 
 // --------------------------------------------------------------------- CLI

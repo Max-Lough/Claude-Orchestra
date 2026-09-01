@@ -1,0 +1,14 @@
+{
+  "name": "legacy-toolkit",
+  "version": "0.14.1",
+  "private": true,
+  "description": "Long-lived reporting helpers; supported on Node 8 and newer.",
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "scripts": {
+    "preflight": "node scripts/preflight.js",
+    "test": "node scripts/preflight.js && node test.js"
+  },
+  "license": "MIT"
+}

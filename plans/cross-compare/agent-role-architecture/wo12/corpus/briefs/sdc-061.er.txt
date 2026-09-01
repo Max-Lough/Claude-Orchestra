@@ -1,0 +1,15 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The exception covers the project memory files, config-directory memory and
+directorMemoryPatterns matches, and every other path still falls to default
+law. The managed block rides through each permitted memory write
+byte-for-byte: the write is simulated and the result denied unless the block
+arrives whole, so surviving markers alone cannot buy an edit through. The
+denial is model-aware, and dormant sessions never see it. Version format
+holds at X.Y.Z, read from the VERSION file. Verified against the 22-case
+hook matrix plus an install, re-install and uninstall round-trip.
+
+Verify the diff on its own merits.

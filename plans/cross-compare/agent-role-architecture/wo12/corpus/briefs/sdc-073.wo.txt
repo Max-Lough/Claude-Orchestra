@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Grade the initial forty-item corpus blind against the sealed reference pass.
+Record the result against the pre-registered threshold of at least
+thirty-six of forty items. If the threshold is missed, redraw the class
+borders and apply the redraw to the plan, but do not simply patch individual
+items in isolation. Diagnose the root cause of any concentrated disagreement
+pattern before changing anything. Add a precedence rule to the preamble:
+recall signals are hints alone, and the requested work product plus the
+border rule decide from intake text, not a signal word standing in for it;
+rename the relevant column to match. Amend the border rules implicated by
+the disagreements, confine any new rule to where a genuine gap is found, and
+add phase-ordering rules for diagnosis-before-implementation and composite
+orders. Record the reference pass, the disagreement ledger, the redraw, and
+a post-redraw resolution of every flagged item while noting it is a grading
+reference and never a validation.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

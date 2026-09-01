@@ -1,0 +1,16 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Identity now derives from git's own records, fs.realpath is off that path
+entirely, and a timed-out lock guard puts the child down with SIGKILL before
+skipping the kill-dependent sub-checks. The lock-cleared-before-SIGTERM
+precondition and the fail-closed teardown are both pinned by the suite, and
+the new regressions cover a poisoned-realpath checkout that still works plus
+a teardown that strands neither registration nor directory. The full
+CI-equivalent run is green, with verifier 100, router one hundred
+thirty-five, registry thirty-one, and review-lane one hundred sixteen twice
+over. The review verdict is transcribed verbatim into the dispositions
+record.
+
+Verify the diff on its own merits.

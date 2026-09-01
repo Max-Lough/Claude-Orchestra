@@ -1,0 +1,31 @@
+{
+  "order": "c-04",
+  "title": "Tabbed panel with ARIA roles",
+  "requiredStructure": [
+    { "name": "tablist with aria-label", "pattern": "<div role=\"tablist\" aria-label=\"Settings sections\">" },
+    { "name": "tab-profile: role=tab, selected, controls panel-profile", "pattern": "<button type=\"button\" role=\"tab\" id=\"tab-profile\" aria-selected=\"true\" aria-controls=\"panel-profile\">Profile</button>" },
+    { "name": "tab-billing: role=tab, unselected, tabindex=-1", "pattern": "<button type=\"button\" role=\"tab\" id=\"tab-billing\" aria-selected=\"false\" aria-controls=\"panel-billing\" tabindex=\"-1\">Billing</button>" },
+    { "name": "tab-security: role=tab, unselected, tabindex=-1", "pattern": "<button type=\"button\" role=\"tab\" id=\"tab-security\" aria-selected=\"false\" aria-controls=\"panel-security\" tabindex=\"-1\">Security</button>" },
+    { "name": "panel-profile: role=tabpanel, labelledby, not hidden", "pattern": "<div role=\"tabpanel\" id=\"panel-profile\" aria-labelledby=\"tab-profile\">" },
+    { "name": "panel-billing: role=tabpanel, labelledby, hidden", "pattern": "<div role=\"tabpanel\" id=\"panel-billing\" aria-labelledby=\"tab-billing\" hidden>" },
+    { "name": "panel-security: role=tabpanel, labelledby, hidden", "pattern": "<div role=\"tabpanel\" id=\"panel-security\" aria-labelledby=\"tab-security\" hidden>" },
+    { "name": "exactly 3 role=\"tab\" elements", "pattern": "\\srole=\"tab\"", "count": 3 },
+    { "name": "exactly 3 role=\"tabpanel\" elements", "pattern": "\\srole=\"tabpanel\"", "count": 3 }
+  ],
+  "contrastPairs": [
+    {
+      "name": "selected-tab text on selected-tab background",
+      "min": 4.5,
+      "blockPattern": "\\[role=\"tab\"\\]\\[aria-selected=\"true\"\\]\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    },
+    {
+      "name": "tabpanel body text on tabpanel background",
+      "min": 4.5,
+      "blockPattern": "\\[role=\"tabpanel\"\\]\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    }
+  ]
+}

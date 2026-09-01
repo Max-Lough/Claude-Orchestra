@@ -53,6 +53,219 @@ function resolveRoot() {
 }
 
 const ROOT = resolveRoot();
+
+/* -------------------------------------------------- WO-14b leg 4: bridge -- */
+
+// bridge/runtime.js ships two places: the source tree (ROOT/bridge/) and,
+// after install.js --roster new, the installed copy
+// (ROOT/.claude/orchestra/bridge/). Installed is checked first since that is
+// where a real installed project keeps it; the source-tree path is what
+// tests (and this repo's own dev loop) use.
+function loadBridgeRuntime() {
+  for (const p of [
+    path.join(ROOT, '.claude', 'orchestra', 'bridge', 'runtime.js'),
+    path.join(ROOT, 'bridge', 'runtime.js'),
+  ]) {
+    if (fs.existsSync(p)) {
+      try { return require(p); } catch (_) { return null; }
+    }
+  }
+  return null;
+}
+
+// bridge/manifest.js ships alongside runtime.js in both layouts (see
+// loadBridgeRuntime above) — same two candidate paths, same load-or-null
+// contract.
+function loadBridgeManifestModule() {
+  for (const p of [
+    path.join(ROOT, '.claude', 'orchestra', 'bridge', 'manifest.js'),
+    path.join(ROOT, 'bridge', 'manifest.js'),
+  ]) {
+    if (fs.existsSync(p)) {
+      try { return require(p); } catch (_) { return null; }
+    }
+  }
+  return null;
+}
+
+// WO-14b leg 4 fix round (item 3): an install footprint that survives even
+// when the manifest itself, or bridge/manifest.js, cannot be read at all —
+// mirrored verbatim in bridge/manifest.js's own hasRosterNewFingerprint();
+// the two must never diverge. Independent of (never delegated to) the
+// bridge module, since the whole point is covering the case where THAT
+// module cannot be loaded.
+const ROSTER_ROLE_FILENAMES = [
+  'architect.md', 'builder.md', 'builder-openai.md', 'conductor.md', 'data-engineer.md',
+  'investigator.md', 'red-team.md', 'reviewer-anthropic.md', 'reviewer-openai.md', 'sweeper.md',
+  'test-designer-vs-anthropic.md', 'test-designer-vs-openai.md',
+];
+const MANIFEST_FINGERPRINT_KEYS = ['projectId', 'installedFiles', 'installedPermissions', 'installedHooks', 'rosterGeneration'];
+
+function hasRosterNewFingerprint(dir) {
+  if (fs.existsSync(path.join(dir, '.claude', 'orchestra'))) return true;
+  if (fs.existsSync(path.join(dir, 'ORCHESTRA-CONDUCTOR.md'))) return true;
+  try {
+    const entries = fs.readdirSync(path.join(dir, '.claude', 'agents'));
+    if (entries.some((f) => ROSTER_ROLE_FILENAMES.includes(f))) return true;
+  } catch (_) { /* no agents dir, or unreadable */ }
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'orchestra.json'), 'utf8'));
+    if (raw && typeof raw === 'object' && MANIFEST_FINGERPRINT_KEYS.some((k) => Object.prototype.hasOwnProperty.call(raw, k))) return true;
+  } catch (_) { /* missing/unreadable/invalid — no fingerprint from this source */ }
+  return false;
+}
+
+// Item 10 (owner amendment, roster/wo14b-finish-plan.md): under roster:new,
+// every lane that can invoke the engine WITHOUT any ticket binding at all
+// (orchestra_crossplan — no ticket concept exists for it; orchestra_doctor's
+// --live probe — a real, if no-op, engine invocation) must refuse outright
+// rather than spend an unticketed engine call. Legacy is unaffected (today's
+// behaviour, unchanged).
+function rosterIsNewAtRoot() {
+  return readOrchestraManifest(ROOT).roster === 'new';
+}
+
+// WO-14b repair A item 3 (oracle-deferred canary): resolves a `cd` argument
+// to an absolute path for the ONE thing this file still uses it for — the
+// CD_NOT_SUPPORTED cross-project check in requireEngineTicket() below.
+// Ticket enforcement itself is evaluated against ROOT only (see there).
+function resolveCdTarget(cdArg) {
+  const p = path.isAbsolute(cdArg) ? cdArg : path.join(ROOT, cdArg);
+  try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); }
+}
+
+// WO-14b leg 4b: goes through bridge/manifest.js's readTrustedManifest()
+// exactly as bridge/runtime.js's own createRuntime() does — the manifest's
+// OWN roster field is never trusted without a matching owner pin (see
+// bridge/manifest.js and roster/wo14b-leg3-redteam-1.md's [HIGH] finding).
+// Returns readTrustedManifest()'s shape ({manifest, trusted, roster,
+// rosterGeneration, seats, reason}); a missing bridge/manifest.js (an
+// installed project pre-dating leg 4b) degrades to the unpinned/legacy shape
+// rather than throwing — item 3's fingerprint gate in requireEngineTicket()
+// below is what keeps that degrade from silently skipping enforcement.
+function readOrchestraManifest(dir) {
+  const mod = loadBridgeManifestModule();
+  if (!mod) return { manifest: {}, trusted: false, roster: 'legacy', rosterGeneration: null, seats: {}, reason: 'unpinned' };
+  try {
+    return mod.readTrustedManifest({ projectDir: dir });
+  } catch (e) {
+    return {
+      manifest: {}, trusted: false, roster: 'legacy', rosterGeneration: null, seats: {},
+      reason: 'readTrustedManifest() threw: ' + (e && e.message ? e.message : String(e)),
+    };
+  }
+}
+
+// Item 2 (the two-pass fix), item 3 (server's own project only), item 5
+// (role+vendor bound), item 6 (caller-declared casting, comparison only):
+// records the engine's enginePass() on an already-LAUNCHED ticket bound to
+// `phase` ('exec'|'review') before ANY codex spawn — NEVER consume() (the
+// Agent tool's own Pre/PostToolUse hooks already carried the launcher's
+// ticket OPEN -> CONSUMED -> LAUNCHED before the launcher ever reaches this
+// server). Returns { ok:true, runtime, consumed } to proceed, or
+// { ok:false } after already sending the typed TICKET_REQUIRED/
+// TICKET_MISMATCH/TICKET_REPLAY/TICKET_EXPIRED/CASTING_MISMATCH/
+// CD_NOT_SUPPORTED result — the caller must return immediately without
+// calling runRunner.
+//
+// Item 3 (oracle-deferred canary): a prior version rooted enforcement at
+// `cd`'s own target directory — meant to let a legacy-rooted server ticket
+// an execution into a trusted roster:new `cd` target, but in practice it
+// could load neither that target's bridge modules (never installed at
+// ROOT) nor bind its ticket, so a genuinely valid ticket still came back
+// TICKET_REQUIRED. Building real cross-project module loading is out of
+// this repair's scope (no new cross-project runner — see the order's
+// forbidden list); enforcement is evaluated against THIS SERVER'S OWN
+// project (ROOT) only, and a `cd` that actually leaves ROOT is refused
+// outright with a typed CD_NOT_SUPPORTED — whenever ROOT is roster:new
+// (it already enforces, just never against a directory that isn't itself)
+// OR the cd target itself carries a roster:new fingerprint (a legacy
+// server must not become a side door around a trusted roster:new
+// project's own enforcement) — rather than silently mis-enforcing (or, for
+// a legacy ROOT with a roster:new cd target, silently NOT enforcing at
+// all). Under roster:legacy with an unfingerprinted cd (or none) this is a
+// no-op pass-through — BUT
+// only when ROOT carries no roster:new install fingerprint at all. A
+// fingerprint present (the manifest itself, or bridge/manifest.js, is
+// missing/unloadable/untrusted while the rest of a roster:new install
+// still stands) fails closed to typed TICKET_REQUIRED instead of silently
+// invoking codex — UNLESS the manifest is itself a TRUSTED explicit
+// legacy manifest (a pin corroborates it, e.g. after a legitimate
+// new->legacy flip that leaves the runtime directory behind): a trusted
+// manifest's own word is never second-guessed by this filesystem
+// heuristic (item 2).
+function requireEngineTicket(id, phase, ticketId, role, cdArg, callerCasting) {
+  const manifest = readOrchestraManifest(ROOT);
+  if (typeof cdArg === 'string' && cdArg.trim()) {
+    const cdTarget = resolveCdTarget(cdArg);
+    // Refuse whenever ticket enforcement could plausibly apply to a
+    // genuinely cross-project `cd` — either THIS server's own root is
+    // roster:new (so it already enforces, just never against a directory
+    // that isn't itself), or the cd TARGET carries a roster:new install
+    // fingerprint of its own (a legacy-rooted server must not become a
+    // side door into a trusted roster:new project's ticket enforcement —
+    // this is exactly the gap the review's cd-scoped probe found). A cd
+    // into an ordinary legacy directory, from an ordinary legacy server,
+    // is unaffected — the common case (an isolated worktree) still works.
+    if (cdTarget !== ROOT && (manifest.roster === 'new' || hasRosterNewFingerprint(cdTarget))) {
+      textResult(id, 'CD_NOT_SUPPORTED: this server enforces engine tickets against its own project ' +
+        '(' + ROOT + ') only — a cross-project cd (' + cdArg + ') that may itself require ticket ' +
+        'enforcement is not supported.', true);
+      return { ok: false };
+    }
+  }
+  if (manifest.roster !== 'new') {
+    if (!manifest.trusted && hasRosterNewFingerprint(ROOT)) {
+      textResult(id, 'TICKET_REQUIRED: ' + ROOT + ' carries a roster:new install fingerprint but the manifest/bridge ' +
+        'could not establish roster:new — refusing to invoke codex without ticket enforcement (fail closed).', true);
+      return { ok: false };
+    }
+    return { ok: true, skip: true };
+  }
+  const bridge = loadBridgeRuntime();
+  if (!bridge) {
+    textResult(id, 'TICKET_REQUIRED: this project runs roster:new but the bridge runtime ' +
+      '(bridge/runtime.js or .claude/orchestra/bridge/runtime.js) could not be loaded — ' +
+      'refusing to invoke codex without ticket enforcement.', true);
+    return { ok: false };
+  }
+  const runtime = bridge.createRuntime({ projectDir: ROOT });
+  try {
+    const consumed = runtime.ticketFor(phase, { id: ticketId, role, casting: callerCasting });
+    return { ok: true, runtime, consumed };
+  } catch (e) {
+    const code = (e && e.code) || 'TICKET_REQUIRED';
+    textResult(id, code + ': ' + (e && e.message ? e.message : String(e)), true);
+    return { ok: false };
+  }
+}
+// Item 7: orchestra_dispatch's MCP input schema IS the dispatch-request
+// schema at top level — no `{request: {...}}` wrapper. Loaded the same
+// installed-then-source-tree way as the bridge modules above; a resolver
+// failure degrades to a permissive generic object schema rather than
+// throwing (bridge/runtime.js's own dispatch() still enforces the real
+// schema at call time regardless of what tools/list advertises).
+function loadDispatchRequestSchema() {
+  for (const p of [
+    path.join(ROOT, '.claude', 'orchestra', 'registry', 'schemas', 'dispatch-request.schema.json'),
+    path.join(ROOT, 'registry', 'schemas', 'dispatch-request.schema.json'),
+  ]) {
+    if (fs.existsSync(p)) {
+      try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { /* fall through */ }
+    }
+  }
+  return null;
+}
+const DISPATCH_REQUEST_SCHEMA = loadDispatchRequestSchema();
+const DISPATCH_INPUT_SCHEMA = DISPATCH_REQUEST_SCHEMA
+  ? {
+      type: 'object',
+      properties: DISPATCH_REQUEST_SCHEMA.properties,
+      required: DISPATCH_REQUEST_SCHEMA.required,
+      additionalProperties: false,
+    }
+  : { type: 'object', properties: {}, additionalProperties: true };
+
 const HOOKS_DIR = process.env.ORCHESTRA_MCP_HOOKS_DIR
   ? path.resolve(process.env.ORCHESTRA_MCP_HOOKS_DIR)
   : __dirname;
@@ -141,10 +354,38 @@ function textResult(id, text, isError) {
   send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], isError: !!isError } });
 }
 
+// The server's own voice. Prefixed so it can never be read as engine output,
+// attributes no cause it did not measure, and names no engine. Returns the
+// composed text (not just sends it) so callers that also need it for ticket
+// bookkeeping (see bindTicket below) build it exactly once.
+function composeTransportText(lines) {
+  return ['MCP TRANSPORT ERROR (orchestra-engine server, not the engine):', ...lines].join('\n');
+}
+
 function transportError(id, lines) {
-  // The server's own voice. Prefixed so it can never be read as engine
-  // output, attributes no cause it did not measure, and names no engine.
-  textResult(id, ['MCP TRANSPORT ERROR (orchestra-engine server, not the engine):', ...lines].join('\n'), true);
+  textResult(id, composeTransportText(lines), true);
+}
+
+/* --------------------------------------- WO-14b leg 4b: engine ticketing -- */
+
+// Pull the RUN NONCE / served-model header fields a runner report exposes,
+// for binding the engine ticket lifecycle (see bindTicket in runRunner()
+// below). Neither field is guaranteed present:
+//   - orchestra-exec.js prints "RUN NONCE: <hex>" in EVERY header
+//     (headerTail(), success and failure paths alike).
+//   - orchestra-review.js deliberately prints NO run nonce and NO
+//     served_model line at all (its own header.js comment: Codex CLI's
+//     --json event stream carries no server-confirmed model field, so
+//     inventing one would be "the requested model echoed back" — exactly
+//     the kind of unverifiable claim this file's reports refuse to make).
+// A missing/absent match returns null; callers supply their own fallback.
+function extractRunNonce(text) {
+  const m = /RUN NONCE: ([0-9a-f]+)/.exec(String(text || ''));
+  return m ? m[1] : null;
+}
+function extractReportedModel(text) {
+  const m = /model:\s*([^,()\n]+)/.exec(String(text || ''));
+  return m ? m[1].trim() : null;
 }
 
 /* ------------------------------------------------- in-flight run registry -- */
@@ -325,9 +566,81 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
 
 const OUTPUT_CAP = 4 * 1024 * 1024; // per stream; a runner report is a few KB
 
-function runRunner(id, lane, args, progressToken, extraEnv) {
+// ticketBinding: { runtime, id, dir } — set by orchestra_review/orchestra_exec
+// ONLY when requireEngineTicket() actually consumed a ticket for this call
+// (roster:new; undefined under legacy or for the ungated crossplan/doctor
+// lanes). Binds the CONSUMED ticket through this run's outcome:
+//   - success / nonzero-exit / empty-output: launch() then resolve() — the
+//     run genuinely happened (codex was invoked and produced SOME captured
+//     output, even if it was a transport-class failure), so the ticket
+//     records who ran (agent_id 'codex:'+the run's nonce, or a synthesized
+//     one when the header carries none — see extractRunNonce above) and
+//     what it said (the exact text this tool call is about to return).
+//   - cancelled / backstop: denied('engine-cancelled'|'engine-backstop', ...)
+//     only — the ticket is left CONSUMED/never-LAUNCHED (or LAUNCHED but
+//     never RESOLVED, if a nonce did surface before the kill) for its own
+//     TTL to expire, per the order: "leave the ticket for expiry".
+//   - spawn never happened at all (runner missing, spawn() threw, or the
+//     OS-level 'error' event) — no codex process, and so no nonce, ever
+//     existed. Treated the same as cancelled/backstop (denied()-only, left
+//     for expiry) rather than fabricating a launch/resolve for a run that
+//     never occurred; this is an extension of the order's five named
+//     branches, documented here because the order does not name it.
+// Every call is best-effort: a TicketTransitionError/TicketStoreError here
+// (e.g. the ticket already expired) is caught and never allowed to affect
+// the MCP response already sent, and never fabricates success.
+function bindTicket(ticketBinding, branch, text, reason) {
+  if (!ticketBinding) return;
+  // Idempotence guard: node emits 'close' after 'error' even for a runner
+  // that failed at the OS level (see the comment above the 'close' handler),
+  // so a spawn-error branch's bindTicket() call must not be followed by a
+  // second, contradictory one from 'close' re-deriving a different branch
+  // for the same run. Whichever fires first wins; the ticket is bound once.
+  if (ticketBinding._bound) return;
+  ticketBinding._bound = true;
+  const { runtime, id: ticketId, dir } = ticketBinding;
+  try {
+    if (branch === 'cancelled' || branch === 'backstop' || branch === 'spawn-error') {
+      try {
+        runtime.denied(ticketId, 'engine-' + branch, reason || branch);
+      } catch (e) {
+        process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} denied()-bookkeeping failed (${branch}): ${e && e.message}\n`);
+      }
+      return;
+    }
+    // success / nonzero-exit / empty-output: the run happened (or at least a
+    // process ran to completion). WO-14b leg 4 fix round (item 2): the
+    // ticket is already LAUNCHED (via the Agent tool's own Pre/PostToolUse
+    // hooks on the launcher's own spawn, BEFORE this server was ever
+    // called) — bind the engine's own verbatim report via engineResult(),
+    // never launch()/resolve() here. The ticket's real terminal RESOLVED
+    // transition still comes from the launcher's own SubagentStop.
+    try {
+      runtime.engineResult(ticketId, { report: text, run_log: dir });
+      // Item 7: the engine-reported identity, never invented — router/
+      // tickets.js's ticket schema has no field for it (this repair does
+      // not add one; see bridge/runtime.js's enginePass() call, which
+      // records 'UNKNOWN' rather than a fabricated pre-run nonce), so the
+      // server's own diagnostic stream is where it is recorded: extracted
+      // verbatim from the runner's own report text, 'UNKNOWN' when the
+      // header carries neither field, never a launcher identity.
+      const runNonce = extractRunNonce(text) || 'UNKNOWN';
+      const reportedModel = extractReportedModel(text) || 'UNKNOWN';
+      process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} identity — run_nonce=${runNonce} model=${reportedModel}\n`);
+    } catch (e) {
+      process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} engineResult()-bookkeeping failed (${branch}): ${e && e.message}\n`);
+    }
+  } catch (e) {
+    // Never let ticket bookkeeping affect (or throw out of) the completion
+    // handler — the MCP response to the caller is already authoritative.
+    process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} bookkeeping threw (${branch}): ${e && e.message}\n`);
+  }
+}
+
+function runRunner(id, lane, args, progressToken, extraEnv, prefixText, ticketBinding) {
   const runner = RUNNERS[lane === 'doctor' ? 'review' : lane];
   if (!fs.existsSync(runner)) {
+    bindTicket(ticketBinding, 'spawn-error', null, 'runner not found at ' + runner);
     transportError(id, [
       `the ${lane} runner was not found at ${runner}`,
       `hooks dir: ${HOOKS_DIR}`,
@@ -353,6 +666,7 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
       detached: process.platform !== 'win32',
     });
   } catch (e) {
+    bindTicket(ticketBinding, 'spawn-error', null, 'spawn() threw: ' + e.message);
     transportError(id, [`the runner process could not be spawned: ${e.message}`]);
     return;
   }
@@ -406,6 +720,7 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
     // deliver the accurate one instead of a misleading "failed to launch"
     // ahead of it. run.killTimer is deliberately NOT cleared — see killTree.
     if (run.cancelled) return;
+    bindTicket(ticketBinding, 'spawn-error', null, 'OS-level error: ' + e.message);
     transportError(id, [`the runner process failed to launch or crashed at the OS level: ${e.message}`]);
   });
 
@@ -439,6 +754,13 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
       if (!run.treeConfirmed) lines.push(unconfirmed);
       lines.push(`runner stdout tail:\n${tail(out, 4000) || '(empty)'}`);
       lines.push(`runner stderr tail:\n${tail(err, 2000) || '(empty)'}`);
+      // Ticket bookkeeping runs BEFORE the response is sent (not after): the
+      // response reaches the caller over a separate pipe the moment it is
+      // written, and a caller/test that reacts immediately (closing the
+      // session, querying the ticket) must never be able to observe a report
+      // whose ticket lifecycle hasn't landed yet.
+      bindTicket(ticketBinding, 'cancelled', null,
+        `cancelled after ${elapsed}ms` + (run.cancelReason ? ` — ${run.cancelReason}` : ''));
       transportError(id, lines);
       return;
     }
@@ -452,13 +774,15 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
       if (!run.treeConfirmed) lines.push(unconfirmed);
       lines.push(`runner stdout tail:\n${tail(out, 4000) || '(empty)'}`);
       lines.push(`runner stderr tail:\n${tail(err, 2000) || '(empty)'}`);
+      bindTicket(ticketBinding, 'backstop', null,
+        `killed by the server's kill-backstop after ${elapsed}ms (backstop ${killAfter}ms, runner cap ${capMs}ms)`);
       transportError(id, lines);
       return;
     }
 
     if (lane === 'doctor') {
       // --doctor is the one runner mode whose exit code is meaningful.
-      const text = `DOCTOR EXIT CODE: ${code}\n` + out + (err ? `\n[doctor stderr]\n${err}` : '');
+      const text = `DOCTOR EXIT CODE: ${code}\n` + out + (err ? `\n[doctor stderr]\n${err}` : '') + (prefixText ? `\n${prefixText}` : '');
       textResult(id, text, code !== 0);
       return;
     }
@@ -467,24 +791,29 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
       // The runners exit 0 on every report path; anything else is a
       // transport-class anomaly. Everything the process wrote is included,
       // clearly labelled — shown, never promoted to a report.
-      transportError(id, [
+      const lines = [
         `the runner exited abnormally (code=${code}, signal=${signal || 'none'}) after ${elapsed}ms — the runners exit 0 on every report path, so this output is NOT a runner report.`,
         `captured stdout${outTruncated ? ' (truncated)' : ''}:\n${out || '(empty)'}`,
         `captured stderr${errTruncated ? ' (truncated)' : ''}:\n${tail(err, 4000) || '(empty)'}`,
-      ]);
+      ];
+      bindTicket(ticketBinding, 'nonzero-exit', composeTransportText(lines), `runner exited code=${code} signal=${signal || 'none'}`);
+      transportError(id, lines);
       return;
     }
 
     if (!out.trim()) {
-      transportError(id, [
+      const lines = [
         `the runner exited 0 after ${elapsed}ms but wrote nothing to stdout — no report exists for this call.`,
         `stderr tail:\n${tail(err, 4000) || '(empty)'}`,
-      ]);
+      ];
+      bindTicket(ticketBinding, 'empty-output', composeTransportText(lines), 'runner exited 0 with empty stdout');
+      transportError(id, lines);
       return;
     }
 
     let text = out;
     if (outTruncated) text += '\n\nMCP TRANSPORT NOTE: runner stdout exceeded the 4MB capture cap and was truncated.';
+    bindTicket(ticketBinding, 'success', text, null);
     textResult(id, text, false);
   });
 }
@@ -536,14 +865,40 @@ const TOOLS = [
         no_tests: { type: 'boolean', description: 'Hard-forbid running the suite/build/app (order says so). Affected claims come back UNVERIFIED (prohibited).' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the reviewer must not execute.' },
         warmup_cmd: { type: 'string', description: 'Command run unsandboxed in the fresh pinned checkout before the integrity baseline (e.g. "pnpm install"). Pinned reviews only.' },
+        ticket: { type: 'string', description: 'roster:new only: the reviewer ticket this call is bound to. Under roster:new a missing or mismatched ticket is refused (TICKET_REQUIRED/TICKET_MISMATCH) WITHOUT invoking codex. Ignored under legacy.' },
+        role: { type: 'string', description: 'roster:new only: the ROLE=<role> value from the launcher\'s own Agent-prompt header — must match the ticket\'s own recorded role exactly, else TICKET_MISMATCH. Required whenever `ticket` is supplied.' },
       },
       required: ['work_order', 'executor_report'],
     },
     handler(id, a, progressToken) {
+      // Item 4: argument-shape validation completes BEFORE
+      // requireEngineTicket() is called — that call is what commits
+      // enginePass() on the ticket, and a parameter error must never leave
+      // a ticket LAUNCHED-with-engine_pass-set for a run that never
+      // happened (a corrected retry would then see a false TICKET_REPLAY,
+      // even though codex was never invoked).
+      let workOrder, executorReport;
+      try {
+        workOrder = requireString(a, 'work_order');
+        executorReport = requireString(a, 'executor_report');
+      } catch (e) {
+        textResult(id, String(e && e.message ? e.message : e), true);
+        return;
+      }
+      // roster:new: records enginePass() on the reviewer ticket named by
+      // `ticket`+`role` BEFORE any spawn (never consume() — see
+      // requireEngineTicket()'s own comment) — a missing/mismatched/replayed
+      // ticket returns typed TICKET_REQUIRED/TICKET_MISMATCH/TICKET_REPLAY
+      // and never reaches runRunner (codex is never invoked). WO-14b leg 4
+      // binds the engine's own report via engineResult() once the runner
+      // completes — see bindTicket() in runRunner() above and
+      // bridge/README.md "engine ticket lifecycle".
+      const gated = requireEngineTicket(id, 'review', a && a.ticket, a && a.role);
+      if (!gated.ok) return;
       const dir = makeRunDir('review');
       const args = [
-        '--work-order', writeInput(dir, 'work-order.txt', requireString(a, 'work_order')),
-        '--executor-report', writeInput(dir, 'executor-report.txt', requireString(a, 'executor_report')),
+        '--work-order', writeInput(dir, 'work-order.txt', workOrder),
+        '--executor-report', writeInput(dir, 'executor-report.txt', executorReport),
       ];
       if (a.base_ref) args.push('--base-ref', String(a.base_ref));
       if (a.head_ref) args.push('--head-ref', String(a.head_ref));
@@ -552,7 +907,8 @@ const TOOLS = [
       if (a.no_tests) args.push('--no-tests');
       pushForbids(args, a.forbid);
       if (typeof a.warmup_cmd === 'string' && a.warmup_cmd.trim()) args.push('--warmup-cmd', a.warmup_cmd);
-      runRunner(id, 'review', args, progressToken);
+      const ticketBinding = (gated.runtime && gated.consumed) ? { runtime: gated.runtime, id: gated.consumed.id, dir } : undefined;
+      runRunner(id, 'review', args, progressToken, undefined, undefined, ticketBinding);
     },
   },
   {
@@ -574,19 +930,57 @@ const TOOLS = [
         cd: { type: 'string', description: 'Isolated worktree directory to execute in, only when the order names one.' },
         model: { type: 'string', description: 'Pin a specific model for this run, only when the order names one.' },
         effort: { type: 'string', description: 'Reasoning effort override, only when the order names one.' },
+        ticket: { type: 'string', description: 'roster:new only: the implementation/Q0 ticket this call is bound to. Under roster:new a missing or mismatched ticket is refused (TICKET_REQUIRED/TICKET_MISMATCH) WITHOUT invoking codex. Ignored under legacy.' },
+        role: { type: 'string', description: 'roster:new only: the ROLE=<role> value from the launcher\'s own Agent-prompt header — must match the ticket\'s own recorded role exactly, else TICKET_MISMATCH. Required whenever `ticket` is supplied.' },
       },
       required: ['work_order'],
     },
     handler(id, a, progressToken) {
+      // Item 4: work_order's own shape validation, before requireEngineTicket()
+      // commits enginePass() — see orchestra_review's identical comment above.
+      let workOrder;
+      try {
+        workOrder = requireString(a, 'work_order');
+      } catch (e) {
+        textResult(id, String(e && e.message ? e.message : e), true);
+        return;
+      }
+      const callerModel = typeof a.model === 'string' && a.model.trim() ? a.model.trim() : null;
+      const callerEffort = typeof a.effort === 'string' && a.effort.trim() ? a.effort.trim() : null;
+
+      // See orchestra_review's handler comment — same roster:new ticket
+      // gate, phase 'exec' (accepts an implementation or q0 ticket). Item 3:
+      // `cd` is no longer the enforcement target — enforcement is always
+      // against this server's own project; a genuinely cross-project `cd`
+      // under roster:new is refused (CD_NOT_SUPPORTED) inside
+      // requireEngineTicket() itself. Item 6: model/effort the caller
+      // supplied are passed through for comparison ONLY — requireEngineTicket()
+      // (via bridge/runtime.js's requireTicket()) refuses CASTING_MISMATCH,
+      // zero invocations, before this call returns, if they disagree with
+      // the ticket's own casting.
+      const gated = requireEngineTicket(id, 'exec', a && a.ticket, a && a.role, a && a.cd, { model: callerModel, effort: callerEffort });
+      if (!gated.ok) return;
+
+      // Item 6: under a ticketed (roster:new) call the invocation's model
+      // and effort ALWAYS come from the ticket's own casting — never the
+      // caller. A caller-supplied value that disagreed already returned
+      // CASTING_MISMATCH above (zero invocations); one that agreed, or was
+      // never supplied, falls through to here. Legacy/unticketed calls
+      // (gated.skip) have no ticket to source from, so the caller's own
+      // values (if any) are used exactly as before.
+      const effectiveModel = gated.consumed ? (gated.consumed.casting && gated.consumed.casting.model) || null : callerModel;
+      const effectiveEffort = gated.consumed ? (gated.consumed.casting && gated.consumed.casting.effort) || null : callerEffort;
+
       const dir = makeRunDir('exec');
-      const args = ['--work-order', writeInput(dir, 'work-order.txt', requireString(a, 'work_order'))];
+      const args = ['--work-order', writeInput(dir, 'work-order.txt', workOrder)];
       if (a.tier === 'heavy') args.push('--tier', 'heavy');
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       pushForbids(args, a.forbid);
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);
-      if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
-      if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', a.effort);
-      runRunner(id, 'exec', args, progressToken);
+      if (effectiveModel) args.push('--model', effectiveModel);
+      if (effectiveEffort) args.push('--effort', effectiveEffort);
+      const ticketBinding = (gated.runtime && gated.consumed) ? { runtime: gated.runtime, id: gated.consumed.id, dir } : undefined;
+      runRunner(id, 'exec', args, progressToken, undefined, undefined, ticketBinding);
     },
   },
   {
@@ -616,6 +1010,13 @@ const TOOLS = [
       required: ['phase', 'brief', 'out_path'],
     },
     handler(id, a, progressToken) {
+      // Item 10: orchestra_crossplan has no ticket concept at all — under
+      // roster:new, every lane that can invoke the engine must be bound to
+      // a ticket or refuse outright; this one refuses.
+      if (rosterIsNewAtRoot()) {
+        textResult(id, 'UNSUPPORTED: orchestra_crossplan has no ticket binding and is refused under roster:new.', true);
+        return;
+      }
       const dir = makeRunDir('crossplan');
       const resolve = (p) => (path.isAbsolute(String(p)) ? String(p) : path.join(ROOT, String(p)));
       const args = [
@@ -641,6 +1042,70 @@ const TOOLS = [
     },
   },
   {
+    name: 'orchestra_dispatch',
+    description:
+      'WO-14b leg 4: validate a pre-dispatch request (this tool\'s own inputSchema IS ' +
+      'registry/schemas/dispatch-request.schema.json — pass the request fields at the top level, no `request` ' +
+      'wrapper) against the activation runtime, read one fresh Quartermaster snapshot, route it, and return the ' +
+      'runtime\'s dispatch() result verbatim — on success, the issued implementation/Q0 tickets and the spawn ' +
+      'instruction; otherwise the router\'s typed outcome (GATED, DISABLED, FORBIDDEN, WAIT, blocked:"Q0", ' +
+      'RETIRED_WORKFLOW) or a typed P0_UNAVAILABLE/INVALID_REQUEST/STORE_UNAVAILABLE/ROUTING_LOG_UNAVAILABLE. ' +
+      'roster:new only — under legacy this returns a typed refusal rather than dispatching.',
+    inputSchema: DISPATCH_INPUT_SCHEMA,
+    handler(id, a) {
+      const bridge = loadBridgeRuntime();
+      if (!bridge) {
+        transportError(id, ['the bridge runtime (bridge/runtime.js or .claude/orchestra/bridge/runtime.js) could not be loaded']);
+        return;
+      }
+      let result;
+      try {
+        const runtime = bridge.createRuntime({ projectDir: ROOT });
+        result = runtime.dispatch(a || {});
+      } catch (e) {
+        transportError(id, ['orchestra_dispatch failed: ' + (e && e.message ? e.message : String(e))]);
+        return;
+      }
+      textResult(id, JSON.stringify(result, null, 2), result && result.ok === false);
+    },
+  },
+  {
+    name: 'orchestra_close',
+    description:
+      'WO-14b leg 5: two-stage ticket closure. On a RESOLVED implementation ticket, validates the bound ' +
+      'executor report and runs verifier.runVerification against it; on PASS, issues the computed opposite-' +
+      'family reviewer ticket and returns stage REVIEW_PENDING. On a RESOLVED reviewer ticket, parses its ' +
+      'mandatory trailing verdict-json block, constructs the verdict audit deterministically from replayed ' +
+      'citation evidence and dispatcher-owned family facts, and CLOSES both tickets only for a genuinely ' +
+      'closing verdict (APPROVE, cross-family, audit-valid, no blocking finding). Returns bridge/runtime.js\'s ' +
+      'close() result verbatim — every non-closing outcome is a typed NOT_CLOSED with a reason, never an ' +
+      'exception. Never accepts a caller-supplied report or verdict — only the ticket id; the bound report is ' +
+      'the one the host recorded at SubagentStop (or the engine run log for codex tickets).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'The ticket id to close (an implementation or reviewer ticket already RESOLVED).' },
+      },
+      required: ['ticket'],
+    },
+    handler(id, a) {
+      const bridge = loadBridgeRuntime();
+      if (!bridge) {
+        transportError(id, ['the bridge runtime (bridge/runtime.js or .claude/orchestra/bridge/runtime.js) could not be loaded']);
+        return;
+      }
+      let result;
+      try {
+        const runtime = bridge.createRuntime({ projectDir: ROOT });
+        result = runtime.close((a && a.ticket) || '');
+      } catch (e) {
+        transportError(id, ['orchestra_close failed: ' + (e && e.message ? e.message : String(e))]);
+        return;
+      }
+      textResult(id, JSON.stringify(result, null, 2), result && result.ok === false);
+    },
+  },
+  {
     name: 'orchestra_doctor',
     description:
       'Check the Codex install without spending a review: resolves the real codex binary, names the install ' +
@@ -648,7 +1113,8 @@ const TOOLS = [
       'copies files into the install on the user\'s machine — run this only on the Director\'s or user\'s say-so), ' +
       'and prints the exact copy command for anything it cannot. The result starts with DOCTOR EXIT CODE: 0 ' +
       '(a review would find a complete install) or 1 (it would not, and the output says why). Pass live=true to ' +
-      'also prove the exec-lane nonce round-trip with a real no-op engine run.',
+      'also prove the exec-lane nonce round-trip with a real no-op engine run. Also reports the WO-14b bridge ' +
+      'state — manifest roster, roster generation, ticket store health, and the count of open tickets.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -656,9 +1122,28 @@ const TOOLS = [
       },
     },
     handler(id, a, progressToken) {
+      // Item 10: --live spends a real (if no-op) engine invocation with no
+      // ticket binding — refused under roster:new. Plain --doctor (no live
+      // probe) never invokes the engine at all and is unaffected.
+      if (a && a.live && rosterIsNewAtRoot()) {
+        textResult(id, 'UNSUPPORTED: orchestra_doctor live=true has no ticket binding and is refused under roster:new.', true);
+        return;
+      }
       const args = ['--doctor'];
       if (a && a.live) args.push('--live');
-      runRunner(id, 'doctor', args, progressToken);
+      const bridge = loadBridgeRuntime();
+      let bridgeLine = 'BRIDGE: not available (bridge/runtime.js not found — leg 4 not installed/copied)';
+      if (bridge) {
+        try {
+          const d = bridge.createRuntime({ projectDir: ROOT }).doctor();
+          bridgeLine = 'BRIDGE: roster=' + d.roster + ' rosterGeneration=' + d.rosterGeneration +
+            ' store=' + (d.store.ok ? 'ok' : 'UNAVAILABLE (' + d.store.error + ')') +
+            ' openTickets=' + (d.openTickets === null ? 'n/a' : d.openTickets);
+        } catch (e) {
+          bridgeLine = 'BRIDGE: doctor() failed: ' + (e && e.message ? e.message : String(e));
+        }
+      }
+      runRunner(id, 'doctor', args, progressToken, undefined, bridgeLine);
     },
   },
 ];

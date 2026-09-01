@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Add /ultra-plan, a roundabout in which two models adversarially refine a
+plan. The Director drafts a plan under full planning discipline, then hands
+it to a counterpart from a different vendor, which either approves it or
+returns a numbered critique plus a counter-draft. The Director arbitrates,
+and the plan ping-pongs until either side approves the standing plan
+unchanged. Cap the rounds at 4, escalate a stalemate to the user, then
+append a log of verdicts and dispositions to the plan file. Build three
+pieces mirroring the cross-vendor review lane — a zero-dependency runner
+that calls the counterpart's API and degrades every failure to an
+unavailable verdict rather than a fake approval, a thin launcher that relays
+verbatim and never plans itself, plus the skill document holding the
+roundabout rules. In the installer, add only the new agent name, the runner
+copy and its uninstall entry, but leave its existing copy plus stamping
+behaviour as the base has it.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

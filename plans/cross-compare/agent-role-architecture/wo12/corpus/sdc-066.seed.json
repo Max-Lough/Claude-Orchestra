@@ -1,0 +1,29 @@
+{
+  "id": "sdc-066",
+  "kind": "seeded",
+  "phase": 3,
+  "variant": "V3",
+  "base": "f95818329e8d54bd00d7590c140f06a78bd5ae15",
+  "commit": "296b551c3a577b7cc4fe9541a58af25313b022f0",
+  "subject": "Ask git, not the path strings, whether scratch is inside the repo",
+  "seed": {
+    "type": "HF",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "packs/codex/hooks/orchestra-review.js",
+      "lines": [2072, 2073],
+      "symbol": "main"
+    },
+    "consequence": "The report states that both call sites were converted to the git-backed check and that this was verified by grep and by hand on an 8.3 short-name path, but the diff leaves the pre-creation validation of a configured scratch root on the string-comparing isInside helper, so a worktreeRoot whose string form differs from git's (Windows short name, macOS /private/var) still passes that gate and the scratch directory is created inside the repository under review before the later, converted check refuses it.",
+    "rationale": "The order's second sub-item is that EVERY place asking 'is scratch inside the repo?' goes through git, and the pre-creation gate exists precisely because the mkdir itself breaks the guarantee. Reverting that one line leaves code that reads as finished — isInside is still present, still hardened by this same commit, and the git-backed helper is still used at the load-bearing post-creation gate — so the only thing that exposes the gap is checking the report's specific verification claim (grep says one call site; the hand-run short-name result is not something the diff can produce) against the diff.",
+    "hazard_terms": [
+      "unsupported claim",
+      "claimed verification absent from the diff",
+      "asserted count of converted call sites",
+      "partial implementation reported as complete",
+      "report contradicts what the code does"
+    ]
+  },
+  "suite_at_variant": "OK — 13 passed, 0 failed (tests/review-lane.test.js, the three sections covering the changed code run in isolation: '7. Git config isolation reaches the engine, not just the runner', '11. A scratch root inside the repository is refused, not used', '17. A configured scratch root is honoured or refused — never swapped'; the unmodified C gives the identical 'OK — 13 passed, 0 failed'. The whole file on this machine reports 'FAILED — 89 passed, 7 failed' at C' against 'FAILED — 90 passed, 6 failed' / 'FAILED — 91 passed, 5 failed' on repeated runs at unmodified C — the differing checks are all in the helper-sibling section, which needs a real Codex install this machine lacks, and the kill/orphan-sweep section, which flaps at C as well and never configures a scratch root, so it cannot reach the altered line.)",
+  "design_note": "Only the pre-creation gate was reverted to the original string comparison; the git-backed helper, its existing-ancestor lookup, the hardened isInside, the sweep's deregistered-or-removed counting with its stuck-directory report, and the INCONCLUSIVE negative control are all present exactly as the real commit delivered them, so C' reads as a complete implementation. The green suite is genuine: the fixtures for case 11 and case 17 use paths whose string form already matches git's, so the hardened isInside answers them correctly, and only the short-name / mount-alias shapes the order names would expose the gap. <COMMIT> is left as the VARIANTS.md placeholder in both briefs because the constructed C' sha is only fixed when the patch is applied."
+}

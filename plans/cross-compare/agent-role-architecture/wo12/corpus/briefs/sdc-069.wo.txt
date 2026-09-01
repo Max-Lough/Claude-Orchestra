@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Record the outcome of a fresh cross-vendor review of the pull request. Run
+it scoped only to the diff against the prior commit, and expect it to
+confirm every earlier tally, gate, and commit-order claim while returning a
+small number of significant findings; apply every one of them in full. Amend
+the relevant rule so that displayed values count as data rather than
+presentation, and set a clear trigger for any additional border pass, keyed
+only on disagreements that both independent passes actually tallied. Sharpen
+the earlier redraw's validation claim so it states precisely what was
+tested, and correct the related pull-request index once that gap is
+confirmed. The owner's blind pass must be committed and pushed before anyone
+opens the sealed file, with no exception granted for convenience, from this
+point forward. Preserve the verdict exactly as delivered, together with
+every disposition it produced, inside one dedicated review record.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

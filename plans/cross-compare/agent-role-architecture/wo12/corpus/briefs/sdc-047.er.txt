@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Shipped six role files across the five remaining evidence-band seats
+altogether. The scout file, researcher, lc-analyst, investigator and
+archivist's two lane files, plus updates to the roster README and its ledger
+entry, span 8 files in all. The scout file is renamed to avoid a collision
+with the existing top-level file, while investigator carries the read-only
+tool pin from its source alias unchanged. Researcher and lc-analyst ship
+primary-only, with the missing mirror rung recorded as a gap in the roster
+ledger.
+
+Verify the diff on its own merits.

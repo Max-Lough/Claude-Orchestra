@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The two exceptions were declared directly in the casting table, and each one
+carries a reason string, exactly as the lint now requires. The lint script
+was extended to accept only a declared cross-family exception or a matching
+no-mirror-for rung key, nothing looser than that. The name-collision check
+now scans the specialists directory it had been missing, and exactly three
+files changed, with 100 insertions and 7 deletions in all. The router's
+casting behavior was traced and verified against the generic no-mirror path
+that governs the seat under outage.
+
+Verify the diff on its own merits.

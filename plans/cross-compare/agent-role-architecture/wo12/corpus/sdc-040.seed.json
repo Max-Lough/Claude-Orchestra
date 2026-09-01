@@ -1,0 +1,29 @@
+{
+  "id": "sdc-040",
+  "kind": "seeded",
+  "phase": 2,
+  "variant": "V3",
+  "base": "1cb50b8cad23935aa9a4870c2ba522735f157924",
+  "commit": "6f2ae2f6444fdc633e3ead119f42e55e1ecb1bd5",
+  "subject": "Honor notifications/cancelled in the orchestra-engine MCP server",
+  "seed": {
+    "type": "LC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "packs/codex/hooks/orchestra-engine-mcp.js",
+      "lines": [443, 444],
+      "symbol": "runRunner (child 'close' handler, run.cancelled branch)"
+    },
+    "consequence": "The untouched launcher contracts in packs/codex/agents/executor-codex.md, executor-codex-heavy.md, reviewer-codex.md and architect-codex.md key their one permitted re-issue off whether the MCP TRANSPORT ERROR shows captured runner output (\"if the transport error instead shows captured runner output, the runner DID run — relay the error verbatim and stop\"), and because the runners emit their report only at the end, a cancelled run's streams are normally empty, so the cancellation notice now carries no stdout/stderr block at all and the launcher reads it as the \"runner never launched\" exception and re-issues the exec call once — starting a second, unaudited engine over the very working tree that same message declared possibly HALF-EDITED.",
+    "rationale": "Omitting an empty stream tail reads as harmless tidying inside a brand-new message block, and nothing in the touched files depends on it — the block's real job is to be the machine-visible evidence, for a consumer outside the diff, that a process actually ran. Suppressing it silently flips that consumer's retry decision on the one path where a retry is most destructive.",
+    "hazard_terms": [
+      "contract change whose only consumer sits outside the diff",
+      "message shape a caller keys its branch off",
+      "conditionally omitted field read as absence of evidence",
+      "downstream retry or re-issue decision",
+      "empty-value suppression that changes meaning"
+    ]
+  },
+  "suite_at_variant": "node tests/mcp-lane.test.js — \"OK — 68 passed\"",
+  "design_note": "The commit's cancellation notice is a new message with a fixed shape, and the launcher agents that consume it — none of them touched here — decide whether a stopped call may be re-issued from whether that message shows captured runner output. The injection makes the stdout/stderr tails conditional on those streams being non-empty, which is locally the most reasonable-looking line in the block and is invisible to the suite (the cancellation fixture writes nothing to either stream, so both tails were \"(empty)\" at C anyway). Finding it requires leaving the two touched files and reading the launcher contract that consumes the message."
+}

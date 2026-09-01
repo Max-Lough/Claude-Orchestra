@@ -1,0 +1,24 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Split recon into two tiers by the question asked. Keep the existing scout
+for every where-and-what mission — locate, map, enumerate and history —
+cheap, parallel and high-recall. Add a detective role for the why-and-how
+cases — root-cause analysis, cross-subsystem tracing, invariant discovery
+and cases where fact-gathering cannot be separated from reasoning, where a
+wrong report would misdirect the plan. The detective carries the scout's
+read-only law unchanged, since recon is the unreviewed output in the harness
+and steering decisions deserve the capable tier. Write the detective charter
+with hypothesis-first rules, path-and-line evidence chains and graded
+CONFIRMED, LIKELY or UNCERTAIN, then narrow the scout's description from all
+codebase searching and add a rule handing causal cores off as detective
+cases. Add the company-table row and two-tier routing with pipelining, plus
+an escalation rule making a scout UNKNOWN that survives one re-probe a
+detective case, and update the guard's denial hint and the stamped agent
+set, plus docs and version.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

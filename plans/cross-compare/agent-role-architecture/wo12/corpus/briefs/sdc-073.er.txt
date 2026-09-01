@@ -1,0 +1,13 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The blind pass graded thirty-one of forty items at 77.5 percent against the
+pre-registered threshold of at least thirty-six of forty, with two
+ambiguities at the cap. Nine disagreements spanned nine distinct pairs, ten
+counting the ambiguity, and none repeated, so no three-pair combination was
+triggered. The redraw was applied, adding a precedence rule, amending the
+implicated border rules, adding new ones only where a genuine gap was found,
+and introducing two phase rules.
+
+Verify the diff on its own merits.

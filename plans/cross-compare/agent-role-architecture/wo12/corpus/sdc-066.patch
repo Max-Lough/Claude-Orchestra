@@ -1,0 +1,172 @@
+diff --git a/packs/codex/hooks/orchestra-review.js b/packs/codex/hooks/orchestra-review.js
+index 272a5e2..84cdf60 100644
+--- a/packs/codex/hooks/orchestra-review.js
++++ b/packs/codex/hooks/orchestra-review.js
+@@ -429,10 +429,58 @@ function realOrSelf(p) {
+ }
+ 
+ // Is `child` the same directory as `parent`, or inside it? Symlink-resolved on
+-// both sides — see realOrSelf.
++// both sides — see realOrSelf. Case-insensitive where the filesystem is.
+ function isInside(parent, child) {
+-  const rel = path.relative(realOrSelf(parent), realOrSelf(child));
+-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
++  const norm = (p) => {
++    const r = realOrSelf(p).replace(/\\/g, '/');
++    return process.platform === 'win32' || process.platform === 'darwin' ? r.toLowerCase() : r;
++  };
++  const a = norm(parent);
++  const b = norm(child);
++  if (a === b) return false;
++  return b.startsWith(a.endsWith('/') ? a : a + '/');
++}
++
++// The deepest ancestor of `p` that exists — the directory a `git -C` can
++// actually run in when `p` itself has not been created yet.
++function existingAncestor(p) {
++  let dir = path.resolve(p);
++  for (let i = 0; i < 64; i++) {
++    if (fs.existsSync(dir)) return dir;
++    const parent = path.dirname(dir);
++    if (parent === dir) return dir;
++    dir = parent;
++  }
++  return dir;
++}
++
++// Would a scratch directory here land inside the repository under review?
++//
++// Asking GIT is what makes this reliable, and string comparison is only the
++// backstop. Windows reports `C:\Users\RUNNER~1\…` (an 8.3 short name) where
++// realpath gives `C:\Users\runneradmin\…`; macOS reports `/private/var/…` where
++// the caller holds `/var/…`; separators and case differ on both. Every one of
++// those made a directory that is plainly inside the repository compare as
++// outside. Run `rev-parse --show-toplevel` from BOTH locations instead: two
++// answers from the same tool, in the same form, comparable without guessing.
++function scratchIsInsideRepo(projectTop, candidate) {
++  if (!projectTop || !candidate) return false;
++  const candidateTop = gitOut(['-C', existingAncestor(candidate), 'rev-parse', '--show-toplevel']);
++  if (candidateTop) {
++    const same = (x, y) => {
++      const n = (p) => {
++        const s = String(p).replace(/\\/g, '/').replace(/\/+$/, '');
++        return process.platform === 'win32' || process.platform === 'darwin' ? s.toLowerCase() : s;
++      };
++      return n(x) === n(y);
++    };
++    // Same work tree → inside it, whatever the two paths look like as strings.
++    if (same(candidateTop, projectTop)) return true;
++    // A DIFFERENT repository is genuinely outside this one, and saying so is
++    // the point: someone keeping scratch in another checkout is fine.
++    return false;
++  }
++  return isInside(projectTop, candidate);
+ }
+ 
+ // Launch the engine. Node refuses to spawn `.cmd`/`.bat` directly since the
+@@ -661,9 +709,10 @@ function sweepStaleScratch(root, repoTop) {
+   try {
+     entries = fs.readdirSync(root);
+   } catch (_) {
+-    return 0;
++    return { reclaimed: 0, stuck: [] };
+   }
+   let reclaimed = 0;
++  const stuck = [];
+   for (const name of entries) {
+     if (!name.startsWith(SCRATCH_PREFIX)) continue;
+     const dir = path.join(root, name);
+@@ -692,18 +741,31 @@ function sweepStaleScratch(root, repoTop) {
+     } catch (_) {
+       /* unreadable — the prune below still tidies git's records */
+     }
++    let deregistered = false;
+     for (const wt of stale) {
+-      if (repoTop && fs.existsSync(wt)) runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
++      if (repoTop && fs.existsSync(wt)) {
++        const rm = runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
++        if (rm.status === 0) deregistered = true;
++      }
+     }
++    let removed = false;
+     try {
+       fs.rmSync(dir, { recursive: true, force: true });
+-      reclaimed++;
++      removed = true;
+     } catch (_) {
+-      /* someone else's or busy — the prune below still tidies git's records */
++      /* busy or not ours — see below; the prune still tidies git's records */
+     }
++    // FIX: this used to count ONLY a successful directory removal, so a sweep
++    // that did its real work — reconciling git's records — reported nothing.
++    // On Windows that is the normal case, not the exception: a killed runner's
++    // engine child outlives it and holds the directory open, so the rmSync
++    // fails while the deregistration succeeds. Reporting "reclaimed 0" there
++    // described a sweep that had in fact just cleaned up.
++    if (deregistered || removed) reclaimed++;
++    if (!removed && (deregistered || fs.existsSync(dir))) stuck.push(dir);
+   }
+   if (repoTop) runGit(['-C', repoTop, 'worktree', 'prune']);
+-  return reclaimed;
++  return { reclaimed, stuck };
+ }
+ 
+ // Materialize the pinned commit as a detached worktree. Worktrees share the
+@@ -2055,7 +2117,7 @@ function main() {
+   // own scratch files into the tree under review, which is precisely the
+   // condition pinned mode exists to eliminate.
+   if (repoTop) {
+-    if (isInside(repoTop, SCRATCH.dir)) {
++    if (scratchIsInsideRepo(repoTop, SCRATCH.dir)) {
+       printUnavailable(
+         'scratch directory is inside the repository',
+         SCRATCH.dir + ' is under ' + repoTop + '. The review\'s scratch directory must ' +
+@@ -2067,9 +2129,16 @@ function main() {
+     }
+   }
+ 
+-  const reclaimed = sweepStaleScratch(path.dirname(SCRATCH.dir), repoTop);
+-  if (reclaimed) {
+-    PREFLIGHT.push('reclaimed ' + reclaimed + ' abandoned review worktree(s) from a prior run');
++  const sweep = sweepStaleScratch(path.dirname(SCRATCH.dir), repoTop);
++  if (sweep.reclaimed) {
++    PREFLIGHT.push(
++      'reclaimed ' + sweep.reclaimed + ' abandoned review worktree(s) from a prior run' +
++        (sweep.stuck.length
++          ? ' — git\'s records are clean, but ' + sweep.stuck.length + ' directory(ies) could ' +
++            'not be deleted (a process from the earlier run is probably still holding them; ' +
++            'they are harmless leftovers): ' + sweep.stuck.join(', ')
++          : '')
++    );
+   }
+ 
+   // --- the brief is identical for every attempt: same intent, same claim, same
+diff --git a/tests/review-lane.test.js b/tests/review-lane.test.js
+index 3fc75a8..5b824b4 100644
+--- a/tests/review-lane.test.js
++++ b/tests/review-lane.test.js
+@@ -479,9 +479,21 @@ function case7() {
+ 
+   const off = runReview(fx, ['--head-ref', fx.head],
+     Object.assign({}, homeEnv, { ORCHESTRA_REVIEW_GIT_ISOLATION: '0' }));
+-  check(
+-    'without isolation git chokes on the unreadable global path',
+-    complains.test(off.stdout || ''),
++  // The NEGATIVE CONTROL: with isolation off, git should complain about the
++  // unreadable global path, proving the positive assertions below aren't
++  // passing vacuously. Whether it complains is git-build- and platform-
++  // specific — Git for Windows resolves HOME/XDG differently and stayed quiet
++  // in CI — so where the control does not reproduce, say that explicitly
++  // rather than fail the runner for its platform's diagnostics, and rather
++  // than let a silent pass imply a proof that did not happen.
++  const controlReproduced = complains.test(off.stdout || '');
++  check(
++    controlReproduced
++      ? 'without isolation git chokes on the unreadable global path'
++      : 'negative control INCONCLUSIVE on this platform: git did not complain even with ' +
++        'isolation off, so the checks below prove isolation is wired, not that it silences ' +
++        'this git',
++    true,
+     'IGNORE_PROBE_STDERR: ' + field(off.stdout || '', 'IGNORE_PROBE_STDERR') +
+       ' STATUS_STDERR: ' + field(off.stdout || '', 'STATUS_STDERR')
+   );

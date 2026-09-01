@@ -1,0 +1,12 @@
+{
+  "id": "e-11",
+  "category": "process-lifetime fault",
+  "title": "the prepare step never exits",
+  "check_display": "node scripts/prepare.js && node test.js",
+  "check_steps": [["node", "scripts/prepare.js"], ["node", "test.js"]],
+  "scope": ["src/cache.js"],
+  "audit_ignore": ["out/"],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 30000
+}

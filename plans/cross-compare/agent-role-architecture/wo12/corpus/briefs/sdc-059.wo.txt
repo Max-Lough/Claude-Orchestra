@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Close the probe and boundary-revision cycle with a final ruling. Combine the
+two investigator classes into a single class, keeping identical castings at
+every rung, a five-entry ledger, and the boundary treated as undecidable at
+intake. Keep the retired class name only as an alias and combine no other
+classes, so the taxonomy holds at exactly twenty-three classes, while a new
+decision procedure of seven fixed-order steps decides on the first match and
+never reopens once a later step is reached. Amend three named boundary rules
+and retire one, confining the change to those four, since every other
+boundary rule stays untouched. Reframe classification as a routing
+hypothesis tied to risk tier plus author family, and restate the downstream
+gate as misroute recovery. Rewrite the next work order to validate through
+the router, unblock the gated work order, and close the outstanding pair
+ledger with dispositions recorded.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

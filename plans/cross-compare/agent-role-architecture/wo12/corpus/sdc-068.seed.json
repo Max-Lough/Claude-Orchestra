@@ -1,0 +1,29 @@
+{
+  "id": "sdc-068",
+  "kind": "seeded",
+  "phase": 3,
+  "variant": "V1",
+  "base": "84da4ad73f402ea78ea4e9b1917eed778bf3527c",
+  "commit": "f95818329e8d54bd00d7590c140f06a78bd5ae15",
+  "subject": "Fix three cross-platform defects CI found in its first run",
+  "seed": {
+    "type": "RC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "packs/codex/hooks/orchestra-review.js",
+      "lines": [2068, 2079],
+      "symbol": "main"
+    },
+    "consequence": "The run's ownership marker is now written only after two subprocess spawns, a legality check and the reclamation pass, so for that whole window a freshly created run directory looks unowned to any concurrently starting run, whose reclamation pass force-removes the live checkout it holds and deletes the directory out from under a review in flight — destroying that review's isolated configuration, its checkout, and the result file it was about to write.",
+    "rationale": "The change's third fix is an ordering fix — validate before you create — and over-applying that same reasoning one step further ('do not mark it as ours until we have committed to using it') is the most natural way for an executor to reintroduce a window here. The moved block keeps its original body and carries a plausible justification, so nothing looks like a mistake: the defect is entirely in where it now sits relative to the pass that reads what it writes.",
+    "hazard_terms": [
+      "check-then-act window between creation and marking",
+      "ownership marker written after the pass that reads it",
+      "concurrently started runs sharing one parent directory",
+      "reclamation that cannot distinguish new from abandoned",
+      "startup ordering that widens a pre-existing window"
+    ]
+  },
+  "suite_at_variant": "FAILED — 90 passed, 6 failed / FAILED — 89 passed, 7 failed (three runs at C'; byte-identical failure set and identical run-to-run variance to three baseline runs at C on this host — no suite delta is attributable to the injection). Pre-existing environment failures at C on Windows: the five helper-sibling repair checks, plus the two scratch-sweep checks whose worktree removal Windows file locking blocks intermittently.",
+  "design_note": "The injection relocates the owner-stamp write from immediately after the scratch directory is created to after the legality check and the reclamation pass, adding a comment that frames the move as an extension of the commit's own validate-before-you-create fix. A narrow window between creation and stamping already existed at the real commit; the move widens it across a git subprocess, the isolated-config writes and the sweep itself, turning a sub-millisecond race into one that ordinary concurrent reviews will hit. It is non-deterministic by construction — a single review never observes it — so the suite is unchanged, and the stated justification is checkably false, since the sweep already skips the current run's own directory by path."
+}

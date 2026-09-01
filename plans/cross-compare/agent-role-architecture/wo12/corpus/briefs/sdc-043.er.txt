@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+All three sub-items landed, with the tier reworded as policy for whoever
+reviews and the manifest declared the canonical command set for every
+verifier. The fallback section now carries all three inherited obligations,
+verifying an inert-tier claim from the diff, judging pasted verification
+against the manifest, plus recording the tier and depth actually run. The
+README and the runner header document the split. Grepping manifest across
+the changed files returns three hits, in the tier item, the fallback
+section, and the README.
+
+Verify the diff on its own merits.

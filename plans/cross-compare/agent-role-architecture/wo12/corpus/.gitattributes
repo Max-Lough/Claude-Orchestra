@@ -1,0 +1,17 @@
+*.patch -text
+briefs/* -text
+content/*.json -text
+# Round-8 MINOR 2. The four files below were EOL-converted on a Windows checkout
+# while the briefs and content files held their bytes: `git -c core.autocrlf=true
+# clone --no-local` of this branch produced a `key.json` with 1443 CR characters
+# and 0 in the briefs. Nothing broke — JSON.parse is EOL-agnostic and
+# `git hash-object` applies the clean filter, so sanitizeClone()'s key-blob
+# assertion still computed the right sha — but re-running assemble-key.js on
+# such a checkout rewrote key.json wholesale and showed a 1400-line diff that
+# was pure line endings. A sealed corpus has to be byte-identical everywhere.
+key.json -text
+base-pool.json -text
+construction-notes.json -text
+materialized.json -text
+blind-read.json -text
+blind-draw-round*.json -text

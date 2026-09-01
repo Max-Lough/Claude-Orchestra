@@ -32,7 +32,7 @@
       "additionalProperties": false
     },
     "served_model": { "type": "string", "minLength": 1, "description": "Where exposed; the literal UNKNOWN otherwise" },
-    "served_model_mismatch": { "type": "boolean", "description": "True when served_model is known and differs from requested_casting.model — a P15 routing incident. COMPUTED, not schema-enforced (ruling 4, WO-8): the Verifier's artifact validation recomputes served_model vs requested_casting.model whenever served_model is not UNKNOWN, and refuses a record that contradicts or omits a computable mismatch" },
+    "served_model_mismatch": { "type": ["boolean", "null"], "description": "True/false when served_model is known — whether it differs from requested_casting.model (a P15 routing incident when true). COMPUTED, not schema-enforced (ruling 4, WO-8): the Verifier's artifact validation recomputes served_model vs requested_casting.model whenever served_model is not UNKNOWN, and refuses a record that contradicts or omits a computable mismatch. null ONLY when served_model is the literal 'UNKNOWN' — the mismatch question could not even be asked (WO-14b leg 5); never null otherwise, never false to mean 'unknown'." },
     "bucket": { "type": "string", "description": "Which allowance bucket the call drew from (e.g. AU-S, AU-O, AU-F, OU)" },
     "context_shape": { "enum": ["packet", "scoped", "subsystem", "repo", "haystack"] },
     "context_size": { "type": "integer", "minimum": 0 },

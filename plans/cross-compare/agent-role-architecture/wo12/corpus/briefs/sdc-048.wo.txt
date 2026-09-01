@@ -1,0 +1,21 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Record the final gate verdict once it returns a clean approve. The
+delta-review track must return zero findings exactly, and the review
+dispositions file should mark the two prior tracks it had been holding in a
+needs-revision state as closed. The verdict file shows, in a compact form,
+the trajectory across all nine delta rounds that brought this review down
+from eleven major findings to zero, and it must cite that round-by-round
+history verbatim, not just the final tally. Every fix folded into this
+verdict traces to an owner ruling already on record, so nothing gets
+adjudicated fresh inside the verdict file itself. Update the older
+dispositions document for the two tracks this review was blocking, but leave
+every other track's disposition text unchanged. Carry forward the two items
+already flagged as non-blocking work, rather than dropping them.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

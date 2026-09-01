@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Every finding carries a [BREACH] or [GAP] bucket beside severity, then the
+verdict rule keys on it, so a CRITICAL or MAJOR BREACH forces REVISE while
+GAPs and MINOR BREACHes permit APPROVE. The rule against ending a turn on a
+still-running process was added to all five command-running roles, phrased
+for each failure shape, but no other line in those files was touched. The
+changelog entry and the version stamp record the change. The frontmatter
+lint reports 37 passed, while the installer's lint checked 19 files with
+zero errors and zero warnings.
+
+Verify the diff on its own merits.

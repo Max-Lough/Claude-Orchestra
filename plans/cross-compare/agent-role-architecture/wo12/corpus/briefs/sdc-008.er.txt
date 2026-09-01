@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The Conductor's transcript was audited fully against the guardrails. A
+disposition was ruled for the single violation it turned up, recorded as a
+complete written audit rather than a brief summary of it. The P0 substrate
+was live-exercised end to end, and its outcome was checked into its own
+written report. The Architect exercise was attempted twice, but the
+environment blocked both attempts, so both transcripts were kept on record,
+and the test suite gained only the changes the runs actually required.
+
+Verify the diff on its own merits.

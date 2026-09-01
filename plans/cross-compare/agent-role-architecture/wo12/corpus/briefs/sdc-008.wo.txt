@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This pass runs the exercise round for the review roster. Every outcome gets
+recorded in full rather than summarized, starting with the Conductor's
+session, which gets audited against the role's guardrails and given a ruled
+disposition for the one violation found, the audit itself standing as a
+complete written record that must never shrink into a shorter one. The P0
+substrate is live-exercised end to end, and the run produces its own written
+report rather than borrowed language. The Architect role gets attempted too,
+even though the environment blocks it, and the blocked attempt is preserved
+as its own transcript. A second attempt keeps a second transcript of its own
+instead of overwriting the first, so both remain on record. The band record
+and status summary then get updated to the real per-seat outcomes, confined
+to what was actually exercised, and the substrate's own production behavior
+stays untouched throughout.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

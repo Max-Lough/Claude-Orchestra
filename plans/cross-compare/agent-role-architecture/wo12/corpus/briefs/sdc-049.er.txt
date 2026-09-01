@@ -1,0 +1,17 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Wrote the round's re-review instructions and its companion writeup as two
+new files. The order pins the exact 2-commit range under review by full
+commit identifiers rather than a branch tip, so the diff being reviewed
+cannot drift at all. It states the one residual strand awaiting a ruling and
+what a clean verdict would clear, and nothing more than that. No prior file
+was touched by this pass, and both new files are brand new additions.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

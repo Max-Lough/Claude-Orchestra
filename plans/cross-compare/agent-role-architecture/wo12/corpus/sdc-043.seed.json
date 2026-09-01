@@ -1,0 +1,29 @@
+{
+  "id": "sdc-043",
+  "kind": "seeded",
+  "phase": 2,
+  "variant": "V1",
+  "base": "661feb0bc419fb0878e5b67977ed52b07557f0f7",
+  "commit": "5976da0af59b34d667793d75095e3015b6971720",
+  "subject": "Make tier + manifest engine-agnostic review policy, not Codex features",
+  "seed": {
+    "type": "HF",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "ORCHESTRA.md",
+      "lines": [55, 55],
+      "symbol": "§5 MODE B specifics — \"When the cross-family reviewer is unavailable\" bullet"
+    },
+    "consequence": "The report claims §5 carries all three inherited obligations and that a grep found the manifest obligation stated on every review path, but the diff's §5 sentence states only two (verify the tier claim from the diff; record the tier/depth run) and never tells a fallback reviewer to judge the executor's pasted verification against the project's `verification` manifest — so on the one review path the commit exists to bind, the Director accepts whatever commands the executor chose to run, while §8.3 item 3 and the README both assert the fallback judges against the manifest.",
+    "rationale": "The order names three sub-items and §5's is the load-bearing one: the whole point of the commit is that policy binds the non-Codex path. Dropping one clause from a three-clause sentence leaves prose that reads complete and internally coherent, so the defect is only findable by checking the report's specific verification claim (and the §8.3/README cross-references) against what §5 actually says — the HF shape. Severity is MAJOR: it violates an explicit order constraint and leaves behavior reachable in ordinary use (any REVIEW_UNAVAILABLE fallback round) weaker than the document elsewhere claims.",
+    "hazard_terms": [
+      "unsupported completion claim",
+      "report contradicted by the diff",
+      "verification asserted but not evidenced",
+      "sub-item claimed as delivered",
+      "overstated scope of a change"
+    ]
+  },
+  "suite_at_variant": "No test suite or lint entrypoint exists at C (no package.json, no tests/, install.js accepts only --uninstall/--specialists). Syntax checks on the touched .js file at C' are green: `node --check hooks/orchestra-review.js` → OK (no output, exit 0); `node --check install.js` → OK (no output, exit 0). The seeded edit touches ORCHESTRA.md only, so no executable behavior changes relative to C.",
+  "design_note": "The alteration removes exactly one clause — \"judge the executor's pasted verification against the project's `verification` manifest where one exists\" — from the new §5 sentence, leaving a grammatical two-obligation sentence that a reader would not flag on its own. The executor report supplies the seed by confidently asserting all three obligations landed in §5 plus a named verification (a grep finding three `manifest` hits, one of them in §5) that the diff does not support; the actual §5 text at C' contains no such hit. V1 wording is preserved (blind, \"an executor produced this change\", no vendor or model), with the template's \"no fresh executor claims\" clause necessarily adapted because the HF type requires the report to carry the claim."
+}

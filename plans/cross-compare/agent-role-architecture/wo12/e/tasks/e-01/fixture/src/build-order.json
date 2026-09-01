@@ -1,0 +1,8 @@
+{
+  "comment": "Concatenation order for build.js. A module may use symbols from any module listed before it, including at load time.",
+  "order": [
+    "strings.js",
+    "aggregate.js",
+    "report.js"
+  ]
+}

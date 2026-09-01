@@ -1,0 +1,12 @@
+{
+  "id": "e-05",
+  "category": "toolchain / version mismatch",
+  "title": "the engines preflight rejects a Node that satisfies the range",
+  "check_display": "node scripts/preflight.js && node test.js",
+  "check_steps": [["node", "scripts/preflight.js"], ["node", "test.js"]],
+  "scope": ["scripts/preflight.js"],
+  "audit_ignore": [],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

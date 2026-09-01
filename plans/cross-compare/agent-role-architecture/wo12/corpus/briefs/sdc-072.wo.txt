@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Complete a blind validation pass against the pre-registered open-item
+corpus. Record every disagreement that surfaces, and save the independent
+pass before the sealed corpus file is opened. Grading after the file is
+unsealed would invalidate the pass, and it must never be accepted as the
+recorded result. Compare the pass item by item against the reference
+grading, and report the match rate against the pre-registered threshold. For
+each disagreement, name the two candidate classes, and state whether it
+reflects a genuine ambiguity in the border rule or a flaw found in the
+corpus item itself, flagging the one at the ambiguity cap as genuine while
+recording it as exactly one ambiguity and nothing more. If the match rate
+falls short of the threshold, trigger the pre-registered next step, an
+additional border revision, before the taxonomy counts as validated for
+downstream encoding.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

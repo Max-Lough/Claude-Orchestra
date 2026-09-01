@@ -1,0 +1,20 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Leftover identification is now structural — a candidate qualifies when its
+basename is checkout and its parent's basename carries the module's
+temporary-directory prefix, and that parent alone is ever removed. The main
+worktree is skipped, while the live-checkout exemption stays untouched. Both
+reproducer shapes are pinned as regressions, then the re-review verdict and
+its dispositions are recorded. Nothing outside the sweep's identification
+and removal rule was altered. The verifier suite reports 96 passed, the
+router suite comes back green behind it, and the registry suite closes at
+31.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

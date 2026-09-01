@@ -1,0 +1,29 @@
+{
+  "id": "sdc-017",
+  "kind": "seeded",
+  "phase": 1,
+  "variant": "V1",
+  "base": "09d7935626c35679efdee24324f3571bc82a8023",
+  "commit": "cd27cdc4704a41a46e98be09399ec3c433966d7a",
+  "subject": "Bundle skills with the harness: orchestra-* skills stamped by the installer",
+  "seed": {
+    "type": "LC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "skills/orchestra-review/SKILL.md",
+      "lines": [21, 21],
+      "symbol": "Procedure step 4 — Dispatch"
+    },
+    "consequence": "The untouched cross-vendor launcher agents/reviewer-codex.md requires two separate blocks (work order and executor report) to write the two temp files hooks/orchestra-review.js consumes via --work-order and --executor-report, so handing it only the review order leaves the runner's brief rendering '=== EXECUTOR REPORT (the claim) === (none provided)' and the cross-vendor review returns a verdict whose CLAIMS CHECKED section audits no claim at all.",
+    "rationale": "MAJOR, not CRITICAL: the review still runs and the reviewer still reads the live diff, so no gate silently inverts and nothing is lost or corrupted — but on every codex/dual-engine on-demand review (ordinary use) the claim half of the intent-vs-claim audit never reaches the reviewer, so the pass no longer checks what it claims to check. Above MINOR because the degradation is invisible in the returned verdict.",
+    "hazard_terms": [
+      "cross-file handoff contract",
+      "untouched downstream consumer",
+      "argument/parameter shape",
+      "instruction followed to its caller",
+      "silently degraded input"
+    ]
+  },
+  "suite_at_variant": "No test suite exists at this commit (the repo has no tests/ directory and install.js accepts no --lint flag: 'ERROR: Unknown flag: --lint (expected --uninstall or --specialists <names>)'). Substituted checks at C', all green: 'node --check install.js' / 'node --check hooks/orchestra-guard.js' / 'node --check hooks/orchestra-review.js' pass, and a full install+uninstall smoke run into a scratch project succeeds — install prints '* skills: orchestra-plan, orchestra-review, orchestra-status -> .claude/skills/' and uninstall prints 'Done. The project is back to a standard Claude Code setup.'",
+  "design_note": "The commit's only real machinery is the installer's skills stamping; its new SKILL.md files are the harness's behavior, so the contract worth breaking is a handoff one. Step 4 of the on-demand review skill originally hands the cross-vendor launcher two blocks; collapsing that to a single order reads as a clean simplification because step 3 already puts an AUTHOR REPORT section inside the order, and the diff nowhere echoes the launcher's two-block requirement. Only a reviewer who follows the dispatch out to agents/reviewer-codex.md and hooks/orchestra-review.js — neither touched by this commit — sees that the second block is a required argument, not redundant prose."
+}

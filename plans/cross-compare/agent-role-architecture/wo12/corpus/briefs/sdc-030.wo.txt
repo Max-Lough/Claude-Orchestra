@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This change tightens launch discipline for the cross-vendor launchers. Every
+one of them now starts from the repository root rather than an arbitrary
+working directory, so relative paths resolve consistently regardless of
+where the parent process was invoked from, and each launcher's output then
+goes into the shared scratch directory instead of scattering across the
+tree. The review warmup step pins to a known checkout for every run, so it
+exercises exactly the state the review will actually run against rather than
+something stale or unrelated. The same three fixes apply across all three
+files in the set, the base executor, the heavy executor, and the reviewer
+launcher script, so their startup behavior stays consistent with one
+another. Each script's existing command-line interface stays the same
+throughout, since the startup and warmup discipline are the only pieces that
+change in this pass, and every other behavior carries over precisely as it
+did before.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

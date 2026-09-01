@@ -1,0 +1,526 @@
+diff --git a/roster/lint.js b/roster/lint.js
+index 9622065..b6c6f2d 100644
+--- a/roster/lint.js
++++ b/roster/lint.js
+@@ -36,8 +36,12 @@ const castings = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'casting
+ const charters = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charters.json'), 'utf8'));
+ 
+ // Non-role documents living in roster/ — everything else *.md must be a
+-// role file with full frontmatter and the nine fields.
+-const NON_ROLE_DOCS = new Set(['README.md', 'EXERCISES.md', 'wo8-review-dispositions.md']);
++// role file with full frontmatter and the nine fields. Record documents
++// (work-order dispositions, exercise orders/reports/verdicts) carry a
++// `woN-` or `rN-exN-` prefix by convention.
++const NON_ROLE_NAMES = new Set(['README.md', 'EXERCISES.md']);
++const RECORD_DOC_RE = /^(wo\d+-|r\d+-ex\d+-)/;
++const isRoleFile = (f) => f.endsWith('.md') && !NON_ROLE_NAMES.has(f) && !RECORD_DOC_RE.test(f);
+ 
+ const NINE_FIELDS = [
+   'Purpose', 'Casting', 'Rationale', 'Tools', 'Strengths',
+@@ -68,7 +72,7 @@ function lint() {
+   const legacyNames = new Set(
+     fs.readdirSync(path.join(MASTER, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''))
+   );
+-  const files = fs.readdirSync(ROSTER_DIR).filter((f) => f.endsWith('.md') && !NON_ROLE_DOCS.has(f));
++  const files = fs.readdirSync(ROSTER_DIR).filter(isRoleFile);
+   const seen = new Set();
+ 
+   for (const file of files) {
+@@ -159,7 +163,7 @@ if (require.main === module) {
+     for (const p of problems) console.error('  - ' + p);
+     process.exitCode = 1;
+   } else {
+-    const n = fs.readdirSync(ROSTER_DIR).filter((f) => f.endsWith('.md') && !NON_ROLE_DOCS.has(f)).length;
++    const n = fs.readdirSync(ROSTER_DIR).filter(isRoleFile).length;
+     console.log('roster contract lint OK: ' + n + ' role file(s), all nine fields populated, castings cross-checked, mirror-or-declared-exception verified');
+   }
+ }
+diff --git a/roster/r0-ex3-verdict.md b/roster/r0-ex3-verdict.md
+new file mode 100644
+index 0000000..8ceee38
+--- /dev/null
++++ b/roster/r0-ex3-verdict.md
+@@ -0,0 +1,38 @@
++# R0-EX3 verdict — cross-vendor gate re-review of fb07668..d00a7ae
++
++Recorded verbatim from the review runner, 2026-08-30. Disposition: all five
++findings verified real, fixed in round 3 (see wo8-review-dispositions.md).
++
++REVIEW ENGINE: OpenAI via Codex CLI (model: gpt-5.6-sol, sandbox: workspace-write, tier: full, timeout: 1800000ms (env), attempts: up to 2, checkout: pinned worktree @ d00a7aedd28a)
++CODEX BINARY: C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: resolved through a link: C:\Users\maxtl\AppData\Local\Programs\OpenAI\Codex\bin\codex.EXE -> C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin\codex.EXE
++PREFLIGHT: codex install layout: unknown (C:\Users\maxtl\.codex\packages\standalone\releases\0.151.0-x86_64-pc-windows-msvc\bin) — not one of the two layouts this runner knows, so helper-sibling repair can only use a directory you name in helpersDir
++PREFLIGHT: helper siblings present: codex-command-runner.exe, codex-resources, codex-windows-sandbox-setup.exe
++PREFLIGHT: auth/exec probe: ok in 6022ms
++PREFLIGHT: pinned review: checked out d00a7aedd28a into a throwaway worktree (C:\Users\maxtl\AppData\Local\Temp\orchestra-review-Ks8Glc\attempt-1\wt); the session's uncommitted files are not visible to the engine
++
++VERDICT: REVISE
++
++FINDINGS
++- [MAJOR] [BREACH] router/router.js:729 — The AU-F reserve gate examines the already-degraded casting, so generic pool degradation can bypass the promised reserve behavior — given an A1 primary casting with `AU-fable={state:"Amber",belowReserve:true}`, dispatch returns `ok:true` on Sol instead of GATED; the equivalent Conductor path also omits the required disclosure and mirror restrictions.
++- [MAJOR] [BREACH] verifier/checkout.js:84 — The ReDoS fix collapses only adjacent stars; separated wildcard runs still cause catastrophic backtracking — given `("**a").repeat(10)+"**b"` against 32 `a` characters, `matchesAny` blocked for 5.456 seconds instead of the claimed sub-5-ms behavior.
++- [MAJOR] [BREACH] verifier/verifier.js:201 — Output is truncated before credential redaction, allowing supported secrets to straddle the tail boundary — given an `sk-…` token crossing the 2,000-character cutoff, the recorded tail contained `…k-ABCDEFGHIJKLMNOPQRSTUV` instead of `[REDACTED]`.
++- [MINOR] [BREACH] verifier/checkout.js:193 — The new SIGTERM cleanup listener does not execute on Windows — given a child with the same listener killed via SIGTERM, the process exited with `handled:false`, so an active checkout is terminated without `sweepActive()` instead of being removed and deregistered.
++- [MINOR] [BREACH] router/router.js:186 — The touch-enum comparison embeds a literal NUL byte in JavaScript source — given a normal `rg -n "function dispatch" router/router.js`, the file is classified as binary and line-level results are suppressed instead of remaining searchable text.
++
++CLAIMS CHECKED
++- "every outstanding finding from the WO-8 gate review chain is closed" → REFUTED (the AU-F, glob, redaction, and signal-cleanup failures above were independently reproduced)
++- "all declared verification commands are green at d00a7ae" → CONFIRMED (ran all seven declared commands; registry 31/31, verifier 89/89, router 129/129, score gates, loaders, and roster lint passed)
++- "manifest pinned outside the audited commit by default" → CONFIRMED (`tests/verifier.test.js` exercised a head-tampered manifest and ran the base manifest)
++- "mutations are wired into runVerification and the CLI" → CONFIRMED (source trace plus integrated and CLI mutation tests)
++- "gated reviewers do not close; inert cannot relax mandatory review; uncastable required Q0 blocks" → CONFIRMED (router tests and direct call-path inspection)
++- "touches is schema-reachable and load-linted; verdict-audit and casting mismatch gates are enforced" → CONFIRMED (schema inspection and negative validation tests)
++- "Conductor AU-F reserve recasts to the Sol mirror with disclosure and restrictions; other Fable seats stay gated" → REFUTED (combined Amber+belowReserve state bypasses the reserve branch)
++- "glob ReDoS reduced to under 5 ms" → REFUTED (separated wildcard-run probe took 5.456 seconds)
++- "credential shapes are redacted from recorded output tails" → REFUTED (tail-boundary probe retained the reconstructible credential)
++- "SIGINT/SIGTERM/SIGHUP sweep checkouts then re-raise" → REFUTED (Windows SIGTERM probe terminated without invoking the listener)
++- "supplemental frontmatter/review/scan/exec/MCP suites were all green" → UNVERIFIED (frontmatter, scan, MCP, and sanitized exec suites passed; review-lane produced 108 passes and 6 environment-dependent failures against the current timeout/helper installation)
++- "the stale 21-discriminator assertion is removed and the loader reports 22" → CONFIRMED (only historical quotations remain; the loader reports 22)
++
++NITS
++- none
+diff --git a/roster/wo8-review-dispositions.md b/roster/wo8-review-dispositions.md
+index 300df49..9771c86 100644
+--- a/roster/wo8-review-dispositions.md
++++ b/roster/wo8-review-dispositions.md
+@@ -5,10 +5,12 @@ the four exercises surfaced genuine defects in the already-committed
+ substrate tranche (WO-4/5/6/14) — the seats working as designed. This file
+ records the exercises and the disposition of every finding.
+ 
+-**Status: round-2 fixes are applied under owner rulings (2026-08-30, below).
+-Every outstanding finding is closed in code. The tranche remains REVISE until
+-the cross-vendor lane re-reviews the round-2 diff — re-review is the one
+-remaining step before the gate closes.**
++**Status: round-2 fixes applied under owner rulings (2026-08-30, below); the
++R0-EX3 re-review (Sol · high, pinned `fb07668..d00a7ae`) confirmed every
++round-1/2 closure real but returned REVISE with 3 MAJOR + 2 MINOR defects in
++the NEW round-2 code — all five reproduced locally and fixed in round 3 (see
++§R0-EX3 below). The tranche remains REVISE until a re-review of the round-3
++diff (R0-EX4) comes back clean.**
+ 
+ ## Exercises
+ 
+@@ -165,11 +167,49 @@ REVISE on new MINORs, all small/local, to fold into the next round:
+   outstanding list** — my confinement fix this round is necessary but not sufficient against a
+   symlinked checkout.
+ 
++## R0-EX3 (re-review of round 2) and the round-3 dispositions
++
++R0-EX3 (Sol · high, Codex CLI, pinned `fb07668..d00a7ae`; order at
++`roster/r0-ex3-order.md`, verdict verbatim at `roster/r0-ex3-verdict.md`):
++**REVISE** — every round-1/2 closure independently CONFIRMED (it re-ran all
++seven declared verification commands itself), but 5 defects found in the new
++round-2 code. All five reproduced locally before fixing; all fixed:
++
++- **[MAJOR] reserve gate examined the already-degraded casting** — at
++  `AU-fable {Amber, belowReserve}` the §5.5 auto-recast silently satisfied
++  the P15 stop (a WORSE state than Green+belowReserve produced a MORE
++  permissive outcome). Fixed: `cast()` records the requested rung;
++  `dispatch()`/`resolveSeat()` run a `reserveGate` against the REQUESTED
++  model first (Amber arming still checks the served casting). A Fable/Opus
++  primary at any-state+belowReserve now GATES; the Conductor takes the
++  disclosed reserve path. Corollary fixed with it: EVERY mirror-served
++  Conductor turn now carries `disclosed:true` + the mirror restrictions,
++  whichever path produced it.
++- **[MAJOR] glob ReDoS survived as separated star runs** (`**a**a…` — 5.4 s
++  on 32 chars). The regex is gone entirely: patterns token-compile to a
++  cached list and match via a linear-pass DP (O(pattern × path), no
++  backtracking to detonate). Semantics regression-tested.
++- **[MAJOR] tail-then-redact leaked straddling credentials** — a token
++  crossing the 2000-char cutoff survived as a reconstructible suffix.
++  Fixed: redaction runs over the FULL output before truncation; end-to-end
++  regression through `runShell`.
++- **[MINOR] SIGTERM listener inert on Windows** — TerminateProcess runs no
++  userland handler; nothing can fix that. Fixed honestly: Windows installs
++  the trappable set (SIGINT/SIGBREAK/SIGHUP), POSIX keeps SIGTERM, the
++  limitation is documented in-code, and the startup `worktree prune` is the
++  named recovery for untrappable kills.
++- **[MINOR] literal NUL bytes in `router.js`** (the touches-enum join
++  separators) made the file read as binary to line tools. Replaced with a
++  comma; a no-control-bytes regression check pinned in the router suite.
++
++Also this round: `roster/lint.js` exempts record documents by prefix
++(`woN-`/`rN-exN-`) instead of a growing name list. R0-EX3's one UNVERIFIED
++row (review-lane suite: 6 environment-dependent failures in ITS sandbox)
++reflects the reviewer's environment; the suite is green here.
++
+ ## Note
+ 
+-This tranche's mandatory cross-vendor review (R0-EX2) is **REVISE**, and the
+-verdict stands until the round-2 diff is re-reviewed by the cross-vendor
+-lane. Everything the review found is now fixed in code under the owner
+-rulings of 2026-08-30 (see above); the two open items are process, not code:
+-(1) the cross-vendor re-review of this round, and (2) the registered
+-follow-on — the verification-time diff-derived `touches` cross-check.
++The tranche's gate verdict is **REVISE** until a cross-vendor re-review of
++the round-3 diff (R0-EX4) comes back clean. Open items are process, not
++code: (1) R0-EX4, and (2) the registered follow-on — the verification-time
++diff-derived `touches` cross-check.
+diff --git a/router/router.js b/router/router.js
+index ec4a099..4e9530f 100644
+--- a/router/router.js
++++ b/router/router.js
+@@ -183,7 +183,7 @@ function createRouter(opts) {
+     const touchUnion = [...new Set([].concat(q0cfg.touchAreas || [], castings.securityTriggerList || []))].sort();
+     if (!Array.isArray(touchesEnum)) {
+       fail('order.schema.json must declare a typed `touches` enum — the Q0/security touch triggers read that field');
+-    } else if (touchesEnum.slice().sort().join(' ') !== touchUnion.join(' ')) {
++    } else if (touchesEnum.slice().sort().join(',') !== touchUnion.join(',')) {
+       fail('order.schema.json touches enum diverges from q0Triggers.touchAreas ∪ securityTriggerList');
+     }
+   }
+@@ -357,6 +357,26 @@ function createRouter(opts) {
+     return { allowed: true };
+   }
+ 
++  // The reserve half of P15 alone, evaluated against the REQUESTED rung's
++  // model — before the degradation machine's output is accepted. The R0-EX3
++  // finding: at Amber+belowReserve the §5.5 auto-recast used to satisfy the
++  // gate silently ("no Fable dispatch below reserve" was answered by never
++  // asking), so a WORSE pool state produced a MORE permissive outcome than
++  // Green+belowReserve. Reserve is a stop-the-line predicate: the response
++  // (mirror or wait) is the Conductor's decision — or the O0 reserve path —
++  // never the ladder's silent substitution. The Amber ARMING check stays in
++  // preDispatchGate, applied to the casting actually served.
++  function reserveGate(model, buckets) {
++    const nb = normalizeBuckets(buckets);
++    if (model === 'Opus 5' && nb['AU-opus'].belowReserve) {
++      return { allowed: false, gate: 'AU-O reserve (P15)', lawfulResponses: ['mirror', 'wait'], reason: 'AU-opus predicted below reserve — requested casting stops before the boundary; mirror-or-wait is a decision, not a silent substitution' };
++    }
++    if (model === 'Fable 5' && nb['AU-fable'].belowReserve && nb['AU-fable'].state === 'Green') {
++      return { allowed: false, gate: 'AU-F reserve (P15)', lawfulResponses: ['Sol mirror at matched effort', 'wait'], reason: 'AU-fable predicted below reserve — requested casting stops before the boundary; Conductor turns take the disclosed Sol-mirror reserve path' };
++    }
++    return { allowed: true };
++  }
++
+   // ---- cast(role, bucket_state) → (vendor, model, effort) ---------------
+   // The degradation machine: Green dispatches the requested rung; Amber
+   // re-casts authoring to the healthy pool's mirror; Orange suspends
+@@ -418,10 +438,14 @@ function createRouter(opts) {
+     }
+ 
+     const state = effectiveState(rung.model, nb);
++    // `requested` records the rung selected BEFORE degradation: the reserve
++    // gate (P15) is evaluated against this, not the recast output — a
++    // degraded recast must never silently satisfy a reserve stop.
+     const result = (rg, name, extra) => Object.assign({
+       ok: true, role: roleName, rung: name,
+       casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
+       note: rg.note, bucketState: state,
++      requested: { model: rung.model, rung: rungName },
+     }, extra || {});
+ 
+     // Ceiling rungs defer from Orange down (AU-fable stops first, §5.5).
+@@ -722,12 +746,17 @@ function createRouter(opts) {
+       ? null
+       : cast(roleName, buckets, Object.assign({ risk: order.risk, purpose: o.purpose || 'authoring' }, o.castOpts));
+ 
+-    // …then the mechanical pre-dispatch gate on whatever came out — BEFORE
+-    // Q0 creation, so the companion is cast opposite the family that will
+-    // ACTUALLY author (a recast changes the author family).
++    // …then the mechanical pre-dispatch gates on what came out — BEFORE Q0
++    // creation, so the companion is cast opposite the family that will
++    // ACTUALLY author (a recast changes the author family). Two gates, in
++    // order (R0-EX3 finding): the RESERVE gate runs against the REQUESTED
++    // rung — a §5.5 degradation recast must never silently satisfy a P15
++    // reserve stop — then the full gate (reserve + Amber arming) runs
++    // against the casting actually served.
+     let gate = { allowed: true };
+     if (casting && casting.ok && !casting.substrate) {
+-      gate = preDispatchGate(casting.casting, buckets);
++      gate = reserveGate((casting.requested || casting.casting).model, buckets);
++      if (gate.allowed) gate = preDispatchGate(casting.casting, buckets);
+       if (!gate.allowed && roleName === 'Conductor' && gate.gate === 'AU-F reserve (P15)') {
+         // Ruling 2a: the AU-fable reserve re-casts the Conductor's turns to
+         // the Sol mirror at matched effort — the plan's promised reserve
+@@ -741,8 +770,6 @@ function createRouter(opts) {
+             casting = Object.assign({}, mirror, {
+               recastFrom: casting.rung,
+               recastReason: gate.reason,
+-              disclosed: true,
+-              restrictions: ((role.rungs || {}).mirror && role.rungs.mirror.restrictions) || [],
+             });
+             gate = mirrorGate;
+           }
+@@ -751,6 +778,17 @@ function createRouter(opts) {
+       if (!gate.allowed) {
+         return { ok: false, outcome: 'GATED', gate, role: roleName, class: cls, order, reason: gate.reason };
+       }
++      // Every Conductor turn served on the mirror carries the mirror's §6.6
++      // restrictions and the disclosure marker — REGARDLESS of which path
++      // put it there (the reserve branch above, or the §5.5 degradation
++      // machine inside cast()). The R0-EX3 finding: the Amber-path recast
++      // arrived undisclosed and unrestricted.
++      if (roleName === 'Conductor' && casting.rung === 'mirror') {
++        casting = Object.assign({}, casting, {
++          disclosed: true,
++          restrictions: ((role.rungs || {}).mirror && role.rungs.mirror.restrictions) || [],
++        });
++      }
+     }
+     if (casting && !casting.ok) {
+       return { ok: false, outcome: casting.outcome, role: roleName, class: cls, order, reason: casting.reason };
+@@ -862,7 +900,11 @@ function createRouter(opts) {
+     let c = cast(a.new.role, o.buckets, castOpts);
+     let gate = { allowed: true };
+     if (c.ok && !c.substrate) {
+-      gate = preDispatchGate(c.casting, o.buckets);
++      // Reserve on the REQUESTED rung first (a degradation recast never
++      // silently satisfies a P15 stop), then the full gate on the served
++      // casting — same order as dispatch().
++      gate = reserveGate((c.requested || c.casting).model, o.buckets);
++      if (gate.allowed) gate = preDispatchGate(c.casting, o.buckets);
+       if (!gate.allowed) {
+         c = { ok: false, outcome: 'GATED', role: a.new.role, rung: c.rung, gate, reason: gate.reason };
+       }
+@@ -897,7 +939,7 @@ function createRouter(opts) {
+     registry, castings, charters, aliases: seatAliases, resolveSeat, problems: [],
+     route, resolveClass, cast, reviewer, reviewPolicy, dispatch, processReclassify,
+     poolState: (r) => poolState(r, ladderCfg),
+-    preDispatchGate, q0Required, createQ0Order,
++    preDispatchGate, reserveGate, q0Required, createQ0Order,
+     requiredReserve: (f) => requiredReserve(f, castings.reserve),
+     familyOf, bucketsFor, effectiveState: (m, b) => effectiveState(m, normalizeBuckets(b)),
+     normalizeBuckets, allGreen,
+diff --git a/tests/review-lane.test.js b/tests/review-lane.test.js
+index ea640fc..6bb938f 100644
+--- a/tests/review-lane.test.js
++++ b/tests/review-lane.test.js
+@@ -857,7 +857,13 @@ function case15() {
+ 
+   writeProjectConfig(fx, { helperSiblings: ['codex-command-runner.exe', 'codex-resources'] });
+ 
+-  const wantHelpers = { ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' };
++  // Isolate the repair search from the REAL machine: the runner's known-good
++  // hunt walks home-derived paths (~/.codex/...), so a genuine install on
++  // the test machine that happens to carry the helpers would silently repair
++  // the "missing" fixture and flip these assertions (observed the moment
++  // this machine's Codex install was fixed by hand).
++  const iso = { HOME: fx.root, USERPROFILE: fx.root, CODEX_HOME: path.join(fx.root, '.codex') };
++  const wantHelpers = Object.assign({ ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe,codex-resources' }, iso);
+   const missing = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, wantHelpers));
+   const mout = missing.stdout || '';
+   check(
+@@ -919,6 +925,7 @@ function case15() {
+   const hard = runReview(fx2, ['--head-ref', fx2.head], {
+     CODEX_BIN: fakeBin2,
+     ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe',
++    HOME: fx2.root, USERPROFILE: fx2.root, CODEX_HOME: path.join(fx2.root, '.codex'),
+   });
+   check(
+     'requireHelperSiblings turns a missing helper into a refusal',
+diff --git a/tests/router.test.js b/tests/router.test.js
+index b0f90fc..101869c 100644
+--- a/tests/router.test.js
++++ b/tests/router.test.js
+@@ -726,6 +726,33 @@ check('a caller-chosen prototype-key rung hits the typed refusal, not a prototyp
+ check('inherited bucket values never satisfy the requirement (own properties only)',
+   (() => { try { router.cast('Builder', Object.create(G)); return false; } catch (e) { return /fail closed/.test(e.message); } })());
+ check('bucketsFor never reads the prototype chain', router.bucketsFor('constructor') === null && router.bucketsFor('__proto__') === null);
++// R0-EX3 findings, pinned as regressions:
++check('R0-EX3: a §5.5 degradation recast never silently satisfies a P15 reserve stop (Amber+belowReserve GATES a Fable primary)',
++  (() => {
++    const d = router.dispatch(order('A1', 'T1'), buckets({ 'AU-fable': { state: 'Amber', belowReserve: true } }));
++    // Either the reserve stop fires, or §5.5 has already moved authoring off
++    // the reserve-bound pool — no Fable turn is served below reserve either way.
++    return d.ok === false
++      ? d.outcome === 'GATED' && d.gate.gate === 'AU-F reserve (P15)'
++      : d.casting.casting.model !== 'Fable 5';
++  })());
++check('R0-EX3: the Conductor reserve path survives Amber+belowReserve — Sol mirror, disclosed, restrictions carried',
++  (() => {
++    const d = router.dispatch(order('O0', 'T1'), buckets({ 'AU-fable': { state: 'Amber', belowReserve: true } }));
++    return d.ok && d.casting.casting.model === 'GPT-5.6 Sol' && d.casting.disclosed === true && (d.casting.restrictions || []).length > 0;
++  })());
++check('R0-EX3: EVERY mirror-served Conductor turn is disclosed with restrictions (the plain-Amber degradation path too)',
++  (() => {
++    const d = router.dispatch(order('O0', 'T1'), buckets({ 'AU-fable': 'Amber' }));
++    return d.ok && d.casting.casting.model === 'GPT-5.6 Sol' && d.casting.disclosed === true && (d.casting.restrictions || []).length > 0;
++  })());
++check('R0-EX3: the same requested-rung reserve stop holds for AU-opus through dispatch',
++  (() => {
++    const d = router.dispatch(order('I0', 'T1'), buckets({ 'AU-opus': { state: 'Amber', belowReserve: true, quartermasterConfirmation: true } }));
++    return d.ok === false && d.outcome === 'GATED' && d.gate.gate === 'AU-O reserve (P15)';
++  })());
++check('R0-EX3: router.js source carries no control bytes (a NUL made the file read as binary to line tools)',
++  !/\x00/.test(fs.readFileSync(path.join(MASTER, 'router', 'router.js'), 'utf8')));
+ check('cast() uses the same risk oracle as every other risk read (sloppy T1 allowed; sloppy T2 and garbage FORBIDDEN on the Terra E4 lane)',
+   (() => {
+     const ok = router.cast('Data Engineer', G, { rung: 'reversibleT1', risk: 't1' });
+diff --git a/tests/verifier.test.js b/tests/verifier.test.js
+index 77f1a42..30333e4 100644
+--- a/tests/verifier.test.js
++++ b/tests/verifier.test.js
+@@ -525,11 +525,37 @@ section('12. Blast radius: minimal env, redacted tails, hardened refs, real-path
+     !linked || (verifier.confine(base, 'sneaky/target.txt') === null && verifier.confine(base, 'real/file.txt') !== null));
+ 
+   // The E7 ReDoS finding: 8 stacked stars measured 7.9 s pre-fix. Post-fix
+-  // (star-run collapse + cache) the same probe must be effectively instant.
++  // the same probe must be effectively instant.
+   const t0 = Date.now();
+   checkoutLib.matchesAny('a/'.repeat(40) + 'deep-file-name-that-never-matches.txt', ['********x', '**/**/**/**/**/**/**y']);
+   const redosMs = Date.now() - t0;
+   check('glob compilation is star-collapse-safe (adversarial pattern < 250 ms, was ~7.9 s)', redosMs < 250, redosMs + 'ms');
++
++  // R0-EX3: SEPARATED star runs detonated the collapsed-regex fix (5.4 s on
++  // 32 chars). The DP matcher is polynomial by construction — pin it.
++  const t1 = Date.now();
++  const sepMatch = checkoutLib.matchesAny('a'.repeat(32), [('**a').repeat(10) + '**b']);
++  const sepMs = Date.now() - t1;
++  check('R0-EX3: separated star runs cannot detonate the matcher (< 250 ms, was 5.4 s)', sepMs < 250 && sepMatch === false, sepMs + 'ms');
++  check('glob semantics survive the DP rewrite',
++    checkoutLib.matchesAny('node_modules/x/y.js', ['node_modules/**']) === true &&
++    checkoutLib.matchesAny('a/b', ['a/**/b']) === true &&
++    checkoutLib.matchesAny('foo', ['**/foo']) === true &&
++    checkoutLib.matchesAny('a/b/c.log', ['**/*.log']) === true &&
++    checkoutLib.matchesAny('c.log', ['*.log']) === true &&
++    checkoutLib.matchesAny('x.logx', ['*.log']) === false &&
++    checkoutLib.matchesAny('a/b', ['*']) === false &&
++    checkoutLib.matchesAny('ab', ['a*b']) === true &&
++    checkoutLib.matchesAny('a/x/b', ['a*b']) === false);
++
++  // R0-EX3: tail-then-redact let a credential straddle the 2000-char cutoff
++  // and survive as a reconstructible suffix. Redaction now runs over the
++  // FULL output before truncation — end-to-end through runShell.
++  const straddleCmd = 'node -e "console.log(\'sk-ABCDEFGHIJKLMNOPQRSTUV\' + \'x\'.repeat(1990))"';
++  const straddle = verifier.runManifest(fixture.dir, { commands: [{ command: straddleCmd }], coverage: 'partial' });
++  check('R0-EX3: a credential straddling the tail cutoff is redacted, never truncated into a reconstructible suffix',
++    straddle.commands[0].exit_code === 0 && !/MNOPQRSTUV/.test(straddle.commands[0].stdout_tail),
++    JSON.stringify(straddle.commands[0].stdout_tail).slice(0, 120));
+ }
+ 
+ section('13. The mutation check is wired into the integrated round and the CLI');
+diff --git a/verifier/checkout.js b/verifier/checkout.js
+index dfdcc30..d0bbfb2 100644
+--- a/verifier/checkout.js
++++ b/verifier/checkout.js
+@@ -64,41 +64,68 @@ function runGit(args, opts) {
+ 
+ // Minimal glob matcher for the classification patterns: `**` crosses path
+ // separators, `*` does not; paths are normalized to forward slashes first.
+-// Compiled regexes are cached and star-runs collapsed (a run of `**` compiled
+-// to stacked `.*.*` groups was measured at 7.9 s for 8 stars — quadratic
+-// backtracking, the E7 ReDoS finding) so a pattern from any future
+-// agent-editable source cannot stall the audit.
++//
++// NOT a regex. The first ReDoS fix collapsed only ADJACENT star runs; the
++// R0-EX3 re-review detonated the compiled regex with SEPARATED runs
++// (`**a**a**a…` — 5.4 s on 32 characters), because stacked `.*` groups
++// backtrack combinatorially no matter how each run is collapsed. Patterns
++// are token-compiled once (cached) and matched with a small dynamic program
++// over tokens × characters — strictly O(pattern × path), no backtracking to
++// detonate, whatever an agent-editable pattern source someday feeds it.
+ const GLOB_CACHE = new Map();
+-function globToRegExp(pattern) {
+-  const norm = pattern.replace(/\\/g, '/');
+-  const cached = GLOB_CACHE.get(norm);
+-  if (cached) return cached;
+-  let re = '';
++function compileGlob(pattern) {
++  const norm = String(pattern).replace(/\\/g, '/');
++  let tokens = GLOB_CACHE.get(norm);
++  if (tokens) return tokens;
++  tokens = [];
+   for (let i = 0; i < norm.length; i++) {
+-    const ch = norm[i];
+-    if (ch === '*') {
++    if (norm[i] === '*') {
+       let stars = 1;
+-      while (norm[i + 1] === '*') { stars++; i++; } // collapse the whole run
++      while (norm[i + 1] === '*') { stars++; i++; }
+       if (stars >= 2) {
+         if (norm[i + 1] === '/') i++; // `**/` also matches zero directories
+-        if (!re.endsWith('.*')) re += '.*'; // never stack adjacent .*
+-      } else {
+-        re += '[^/]*';
++        if (tokens[tokens.length - 1] !== 'globstar') tokens.push('globstar');
++      } else if (tokens[tokens.length - 1] !== 'star') {
++        tokens.push('star');
+       }
+-    } else if ('\\^$.|?+()[]{}'.indexOf(ch) !== -1) {
+-      re += '\\' + ch;
+     } else {
+-      re += ch;
++      tokens.push(norm[i]); // literal character (one-char tokens)
+     }
+   }
+-  const compiled = new RegExp('^' + re + '$');
+-  GLOB_CACHE.set(norm, compiled);
+-  return compiled;
++  GLOB_CACHE.set(norm, tokens);
++  return tokens;
++}
++
++// dp[j] = "the tokens consumed so far can match text[0..j)". Each token
++// updates the whole row in one linear pass.
++function globMatch(tokens, text) {
++  const n = text.length;
++  let prev = new Array(n + 1).fill(false);
++  prev[0] = true;
++  for (const tok of tokens) {
++    const next = new Array(n + 1).fill(false);
++    if (tok === 'globstar') {
++      let reachable = false;
++      for (let j = 0; j <= n; j++) {
++        reachable = reachable || prev[j];
++        next[j] = reachable; // spans any characters, including '/'
++      }
++    } else if (tok === 'star') {
++      for (let j = 0; j <= n; j++) {
++        if (prev[j]) next[j] = true;
++        else if (j > 0 && next[j - 1] && text[j - 1] !== '/') next[j] = true;
++      }
++    } else {
++      for (let j = n; j >= 1; j--) next[j] = prev[j - 1] && text[j - 1] === tok;
++    }
++    prev = next;
++  }
++  return prev[n];
+ }
+ 
+ function matchesAny(p, patterns) {
+   const norm = String(p).replace(/\\/g, '/');
+-  return (patterns || []).some((pat) => globToRegExp(pat).test(norm));
++  return (patterns || []).some((pat) => globMatch(compileGlob(pat), norm));
+ }
+ 
+ // ------------------------------------------------------------- fingerprint
+@@ -187,8 +214,18 @@ function installExitHandler() {
+   // E7 LOW finding: an interrupted run left writable checkouts and stale
+   // worktree registrations behind (observed on this machine). Sweep, then
+   // re-raise the signal so the exit status stays honest; if re-raising is
+-  // unsupported (Windows), fall back to a plain non-zero exit.
+-  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
++  // unsupported, fall back to a plain non-zero exit.
++  //
++  // Windows honesty (R0-EX3): SIGTERM is NOT deliverable to a Node handler
++  // on Windows — TerminateProcess kills without running anything, so no
++  // userland listener can help there. What IS trappable on Windows: SIGINT
++  // (Ctrl+C), SIGBREAK (Ctrl+Break), SIGHUP (console close, ~5 s grace).
++  // The startup `git worktree prune` in createCheckout() is the recovery
++  // path for the untrappable kills; these handlers cover the trappable rest.
++  const sigs = process.platform === 'win32'
++    ? ['SIGINT', 'SIGBREAK', 'SIGHUP']
++    : ['SIGINT', 'SIGTERM', 'SIGHUP'];
++  for (const sig of sigs) {
+     try {
+       process.on(sig, () => {
+         sweepActive();
+diff --git a/verifier/verifier.js b/verifier/verifier.js
+index d83c18a..b9f3054 100644
+--- a/verifier/verifier.js
++++ b/verifier/verifier.js
+@@ -198,8 +198,11 @@ function runShell(command, cwd, timeoutMs) {
+     error: r.error ? String(r.error.message || r.error) : null,
+     timed_out: !!(r.error && r.error.code === 'ETIMEDOUT'),
+     duration_ms: Date.now() - started,
+-    stdout_tail: redact(tail(r.stdout)),
+-    stderr_tail: redact(tail(r.stderr)),
++    // Redact BEFORE truncating (R0-EX3): tail-then-redact let a credential
++    // straddle the cutoff and survive as a reconstructible suffix — the
++    // pattern only matches whole tokens, and half a token is still a secret.
++    stdout_tail: tail(redact(r.stdout)),
++    stderr_tail: tail(redact(r.stderr)),
+   };
+ }
+ 

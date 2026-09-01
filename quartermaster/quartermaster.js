@@ -461,7 +461,18 @@ function analyze(opts) {
   // only gate a reading crosses for routing. It survives only as
   // predictThrottle()'s own, unrelated bound — see the ruling comment above
   // DEFAULT_MAX_STALE_MS.
-  const forecast = opts.forecast ? validateForecast(opts.forecast) : defaultForecast();
+  // Q6 (triage): gate on IDENTITY (`=== undefined`), never truthiness. The
+  // old `opts.forecast ? ... : defaultForecast()` treated any falsy override
+  // — null, 0, '', false, NaN — as "no override supplied" and silently
+  // substituted the loosest default reserve (0.08 floor) instead of throwing
+  // on the caller's malformed value. A caller who wrote
+  // `forecast: {mandatoryReviewDraw: 0, incidentDraw: 0}` (an EXPLICIT
+  // zero-draw override — a legitimate value the test suite's own FC0
+  // fixture uses throughout) is fine — that reaches validateForecast() and passes
+  // — but `forecast: null` or `forecast: 0` must be refused as a malformed
+  // caller-supplied option (module-boundary validation, round 2's own rule),
+  // not quietly reinterpreted as "use the default".
+  const forecast = opts.forecast === undefined ? defaultForecast() : validateForecast(opts.forecast);
   const reserve = requiredReserve(forecast, RESERVE_CFG);
 
   const parsed = readEntries(file);
@@ -551,9 +562,32 @@ function analyze(opts) {
       continue;
     }
 
-    // (4) Throttles inside the freshness window.
+    // (4) Throttles. Q4 CRITICAL (triage): a future-dated throttle used to be
+    // silently dropped by the `now - t.at >= 0` half of this very filter — a
+    // HARD throttle timestamped +2h vanished with no disclosure at all, the
+    // bucket published Green, and preDispatchGate let an Opus dispatch
+    // through it. A future timestamp is exactly the same tamper/clock signal
+    // on a throttle that it is on a reading (see the future-reading check at
+    // (3) above) — it must not be filtered into nothing. Partition instead of
+    // filter: find any future-dated throttle FIRST, of either severity, and
+    // fail the whole bucket closed on it, before the freshness-window filter
+    // ever runs.
+    const futureThrottle = throttles.find((t) => now - t.at < 0);
+    if (futureThrottle) {
+      info.problem =
+        'REFUSED for ' + bucket + ': a ' + futureThrottle.severity + ' throttle (line ' + futureThrottle.lineNumber +
+        ', ' + futureThrottle.ts + ') is dated in the future relative to now (' + now.toISOString() + ') — a clock ' +
+        'skew or a tampered record, either way not evidence. A future-dated throttle is not silently dropped: it ' +
+        'fails the whole bucket closed exactly like a future-dated reading, rather than vanishing from the ' +
+        'published state.';
+      out.buckets[bucket] = info;
+      continue;
+    }
+    // Every throttle reaching this filter is now guaranteed non-future
+    // (the guard above already refused the bucket on any that were), so the
+    // filter only needs the freshness-window upper bound.
     info.throttles = throttles
-      .filter((t) => now - t.at <= maxFreshMs && now - t.at >= 0)
+      .filter((t) => now - t.at <= maxFreshMs)
       .map((t) => ({ ts: t.ts, severity: t.severity, message: t.message, lineNumber: t.lineNumber, ageMs: now - t.at }));
     info.hardThrottleFresh = info.throttles.some((t) => t.severity === 'hard');
 
@@ -596,8 +630,12 @@ function analyze(opts) {
     //   (b) its evidenceTs equals the CURRENT latest valid reading's ts —
     //       a newer reading since landing VOIDS it (superseded evidence);
     //   (c) that current latest reading's OWN fraction still satisfies the R5
-    //       predicate (strictly above orangeBelow) — checked against the live
-    //       reading, never against the confirmation's own recorded fraction;
+    //       predicate — strictly inside the Amber band (above orangeBelow AND
+    //       below amberBelow, triage fix Q1: the original code enforced only
+    //       the lower bound, so a Green-band 0.92 reading could mint a real,
+    //       arm-lifting confirmation, contradicting this very function's own
+    //       "the Amber band only" claim) — checked against the live reading,
+    //       never against the confirmation's own recorded fraction;
     //   (d) no throttle is fresh and the bucket is not exhausted for this
     //       bucket right now — the same facts that make confirm() itself
     //       refuse today (MAJOR, below);
@@ -611,10 +649,41 @@ function analyze(opts) {
     //       against stale live evidence. Listed for completeness — kept
     //       consistent with confirm()'s own predicate — even though it can
     //       never actually fire from this call site.
+    //   (g) the bucket is not belowReserve right now (triage fix Q2: without
+    //       this clause the published contract could carry
+    //       {reserveBreached:true, quartermasterConfirmation:true}
+    //       simultaneously — an asserted arm-lift on a bucket the router
+    //       calls Red, shielded from mattering only by gate-evaluation ORDER
+    //       in router.js, which is the router's business, not a reason for
+    //       this seat to publish a self-contradicting contract).
+    //   (h) the confirmation entry itself is not dated in the future (triage
+    //       fix Q4: a future-dated confirmation is a clock-skew/tamper signal
+    //       exactly like a future-dated reading or throttle — it fails the
+    //       whole bucket closed above, before this code is ever reached,
+    //       rather than being silently filtered out as merely "not fresh").
     // Any violation VOIDS the confirmation: quartermasterConfirmation is
     // omitted, the state publishes without it, and both info.confirmation and
     // the human report say exactly why.
-    const freshConfirm = confirmations.filter((c) => now - c.at <= maxFreshMs && now - c.at >= 0).pop() || null;
+    // Q4 CRITICAL (triage): a future-dated CONFIRMATION is the same tamper/
+    // clock signal as a future-dated reading or throttle, and the old
+    // `now - c.at >= 0` half of the filter below silently dropped it too —
+    // it just never counted as `freshConfirm`, no different from a
+    // confirmation that had simply expired, and the bucket carried on as if
+    // no confirmation (fraudulent or clock-skewed) had ever been recorded.
+    // That is itself information: a confirmation entry dated in the future
+    // is evidence the file has been tampered with or the clock is wrong, and
+    // the whole bucket fails closed on it rather than silently proceeding as
+    // "unconfirmed but otherwise fine".
+    const futureConfirmation = confirmations.find((c) => now - c.at < 0);
+    if (futureConfirmation) {
+      info.problem =
+        'REFUSED for ' + bucket + ': a confirmation (line ' + futureConfirmation.lineNumber + ', ' +
+        futureConfirmation.ts + ') is dated in the future relative to now (' + now.toISOString() + ') — a clock ' +
+        'skew or a tampered record, either way not evidence.';
+      out.buckets[bucket] = info;
+      continue;
+    }
+    const freshConfirm = confirmations.filter((c) => now - c.at <= maxFreshMs).pop() || null;
     let confirmationVoidReason = null;
     if (freshConfirm) {
       if (freshConfirm.evidenceTs !== latest.ts) {
@@ -626,6 +695,32 @@ function analyze(opts) {
         confirmationVoidReason =
           'the confirmed reading (' + pct(latest.remainingFraction) + ') no longer satisfies the R5 Amber ' +
           'predicate (strictly above orangeBelow, ' + pct(THRESHOLDS.orangeBelow) + ') — the confirmation is void.';
+      } else if (!(latest.remainingFraction < THRESHOLDS.amberBelow)) {
+        // Q1 (triage): confirm()'s own docstring says "the Amber-arm
+        // confirmation covers the Amber band only", but this void-chain
+        // previously enforced only the LOWER band bound (orangeBelow) —
+        // a Green-band reading (e.g. 0.92) could carry a live, arm-lifting
+        // confirmation forever. Mirrors the upper bound confirm() itself now
+        // enforces (~line 785) so a confirmation is voided at analyze() time
+        // unless the live reading is genuinely inside the Amber band.
+        confirmationVoidReason =
+          'the confirmed reading (' + pct(latest.remainingFraction) + ') is at or above the ladder\'s amberBelow ' +
+          'threshold (' + pct(THRESHOLDS.amberBelow) + ') — the bucket is Green (or the reading has since risen out ' +
+          'of Amber), and the R5 Amber-arm confirmation covers the Amber band only; the confirmation is void.';
+      } else if (belowReserve) {
+        // Q2 (triage): with no belowReserve clause here, the published
+        // contract could carry {reserveBreached:true (state Red),
+        // quartermasterConfirmation:true} simultaneously — an asserted
+        // arm-lift on a bucket the router itself calls Red, shielded from
+        // actually mattering only by gate-evaluation ORDER in router.js
+        // (the P15 reserve gate happens to be checked before the confirmed
+        // Amber arm). That ordering is the router's business, not a reason
+        // for this seat to publish a self-contradicting contract. A
+        // confirmation is void whenever the bucket is belowReserve at
+        // analyze() time, regardless of what fraction band the reading sits in.
+        confirmationVoidReason =
+          bucket + ' is below the required reserve (' + pct(reserve) + ') at analyze() time — a confirmation ' +
+          'cannot arm the gate for a bucket the router will read as reserve-breached; the confirmation is void.';
       } else if (throttleObserved) {
         confirmationVoidReason =
           'a throttle is fresh for ' + bucket + ' — a confirmation cannot arm the gate over an active throttle signal; the confirmation is void.';
@@ -708,11 +803,15 @@ function bucketStateDetail(opts) {
  *
  *   confirmation is EVIDENCE, not permission. It is granted only when a FRESH
  *   reading (≤ maxFreshMs) exists for the bucket AND that reading is strictly
- *   above the ladder's orangeBelow threshold — i.e. the bucket is genuinely in
- *   the Amber band the gate was written for, not sliding through Orange or Red
- *   behind a stale number. Otherwise it is REFUSED and NOTHING is appended:
- *   a refused confirmation must leave no artifact a later reader could mistake
- *   for a grant.
+ *   INSIDE the ladder's Amber band — above orangeBelow AND below amberBelow —
+ *   i.e. the bucket is genuinely in the Amber band the gate was written for,
+ *   not sliding through Orange or Red behind a stale number, and not sitting
+ *   in Green where no confirmation is even needed (triage fix Q1: the upper
+ *   bound was missing entirely — a Green-band 0.92 reading used to mint a
+ *   real, arm-lifting confirmation, contradicting this very paragraph's own
+ *   "the Amber band only" claim). Otherwise it is REFUSED and NOTHING is
+ *   appended: a refused confirmation must leave no artifact a later reader
+ *   could mistake for a grant.
  *
  * A grant appends a confirmation entry — the audit trail that makes a wrong
  * confirmation attributable after the fact.
@@ -766,7 +865,24 @@ function confirm(bucket, opts) {
   if (ageMs > maxFreshMs) {
     return { confirmed: false, bucket, reason: 'latest ' + bucket + ' reading is ' + fmtAge(ageMs) + ' old (line ' + latest.lineNumber + '), past the ' + fmtAge(maxFreshMs) + ' freshness window — a stale number cannot arm a gate that exists because the bucket fails silently' };
   }
-  const freshThrottle = throttles.find((t) => now - t.at <= maxFreshMs && now - t.at >= 0);
+  // Q4 CRITICAL (triage): a future-dated throttle is a clock-skew/tamper
+  // signal, same as a future-dated reading two checks above — it must not be
+  // silently excluded by the freshness-window filter below (which the old
+  // `now - t.at >= 0` half of that filter did) as if it simply weren't
+  // there. confirm() refuses outright while ANY throttle for this bucket is
+  // dated in the future, of either severity: the file cannot be trusted
+  // enough to grant an arm-lifting confirmation off it.
+  const futureThrottle = throttles.find((t) => now - t.at < 0);
+  if (futureThrottle) {
+    return {
+      confirmed: false,
+      bucket,
+      reason: 'a ' + futureThrottle.severity + ' throttle for ' + bucket + ' is dated in the future (' + futureThrottle.ts +
+        ') relative to now — a clock skew or a tampered record, either way not evidence; a confirmation cannot be ' +
+        'granted while a future-dated throttle is on file',
+    };
+  }
+  const freshThrottle = throttles.find((t) => now - t.at <= maxFreshMs);
   if (freshThrottle) {
     return {
       confirmed: false,
@@ -788,6 +904,19 @@ function confirm(bucket, opts) {
       bucket,
       reason: 'latest ' + bucket + ' reading is ' + pct(latest.remainingFraction) + ', not above the ladder\'s orangeBelow threshold (' +
         pct(THRESHOLDS.orangeBelow) + ') — the Amber-arm confirmation covers the Amber band only; at Orange authoring is suspended, not confirmable',
+    };
+  }
+  if (!(latest.remainingFraction < THRESHOLDS.amberBelow)) {
+    // Q1 (triage): the upper band bound was missing entirely — only the
+    // lower bound (orangeBelow, just above) was enforced, so a Green-band
+    // reading (e.g. 0.92) minted a real, arm-lifting confirmation, directly
+    // contradicting this function's own docstring ("the Amber band only").
+    return {
+      confirmed: false,
+      bucket,
+      reason: 'latest ' + bucket + ' reading is ' + pct(latest.remainingFraction) + ', at or above the ladder\'s amberBelow threshold (' +
+        pct(THRESHOLDS.amberBelow) + ') — the Amber-arm confirmation covers the Amber band only; the bucket is Green ' +
+        '(or has risen out of Amber) and no confirmation is needed to dispatch',
     };
   }
 
@@ -852,6 +981,20 @@ function predictThrottle(bucket, opts) {
   const a = readings[readings.length - 2];
   const b = readings[readings.length - 1];
   const bAgeMs = now - b.at;
+  // Q7 (triage): a future-dated latest reading had no guard at all here — a
+  // reading dated +10h produced a confident declining-trend ETA (even an
+  // "already crossed" rung) from a record analyze() itself refuses outright
+  // as a clock-skew/tamper signal (see the future-reading check in
+  // analyze()). predictThrottle() must refuse it too, before the staleness
+  // check below, rather than treating a future timestamp as extra-fresh data.
+  if (bAgeMs < 0) {
+    return {
+      ok: false,
+      bucket,
+      reason: 'latest reading is dated in the future — clock skew or a tampered record, either way not evidence',
+      readingCount: readings.length,
+    };
+  }
   if (bAgeMs > maxStaleMs) {
     return {
       ok: false,

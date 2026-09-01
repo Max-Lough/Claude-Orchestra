@@ -1,0 +1,18 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The installer now merges exactly three git command permissions into the
+allow list, verified idempotent across repeated runs with no duplicate
+entries. The uninstaller removes exactly those three grants, confirmed to
+touch no other entry. The Director remains barred from shell commands by the
+existing guard hook. The diff was inspected directly and confirmed confined
+to 2 files, the installer script and the README, adding only the merge and
+removal logic.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

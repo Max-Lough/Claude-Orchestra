@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Grant the agents that carry out work the git permissions they need to
+complete orders that call for committing and pushing, since a subagent
+cannot accept authorization relayed only through a work order's prose. Have
+the installer merge exactly three git command patterns — add, commit, push —
+into the allow list in the project's settings file, with the merge
+idempotent so re-running the installer does not duplicate an entry or
+clobber anything already present. Have the uninstaller remove those same
+three grants, confining its reach so no other permission entry the user
+added is touched. Keep the existing guard-hook restriction that bars the
+Director itself from running shell commands unchanged, so the new grants
+extend to the agents doing the work and not to the Director. Document the
+change in the README's install and permissions notes; outside that, nothing
+changes.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

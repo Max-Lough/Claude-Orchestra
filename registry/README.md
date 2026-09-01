@@ -16,7 +16,45 @@ final on 2026-08-29) and its WO-4 order.
 | `schemas/authorization-packet.schema.json` | Destructive T2 / all T3 — the artifact a human reads before signing; T3 forces a named-human approver (P13) |
 | `schemas/casting-record.schema.json` | The per-dispatch attestation row (P15 + §7.3): requested vs served, bucket, draw, review disclosure |
 | `schemas/verdict-audit.schema.json` | The Verifier's mechanical audit of a verdict: citation replay, refutation duty, gate-class falsification, substitution check |
+| `schemas/dispatch-request.schema.json` | WO-14b leg 2a — what the Conductor hands `orchestra_dispatch`, before routing happens |
+| `schemas/ticket.schema.json` | WO-14b leg 2a — the authoritative per-spawn lifecycle record consumed by `router/tickets.js` |
 | `load.js` | Loader + the mechanical ownership-invariant assertion |
+
+## WO-14b leg 2a: the dispatch-request / ticket split
+
+`schemas/order.schema.json` is the **routed canonical order** — `dispatch()`'s
+output, not its input. It requires `requested_casting`, `author_family`,
+`review_policy`, and `integrity_nonce`, all of which `dispatch()` computes or
+mints itself; a caller that could set them could pick its own casting or forge
+a review policy. `schemas/dispatch-request.schema.json` is the actual input
+side of that boundary — `class`, `risk`, `goal`, `acceptance_criteria`, and a
+handful of declared-by-the-Conductor optionals (`tier`, a reasoned `override`,
+`touches`, `context_shape`, `human_authored`, `under_specified`, …) — with
+`additionalProperties: false` making the four dispatcher-owned order fields
+structurally unrepresentable in a request, not just discouraged by convention.
+Both `schemas/dispatch-request.schema.json` and `schemas/order.schema.json`
+also carry an optional `medium` enum (`documents` / `images` / `videoAudio`
+— WO-14b leg 2 fix round 2, finding 3): the M0 intake modality read by
+`router.js` `dispatch()`'s M0 `UNAVAILABLE` guard (`mergedClasses.M0.
+unavailable`), otherwise ignored by validation. Additive on both schemas;
+before the fix, `dispatch-request.schema.json`'s `additionalProperties:
+false` made the field structurally unrepresentable, so a Conductor could
+never reach the guard through the public contract — only an internal
+`castOpts.medium` injection could. `dispatch()` now reads `order.medium` OR
+`castOpts.medium`; either names the unavailable medium and refuses.
+
+Once a request is routed, the only way work is actually reached under
+`roster:new` is a **ticket** (`schemas/ticket.schema.json`,
+`router/tickets.js`): a per-spawn record whose lawful states follow the host's
+own async Agent-tool lifecycle proved in
+`roster/wo14b-leg1-lifecycle-proof.md` — `OPEN → CONSUMED` (`PreToolUse`) `→
+LAUNCHED` (`PostToolUse`, `agentId`/`resolvedModel` bound) `→ RESOLVED`
+(`SubagentStop`, `last_assistant_message`/`agent_transcript_path` bound) `→
+CLOSED` (or a disclosed `NOT_CLOSED`) — plus `EXPIRED`/`INVALIDATED` for a
+ticket that never reaches a subagent result or a roster generation bump.
+`router/tickets.js` is a pure state machine and JSON-file store; wiring it
+into the actual `PreToolUse`/`PostToolUse`/`SubagentStop`/`Stop` hooks is a
+later leg.
 
 ## The invariant, asserted at load
 
@@ -26,11 +64,15 @@ classes); `I1` registered as an alias of I0 and colliding with nothing; the
 §4.0 procedure **closed over the table** (every route target active, every
 active class reachable, no clause citing a retired discriminator, no route to
 a retired identifier); exactly two substrates (V0, P0); T3 human-authorized;
-and the six schemas present with the mandated required fields and their
-class/risk enums **byte-identical** to the registry's identifiers.
+and the eight schemas present with the mandated required fields and their
+class/risk enums **byte-identical** to the registry's identifiers — WO-14b leg
+2 fix round (finding 4): `dispatch-request.schema.json` and `ticket.schema.json`
+are enumerated and class-enum-checked here too, alongside the original six;
+before the fix a drifted class enum on either schema was invisible to the
+loader (still "6 schemas in sync", zero problems).
 
-`node tests/registry.test.js` runs the same load plus fourteen tamper tests
-proving each corruption is actually caught.
+`node tests/registry.test.js` runs the same load plus tamper tests (including
+the two new drift-tamper cases) proving each corruption is actually caught.
 
 ## Editing rules
 

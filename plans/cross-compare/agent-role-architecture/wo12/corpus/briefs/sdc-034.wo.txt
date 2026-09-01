@@ -1,0 +1,21 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Add a file that pins line endings to LF. Cover shell, JavaScript, and
+Markdown files across the repository, and mark install.sh executable as part
+of the same change. The goal is to stop a checkout on any platform from
+silently converting install.sh to CRLF, since that conversion breaks its
+POSIX shebang line, but leaves the installer unable to run at all on a Unix
+machine after a plain checkout. Scope is exactly two changes, the new
+line-ending rules and the executable bit, and install.sh's own contents stay
+unchanged, so the diff shows zero insertions inside the script. Cover only
+the file extensions that matter for this installer path, because widening
+the rule set to every text file risks rewriting files whose endings carry
+meaning elsewhere. Keep the fix narrow enough that a reviewer can verify its
+effect from one small diff alone.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

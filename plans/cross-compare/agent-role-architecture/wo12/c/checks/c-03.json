@@ -1,0 +1,30 @@
+{
+  "order": "c-03",
+  "title": "Labeled form with inline validation messages",
+  "requiredStructure": [
+    { "name": "form has id=signup-form", "pattern": "<form\\b[^>]*\\bid=\"signup-form\"" },
+    { "name": "full-name label+input pair, wired by aria-describedby", "pattern": "<label for=\"full-name\">Full name</label>\\s*<input type=\"text\" id=\"full-name\" name=\"fullName\" aria-describedby=\"full-name-error\">" },
+    { "name": "full-name-error message, fixed copy", "pattern": "<p id=\"full-name-error\" class=\"error-message\">Please enter your full name\\.</p>" },
+    { "name": "email label+input pair, wired by aria-describedby", "pattern": "<label for=\"email\">Email address</label>\\s*<input type=\"email\" id=\"email\" name=\"email\" aria-describedby=\"email-error\">" },
+    { "name": "email-error message, fixed copy", "pattern": "<p id=\"email-error\" class=\"error-message\">Please enter a valid email address\\.</p>" },
+    { "name": "password label+input pair, wired by aria-describedby", "pattern": "<label for=\"password\">Password</label>\\s*<input type=\"password\" id=\"password\" name=\"password\" aria-describedby=\"password-error\">" },
+    { "name": "password-error message, fixed copy", "pattern": "<p id=\"password-error\" class=\"error-message\">Password must be at least 8 characters\\.</p>" },
+    { "name": "submit button, fixed copy", "pattern": "<button type=\"submit\">Create account</button>" }
+  ],
+  "contrastPairs": [
+    {
+      "name": "label text on form background",
+      "min": 4.5,
+      "blockPattern": "\\blabel\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    },
+    {
+      "name": "error-message text on error-message background",
+      "min": 4.5,
+      "blockPattern": "\\.error-message\\s*\\{([\\s\\S]*?)\\}",
+      "fgPattern": "color:\\s*(#[0-9a-fA-F]{6})",
+      "bgPattern": "background(?:-color)?:\\s*(#[0-9a-fA-F]{6})"
+    }
+  ]
+}

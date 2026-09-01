@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This change fixes a silent agent-load failure in three agent files. The
+first task is diagnosing why the harness drops these agents silently instead
+of raising an error a person could see. It turns out a bare colon-space
+sequence inside an unquoted description field makes the frontmatter
+unparseable, and the harness's own repair pass cannot recover it, even under
+otherwise normal conditions, since a Windows line-ending checkout defeats it
+outright. Each of the three files then gets fixed with a one-word rewording,
+without restructuring the frontmatter and without adding any quoting
+anywhere in it. Nothing else changes in any of the three files, because a
+minimal wording change is exactly enough to eliminate the bare colon, and
+that single change also restores parseability across the whole file on its
+own. The fix stays scoped to only the files that failed to load, and every
+other agent definition in the pack stays byte-identical throughout.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+3 orchestra-namespaced skills plus a never-installed authoring template now
+live in the master, and the installer stamps them wholesale into the
+project's skills folder on every run. Uninstall removes the master-known
+names, passes over anything the user authored under another name, and prunes
+the skills directory once it empties. Verified by running the installer's
+checker in check mode over it and its supporting scripts, and by a full
+install followed by an uninstall into a scratch project, each printing its
+expected summary line.
+
+Verify the diff on its own merits.

@@ -1,0 +1,248 @@
+diff --git a/plans/cross-compare/agent-role-architecture/STATUS.md b/plans/cross-compare/agent-role-architecture/STATUS.md
+index 5b42eb9..916e819 100644
+--- a/plans/cross-compare/agent-role-architecture/STATUS.md
++++ b/plans/cross-compare/agent-role-architecture/STATUS.md
+@@ -330,6 +330,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
+   provenance, not organic ambiguity). Full record: `wo7b/wo7b-report.md`. The restated
+   7.2 routing gate is validated; live P95 telemetry continues during shadow (WO-15).
+   Next: **WO-8–11** (staff the bands), with WO-13/WO-14/WO-12f parallelizable.
++- **WO-14 EXECUTED (2026-08-30):** the alias layer and roster kill switch, in
++  `router/aliases.json` + `router.resolveSeat()`. Every §6.6 retired name resolves
++  declaratively to its new (role, rung) pair AND carries its legacy identity; the
++  `roster: legacy | new` flag is evaluated per order (opts override; declarative default
++  `legacy` — the kill-switch home position), so rollback is a flag flip with no reload.
++  Proof per the order, in `tests/router.test.js` §12 (92 total green): an order written
++  against `executor` dispatches correctly under both flag values; the flip demonstrated
++  mid-session on one router instance; `executor-heavy-xhigh` lands on Principal's routed
++  xhigh effort point (not a second seat); `detective` lands on the merged Investigator
++  with the read-only pin carried; `reviewer`/`reviewer-codex` resolve to the computed
++  Reviewer (never a static casting); and every retired-name resolution emits its ledger
++  deprecation line under both flags. One judgment call recorded in the file: §6.6 wrote
++  `planner-gpt → Architect(mirror)` before the same-day Sol-default re-cast —
++  operatively it maps to the Architect's Sol casting, with WO-13 owning its transport
++  migration.
+ - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
+   edge observation, served-model checks (listed in the RUNBOOK).
+ 
+diff --git a/router/aliases.json b/router/aliases.json
+new file mode 100644
+index 0000000..1165050
+--- /dev/null
++++ b/router/aliases.json
+@@ -0,0 +1,88 @@
++{
++  "$comment": "WO-14 alias layer — every retired roster name resolves declaratively to its new (role, rung) pair per final-plan.md §6.6, alongside the legacy identity it carries while the legacy roster is installed. The kill switch is the roster flag: 'legacy' resolves a name to the installed legacy agent unchanged; 'new' resolves it through the WO-6 casting tables. Evaluated PER ORDER (router.resolveSeat opts.roster overrides rosterDefault); rollback is a flag flip, no file changes. Every resolution of a retired name emits a ledger deprecation line. Class alias I1 → I0 lives in registry/classes.json, not here.",
++  "version": "2026-08-30",
++  "source": "plans/cross-compare/agent-role-architecture/final-plan.md — §6.6 transition safety; ORCHESTRA.md §2 for the legacy identities",
++  "rosterDefault": "legacy",
++  "aliases": {
++    "executor": {
++      "new": { "role": "Builder", "rung": "primary" },
++      "legacy": { "agent": "executor", "model": "Sonnet 5" },
++      "deprecation": "executor is retired: routine implementation is Builder (E2); the Luna preferred-bounded lane and Terra mirror replace engine flags"
++    },
++    "executor-heavy": {
++      "new": { "role": "Principal", "rung": "primary" },
++      "legacy": { "agent": "executor-heavy", "model": "Opus 5", "effort": "high" },
++      "deprecation": "executor-heavy is retired: hard-tier authoring is Principal (E3) at the high effort point"
++    },
++    "executor-heavy-xhigh": {
++      "new": { "role": "Principal", "rung": "effortPoint2" },
++      "legacy": { "agent": "executor-heavy-xhigh", "model": "Opus 5", "effort": "xhigh" },
++      "deprecation": "executor-heavy-xhigh is retired as a second definition: it is Principal's routed xhigh effort point, one tier, two effort points"
++    },
++    "executor-codex": {
++      "new": { "role": "Builder", "rung": "mirror" },
++      "legacy": { "agent": "executor-codex", "model": "GPT-5.6 Terra" },
++      "deprecation": "executor-codex is retired as a role: it is Builder's Terra mirror casting; executorEngine fallback logic is removed"
++    },
++    "executor-codex-heavy": {
++      "new": { "role": "Principal", "rung": "mirror" },
++      "legacy": { "agent": "executor-codex-heavy", "model": "GPT-5.6 Sol", "effort": "high" },
++      "deprecation": "executor-codex-heavy is retired as a role: it is Principal's Sol mirror casting"
++    },
++    "reviewer": {
++      "new": { "role": "Reviewer", "computed": true },
++      "legacy": { "agent": "reviewer", "model": "Opus 5" },
++      "deprecation": "reviewer is no longer a fixed Opus seat: R0's casting is computed from the recorded author/co-author family set — use reviewer(), never a static casting"
++    },
++    "reviewer-codex": {
++      "new": { "role": "Reviewer", "computed": true, "laneNote": "the OpenAI casting of the computed Reviewer (Sol · high at mandatory class)" },
++      "legacy": { "agent": "reviewer-codex", "model": "GPT-5.6 Sol" },
++      "deprecation": "reviewer-codex is retired as a role: it is the OpenAI lane of the computed Reviewer matrix"
++    },
++    "scout": {
++      "new": { "role": "Scout", "rung": "primary" },
++      "legacy": { "agent": "scout", "model": "Haiku 4.5" },
++      "deprecation": "scout keeps its seat, re-contracted: N0 only — external research is N1, long-context reconciliation N2, media intake M0"
++    },
++    "detective": {
++      "new": { "role": "Investigator", "rung": "primary", "pin": "read-only" },
++      "legacy": { "agent": "detective", "model": "Opus 5" },
++      "deprecation": "detective is merged into the Investigator (I0, 2026-08-29 ruling): the read-only law survives as the read-only-first law plus this alias's read-only tool pin"
++    },
++    "modeler": {
++      "new": { "role": "Spatial Specialist", "rung": "primary" },
++      "legacy": { "agent": "modeler", "model": "Sonnet 5", "specialist": true },
++      "deprecation": "modeler is promoted: spatial/procedural work is the first-class Spatial Specialist (E6, Opus 5 · high); specialists remain for project-specific domains only"
++    },
++    "architect-claude": {
++      "new": { "role": "Architect", "rung": "nebulous" },
++      "legacy": { "agent": "architect-claude", "model": "Fable 5" },
++      "deprecation": "architect-claude is retired as a role: it is the Architect's Anthropic casting (Fable, nebulous/ambiguous goals)"
++    },
++    "architect-claude-xhigh": {
++      "new": { "role": "Architect", "rung": "ceilingAnthropic" },
++      "legacy": { "agent": "architect-claude-xhigh", "model": "Fable 5", "effort": "xhigh" },
++      "deprecation": "architect-claude-xhigh is retired: it is the Architect's Anthropic ceiling casting (comparative sessions)"
++    },
++    "architect-claude-max": {
++      "new": { "role": "Architect", "rung": "ceilingAnthropic" },
++      "legacy": { "agent": "architect-claude-max", "model": "Fable 5", "effort": "max" },
++      "deprecation": "architect-claude-max is retired: the Anthropic ceiling is Fable · xhigh (comparative sessions); the max point does not survive into the new roster"
++    },
++    "architect-codex": {
++      "new": { "role": "Architect", "rung": "primary" },
++      "legacy": { "agent": "architect-codex", "model": "GPT-5.6 Sol" },
++      "deprecation": "architect-codex is retired as a role: it is the Architect's Sol casting — the default primary under the 2026-08-28 owner re-cast"
++    },
++    "planner-gpt": {
++      "new": { "role": "Architect", "rung": "primary" },
++      "legacy": { "agent": "planner-gpt", "model": "GPT-5.6 Sol", "transport": "metered API — the lane WO-13 migrates" },
++      "deprecation": "planner-gpt is retired: §6.6 wrote it as Architect(mirror) before the same-day Sol-default re-cast made the GPT lane the primary; operatively it is the Architect's Sol casting, and its metered API transport is replaced by the subscription Codex CLI (WO-13) or reported unavailable"
++    },
++    "plan-synthesizer": {
++      "new": { "role": "Synthesizer", "rung": "primary" },
++      "legacy": { "agent": "plan-synthesizer", "model": "Opus 5" },
++      "deprecation": "plan-synthesizer keeps its charter as the Synthesizer (A1); the blind-merge anonymity law carries over unchanged"
++    }
++  }
++}
+diff --git a/router/router.js b/router/router.js
+index d40712a..927101d 100644
+--- a/router/router.js
++++ b/router/router.js
+@@ -199,6 +199,29 @@ function createRouter(opts) {
+     }
+   }
+ 
++  // ---- WO-14 alias layer (§6.6: alias layer before any rename) -----------
++  let seatAliases;
++  try {
++    seatAliases = JSON.parse(fs.readFileSync(options.aliasesFile || path.join(path.dirname(castingsFile), 'aliases.json'), 'utf8'));
++  } catch (e) {
++    fail('aliases.json unreadable or unparseable: ' + e.message);
++  }
++  if (seatAliases) {
++    if (!['legacy', 'new'].includes(seatAliases.rosterDefault)) {
++      fail('aliases rosterDefault must be legacy or new; got ' + JSON.stringify(seatAliases.rosterDefault));
++    }
++    for (const [name, a] of Object.entries(seatAliases.aliases || {})) {
++      if (!a.deprecation) fail('alias ' + name + ' has no deprecation line');
++      if (!a.legacy || !a.legacy.agent || !a.legacy.model) fail('alias ' + name + ' has no legacy identity');
++      else if (!familyOf(a.legacy.model)) fail('alias ' + name + ' legacy model unknown: ' + a.legacy.model);
++      const n = a.new || {};
++      if (!n.role || !roles[n.role]) fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
++      else if (n.computed && !roles[n.role].computed) {
++        fail('alias ' + name + ' claims a computed casting but ' + n.role + ' is not computed');
++      }
++    }
++  }
++
+   if (problems.length > 0) {
+     throw new Error('router refused: casting tables invalid (' + problems.length + ' violation(s)):\n  - ' + problems.join('\n  - '));
+   }
+@@ -638,6 +661,36 @@ function createRouter(opts) {
+     return { escalated: false, hop, ledger: ledgerEntry, order: newOrder, dispatch: dispatch(newOrder, buckets, dispatchOpts) };
+   }
+ 
++  // ---- resolveSeat: the WO-14 kill switch, evaluated per order -----------
++  // A name written against the OLD roster resolves under whichever roster
++  // flag the order carries: 'legacy' → the installed legacy agent identity,
++  // unchanged; 'new' → the (role, rung) pair from the casting tables, cast
++  // through the degradation machine. Either way a retired name emits its
++  // ledger deprecation line. Rollback is a flag flip — same router, no
++  // reload, demonstrated per-call.
++  function resolveSeat(name, seatOpts) {
++    const o = seatOpts || {};
++    const roster = o.roster || seatAliases.rosterDefault;
++    if (!['legacy', 'new'].includes(roster)) throw new Error('unknown roster flag: ' + JSON.stringify(roster));
++    const a = (seatAliases.aliases || {})[name];
++    if (!a) {
++      if (roles[name]) return { roster, alias: false, target: { kind: 'role', role: name } };
++      return { roster, alias: false, error: 'unknown seat name: ' + JSON.stringify(name) };
++    }
++    const ledger = 'DEPRECATED "' + name + '" (roster: ' + roster + ') — ' + a.deprecation;
++    if (roster === 'legacy') {
++      return { roster, alias: true, ledger, target: Object.assign({ kind: 'legacy-agent' }, a.legacy) };
++    }
++    if (a.new.computed) {
++      return { roster, alias: true, ledger, target: { kind: 'computed-reviewer', role: a.new.role, laneNote: a.new.laneNote } };
++    }
++    const c = cast(a.new.role, o.buckets || allGreen(), Object.assign({ rung: a.new.rung, purpose: o.purpose }, o.castOpts));
++    return {
++      roster, alias: true, ledger,
++      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung, pin: a.new.pin || null, cast: c },
++    };
++  }
++
+   function allGreen() {
+     const out = {};
+     for (const b of castings.buckets) out[b] = 'Green';
+@@ -645,7 +698,7 @@ function createRouter(opts) {
+   }
+ 
+   return {
+-    registry, castings, charters, problems: [],
++    registry, castings, charters, aliases: seatAliases, resolveSeat, problems: [],
+     route, resolveClass, cast, reviewer, reviewPolicy, dispatch, processReclassify,
+     poolState: (r) => poolState(r, ladderCfg),
+     preDispatchGate, q0Required, createQ0Order,
+diff --git a/tests/router.test.js b/tests/router.test.js
+index 6dd8639..86be255 100644
+--- a/tests/router.test.js
++++ b/tests/router.test.js
+@@ -520,4 +520,43 @@ check('an alias in recommended_class resolves before re-dispatch',
+     return r.dispatch.class === 'I0' && r.dispatch.role === 'Investigator';
+   })());
+ 
++// -------------------------- 12. WO-14 alias layer and roster kill switch
++section('12. WO-14: alias layer and the roster kill switch');
++
++{
++  const qc = buckets({ 'AU-opus': { state: 'Green', quartermasterConfirmation: true } });
++  const legacyEx = router.resolveSeat('executor', { roster: 'legacy' });
++  const newEx = router.resolveSeat('executor', { roster: 'new', buckets: qc });
++  check('an order written against "executor" dispatches correctly under BOTH flag values',
++    legacyEx.target.kind === 'legacy-agent' && legacyEx.target.agent === 'executor' && legacyEx.target.model === 'Sonnet 5' &&
++    newEx.target.kind === 'new-roster' && newEx.target.role === 'Builder' && newEx.target.cast.ok && newEx.target.cast.casting.model === 'Sonnet 5');
++  check('the flip is per-order, mid-session: same router, alternating flags, no reload',
++    router.resolveSeat('executor-heavy', { roster: 'new', buckets: qc }).target.role === 'Principal' &&
++    router.resolveSeat('executor-heavy', { roster: 'legacy' }).target.agent === 'executor-heavy' &&
++    router.resolveSeat('executor-heavy', { roster: 'new', buckets: qc }).target.cast.casting.effort === 'high');
++  check('executor-heavy-xhigh maps to Principal’s routed xhigh effort point, not a second seat',
++    (() => { const r = router.resolveSeat('executor-heavy-xhigh', { roster: 'new', buckets: qc }); return r.target.rung === 'effortPoint2' && r.target.cast.casting.effort === 'xhigh'; })());
++  check('detective maps to the merged Investigator with the read-only pin carried',
++    (() => { const r = router.resolveSeat('detective', { roster: 'new', buckets: qc }); return r.target.role === 'Investigator' && r.target.pin === 'read-only' && r.target.cast.casting.model === 'Opus 5'; })());
++  check('reviewer and reviewer-codex resolve to the COMPUTED Reviewer, never a static casting',
++    router.resolveSeat('reviewer', { roster: 'new' }).target.kind === 'computed-reviewer' &&
++    router.resolveSeat('reviewer-codex', { roster: 'new' }).target.kind === 'computed-reviewer');
++  check('codex executors become mirror castings (Builder Terra, Principal Sol)',
++    router.resolveSeat('executor-codex', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Terra' &&
++    router.resolveSeat('executor-codex-heavy', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Sol');
++  check('modeler is promoted to the Spatial Specialist (Opus 5 · high)',
++    router.resolveSeat('modeler', { roster: 'new', buckets: qc }).target.cast.casting.model === 'Opus 5');
++  check('every retired-name resolution emits a ledger deprecation line, under both flags',
++    /DEPRECATED "executor"/.test(legacyEx.ledger) && /DEPRECATED "executor"/.test(newEx.ledger) &&
++    Object.keys(router.aliases.aliases).every((n) => {
++      const l = router.resolveSeat(n, { roster: 'legacy' });
++      return typeof l.ledger === 'string' && l.ledger.includes(n);
++    }));
++  check('the roster default comes from the alias map when the order carries no flag (kill-switch home position: legacy)',
++    router.aliases.rosterDefault === 'legacy' && router.resolveSeat('scout', {}).target.kind === 'legacy-agent');
++  check('a current role name passes through un-aliased; an unknown name is an error, not a guess',
++    router.resolveSeat('Builder', { roster: 'new' }).alias === false &&
++    typeof router.resolveSeat('warlock', {}).error === 'string');
++}
++
+ console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

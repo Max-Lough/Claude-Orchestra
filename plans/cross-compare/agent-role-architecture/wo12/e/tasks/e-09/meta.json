@@ -1,0 +1,12 @@
+{
+  "id": "e-09",
+  "category": "path / encoding fault on Windows",
+  "title": "the generated index keys nested files with the platform separator",
+  "check_display": "node scripts/index-files.js && node test.js",
+  "check_steps": [["node", "scripts/index-files.js"], ["node", "test.js"]],
+  "scope": ["scripts/index-files.js"],
+  "audit_ignore": ["index.json"],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This change makes the guard hook read the session's own model first, and it
+decides whether to deny a tool call. Enforcement now applies to director
+models alone while every other model stands the guard down entirely, with no
+partial state in between the two. An undetermined model still resolves to
+enforce rather than stand down, and the harness can never silently vanish
+for an actual director session under ambiguous conditions. The latest
+non-sidechain assistant model alone gets read from the transcript, using a
+fixed-cost tail read, and sidechain entries are skipped so a finished scout
+run under a different model is never mistaken for the session's own. Reading
+the latest turn alone means a mid-session model switch gets honored right
+away rather than through a stale cached value, and detection runs solely on
+the would-deny path, so an allowed call pays nothing extra. The docs then
+get updated to describe the new behavior in full.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Carry the in-progress rename of the plan roundabout from its old name to
+deep-plan out of the working tree into this commit, complete and
+self-consistent across the harness. Rename the roundabout hook file,
+converting its header and usage text, its environment-variable names and
+engine header line, the unavailable verdict token, and the saved-response
+temporary-directory prefix plus every prose mention, then rename the skill
+directory and update its frontmatter name and description, its headings and
+the runner path, plus its verdict token and the log heading. Point the
+installer at the new runner filename in the runner constant, the
+install-time copy and the uninstall list. Update the planner agent file and
+the orchestration document, plus the README end to end. Update the
+bundled-skill roster in the status skill so a status run names deep-plan,
+never the old name. Behavior must stay unchanged; this is a rename plus its
+documentation sync, kept as its own commit.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

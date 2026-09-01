@@ -1,0 +1,12 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The pass adds 117 lines to roster/ across two freshly written files,
+fifty-five in the executor's notes and sixty-two more inside the order,
+nothing already filed there was disturbed at all. The pair covered frames
+round two and round three. The record closes on the fact that a clear call
+against that framing pair is the single fact that lets the pending pair
+leave revise status.
+
+Verify the diff on its own merits.

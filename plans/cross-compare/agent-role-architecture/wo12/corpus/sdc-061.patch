@@ -1,0 +1,515 @@
+diff --git a/ORCHESTRA.md b/ORCHESTRA.md
+index 72ab476..1cbceae 100644
+--- a/ORCHESTRA.md
++++ b/ORCHESTRA.md
+@@ -29,7 +29,7 @@ Projects may add **specialist executors** — domain-tuned variants of the execu
+ 
+ ## 3. Director law (both modes)
+ 
+-1. **You never touch the code.** No Edit/Write/NotebookEdit, no Bash/PowerShell, no Grep/Glob — a PreToolUse hook enforces this, and project policy may extend the blocklist (e.g. to mutating MCP tools) via `.claude/orchestra.json`. A hook denial is the system working, not an obstacle: delegate that action instead of looking for a way around it. **Read** is permitted only for (a) files or images the user explicitly hands you, (b) artifacts your agents direct you to, and (c) the project's `.claude/orchestra.json` — harness configuration (e.g. the review engine) is decision input, and one known file is not exploration. Never read exploratorily; exploration belongs to the scout. **One authoring exception — plan files:** you may Write/Edit markdown under `.claude/plans/` yourself (the guard permits exactly that). Plans are Director thinking, not execution; nothing else goes there — no code, no config, no deliverables. Projects may designate additional plan locations via `directorPlanPatterns` in `.claude/orchestra.json`.
++1. **You never touch the code.** No Edit/Write/NotebookEdit, no Bash/PowerShell, no Grep/Glob — a PreToolUse hook enforces this, and project policy may extend the blocklist (e.g. to mutating MCP tools) via `.claude/orchestra.json`. A hook denial is the system working, not an obstacle: delegate that action instead of looking for a way around it. **Read** is permitted only for (a) files or images the user explicitly hands you, (b) artifacts your agents direct you to, and (c) the project's `.claude/orchestra.json` — harness configuration (e.g. the review engine) is decision input, and one known file is not exploration. Never read exploratorily; exploration belongs to the scout. **Two authoring exceptions.** *Plan files:* you may Write/Edit markdown under `.claude/plans/` yourself (the guard permits exactly that). Plans are Director thinking, not execution; nothing else goes there — no code, no config, no deliverables. *Memory files:* you may edit memory yourself — `CLAUDE.md` / `CLAUDE.local.md` in the project, and your auto-memory directory. Memory distills the conversation, which only you hold; delegating a one-line append wastes an executor and buys no independence. Hard limit: never touch the managed `<!-- ORCHESTRA:BEGIN/END -->` block in `CLAUDE.md` — it wires the harness, it belongs to the user (§6), and the guard denies any edit that would alter or remove it; carry it through unchanged and edit around it. Projects may designate additional plan/memory locations via `directorPlanPatterns` / `directorMemoryPatterns` in `.claude/orchestra.json`.
+ 2. **Every substantive change is reviewed before you call it done.** Substantive = touches logic, config, dependencies, data, API surface, or the meaning of docs. Non-substantive (may skip review): pure formatting or typo fixes with zero behavior impact. When unsure, it's substantive.
+ 3. **Work orders are self-contained.** Agents share no memory with you or each other. Every order includes: the goal, exact scope (paths), constraints, the context/prior findings the agent needs pasted in, and the report format you expect back. Every relay of reviewer findings back to the executor includes the findings verbatim.
+ 4. **Parallelize deliberately.** Independent scout missions: launch together in one message. Executors in parallel only on disjoint file sets (use worktree isolation if they must overlap). Never parallelize execute and review of the same change. A long-running order is not idle time: pipeline recon and probes for the NEXT order while it runs, and put genuine design forks to competing time-boxed spikes in parallel worktrees — let verification evidence pick the winner (§8.2).
+@@ -60,7 +60,7 @@ Everything above holds, plus:
+ 
+ ## 6. Pause switch (user-only)
+ 
+-Creating `.claude/orchestra.pause` in the project (or setting env `ORCHESTRA_PAUSE=1`) stands the hook down; deleting it restores enforcement. This is the **user's** switch: you never create the pause file to route around a denial. If the user asks you to disable the Orchestra, you may create that one file (the hook permits that specific write, alongside the plan-file exception of §3.1) and confirm the harness is paused. To remove the harness entirely they run the installer with `--uninstall`.
++Creating `.claude/orchestra.pause` in the project (or setting env `ORCHESTRA_PAUSE=1`) stands the hook down; deleting it restores enforcement. This is the **user's** switch: you never create the pause file to route around a denial. If the user asks you to disable the Orchestra, you may create that one file (the hook permits that specific write, alongside the plan- and memory-file exceptions of §3.1) and confirm the harness is paused. To remove the harness entirely they run the installer with `--uninstall`.
+ 
+ ## 7. Specialists, hands-on skills, and MCP
+ 
+diff --git a/README.md b/README.md
+index 655144a..d25d848 100644
+--- a/README.md
++++ b/README.md
+@@ -19,7 +19,7 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
+    └───────────────┘     └───────────────┘     └───────────────┘
+ ```
+ 
+-The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. One authoring carve-out: the Director may write **plan files** — markdown under `.claude/plans/` — itself; plans are Director thinking, not execution (see "Plan files" below).
++The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: it enforces only when a director model (Fable/Opus) is at the helm — Sonnet/Haiku sessions run as plain Claude Code. Two authoring carve-outs: the Director may write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md` / `CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution (see "Plan files" and "Memory files" below). The managed Orchestra block inside `CLAUDE.md` stays off-limits.
+ 
+ ## Two modes, selected automatically
+ 
+@@ -72,6 +72,7 @@ Review has two engines, both under one identical contract — adversarial brief,
+ ```
+ Orchestra/
+ ├── README.md              ← you are here
++├── VERSION                ← harness version, stamped into installed projects (see "Versioning")
+ ├── ORCHESTRA.md           ← the Director protocol (imported into the project's CLAUDE.md)
+ ├── install.js             ← idempotent installer/uninstaller (Node)
+ ├── install.ps1            ← thin PowerShell wrapper
+@@ -99,6 +100,16 @@ Orchestra/
+ 
+ This folder is the **master copy**. Projects get stamped copies; to change the system, edit here and re-run the installer per project.
+ 
++## Versioning
++
++The master's version lives in the `VERSION` file at the repo root. The installer stamps it into every project it touches — the header comment of `<project>/.claude/ORCHESTRA.md` reads `Installed by the Orchestra harness (vX.Y.Z)` — so any project can answer "what Orchestra version am I on":
++
++```bash
++head -3 .claude/ORCHESTRA.md     # or just ask the session: /orchestra-status
++```
++
++Compare that against the master's `VERSION` and re-run the installer to update (it's idempotent). Installs stamped before versioning existed carry no version — treat "unversioned" as "older than v1.0.0". The number bumps with any change to the stamped files (protocol, guard, hooks, agents, bundled skills): **patch** for fixes and doc-only changes, **minor** for new capabilities (carve-outs, skills, config knobs), **major** for breaking changes to the protocol or the `orchestra.json` format.
++
+ ## Install into a project
+ 
+ Clone the master once, then point the installer at any project. `ORCHESTRA_HOME` below is wherever you cloned it.
+@@ -129,7 +140,7 @@ The installer is **idempotent** — run it again anytime to update a project to
+ 1. Copies `agents/*.md` → `<project>/.claude/agents/`
+ 2. Copies each bundled skill `skills/<name>/` → `<project>/.claude/skills/<name>/` (stamped wholesale — local edits to those directories are overwritten on update; see "Bundled skills")
+ 3. Copies `hooks/orchestra-guard.js`, `hooks/orchestra-review.js`, and `hooks/orchestra-ultraplan.js` → `<project>/.claude/hooks/`
+-4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`
++4. Copies `ORCHESTRA.md` → `<project>/.claude/ORCHESTRA.md`, stamping the harness version into its header
+ 5. Merges the PreToolUse hook entry into `<project>/.claude/settings.json` (preserving whatever else is there)
+ 6. Merges git permission grants (`Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)`) into `permissions.allow` in that same `settings.json`, so the executor can commit and push when a work order tells it to
+ 7. Ensures the project's `CLAUDE.md` contains the Orchestra import line (added inside `<!-- ORCHESTRA:BEGIN/END -->` markers)
+@@ -167,7 +178,7 @@ New-Item -ItemType File .claude\orchestra.pause
+ Remove-Item .claude\orchestra.pause
+ ```
+ 
+-Or launch with the env var: `ORCHESTRA_PAUSE=1 claude`. You can also ask the Director to pause — creating that file is permitted by the hook (its only write exception besides plan files), and only at your explicit request. The Director is instructed never to pause on its own initiative.
++Or launch with the env var: `ORCHESTRA_PAUSE=1 claude`. You can also ask the Director to pause — creating that file is permitted by the hook (its only write exception besides plan and memory files), and only at your explicit request. The Director is instructed never to pause on its own initiative.
+ 
+ ## Plan files
+ 
+@@ -181,6 +192,23 @@ If your project keeps plans elsewhere (say `docs/plans/`), add `directorPlanPatt
+ }
+ ```
+ 
++## Memory files
++
++Memory is the other artifact the Director authors itself. A memory entry distills the *current conversation* — which only the Director holds — so routing "append one line to CLAUDE.md" through an executor adds a subagent round-trip and zero judgment: the work order would have to contain the exact text anyway, and the executor would just transcribe it. Blocking it also breaks Claude Code's own auto-memory, which writes from the main session. So the guard treats these as Director-editable:
++
++- `CLAUDE.md` and `CLAUDE.local.md` anywhere inside the project (root, `.claude/`, subdirectories);
++- user-level memory under Claude's config dir (`~/.claude`, or `$CLAUDE_CONFIG_DIR`): its `CLAUDE.md`, and markdown inside `memory`/`memories` directories — Claude Code's auto-memory notebook.
++
++**The one fence:** the `<!-- ORCHESTRA:BEGIN/END -->` block the installer stamps into `CLAUDE.md` is not memory — it's the harness's own wiring, and disabling the harness belongs to you (ORCHESTRA.md §6). The guard simulates each memory write and denies any edit whose result doesn't carry that block through verbatim, whatever else the edit does. Everything around the block is fair game.
++
++If your project keeps memory elsewhere (say `.claude/rules/`), add `directorMemoryPatterns` to `.claude/orchestra.json` — regexes over the project-relative path, additive to the defaults (marker-block protection applies to matched files too):
++
++```json
++{
++  "directorMemoryPatterns": ["^\\.claude/rules/.+\\.md$"]
++}
++```
++
+ ## Specialists & hands-on skills
+ 
+ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: whoever invokes them is expected to execute their steps with their own tools. If the *Director* invokes one, the knowledge lands in the one head the guard forbids from using it. The extension closes that gap.
+@@ -208,6 +236,7 @@ Complex skills (say, a Blender→Godot asset pipeline) are prompt playbooks: who
+ - `directorBlockedPatterns` — regexes over tool names, denied to the Director (subagents unaffected). Pattern-match whole servers, or just mutating verbs: `"^mcp__blender__(create|set|modify|delete|execute)"`.
+ - `directorAllowedTools` — exact built-in names to *remove* from the default blocklist (e.g. `["Glob"]` if you want the Director to glob), so you can loosen the law per project without editing the guard.
+ - `directorPlanPatterns` — regexes over project-relative file paths (forward-slash form) that count as plan files the Director may write directly, in addition to the built-in `.claude/plans/*.md` (see "Plan files").
++- `directorMemoryPatterns` — same shape: paths that count as memory files the Director may edit directly, in addition to the built-in `CLAUDE.md` / `CLAUDE.local.md` and auto-memory locations; the CLAUDE.md marker block stays protected either way (see "Memory files").
+ - `reviewEngine` — review engine selection: `"opus"` (default — the fresh-context Opus `reviewer`), `"codex"` (cross-vendor primary via `reviewer-codex`; the Opus `reviewer` is its unavailable-fallback), or `"dual"` (both engines on every substantive review, Director arbitrates). Hot-swappable — edit the value and the next review routes accordingly (see "Review engines").
+ - `verification` — optional verification manifest: `{ "full": "<command>", "lint": "<command>", "shards": ["<command>", …], "protected": ["<suite>", …] }`. It is the canonical command set for every verifier: executors run it, the review runner injects it into the Codex brief, and a fallback review judges pasted verification against it. The Director uses it to declare review tiers, scope mid-chain verification to touched + protected shards, and brief executors on concurrent shard runs (`ORCHESTRA.md` §8.3). Typically written once by a verification-profile micro-order that times the tree and maps its seams.
+ - The file is optional, user-authored, and fail-open: a broken `orchestra.json` disables only itself — the default blocklist still applies. The uninstaller leaves it in place.
+@@ -274,6 +303,7 @@ This trades tokens for quality and control, deliberately:
+ | Symptom | Cause / fix |
+ |---|---|
+ | "Orchestra: the Director does not use X" denials | Working as intended on Fable/Opus — the session should delegate. On Sonnet/Haiku the guard stands down automatically, including on a fresh session's first turn (the guard enforces only on positive evidence of a director model). Any denial on Sonnet/Haiku means model detection failed — pause (above) and file a bug against the master. |
++| "…would alter or remove the managed Orchestra block" denial | Working as intended — memory files are Director-editable, but the `<!-- ORCHESTRA:BEGIN/END -->` import block in `CLAUDE.md` is harness wiring and yours alone. The Director edits around it; removing the harness is `--uninstall`, pausing is `.claude/orchestra.pause`. |
+ | Hook seems inactive | Did you approve project hooks at first launch? Check `/hooks` in Claude Code; confirm `.claude/settings.json` has the `orchestra-guard` entry. |
+ | Executor/scout getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |
+ | Executor denied on `git commit` / `git push` | The permission classifier won't accept user authorization relayed through a work order — it needs a settings-level grant. Re-run the installer: it now merges `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git push:*)` into `permissions.allow` in `.claude/settings.json`. Check those entries survived if you've hand-edited settings. |
+@@ -291,6 +321,7 @@ This trades tokens for quality and control, deliberately:
+ 
+ - **Why a hook and not just instructions?** Under pressure ("just quickly fix the import"), models drift toward doing work themselves. The hook makes drift impossible instead of discouraged; the denial message itself re-points the Director at the right agent.
+ - **Why does the guard read the transcript for the model?** The protocol already tells non-director sessions to act normally, but instructions can't unblock a hook — without detection, a Sonnet session would be told "you're dormant" and then denied every Edit. So before denying, the guard tail-reads the session transcript (fixed cost, sub-millisecond, regardless of transcript size), takes the latest non-sidechain assistant turn's model, and stands down for non-directors. An undetermined model resolves to *enforce*: the harness can drop out only on positive evidence of a non-director model, never by accident on a director. Reading the *latest* turn (rather than trusting the session's static self-image) also means mid-session `/model` switches are honored.
++- **Why can the Director write plans and memory itself?** Both are the Director's own thinking: a plan decomposes the work, a memory entry distills the conversation, and only the Director holds either. Delegating them buys no independence — the executor would transcribe text the Director composed — and costs a subagent round-trip per write; blocking memory even broke Claude Code's built-in auto-memory. The guard still fences the one dangerous inch of those files: the managed Orchestra block in `CLAUDE.md`, which stays user-only because it's the harness's own wiring (§6 reserves disabling the harness for you).
+ - **Why can the Director still Read?** Users hand the Director screenshots, specs, and reports that inform decisions. Decision-relevant reading is directing; exploratory reading is scouting — the protocol draws that line, and the scout does all discovery.
+ - **Why is the default reviewer Opus, with cross-vendor as an option?** Self-review inside the planning context inherits the planner's blind spots — independence starts with a fresh context. The `reviewer` provides that: a fresh Opus context reviewing a Sonnet-authored change, re-running the tests itself, which captures most of what independent review buys. A different-vendor reviewer (OpenAI via Codex) decorrelates one layer further — same-vendor models share training lineage — so `reviewer-codex` exists for gate-class second opinions, or as a primary engine for projects that want it. It is optional rather than default because the residual decorrelation is incremental over fresh-context different-model review, while the dependency it adds (external CLI, auth, separate billing) can leave review unavailable exactly when you need it.
+ - **Why is `reviewer-codex` a Claude launcher instead of calling OpenAI directly?** The Director is guard-blocked from Bash, so it can't shell out to Codex itself, and there's no OpenAI tool in its toolbox. A thin subagent (exempt from the guard) runs Codex and relays the verdict — which keeps review delegated and keeps the judgment cross-vendor, without weakening the guard or handing the Director a new way to do work itself.
+diff --git a/VERSION b/VERSION
+new file mode 100644
+index 0000000..3eefcb9
+--- /dev/null
++++ b/VERSION
+@@ -0,0 +1 @@
++1.0.0
+diff --git a/hooks/orchestra-guard.js b/hooks/orchestra-guard.js
+index 72331ea..d6845ab 100644
+--- a/hooks/orchestra-guard.js
++++ b/hooks/orchestra-guard.js
+@@ -26,19 +26,31 @@
+  *   - the current turn is flushed only after it completes, so a mid-session
+  *     /model switch is picked up one turn late.
+  *
+- * Two writes are exempt from Director law:
++ * Three classes of writes are exempt from Director law:
+  *   - the pause file (.claude/orchestra.pause), at the user's request (§6);
+  *   - plan files: Write/Edit/MultiEdit of markdown under .claude/plans/
+- *     (ORCHESTRA.md §4 PLAN). Plans are Director thinking, not execution —
+- *     the plan is the one artifact the Director authors itself. The carve-out
+- *     is deliberately narrow (that directory, .md only, traversal-checked) so
+- *     it cannot become a general write loophole.
++ *     (ORCHESTRA.md §4 PLAN). Plans are Director thinking, not execution.
++ *     The carve-out is deliberately narrow (that directory, .md only,
++ *     traversal-checked) so it cannot become a general write loophole.
++ *   - memory files: CLAUDE.md / CLAUDE.local.md anywhere in the project, plus
++ *     user-level memory under Claude's config dir ($CLAUDE_CONFIG_DIR or
++ *     ~/.claude): its CLAUDE.md and markdown inside memory/memories
++ *     directories (Claude Code's auto-memory notebook). Memory distills the
++ *     conversation, which only the Director holds — delegating a one-line
++ *     append buys no independence (the executor would transcribe text the
++ *     Director composed) and blocking it breaks Claude Code's own auto-memory.
++ *     One fence: an edit may never alter or remove the managed
++ *     <!-- ORCHESTRA:BEGIN/END --> block in CLAUDE.md — that block wires the
++ *     harness into the project and §6 reserves disabling the harness for the
++ *     user. The guard simulates the write's result and denies any memory edit
++ *     that does not carry the block through verbatim.
+  *
+  * Optional per-project policy — .claude/orchestra.json:
+  *   {
+  *     "directorBlockedPatterns": ["^mcp__blender__", "^mcp__godot__"],
+  *     "directorAllowedTools": ["Glob"],
+- *     "directorPlanPatterns": ["^docs/plans/.+\\.md$"]
++ *     "directorPlanPatterns": ["^docs/plans/.+\\.md$"],
++ *     "directorMemoryPatterns": ["^\\.claude/rules/.+\\.md$"]
+  *   }
+  * directorBlockedPatterns: regexes tested against tool names; matches are
+  *   denied to the Director (use for MCP tools that mutate external state).
+@@ -48,6 +60,9 @@
+  *   (forward-slash form) of Write/Edit/MultiEdit targets; matches are
+  *   treated as plan files in ADDITION to the default .claude/plans/*.md.
+  *   Paths outside the project directory never match.
++ * directorMemoryPatterns: same shape as directorPlanPatterns; matches are
++ *   treated as memory files in ADDITION to the defaults above. Marker-block
++ *   protection applies to matched files too.
+  *
+  * Fail-open by design: any unexpected input, config error, or internal error
+  * allows the call rather than bricking the session. A broken orchestra.json
+@@ -57,6 +72,7 @@
+ 'use strict';
+ 
+ const fs = require('fs');
++const os = require('os');
+ const path = require('path');
+ 
+ // Tools the Director may not use (default law).
+@@ -82,13 +98,33 @@ const PAUSE_BASENAME = 'orchestra.pause';
+ const CONFIG_BASENAME = 'orchestra.json';
+ const PLANS_DIRNAME = 'plans'; // .claude/plans — the Director's own notebook
+ 
+-// Tools whose calls can qualify for the plan-file exception.
++// Memory files the Director may edit itself (ORCHESTRA.md §3.1).
++const MEMORY_BASENAMES = new Set(['CLAUDE.md', 'CLAUDE.local.md']);
++const MARKER_BEGIN = '<!-- ORCHESTRA:BEGIN'; // loose: matches older stamped variants
++const MARKER_END = '<!-- ORCHESTRA:END -->';
++
++// Tools whose calls can qualify for the plan-file and memory-file exceptions.
+ const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
+ 
+ function projectDir() {
+   return process.env.CLAUDE_PROJECT_DIR || process.cwd();
+ }
+ 
++// Claude's own config dir — where user-level memory (CLAUDE.md, auto-memory)
++// lives. Empty string when it can't be determined (then only project-level
++// memory files qualify).
++function claudeConfigDir() {
++  if (typeof process.env.CLAUDE_CONFIG_DIR === 'string' && process.env.CLAUDE_CONFIG_DIR !== '') {
++    return process.env.CLAUDE_CONFIG_DIR;
++  }
++  try {
++    const home = os.homedir();
++    return home ? path.join(home, '.claude') : '';
++  } catch (_) {
++    return '';
++  }
++}
++
+ function allow() {
+   process.exit(0);
+ }
+@@ -108,8 +144,8 @@ function deny(reason) {
+ 
+ function denyDefault(toolName) {
+   const planHint = FILE_WRITE_TOOLS.has(toolName)
+-    ? 'Exception: plan files — the Director may write markdown under .claude/' +
+-      PLANS_DIRNAME + '/ itself. '
++    ? 'Exceptions: plan files (markdown under .claude/' + PLANS_DIRNAME + '/) and memory ' +
++      'files (CLAUDE.md / CLAUDE.local.md, auto-memory) are Director-authored. '
+     : '';
+   deny(
+     'Orchestra: the Director does not use ' + toolName + '. Delegate instead — ' +
+@@ -129,10 +165,21 @@ function denyByPolicy(toolName) {
+   );
+ }
+ 
++function denyMarkerBlock(toolName) {
++  deny(
++    'Orchestra: memory files are Director-editable, but this ' + toolName + ' would alter ' +
++      'or remove the managed Orchestra block (' + MARKER_BEGIN + ' ... ' + MARKER_END +
++      ') in CLAUDE.md. That block wires the harness and belongs to the installer and the ' +
++      'user (ORCHESTRA.md §6): edit around it, carrying it through unchanged. If the user ' +
++      'wants the harness disabled, they pause it (.claude/' + PAUSE_BASENAME + ' / ' +
++      'ORCHESTRA_PAUSE=1) or run the installer with --uninstall.'
++  );
++}
++
+ // Per-project policy. Any failure here returns the empty policy — the default
+ // blocklist above is never weakened by a broken config.
+ function loadPolicy() {
+-  const empty = { patterns: [], allowed: [], planPatterns: [] };
++  const empty = { patterns: [], allowed: [], planPatterns: [], memoryPatterns: [] };
+   try {
+     const p = path.join(projectDir(), '.claude', CONFIG_BASENAME);
+     if (!fs.existsSync(p)) return empty;
+@@ -151,10 +198,11 @@ function loadPolicy() {
+         .filter(Boolean);
+     const patterns = toRegexes(cfg.directorBlockedPatterns);
+     const planPatterns = toRegexes(cfg.directorPlanPatterns);
++    const memoryPatterns = toRegexes(cfg.directorMemoryPatterns);
+     const allowed = (Array.isArray(cfg.directorAllowedTools) ? cfg.directorAllowedTools : []).filter(
+       (s) => typeof s === 'string'
+     );
+-    return { patterns, allowed, planPatterns };
++    return { patterns, allowed, planPatterns, memoryPatterns };
+   } catch (_) {
+     return empty;
+   }
+@@ -229,6 +277,103 @@ function isPlanFileOperation(toolName, toolInput, planPatterns) {
+   return planPatterns.some((re) => re.test(posixRel));
+ }
+ 
++// Memory-file exception (ORCHESTRA.md §3.1): CLAUDE.md / CLAUDE.local.md
++// anywhere inside the project, any project-relative path matching
++// directorMemoryPatterns, and — outside the project — user-level memory under
++// Claude's config dir: its CLAUDE.md, or markdown inside a memory/memories
++// directory (auto-memory). Containment is checked on resolved paths, same as
++// the plan carve-out.
++function isMemoryFileTarget(resolved, memoryPatterns) {
++  const root = projectDir();
++  const relToProject = path.relative(root, resolved);
++  const inProject =
++    relToProject !== '' && !relToProject.startsWith('..') && !path.isAbsolute(relToProject);
++  if (inProject) {
++    if (MEMORY_BASENAMES.has(path.basename(resolved))) return true;
++    const posixRel = relToProject.split(path.sep).join('/');
++    return memoryPatterns.some((re) => re.test(posixRel));
++  }
++  const cfg = claudeConfigDir();
++  if (cfg === '') return false;
++  const relToCfg = path.relative(cfg, resolved);
++  if (relToCfg === '' || relToCfg.startsWith('..') || path.isAbsolute(relToCfg)) return false;
++  if (!/\.md$/i.test(resolved)) return false;
++  const segments = relToCfg.split(path.sep);
++  if (segments.length === 1 && MEMORY_BASENAMES.has(segments[0])) return true;
++  return segments.slice(0, -1).some((s) => s === 'memory' || s === 'memories');
++}
++
++// Predicted file content after the tool call, or null when the input can't be
++// modeled. Mirrors the file tools' semantics: Write replaces wholesale; Edit
++// replaces the first occurrence (all with replace_all); MultiEdit applies its
++// edits in sequence. A no-match old_string is a no-op here — the real tool
++// errors out without writing, so nothing needs protecting.
++function simulateWrite(toolName, toolInput, pre) {
++  if (toolName === 'Write') {
++    return typeof toolInput.content === 'string' ? toolInput.content : null;
++  }
++  const applyOne = (text, e) => {
++    if (!e || typeof e.old_string !== 'string' || typeof e.new_string !== 'string') return null;
++    if (e.old_string === '') return text;
++    if (e.replace_all === true) return text.split(e.old_string).join(e.new_string);
++    const idx = text.indexOf(e.old_string);
++    if (idx === -1) return text;
++    return text.slice(0, idx) + e.new_string + text.slice(idx + e.old_string.length);
++  };
++  if (toolName === 'Edit') return applyOne(pre, toolInput);
++  if (toolName === 'MultiEdit') {
++    if (!Array.isArray(toolInput.edits)) return null;
++    let text = pre;
++    for (const e of toolInput.edits) {
++      text = applyOne(text, e);
++      if (text === null) return null;
++    }
++    return text;
++  }
++  return null;
++}
++
++// The managed Orchestra block must ride through every memory edit verbatim.
++// An unbalanced block (BEGIN without END — a hand-edited file) degrades to
++// requiring the BEGIN marker itself to survive.
++function markerBlockSurvives(pre, post) {
++  const start = pre.indexOf(MARKER_BEGIN);
++  if (start === -1) return true; // nothing managed in this file
++  const endIdx = pre.indexOf(MARKER_END, start);
++  if (endIdx === -1) return post.indexOf(MARKER_BEGIN) !== -1;
++  return post.indexOf(MARKER_BEGIN) !== -1 && post.indexOf(MARKER_END) !== -1;
++}
++
++// Classify a tool call against the memory exception:
++//   'none'   — not a memory-file write; default law applies.
++//   'allow'  — memory-file write that leaves any managed block intact.
++//   'marker' — memory-file write that would damage the managed block; deny
++//              with the marker-specific message (still subject to model
++//              dormancy, like every other denial).
++// Internal errors classify as 'none' — no exemption granted, default law and
++// messaging apply, and the guard's global fail-open still backstops crashes.
++function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
++  try {
++    if (!FILE_WRITE_TOOLS.has(toolName)) return 'none';
++    if (!toolInput || typeof toolInput !== 'object') return 'none';
++    if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '') return 'none';
++    const resolved = path.resolve(projectDir(), toolInput.file_path);
++    if (!isMemoryFileTarget(resolved, memoryPatterns)) return 'none';
++    let pre;
++    try {
++      pre = fs.readFileSync(resolved, 'utf8');
++    } catch (_) {
++      return 'allow'; // no existing file — nothing managed to protect
++    }
++    if (pre.indexOf(MARKER_BEGIN) === -1) return 'allow';
++    const post = simulateWrite(toolName, toolInput, pre);
++    if (post === null) return 'marker'; // unmodelable change to a managed file — protect it
++    return markerBlockSurvives(pre, post) ? 'allow' : 'marker';
++  } catch (_) {
++    return 'none';
++  }
++}
++
+ // The one mutation the Director is permitted regardless of location: the
+ // pause file itself, at the user's explicit request (see ORCHESTRA.md §6).
+ function isPauseFileOperation(toolName, toolInput) {
+@@ -272,14 +417,19 @@ function main(raw) {
+   const toolName = input.tool_name;
+   if (typeof toolName !== 'string') return allow();
+ 
+-  // Exempt mutations: the pause-file toggle (§6) and plan-file authorship
+-  // (§4 PLAN — .claude/plans/*.md plus any directorPlanPatterns matches).
++  // Exempt mutations: the pause-file toggle (§6), plan-file authorship
++  // (§4 PLAN — .claude/plans/*.md plus any directorPlanPatterns matches), and
++  // memory-file authorship (§3.1 — CLAUDE.md/CLAUDE.local.md, auto-memory,
++  // plus any directorMemoryPatterns matches; marker block protected).
+   if (isPauseFileOperation(toolName, input.tool_input)) return allow();
+ 
+   const policy = loadPolicy();
+ 
+   if (isPlanFileOperation(toolName, input.tool_input, policy.planPatterns)) return allow();
+ 
++  const memory = classifyMemoryOperation(toolName, input.tool_input, policy.memoryPatterns);
++  if (memory === 'allow') return allow();
++
+   const deniedByDefault = BLOCKED.has(toolName) && !policy.allowed.includes(toolName);
+   const deniedByPolicy = policy.patterns.some((re) => re.test(toolName));
+   if (!deniedByDefault && !deniedByPolicy) return allow();
+@@ -294,6 +444,7 @@ function main(raw) {
+   const model = latestMainModel(input);
+   if (model === null || !DIRECTOR_MODEL.test(model)) return allow();
+ 
++  if (memory === 'marker') return denyMarkerBlock(toolName);
+   return deniedByDefault ? denyDefault(toolName) : denyByPolicy(toolName);
+ }
+ 
+diff --git a/install.js b/install.js
+index 69c94fb..5c80b13 100644
+--- a/install.js
++++ b/install.js
+@@ -15,6 +15,19 @@ const fs = require('fs');
+ const path = require('path');
+ 
+ const SRC = __dirname;
++
++// Harness version — single source of truth is the VERSION file at the master
++// root. Stamped into each installed project's .claude/ORCHESTRA.md header so
++// a project can always answer "what Orchestra version am I on".
++const VERSION = (() => {
++  try {
++    const v = fs.readFileSync(path.join(SRC, 'VERSION'), 'utf8').trim();
++    return /^\d+\.\d+\.\d+$/.test(v) ? v : '';
++  } catch (_) {
++    return '';
++  }
++})();
++
+ const AGENTS = ['scout.md', 'executor.md', 'reviewer.md', 'reviewer-codex.md', 'planner-gpt.md'];
+ const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
+ 
+@@ -186,8 +199,9 @@ const claudeMd = path.join(target, 'CLAUDE.md');
+ const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
+ const pauseFile = path.join(dotClaude, 'orchestra.pause');
+ 
++const vTag = VERSION ? ' v' + VERSION : '';
+ console.log(
+-  (uninstall ? 'Uninstalling Orchestra from: ' : 'Installing Orchestra into: ') + target
++  (uninstall ? 'Uninstalling Orchestra' + vTag + ' from: ' : 'Installing Orchestra' + vTag + ' into: ') + target
+ );
+ 
+ if (!uninstall) {
+@@ -217,8 +231,15 @@ if (!uninstall) {
+   did('review runner -> .claude/hooks/' + REVIEW_RUNNER);
+   fs.copyFileSync(path.join(SRC, 'hooks', ULTRAPLAN_RUNNER), path.join(hooksDir, ULTRAPLAN_RUNNER));
+   did('ultra-plan runner -> .claude/hooks/' + ULTRAPLAN_RUNNER);
+-  fs.copyFileSync(path.join(SRC, 'ORCHESTRA.md'), orchestraMd);
+-  did('protocol -> .claude/ORCHESTRA.md');
++  let protocol = fs.readFileSync(path.join(SRC, 'ORCHESTRA.md'), 'utf8');
++  if (VERSION) {
++    protocol = protocol.replace(
++      'Installed by the Orchestra harness.',
++      'Installed by the Orchestra harness (v' + VERSION + ').'
++    );
++  }
++  fs.writeFileSync(orchestraMd, protocol, 'utf8');
++  did('protocol -> .claude/ORCHESTRA.md' + (VERSION ? ' (v' + VERSION + ')' : ''));
+ 
+   // 2. Merge hook entry into settings.json (replace any stale Orchestra entries).
+   const settings = readJson(settingsFile);
+@@ -266,8 +287,12 @@ if (!uninstall) {
+     '  - Pause anytime: create .claude/orchestra.pause (delete it to resume), or ORCHESTRA_PAUSE=1.'
+   );
+   console.log(
+-    '  - The Director may write plan files (.claude/plans/*.md) itself; everything else stays delegated.'
++    '  - The Director may write plan files (.claude/plans/*.md) and memory files (CLAUDE.md /'
++  );
++  console.log(
++    '    CLAUDE.local.md / auto-memory) itself; the CLAUDE.md marker block is protected, and'
+   );
++  console.log('    everything else stays delegated.');
+   if (skills.length) {
+     console.log(
+       '  - Bundled skills installed: ' +
+diff --git a/skills/orchestra-status/SKILL.md b/skills/orchestra-status/SKILL.md
+index 0b02586..e87e3c5 100644
+--- a/skills/orchestra-status/SKILL.md
++++ b/skills/orchestra-status/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: orchestra-status
+-description: Report the Orchestra harness's live state in this project — mode (director model or dormant), enforcement/pause state, review engine, guard wiring, installed agents, specialists and skills, verification manifest, plans and ledger. Use when the user asks whether the Orchestra is active, which mode or review engine the session is running, why a denial happened, what's installed, or for a general harness health check. Read-only; changes nothing.
++description: Report the Orchestra harness's live state in this project — harness version, mode (director model or dormant), enforcement/pause state, review engine, guard wiring, installed agents, specialists and skills, verification manifest, plans and ledger. Use when the user asks whether the Orchestra is active, which mode or review engine the session is running, why a denial happened, what's installed, or for a general harness health check. Read-only; changes nothing.
+ ---
+ 
+ # Orchestra status
+@@ -15,10 +15,10 @@ Then the facts. Under a director model, dispatch **one scout mission** carrying
+ 
+ 1. **Pause state** — does `.claude/orchestra.pause` exist? Is `ORCHESTRA_PAUSE=1` set in the environment?
+ 2. **Guard wiring** — does `.claude/settings.json` contain a PreToolUse entry whose command references `orchestra-guard.js`? Do `.claude/hooks/orchestra-guard.js` and `.claude/hooks/orchestra-review.js` exist?
+-3. **Protocol** — does `.claude/ORCHESTRA.md` exist? Does `CLAUDE.md` contain the `<!-- ORCHESTRA:BEGIN` marker?
++3. **Protocol** — does `.claude/ORCHESTRA.md` exist? What harness version does its header carry (`Installed by the Orchestra harness (vX.Y.Z)` in the first lines; installs stamped before versioning carry none)? Does `CLAUDE.md` contain the `<!-- ORCHESTRA:BEGIN` marker?
+ 4. **Company** — which of `scout.md`, `executor.md`, `reviewer.md`, `reviewer-codex.md`, `planner-gpt.md` are present in `.claude/agents/`? List any other `.md` files there as specialists.
+ 5. **Skills** — which skill directories exist under `.claude/skills/`? (Bundled: the `orchestra-*` set and `ultra-plan`.)
+-6. **Config** — from `.claude/orchestra.json` (absent = all defaults): `reviewEngine` (default `opus`), counts of `directorBlockedPatterns` and `directorPlanPatterns`, any `directorAllowedTools`, and whether a `verification` manifest exists (quote its `full` command if so).
++6. **Config** — from `.claude/orchestra.json` (absent = all defaults): `reviewEngine` (default `opus`), counts of `directorBlockedPatterns`, `directorPlanPatterns`, and `directorMemoryPatterns`, any `directorAllowedTools`, and whether a `verification` manifest exists (quote its `full` command if so).
+ 7. **Codex availability** — only if the engine is `codex` or `dual`: is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)?
+ 8. **Plans** — does `.claude/plans/` exist, how many `.md` files does it hold, and is `ledger.md` among them?
+ 
+@@ -30,11 +30,11 @@ Render exactly this block (drop the Codex parenthetical unless it was checked),
+ ORCHESTRA STATUS
+ Mode:         MODE A (Fable directs) | MODE B (Opus directs) | DORMANT (<model> at the helm)
+ Enforcement:  active | paused (.claude/orchestra.pause) | paused (ORCHESTRA_PAUSE=1) | guard not wired
+-Protocol:     .claude/ORCHESTRA.md <present|MISSING> · CLAUDE.md import <present|MISSING>
++Protocol:     .claude/ORCHESTRA.md <present (vX.Y.Z | unversioned)|MISSING> · CLAUDE.md import <present|MISSING>
+ Company:      scout <✓|✗> executor <✓|✗> reviewer <✓|✗> reviewer-codex <✓|✗> planner-gpt <✓|✗> · specialists: <names | none>
+ Skills:       <skill names | none>
+ Engine:       opus (default) | opus (configured) | codex (Codex CLI <found|NOT FOUND>) | dual (Codex CLI <found|NOT FOUND>)
+-Policy:       blocked-patterns <n> · allowed-tools <names | none> · plan-patterns <n>
++Policy:       blocked-patterns <n> · allowed-tools <names | none> · plan-patterns <n> · memory-patterns <n>
+ Verification: manifest present (full: <command>) | no manifest
+ Plans:        <n> plan file(s) · ledger <present|none>
+ ```

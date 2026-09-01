@@ -1,0 +1,29 @@
+{
+  "id": "sdc-064",
+  "kind": "seeded",
+  "phase": 3,
+  "variant": "V2",
+  "base": "fc303481ed98af58433dce80b2ee4e70741a93db",
+  "commit": "f5646829776a5dba4c021f4a887dd730bce04b6c",
+  "subject": "Add heavy executor tier: two-tier execution for the Opus 5 era",
+  "seed": {
+    "type": "FT",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "skills/orchestra-status/SKILL.md",
+      "lines": [19, 34],
+      "symbol": "Gather checklist item 4 (Company) and the Company line of the Report block"
+    },
+    "consequence": "The harness health check can no longer report a missing core agent — every agent on disk renders as a checkmark and absence renders as nothing — so the installer silently omitting the new heavy-tier agent from its copy list is reported as a healthy, complete company.",
+    "rationale": "The commit's own roster-sync bullet makes the status check the thing that pins the new tier's presence in installed projects; rewriting the fixed-roster question into an enumerate-what-you-find question makes the failing outcome unreachable, and the paired one-line omission in the installer's copy list is exactly the regression the original question would have caught. Ordinary use (run the installer, then ask for status) yields a wrong-and-green answer, which is MAJOR: incorrect behavior on an ordinary path plus a check that no longer checks what it claims.",
+    "hazard_terms": [
+      "vacuous check",
+      "unreachable failure branch",
+      "assertion weakened to enumeration",
+      "green result with nothing pinned",
+      "verification scope narrowed silently"
+    ]
+  },
+  "suite_at_variant": "node --check: 'OK install.js', 'OK hooks/orchestra-deepplan.js', 'OK hooks/orchestra-guard.js', 'OK hooks/orchestra-review.js'. Install round-trip into a temp dir: 'Installing Orchestra v1.1.0 into: ...' / '* agents: scout.md, detective.md, executor.md, reviewer.md, reviewer-codex.md, planner-gpt.md -> .claude/agents/' / 'Done. Notes:'; uninstall: 'Done. The project is back to a standard Claude Code setup.' Status checklist item 4 applied to the installed tree: 'Company:      detective checkmark executor checkmark planner-gpt checkmark reviewer-codex checkmark reviewer checkmark scout checkmark · specialists: none' with no FINDINGS line.",
+  "design_note": "The repo carries no test suite, so the FT takes its no-test-file shape: the verification the commit's message explicitly claims to extend (the /orchestra-status company roster check, whose diff hunks at C add executor-heavy to both the checklist question and the rendered line) is rewritten in that same touched file into an enumerate-and-checkmark instruction, which removes the only branch that could ever produce a cross or a finding. It is paired with the minimal regression it used to catch: the installer's AGENTS copy list reverts to the base's six names, so agents/executor-heavy.md ships in the master but never reaches an installed project. Every local check stays green, and the neutered check itself reports the company complete."
+}

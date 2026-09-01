@@ -1,0 +1,24 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Fix the abandoned-worktree sweep that the disposable-checkout module runs at
+startup. It recognizes its own leftovers by testing whether a registered
+worktree's path contains the module's temporary-directory prefix, then
+removes that worktree and recursively deletes its parent. Two reproductions
+have landed — CI deleted the OS temp root, because the fixture repository's
+name carried the prefix, while a delta re-review destroyed a legitimate
+worktree under a prefix-substring ancestor. Replace the substring test with
+a structural one, so that a leftover is exactly <tmp>/<prefix>XXXX/checkout
+and only that immediate parent is ever removed, skip the main worktree as a
+second belt, and keep the live-checkout exemption. Pin both reproducer
+shapes as regressions, record the re-review verdict verbatim, then fold its
+dispositions into the round's ledger. Confine the work to the sweep's
+identification and removal rule, those regressions plus those two roster
+documents, leaving every module-level constant, every default and all
+behaviour outside that rule unchanged.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

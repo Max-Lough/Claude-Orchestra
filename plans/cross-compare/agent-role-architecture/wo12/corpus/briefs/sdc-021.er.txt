@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The guard now requires positive evidence of a director model before it
+enforces anything, so a session without one, including a fresh session's own
+first turn, never sees a denial at all. A genuine director session still
+absorbs just one unenforced opening turn before hard enforcement engages the
+instant the model reaches the transcript, and the existing delegation
+instructions already cover that gap on their own. The docs on mode detection
+and troubleshooting were brought in line with the revised default, confined
+to 3 files with no other line touched.
+
+Verify the diff on its own merits.

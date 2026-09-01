@@ -9,6 +9,299 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.4.1 — WO-12 pre-trial work closed under an oracle-authored bound; 12f withdrawn
+
+What prompted this release is a postmortem, not a finding. Rounds 4–8 of the
+WO-12 blinding work had escalated a met reader standard (a fresh blind reader
+at or below chance since round 3) into an arms race against a label-informed
+style classifier — a threat outside the trial's model, since a per-packet
+reviewer holds one clone and one brief, never 84 labels. The owner called the
+creep, directed a hard turn to live pilot testing, and dropped Terra as a
+reviewer candidate outright ("attempting to find cheaper reviewers is
+unnecessary"), and a session scope oracle ratified a bounded close-out and
+authored the stopping rule — worker-authored stopping rules being the round-7
+lesson (amendment xii built its own treadmill).
+
+Landed: protocol amendments xiv (the stopping rule: one completion pass on
+the 20 residue ids plus at most one repair pass; blind test #4 once with one
+bounded retry; the pre-registered rounds-8 delta review struck; every later
+classifier finding a disclosure, never a gate) and xv (12f withdrawn, X-Terra
+struck from every phase, the served-model identity follow-on moot; the
+corpus's consumers are 12d and 12h). Content batch G5 cleared the three
+residue findings; the corpus regenerated idempotently; blind test #4 — drawn
+by `blind-draw.js`, read by a fresh-context evaluator, scored mechanically —
+came in below chance, and `--check-only` now prints **SEAL: PASS** with the
+transcript committed. A sub-chance disclosure (the evaluator's honesty
+heuristics fired on real history, not the seeds) is recorded in
+`BLIND-TEST-round8.md` and, per amendment xiv, gates nothing. The X-Sol
+phase-0 dry-run is clean. The trial now waits on exactly two owner actions:
+the codex helper repair and the P0 `/status` readings.
+
+## 2.4.0 — WO-12 round 8: the stopping standard enforced, not described; the review runner made observable
+
+What prompted this release is a verdict, not a feature request. The first
+cross-vendor pair of delta reviews on the WO-12 tooling (Anthropic rounds 6–7,
+OpenAI rounds 3–7 — the latter after two VOID attempts, see below) converged
+blind on the same four defects and then each added its own. The Anthropic
+lane applied the protocol's own stopping standard and found it unmet: a
+style-only classifier at 85.7% precision under leave-one-out CV, and a
+nine-rule list of absolute thresholds that labels 58 of 84 packets with zero
+errors. Round 7 had gated every *mean* the previous review named; the tails
+were untouched, and a floor of 8 words minted the rule "shortest sentence is
+exactly 8 → control" on 15 packets.
+
+- **New: arm (8), single-threshold purity.** `assemble-key.js` now scans 15
+  derived features (sentence counts, mean/min/max/sd sentence length, commas,
+  semicolons, colons, dashes, "and", connectives and digits per 100 words)
+  at every observed value in both directions and fails any rule that fires on
+  ≥5 artifacts of one population and 0 of the other, printing per failing rule
+  the artifacts it fires on. This is the generic test that would have caught
+  the round-3 length tails, the round-5 sentence shapes and every rule in the
+  reviewer's list with one gate; it is the in-tool proxy for amendment
+  (xii)'s classifier arm (protocol amendment xiii).
+- **New: `SEAL:` verdict.** `--check-only` now prints the whole distribution
+  report and exits 1 when briefs drift from generation, a purity rule fires,
+  or `corpus/blind-read.json` — amendment (vi)'s acceptance evidence — is
+  absent, stale against a content hash, or above the 65% ceiling. The
+  standard was rendered before; it is enforced now. `--no-seal` for interim
+  content work.
+- **Fixed: the identity gate was writable by its subject.** `served_model`
+  was parsed out of the reviewed model's own transcript, so the only reachable
+  PASS for gate 5 was a line the model wrote; a contradicting line failed it.
+  `run-lane.js` now honours the field only from the runner's header block
+  before a literal `=== ENGINE OUTPUT ===` delimiter.
+- **Fixed: the FINDINGS window terminator, from both directions.** The
+  round-7 rule ended the window at any heading, any `---` and any `--flag`
+  continuation, so a correctly cited CRITICAL under a `### CRITICAL` subhead
+  scored MISS with no warning (Anthropic); it also did not end at a
+  Title-case bare label such as `Verification rerun:`, so a re-run block could
+  mint a hit (OpenAI). Now: same-or-higher headings, named sections, bare
+  labels, and the literal runner delimiters end it; severity subheads,
+  rules and flags do not.
+- **Fixed: what the lane's checkout revealed.** Run clones were directories
+  named `sdc-NNN`, and the seeded id blocks are published in this repository;
+  `--run-clone-root` inside the repository let a clone reach the live key by
+  relative path. Clones are now named by an opaque per-run token with an
+  id↔token map beside the results, and a root inside the repository or any
+  worktree is refused.
+- **Fixed: the `Commit subject:` line.** Round 6 removed the sha half of the
+  reused-base pair oracle and left the subject half — ten byte-identical
+  lines, each pair one seed and one control. VARIANTS v4 prints no subject;
+  the reviewer has `git log` in the clone.
+- **Fixed, smaller:** unigram exclusivity now covers two-letter words,
+  stopwords and bare numbers (`we` was 0 seeded / 13 control under the old
+  exclusions); sentences split unconditionally with an abbreviation list and
+  the shortest-sentence range is gated, not just its mean; resume keeps the
+  absolute run index so gate 6's streak survives a crash; gate 3 is not
+  ready while a run is dead; hex lint floor 6 with a `0x` boundary; label
+  lint zero-tolerance; blind draws backtrack before reporting a shortfall and
+  are stored verbatim; `.gitattributes` `-text` on the JSON evidence files.
+  Suite 815 → 983 checks.
+- **Found: a review runner can silently run the test stub.** An OpenAI-lane
+  attempt returned `VERDICT: APPROVE` — the literal output of
+  `tests/fixtures/stub-codex.js`, run because `CODEX_BIN` was set in the
+  invoking environment; the runner logged no resolved engine, so nothing but
+  the fixture's prose exposed it. The next attempt died under a 10-minute
+  foreground cap the dispatch itself imposed. Both ruled VOID and charged.
+  `orchestra-review.js` now prints `ENGINE BIN: <path> sha256=<hex>` in its
+  header, ends the header with the `=== ENGINE OUTPUT ===` delimiter
+  (occurrences inside engine output are neutralised, so the engine cannot
+  forge a header), and refuses a fixture engine unless
+  `ORCHESTRA_ALLOW_STUB_ENGINE=1`. It emits no `served_model:` because
+  codex-cli 0.151.0 exposes none — gate 5 reads LIMITED on codex lanes
+  honestly until the CLI reports one.
+- **Content round 8** re-authors both populations against the purity gate's
+  targets; blind test #4 and the rounds-8 delta reviews follow and are
+  recorded in STATUS.md.
+
+## 2.3.0 — WO-12 trial substrate: a pre-registered protocol, a sealed seeded-defect corpus, and the lanes to run it; the codex sandbox fault root-caused
+
+The plan's paired-casting trials (WO-12) exist as runnable, pre-registered
+instruments rather than intentions — but **no trial pass has run**: every
+pass is gated on the Quartermaster showing a usable pool and on the codex
+helper repair below. What prompted the shape of this release is the
+review-qualification problem the plan names in § 3.4: no measurement of
+GPT-5.6 Terra's review recall exists, so the T1 relief lane is neither
+granted nor denied on evidence — it is qualification-gated, and a
+qualification needs a corpus whose answer key was sealed before any reviewer
+saw it.
+
+- **New: `plans/cross-compare/agent-role-architecture/wo12/wo12-protocol.md`** —
+  decision rules, corpus design, lanes, phases and scoring for trials 12a/12c/
+  12d/12e/12f/12h committed before any model pass (the WO-7b precedent); 12b
+  deferred to the shadow period with its rule fixed now; allowance governance
+  bound to P0 bucket state. One pre-run amendment recorded in place (the 12h
+  variant rotation, which the first draft skewed 18/6/6).
+- **New: the seeded-defect corpus (`wo12/corpus/`)** — 84 review packets drawn
+  from this repository's own history: 30 seeded variants (6 complementarity
+  types × 5 — constraint violation, over-obedience, long-context miss,
+  falsified test state, unsupported claim, race/lifetime; 6 CRITICAL, 24 MAJOR,
+  0 MINOR) and 54 unmodified controls, packet variants 10/10/10 and 18/18/18
+  for the blinding factor. Each seed was produced by a fresh-context seeder
+  that saw only its own base commit, type definition and rubric — never the
+  key — as a `P → C'` patch that re-applies in a fresh clone with the suite
+  green (an escaped defect, not a red one). The key is sealed in
+  `corpus/key.json`; `CONSTRUCTION.md` records every tally, head sha,
+  deviation and brief normalization.
+- **New: the lane tooling** — `build-corpus.js` (reproducible variant
+  materialization in a throwaway clone; the variant's commit message is the
+  real commit's subject, so the reviewer reads the intent the packet claims),
+  `run-lane.js` (P0-gated, `--yes`/`--dry-run`, one retry on UNAVAILABLE,
+  verbatim results; refuses unless the Quartermaster shows OU usable),
+  `score.js` (mechanical hits with `exact-path` vs `basename-only` tiers and a
+  `--strict-paths` mode, Wilson intervals, the 12f gate table, the 12d
+  seed-level union table), `assemble-key.js` (all-or-nothing key assembly,
+  brief sha normalization, leakage and template-conformance lints scoped to
+  the author sentence and exempting transcribed commit subjects). Suite:
+  `tests/wo12-tooling.test.js`, in CI.
+- **New: the 12a, 12e and 12c corpora** — 8 bounded Builder orders with
+  hidden acceptance tests (red on baseline, green on a private reference), 12
+  hard-environment tasks with a scope-audited resolver check (`check-task.js`
+  reports out-of-scope mutation as NOT_RESOLVED even when the check passes),
+  and 6 static-component orders with a dependency-free markup/contrast checker
+  reusing the WO-10 contrast algorithm.
+- **Round 2 (pre-run), after two REVISE verdicts on the tooling commit** — the
+  Anthropic fallback lane (4 CRITICAL / 12 MAJOR / 8 MINOR) and the cross-vendor
+  lane (3 CRITICAL / 10 MAJOR) converged on the same lines. What they found is
+  the kind of thing a sealed corpus exists to prevent: the P0 gate proceeded on
+  any Quartermaster failure that was not the literal refusal string; the seeded
+  variant's commit identity (`WO-12 seeder`, a one-line message, no ref)
+  separated seeds from controls at 100%; the answer key was reachable from the
+  reviewer's clone through `.git`; and 14 of 30 seeded briefs were structurally
+  distinguishable from controls. All closed before any pass: the gate proceeds
+  only on a positive Green (or confirmed Amber) reading parsed from
+  `--state`'s JSON, with the projected-draw check and the phase-0 stop
+  condition; variants commit with the real commit's author/committer/dates/body
+  and every review runs in a **sanitized clone** (refs, remotes and reflogs
+  removed, unreachable objects pruned, key blob asserted absent) for seeds and
+  controls alike; briefs are **generated** from per-artifact content files under
+  one structure, hazards from a closed kind-vocabulary, with structural-tell,
+  leakage, vendor and word-band lints that run before `key.json` is written;
+  hits require the locator's path (basename-only is a reported near-miss);
+  identity, false-blocker, adjudication-promotion and phase-order rules follow
+  the protocol text exactly. Two lessons recorded: a builder agent wiped 54
+  untracked content files with its own `rm -rf` (now impossible in-tool:
+  `O_EXCL` writes and a byte-level directory snapshot asserted before every
+  exit), and shared directories are committed per batch from now on. CI then
+  caught what no local run could: `build-corpus.js`'s nested-clone guard was
+  inoperative on macOS and Windows runners — a clone destination does not exist
+  yet, so a one-sided `realpath` left the two paths in different namespaces
+  (`/var` vs `/private/var`; `RUNNER~1` vs `runneradmin`) and the guard would
+  have created a clone inside the tree under review. Fixed by resolving the
+  nearest existing ancestor on both sides and comparing segment-wise, case-folded
+  on win32/darwin, with every source-spelling × destination-spelling pair pinned.
+- **Round 3 (pre-run), after the round-2 delta verdicts** (Anthropic 0C/5M/6m,
+  OpenAI 4C/2M — no CRITICAL reopened). The finding that mattered was measured,
+  not argued: a fresh evaluator separated seeds from controls at 83% on ORDER
+  prose alone, because seeds were drawn from single-invariant code commits and
+  controls from softer chore/docs commits. The fix is content plus a lint: every
+  control ORDER/CLAIMS was re-authored to the seeds' register from its own
+  commit body (135–160 / 65–95 words, hard constraints the body supports), then
+  calibrated against the seeds' measured hardness (2.3 whole-word
+  must/never/exactly/… per ORDER) — first drafts overshot to 4–16 and would have
+  flipped the tell — and a **population-balance lint** now fails assembly when the
+  populations' mean lengths differ by more than 6 words or their hardness ratio
+  leaves 0.80–1.25 (final: Δ3.2 / Δ1.8 / 1.00). Also closed: artifact ids are
+  validated before any delete path; no-verdict runs are UNAVAILABLE, not 0-hit
+  completions; false-blocker completeness is per finding; adjudication
+  promotions require the lane, the id, and a quote that appears in that lane's
+  verdict; interrupted phases resume and duplicates refuse; the phase-0 stop
+  counter persists across invocations and lanes; the exact-path suffix tier is
+  gone. One limit stated rather than papered over: the runner's model header
+  echoes the request, so the 12f identity gate is labelled `echoed-request` until
+  the runner surfaces a served model. Suite: 533 checks.
+- **Round 4 (pre-run): the blind test, measured again.** A fresh evaluator over 24
+  regenerated briefs scored 10/24 (41.7%) — at or below chance, against 83% in
+  round 2 — and its only confident hits keyed on a literal `Constraint:` label
+  that five seeded orders carried and no control did. A scan of all 84 content
+  files found the pattern was general: 15 distinct sentence-initial labels, each
+  present in exactly one population (`Verification:` in seeds, `Suites:` in
+  controls, a dozen one-offs), because labels are bespoke to the change they
+  describe and never balance. So the rule is zero tolerance — no inline
+  label-plus-colon inside ORDER or CLAIMS prose, enforced by a lint that refuses
+  assembly — and the 21 affected files were rewritten as plain prose with every
+  fact, number and constraint preserved. Suite: 561 checks.
+- **Round 5 (pre-run): what a reader cannot see, a classifier still could.** The
+  round-3 delta reviews (Anthropic 0 CRITICAL / 5 MAJOR; cross-vendor pending)
+  put a fresh reader at exactly chance (50%) and then showed, with corpus-level
+  statistics, that the populations were still separable at 100% precision on
+  25 artifacts: the controls had been authored into tight bands while the seeds
+  kept their wider spread, so the tails were seed-only; backticks appeared in 10
+  seeded orders and no control; two idioms in 15 controls and no seed. The fix is
+  symmetric authoring plus measurement: both populations now sit in the same
+  bands (ORDER 135–160, CLAIMS 65–95 — final means 150/148 and 80/78), backticks
+  are forbidden in content prose, watched idioms are balanced or absent, and a
+  **distribution lint** refuses assembly on range floors or ceilings more than 8
+  words apart, sd ratios outside 0.6–1.6, digit density more than 1.5/100 words
+  apart, any content 3-gram exclusive to one population in 4+ artifacts, or a
+  watched idiom outside a 0.5–2.0 frequency ratio. Also closed: the identity gate
+  reports `LIMITED` (never PASS) on echoed evidence; the substring fallback that
+  re-admitted the suffix tier is gone and hits are minted only from the FINDINGS
+  section; per-finding adjudication coverage needs an exact, length-bounded match;
+  a truncated sibling results file refuses instead of disarming the phase-0 halt.
+  Two things the n-gram lint taught, recorded rather than smoothed over: its first
+  cut (any 3-gram, 4+ documents) flagged 133 phrases, almost all connective
+  scaffolding, and had to be re-scoped to content-word 3-grams in 6+ documents;
+  what survived was not subject matter but one author's sentence repeated across
+  nine consecutive control files — a fingerprint the rule exists to catch, fixed
+  by varying the prose. The genuine asymmetry — docs/records commits exist only
+  among the controls, because every seeded base has to be a code commit — cannot
+  be authored away and is disclosed in `CONSTRUCTION.md` with the exclusive
+  n-grams as evidence: a whole-corpus classifier can see it; a per-packet reviewer
+  in a sanitized clone cannot.
+- **Round 6 (pre-run): the second blind test scored 24/24 — and taught the right
+  lesson.** The signal was not review content but the commit shas the brief
+  templates quoted: across many packets a control's head reappears as another
+  packet's base, and the ten reused-base pairs show one subject under two heads,
+  one per cohort. A single-packet reviewer in a sanitized clone sees only its own
+  HEAD and cannot chain packets; the blind-test instrument, a many-packet reader,
+  could. Shas now leave the brief text entirely (the runner is handed the refs out
+  of band), a lint refuses any hex-sha token in a brief, and blind draws are
+  pair-aware and seeded. Round 3's chance-level result stands as the content
+  measure; a third blind test on the regenerated briefs confirms it.
+- **Round 7 (pre-run): a stopping rule, stated.** The rounds-4–5 delta review put a
+  fresh reader at 33% — below chance — and then built a style-only classifier at
+  90% precision from two features no lint gated: seeds ended claims with clipped
+  sentences ("Done."; shortest sentence 5.6 words vs 12.5) and controls alone used
+  diff-stat vocabulary ("deletions", "insertions", "touching"). Both are now gated
+  (a sentence floor; unigram exclusivity at 8+ artifacts) and the content re-authored
+  once more. It also found a CRITICAL in the identity gate — a bare substring made
+  "served_model not reported" read as independent evidence, and an explicit
+  contradicting served model could still return MATCHED — fixed so that only an
+  explicit served model equal to the lane's model counts as evidence, a contradiction
+  fails the gate, and absence is `LIMITED`. The FINDINGS extractor now stops at any
+  header, not two named ones. And the protocol now says when this ends: the corpus
+  is accepted when every gated feature passes and the delta reviewer's best ungated
+  style classifier no longer reaches 80% precision over 84 artifacts — an adversary
+  with all 84 labels will always find *something*; the standard is that it is
+  disclosed, not that it is zero. Round 7 landed: the 84 content files re-authored,
+  every gate green on the sealed content (sentence floor 0 failures, shortest-sentence
+  means Δ1.3 of a limit of 3, unigram exclusivity 0 at df≥8), 168 briefs regenerated
+  idempotently with zero sha-like tokens, sanitized run clones re-verified, 815 checks
+  in the suite. A third blind read and the rounds-6–7 delta reviews run against it.
+- **Found: a review runner can silently run the test stub.** The OpenAI-lane delta's
+  third attempt returned `VERDICT: APPROVE` — the literal output of
+  `tests/fixtures/stub-codex.js`. `CODEX_BIN` (the runner's only engine override) was
+  set in the invoking environment; the source is undetermined and the runner logs no
+  resolved engine path, so nothing but the fixture's prose exposed it. Ruled VOID; the
+  lane's delta stays outstanding and re-runs with the binary pinned and the environment
+  quoted. Follow-on: the runner prints the resolved engine path and hash in every
+  verdict header and refuses a fixture path outside an explicit test mode.
+- **Found: the "intermittent codex sandbox fault" was never intermittent.**
+  A fresh-context Investigator refuted the working-directory hypothesis and
+  located the emitter by hash and binary search: the `codex-command-runner.exe`
+  inside the 0.151.0 install is byte-identical to 0.147.0's and rejects the
+  0.151.0 CLI's spawn protocol v6 on the unified-exec tool path; the legacy
+  shell path works, so the discriminator was which exec tool the model picked
+  on a turn (23 engine-reaching attempts, 18 faults; `-c
+  features.unified_exec=false` refuted 3/3). Repairing the helper is an owner
+  action on the install, outside this repository — recorded, not patched.
+  `roster/wo11-codex-fault-investigation-2026-08-31.md`.
+- **Records:** the owed Refactorer/Runner/Architect exercises re-attempted
+  (5 attempts each, all BLOCKED on the fault, fixtures untouched; one Architect
+  attempt charged to the Conductor as a dispatch staging error); WO-13 disposed
+  as having no target (the metered planning lane was deleted in 2.0.0).
+
 ## 2.2.0 — the Quartermaster substrate; the next-generation roster staffed; freshness becomes the pool state's only routing gate
 
 The agent-role-architecture plan (`plans/cross-compare/agent-role-architecture/`,

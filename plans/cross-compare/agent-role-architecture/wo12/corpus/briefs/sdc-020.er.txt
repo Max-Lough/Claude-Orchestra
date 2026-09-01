@@ -1,0 +1,12 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The new role is added under the same read-only law and the scout hands
+causal cores off. The routing, escalation, guard hint, stamped agent set,
+documentation and version bump are all in place. The installer's dry-run
+checker clears it and both of its supporting scripts, 3 of 3. An
+install-then-uninstall round-trip into a scratch directory then stamps the
+six agent charters and returns the project to a standard setup.
+
+Verify the diff on its own merits.

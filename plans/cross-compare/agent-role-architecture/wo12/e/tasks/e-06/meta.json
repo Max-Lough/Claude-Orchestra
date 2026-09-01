@@ -1,0 +1,12 @@
+{
+  "id": "e-06",
+  "category": "toolchain / version mismatch",
+  "title": "an inverted capability probe selects the legacy runtime path",
+  "check_display": "node test.js",
+  "check_steps": [["node", "test.js"]],
+  "scope": ["src/compat.js"],
+  "audit_ignore": [],
+  "env_unset": [],
+  "budget_minutes": 20,
+  "timeout_ms": 60000
+}

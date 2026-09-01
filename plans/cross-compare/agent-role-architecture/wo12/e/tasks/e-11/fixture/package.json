@@ -1,0 +1,11 @@
+{
+  "name": "site-prepare",
+  "version": "2.4.0",
+  "private": true,
+  "description": "Builds the content manifest before the site build runs.",
+  "scripts": {
+    "prepare-content": "node scripts/prepare.js",
+    "test": "node scripts/prepare.js && node test.js"
+  },
+  "license": "MIT"
+}

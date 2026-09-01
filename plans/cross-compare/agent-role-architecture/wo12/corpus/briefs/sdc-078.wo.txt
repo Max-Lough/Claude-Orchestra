@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Restructure checkout identity derivation to rely on git's own worktree
+records instead of filesystem path lookup. Snapshot the porcelain worktree
+list across the add operation so the single new entry becomes the identity
+and the working handle; real-path lookup must never reach the identity path.
+Fix the finding where removing the alias a checkout was created through
+strands the canonical registration, because the fail-closed cleanup path
+does not run in that case. Make creation, sweep, and teardown all address
+git's own spelling of the path, not a resolved alternative. Ambiguous
+records refuse the operation fail-closed rather than guessing. Teardown
+clears both parent path spellings behind a prefix guard, not just one. Also
+gate the timed-out lock guard: when a lock wait times out, forcibly
+terminate the child process and skip the kill-dependent sub-checks rather
+than killing into a state that can no longer be reclaimed.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

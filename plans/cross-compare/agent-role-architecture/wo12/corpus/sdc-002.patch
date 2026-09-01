@@ -1,0 +1,275 @@
+diff --git a/quartermaster/README.md b/quartermaster/README.md
+index 993a39a..0d55248 100644
+--- a/quartermaster/README.md
++++ b/quartermaster/README.md
+@@ -102,7 +102,7 @@ The plan sets no freshness window. The Director set: `maxFreshMs = 24h`,
+ A **future-dated** reading is also refused: clock skew or tamper, either way not
+ evidence.
+ 
+-### R4 — `belowReserve` via the router's own `requiredReserve`, on a WO-2-derived default forecast · *plan-cited formula (final-plan.md:1003-1006) + unstatedInPlan default (ESTIMATE)*
++### R4 — `belowReserve` via the router's own `requiredReserve`, on a WO-2-measured default forecast · *plan-cited formula (final-plan.md:1003-1006) + unstatedInPlan default (ESTIMATE), CORRECTED by Director ruling (WO-11 P0 review)*
+ 
+ The formula is the plan's — *"required reserve = forecast mandatory-review draw
+ + forecast incident draw + 30% uncertainty buffer, floored at the larger of 8%
+@@ -110,33 +110,54 @@ of the bucket and the measured cost of two gate-class reviews"* — and it is
+ **imported from `router/router.js`, never reimplemented**, so the seat that
+ computes the reserve and the gate that enforces it can never drift.
+ 
+-The plan supplies no default forecast. Derived from `router/castings.json`, and
+-carried as a **WO-2-based ESTIMATE** (Director-set operational default):
++The plan supplies no default forecast. An earlier derivation (below, now
++**REJECTED**) sustained the *peak* arrival rate across a whole week and pushed
++the default required reserve to ~65.5% — above the ladder's own 40% Green
++threshold, so the P15 gate fired for nearly any bucket. **Ruling: that
++derivation fabricated load** — no week runs entirely at burst rate — and is
++replaced by WO-2's directly **measured** weekly draw as the operational
++default:
++
++```
++mandatoryReviewDraw = 0.03
++  (WO-2 throughput probe 2026-08-28: 20 gate-class reviews drew ~3 percentage
++   points of the weekly window, 8%→11% ⇒ 0.03 measured directly — the SAME
++   probe castings.reserve.twoGateClassReviewsCostSource cites, read as a
++   weekly aggregate rather than derived through a peak-arrival extrapolation)
++incidentDraw        = 0
++```
++
++`incidentDraw` is **not derivable** from anything measured today, so it is left
++at zero — a *disclosed under-estimate* rather than a fabricated number.
++
++**Consequence.** `requiredReserve(default) = 0.03 × 1.3 = 0.039`, which sits
++**below** the plan's own 8% floor (`max(floorFractionOfBucket,
++twoGateClassReviewsCostFraction) = max(0.08, 0.003) = 0.08`), so
++**the floor governs the default**: `requiredReserve = 0.08`. A bucket below 8%
++remaining is `belowReserve` under the default forecast — a floor-dominated,
++non-fabricated result. Callers who want a busier-window forecast still pass one
++explicitly (`{mandatoryReviewDraw, incidentDraw}`, or `--forecast-mandatory` /
++`--forecast-incident`); that override path is unaffected by this correction.
++
++**Rejected alternative, kept for the record** (its arithmetic is real, the
++assumption behind it — a peak burst sustained across the whole week — was not):
+ 
+ ```
+ per-review basis   = reserve.twoGateClassReviewsCostFraction / 2
+                    = 0.003 / 2 = 0.0015 of the bucket per gate-class review
+-                     (WO-2 throughput probe 2026-08-28: 20 gate-class reviews
+-                      drew ~3 percentage points of the weekly window, 8%→11%
+-                      ⇒ 0.0015 each; the castings constant is the two-review floor)
++                     (the castings constant is the two-review floor, i.e.
++                      twice that)
+ 5h windows / week  = 168 / 5 = 33.6
+ weekly reviews     = liveness.forecastPeakArrivalsPer5h × 33.6 = 10 × 33.6 = 336
+ mandatoryReviewDraw = 336 × 0.0015 = 0.504
+-incidentDraw        = 0
++required reserve    = 0.504 × 1.3 = 0.6552 — above the ladder's 40% Green
++                       threshold; any bucket below ~65.5% remaining would have
++                       been `belowReserve` under this rejected default.
+ ```
+ 
+-`incidentDraw` is **not derivable** from anything measured today, so it is left
+-at zero — a *disclosed under-estimate* rather than a fabricated number. The
+-default reserve is therefore a lower bound on the plan's full formula.
+-
+-**Consequence, stated rather than softened.** The derivation uses the *peak*
+-arrival rate sustained across a whole week, so the default required reserve is
+-`0.504 × 1.3 = 0.6552` — **above the ladder's 40% Green threshold**. Under the
+-default forecast, any bucket below ~65.5% remaining is `belowReserve` and the
+-P15 gate fires. That is what the ruling's arithmetic says. Callers who want a
+-duty-cycled forecast pass one explicitly (`{mandatoryReviewDraw, incidentDraw}`,
+-or `--forecast-mandatory` / `--forecast-incident`). Flagged to the Director as
+-the one ruling whose literal reading has an operationally sharp edge.
++This alternative is **no longer the default** but remains available to any
++caller who explicitly wants a peak-sustained forecast, by passing
++`{mandatoryReviewDraw: 0.504, incidentDraw: 0}` (or the CLI flags) directly.
+ 
+ ### R5 — The Amber-arm confirmation protocol · *unstatedInPlan*
+ 
+diff --git a/quartermaster/quartermaster.js b/quartermaster/quartermaster.js
+index 2573146..34a0e2c 100644
+--- a/quartermaster/quartermaster.js
++++ b/quartermaster/quartermaster.js
+@@ -104,46 +104,72 @@ const DEFAULT_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+ 
+ // ---------------------------------------------------------------------------
+ // Ruling R4 — the default review-draw forecast, derived from castings.json.
++// CORRECTED by Director ruling (WO-11 P0 review): the original derivation
++// sustained the PEAK arrival rate across a whole 168h week to get
++// mandatoryReviewDraw = 0.504, which pushed the default requiredReserve to
++// ~0.6552 — ABOVE the ladder's 40% Green threshold, so the P15 gate fired on
++// nearly every bucket under the default forecast. RULING: that derivation
++// FABRICATED LOAD — no week runs entirely at burst rate — and is REJECTED as
++// the default (its arithmetic is preserved below, unused, as the cautionary
++// alternative).
+ //
+ // requiredReserve(forecast) needs `mandatoryReviewDraw` as a FRACTION OF THE
+-// BUCKET per scheduling window. The plan never states one; WO-2's measured
+-// numbers in castings.json do let one be derived, and the Director set that
+-// derivation as the operational default. It is an ESTIMATE and is labelled as
++// BUCKET per scheduling window. The plan never states one; the ADOPTED
++// default is WO-2's directly MEASURED weekly draw — the same throughput
++// probe castings.reserve.twoGateClassReviewsCostSource cites — rather than an
++// extrapolation from a sustained peak. It is an ESTIMATE and is labelled as
+ // one everywhere it surfaces.
+ //
++//   mandatoryReviewDraw = 0.03
++//     (WO-2 throughput probe 2026-08-28: 20 gate-class reviews drew ~3
++//      percentage points of the weekly window, 8%→11% ⇒ 0.03 measured
++//      directly — the SAME probe castings.reserve.twoGateClassReviewsCostSource
++//      cites, read as a weekly aggregate rather than derived through the
++//      peak-arrival-rate arithmetic below.)
++//
++// incidentDraw is NOT derivable from anything measured today. It is left at 0
++// — a DISCLOSED under-estimate rather than a fabricated number (§5.2).
++//
++// requiredReserve(default) = mandatoryReviewDraw × (1 + uncertaintyBuffer)
++//                           = 0.03 × 1.3 = 0.039
++//                           → floored at max(floorFractionOfBucket,
++//                             twoGateClassReviewsCostFraction)
++//                           = max(0.08, 0.003) = 0.08
++// The dynamic term (0.039) sits BELOW the plan's own 8% floor, so the floor
++// governs the default: a bucket below 8% remaining is belowReserve. Callers
++// who want a busier-window forecast still pass one explicitly
++// ({mandatoryReviewDraw, incidentDraw}, or --forecast-mandatory /
++// --forecast-incident) — the override is unaffected by this correction.
++//
++// REJECTED ALTERNATIVE, preserved as the cautionary arithmetic (not used by
++// defaultForecast() below):
++//
+ //   per-review basis   = reserve.twoGateClassReviewsCostFraction / 2
+ //                      = 0.003 / 2 = 0.0015 of the bucket per gate-class review
+-//     (WO-2 throughput probe 2026-08-28: 20 gate-class reviews drew ~3
+-//      percentage points of the weekly window, 8%→11% ⇒ 0.0015 each; the
+-//      castings constant is the two-review floor, i.e. twice that.)
++//     (the castings constant is the two-review floor, i.e. twice that.)
+ //   5h windows / week  = 168 / 5 = 33.6
+ //   weekly reviews     = liveness.forecastPeakArrivalsPer5h × 33.6
+ //                      = 10 × 33.6 = 336
+ //   mandatoryReviewDraw = 336 × 0.0015 = 0.504
+-//
+-// incidentDraw is NOT derivable from anything measured today. It is left at 0
+-// — a DISCLOSED under-estimate rather than a fabricated number (§5.2). The
+-// reserve is consequently a lower bound on the plan's full formula.
+-//
+-// NOTE, escalated rather than silently softened: the literal derivation uses
+-// the PEAK arrival rate sustained across a whole week, so the default
+-// required reserve is 0.504 × 1.3 = ~0.655 — above the ladder's Green
+-// threshold. Under the default forecast a bucket below ~65.5% remaining is
+-// belowReserve and the P15 gate fires. That is what the ruling's arithmetic
+-// says; callers who want a duty-cycled forecast pass one explicitly.
+-const HOURS_PER_WEEK = 168;
+-const ROLLING_WINDOW_HOURS = 5;
+-const WINDOWS_PER_WEEK = HOURS_PER_WEEK / ROLLING_WINDOW_HOURS;
++//   required reserve    = 0.504 × 1.3 = 0.6552 — above the ladder's Green
++//                          threshold; a bucket below ~65.5% remaining would
++//                          have been belowReserve under this rejected default.
++const REJECTED_HOURS_PER_WEEK = 168;
++const REJECTED_ROLLING_WINDOW_HOURS = 5;
++const REJECTED_WINDOWS_PER_WEEK = REJECTED_HOURS_PER_WEEK / REJECTED_ROLLING_WINDOW_HOURS;
++const REJECTED_PER_REVIEW = RESERVE_CFG.twoGateClassReviewsCostFraction / 2;
++const REJECTED_WEEKLY_REVIEWS = LIVENESS.forecastPeakArrivalsPer5h * REJECTED_WINDOWS_PER_WEEK;
++const REJECTED_MANDATORY_REVIEW_DRAW = REJECTED_WEEKLY_REVIEWS * REJECTED_PER_REVIEW; // 0.504, kept only for the record — NOT used below
+ 
+ function defaultForecast() {
+-  const perReview = RESERVE_CFG.twoGateClassReviewsCostFraction / 2;
+-  const weeklyReviews = LIVENESS.forecastPeakArrivalsPer5h * WINDOWS_PER_WEEK;
++  const mandatoryReviewDraw = 0.03; // WO-2-MEASURED weekly draw (Director ruling: corrected default)
+   return {
+-    mandatoryReviewDraw: weeklyReviews * perReview,
++    mandatoryReviewDraw,
+     incidentDraw: 0,
+-    basis: 'WO-2-derived ESTIMATE (ruling R4): ' + LIVENESS.forecastPeakArrivalsPer5h +
+-      ' peak review arrivals/5h × ' + WINDOWS_PER_WEEK + ' windows/week × ' + perReview +
+-      ' bucket-fraction/review; incidentDraw left at 0 — not derivable, disclosed not fabricated',
++    basis: 'WO-2-MEASURED weekly draw (Director ruling R4, corrected): ' + RESERVE_CFG.twoGateClassReviewsCostSource +
++      ' ⇒ mandatoryReviewDraw=' + mandatoryReviewDraw + '; incidentDraw left at 0 — not derivable, disclosed not ' +
++      'fabricated. Supersedes the rejected peak-arrival-rate derivation (mandatoryReviewDraw=' +
++      REJECTED_MANDATORY_REVIEW_DRAW + ', requiredReserve≈0.6552) which sustained a peak burst across a full week.',
+     estimate: true,
+   };
+ }
+@@ -584,9 +610,11 @@ function confirm(bucket, opts) {
+  *
+  *   - one reading  → NO prediction. Extrapolating from a single point is
+  *     inventing a slope, which is inventing a number.
+- *   - non-negative rate (flat, or regenerating at a window reset) → typed
+- *     "window-reset or non-monotonic; no prediction". A rising allowance has
+- *     no crossing time, and pretending otherwise would emit a fictional date.
++ *   - RISING rate (regenerating at a window reset) → typed "window-reset or
++ *     non-monotonic; no prediction". A rising allowance has no crossing time,
++ *     and pretending otherwise would emit a fictional date. A perfectly FLAT
++ *     rate is not a reset — it is a stable window, so it is no longer
++ *     mislabelled as one.
+  *   - declining rate → crossing times for every ladder threshold plus zero,
+  *     at confidence "low (two-point linear)". Never higher: two points cannot
+  *     support a stronger claim, and predicted-vs-observed is the seat's own
+@@ -614,7 +642,9 @@ function predictThrottle(bucket, opts) {
+     b: { ts: b.ts, remainingFraction: b.remainingFraction },
+     ratePerHour: rate * 3600000,
+   };
+-  if (rate >= 0) {
++  // Only a RISING allowance is the window-reset case; a flat one is a stable
++  // window, not a reset, and is no longer typed as one.
++  if (rate > 0) {
+     return {
+       ok: true,
+       bucket,
+diff --git a/tests/quartermaster.test.js b/tests/quartermaster.test.js
+index e2b6731..dee4857 100644
+--- a/tests/quartermaster.test.js
++++ b/tests/quartermaster.test.js
+@@ -248,27 +248,33 @@ section('4. The contract shape (ruling R1)');
+   check('every remainingFraction is in [0,1] — the router throws otherwise',
+     qm.BUCKETS.every((b) => st[b].state.remainingFraction >= 0 && st[b].state.remainingFraction <= 1));
+ 
+-  // The default (WO-2-derived) forecast, ruling R4: imported from the router.
++  // The default (WO-2-MEASURED) forecast, ruling R4 (corrected): imported
++  // from the router.
+   const fc = qm.defaultForecast();
+   check('the default forecast is derived from castings and MARKED as an estimate',
+-    fc.estimate === true && /WO-2-derived ESTIMATE/.test(fc.basis));
+-  check('the default mandatoryReviewDraw is the documented arithmetic (10 × 33.6 × 0.0015)',
+-    Math.abs(fc.mandatoryReviewDraw - 0.504) < 1e-9);
++    fc.estimate === true && /WO-2-MEASURED weekly draw/.test(fc.basis));
++  check('the default mandatoryReviewDraw is the WO-2 MEASURED weekly draw (0.03), not the rejected peak-derived 0.504',
++    Math.abs(fc.mandatoryReviewDraw - 0.03) < 1e-9);
+   check('incidentDraw is 0 — a disclosed under-estimate, not a fabricated number', fc.incidentDraw === 0);
+   check('requiredReserve comes from the ROUTER, not a local reimplementation',
+     (() => {
+       const d = qm.bucketStateDetail({ file: f, now: NOW });
+       return Math.abs(d.analysis.requiredReserve - router.requiredReserve(fc)) < 1e-12;
+     })());
+-  // The R4 derivation is aggressive on purpose: peak arrivals sustained for a
+-  // whole week ⇒ required reserve ≈65.5%, ABOVE the ladder's Green threshold.
+-  // Pinned here so the consequence is visible rather than surprising.
+-  check('the default required reserve is the documented ~65.5%, above the Green threshold',
+-    Math.abs(router.requiredReserve(fc) - 0.6552) < 1e-9);
++  // Corrected R4: the dynamic term (0.03 × 1.3 = 0.039) sits BELOW the plan's
++  // own 8% floor, so the FLOOR governs the default required reserve — not the
++  // rejected peak-derived ~65.5%. Pinned here so the floor-dominance is
++  // visible rather than surprising.
++  check('the default required reserve is the corrected 0.039 dynamic term, floor-dominated to 0.08',
++    Math.abs(router.requiredReserve(fc) - 0.08) < 1e-9);
++  check('the floor (0.08), not the dynamic term (0.039), is what the default actually enforces',
++    router.requiredReserve(fc) > (fc.mandatoryReviewDraw + fc.incidentDraw) * 1.3);
+   check('under the default forecast a 75% bucket is NOT below reserve',
+     qm.bucketState({ file: f, now: NOW })['AU-all'].belowReserve === false);
+-  check('…but a 60% bucket IS — the derivation is aggressive, and the README says so',
+-    (() => { const g = newFile(); seedAll(g, 0.6, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === true; })());
++  check('…nor is a 60% bucket — the corrected default reserve is the 8% floor, not ~65.5%',
++    (() => { const g = newFile(); seedAll(g, 0.6, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === false; })());
++  check('…but a bucket AT the floor (8%) IS below reserve under the default forecast',
++    (() => { const g = newFile(); seedAll(g, 0.0799, ago(1)); return qm.bucketState({ file: g, now: NOW })['AU-all'].belowReserve === true; })());
+ }
+ 
+ // =========================================================================
+@@ -345,8 +351,8 @@ section('7. THE INTEROP — a P0-produced state through the real router');
+   check('INTEROP: no gate fires on the Green path', dGreen.outcome === undefined);
+ 
+   // (b) A below-reserve AU-opus READING blocks a real Opus dispatch.
+-  // 0.30 of the bucket against the WO-2-derived default forecast (~65.5%
+-  // required) — the reading alone arms the P15 stop, no hand-set flag.
++  // 0.30 of the bucket against an explicit 39%-required forecast (not the
++  // default) — the reading alone arms the P15 stop, no hand-set flag.
+   const g = newFile();
+   for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.30 : 0.92, 'vendor UI', undefined, { file: g, now: ago(1) });
+   const low = qm.bucketState({ file: g, now: NOW, forecast: { mandatoryReviewDraw: 0.3, incidentDraw: 0 } });

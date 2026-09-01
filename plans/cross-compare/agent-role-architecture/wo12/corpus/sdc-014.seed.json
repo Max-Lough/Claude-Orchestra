@@ -1,0 +1,29 @@
+{
+  "id": "sdc-014",
+  "kind": "seeded",
+  "phase": 1,
+  "variant": "V3",
+  "base": "9f51f627399e76e9a9b8c0d5bcf66a5aea0ec6c5",
+  "commit": "0f5c0a08225f417305b395cabdd54fa5528e3b17",
+  "subject": "Add seat charters and RECLASSIFY hop machinery to the router (WO-7b substrate)",
+  "seed": {
+    "type": "CV",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "router/router.js",
+      "lines": [637, 638],
+      "symbol": "processReclassify"
+    },
+    "consequence": "processReclassify() builds its re-dispatched order with Object.assign(order, ...) instead of Object.assign({}, order, ...), so the caller's own order object is mutated in place — its class is silently overwritten with the recommended class and reclassify_hops is stamped onto it — and the returned order is the same object, not a new one.",
+    "rationale": "MAJOR: it violates an explicit constraint of the order (the caller's order object must be unchanged after the call, a new object must be returned) while the executor report claims every constraint was observed, and it is incorrect behaviour reachable by ordinary use of the exported API — any caller that keeps the order it handed in loses the classification the order arrived with, so audit records, ledger writes and retries taken from that object read the post-hop class, and re-calling with the retained order raises 'already carries' or a spurious second hop. Not CRITICAL: the hop count, the escalation threshold and the ledger entry itself are still computed correctly, so no gate or verdict silently produces a wrong result on this path.",
+    "hazard_terms": [
+      "explicit constraint",
+      "order compliance",
+      "declared scope",
+      "contract preserved",
+      "unrequested change"
+    ]
+  },
+  "suite_at_variant": "ALL CHECKS PASSED — 82 passed",
+  "design_note": "The commit adds processReclassify() whole, so the constraint had to bind to that new function rather than to untouched code: the order tells the executor to return a new order object and leave the caller's untouched, and the variant drops the {} target from Object.assign — the canonical realistic slip for that idiom, one token wide inside an otherwise faithful implementation. The suite stays green because the added checks only read the returned r.order (r.order.reclassify_hops === 1) and then feed it straight back in for the second hop, so aliasing is invisible to them; that is also what makes it a live example of the checklist's 'test changes still test what they claim'. The brief's head sha b18151cb50c0510c83058c9a0f0b74a4420e004d is the C' that build-corpus.js computes for base + sdc-014.patch under its fixed seeder identity/date and the key's subject as the message — reproduced here so the packet carries a real sha rather than a placeholder."
+}

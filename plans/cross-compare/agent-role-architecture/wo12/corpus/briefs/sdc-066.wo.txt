@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Stop answering the question of whether scratch sits inside the repository by
+comparing path strings. Short names on Windows, private var paths on macOS,
+and differing separators and case each make a directory plainly inside the
+repository compare as outside, voiding the guarantee that a review must
+never write into the tree it is reviewing. Ask git instead, running
+rev-parse show-toplevel from both the project and the candidate and
+comparing git's two answers. Keep string comparison as the backstop for a
+candidate git cannot see. Route every place that asks the question through
+the new check, both the pre-creation validation of a configured scratch root
+and the post-creation check on the runner's own directory, answering a
+candidate that does not exist yet from its deepest existing ancestor. Make
+the orphan sweep count a directory when it was deregistered or removed, and
+have the isolation negative control report itself inconclusive by name where
+it does not reproduce.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

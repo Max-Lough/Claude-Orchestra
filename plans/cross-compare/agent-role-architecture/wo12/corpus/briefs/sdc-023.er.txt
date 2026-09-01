@@ -1,0 +1,18 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The install example now points at a placeholder environment variable instead
+of a hardcoded local path, with a POSIX clone-and-install snippet added
+right beside it. Internal labels were renamed to a neutral name throughout,
+while the uninstaller's loose-prefix fallback was left unchanged, so it
+still matches markers from installs performed under the old name. A
+permissive license file and a matching README section were added as well,
+confined to 4 files in all with no other change made.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

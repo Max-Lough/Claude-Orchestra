@@ -1,0 +1,19 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The four cross-platform runner faults found in early testing were recorded,
+and continuous integration surfaced them within its first hour so this
+release could fix each one in turn. The one negative control that reports
+inconclusive under one platform's shell was noted as well, so it is never
+mistaken for a passing proof. A field-validation line was added, and it
+documents the shim case that integration testing can prove but cannot stage
+on a real user's own path directly, and the change stayed documentation only
+throughout.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

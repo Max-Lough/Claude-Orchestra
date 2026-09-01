@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This pass closes out every finding from the prior review round. It starts
+with a rewrite of the test-authoring seat's mirror-substitution conflict
+text so it matches the exception now declared for that seat, an exception
+the cross-family exception recorded elsewhere already closes, and the lint
+check then gets verified to exit clean once the fix lands. The documentation
+seat's dropped rule, that the inert verification tier never applies to
+documentation, gets restored at its original plan lines and stays unchanged
+from before. The legacy-validation rule-count table gets fixed for the base
+and heavy executors, since the base carries ten rules while heavy carries
+twelve, including two rules unique to heavy alone. The environment-variable
+deviation gets described as caught on review rather than self-disclosed,
+because the report's own deviations line already says none. The cross-vendor
+engine fault tally gets stated as exactly ten of fourteen engine-reaching
+attempts, with a full per-attempt list replacing the earlier wrong figure.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

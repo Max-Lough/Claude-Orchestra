@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The verdict marks the earlier CRITICAL as shut and separately flags the
+sweep guard's live-set check as a text compare rather than a real-path one,
+a MAJOR already fixed at the commit already on record from the prior pin,
+predating this verdict, so its disposition reads settled, not owed. The
+seventh order is anchored to that fix commit paired with its immediate
+successor, the two together bounding the current checkpoint and the next
+one. Four files changed in the pass, 152 lines added, three removed, and
+nothing beyond that touched.
+
+Verify the diff on its own merits.

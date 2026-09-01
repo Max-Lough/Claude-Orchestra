@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Correct the default forecast in the reserve calculator itself. The current
+derivation sustains the peak review arrival rate across a full week to
+compute a mandatory draw figure, and that figure pushes the default reserve
+above the ladder's green threshold, which is unrealistic because no week
+runs entirely at burst rate. Replace it with the directly measured weekly
+draw produced by the existing throughput probe, and keep the incident draw
+at exactly zero, a disclosed under-estimate rather than a computed figure.
+Recompute the default reserve from the measured draw, and apply the plan's
+floor whenever the dynamic term sits below it, since the floor governs the
+default in that case. Keep the rejected peak-derived arithmetic in code
+comments unchanged, while leaving it computed but unused, kept as a
+cautionary record. Update the README to record both derivations, and update
+the test suite's pinned values, including a check that the floor governs
+when the dynamic term is below it.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

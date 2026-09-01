@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Add the seat charters and the RECLASSIFY hop machinery to the router. First,
+add router/charters.json transcribing the owns and must-not-receive intake
+filters for all 23 seats. Load it with the same fail-closed discipline the
+casting tables get. A missing role, a class mismatch or an empty filter must
+each refuse construction. Second, implement processReclassify as the
+recovery loop for the classification-error stance. A RECLASSIFY report
+without a recommended class and observed evidence is rejected, and an alias
+resolves first. The order is then re-dispatched to the recommended class
+with the hop counted, and every hop feeds the per-pair ledger. A second hop
+on the same order escalates to the Conductor rather than dispatching again.
+Treat the order handed to processReclassify as read-only, returning a new
+order object that carries the recommended class and the incremented hop
+count and leaving the caller's own object as it was, and do not alter route
+or dispatch or add any new dependency.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

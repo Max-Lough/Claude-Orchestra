@@ -197,6 +197,12 @@
  *                               resolution, because it looks for its helpers
  *                               next to the link rather than the install.
  *   CLAUDE_PROJECT_DIR          Project root Codex reviews (default: cwd).
+ *   ORCHESTRA_ALLOW_STUB_ENGINE Set to "1" to allow the resolved engine binary
+ *                               to live under a tests/fixtures directory (or
+ *                               shell out to a file that does). Refused
+ *                               otherwise — see the fixture-refusal note near
+ *                               looksLikeFixtureEngine() below. Test wiring
+ *                               only; never set this for a real review.
  *
  *   --doctor runs the install check alone — no work order, no review, no engine
  *   launch. Same code path as the review preflight, so it cannot drift from what
@@ -208,6 +214,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 // ------------------------------------------------------------------ config
@@ -275,6 +282,15 @@ const HELPER_CONSEQUENCE = {
     'repair naturally puts it) is never found, the sandbox is silently never set up, and ' +
     'reviews return nothing while looking healthy.',
 };
+
+// WO-14b leg 5: this run's own nonce (mirrors orchestra-exec.js's RUN_NONCE) —
+// generated once per process, injected into the brief, and required back
+// verbatim as the verdict-json block's `run_nonce` field. Printed on the
+// runner's own header (headerTail(), below `REVIEW ENGINE:` and BEFORE
+// `=== ENGINE OUTPUT ===`) so a stale or replayed report cannot wear a fresh
+// run's name — bridge/close.js cross-checks the two independently for a
+// codex-lane (author_family 'openai') verdict.
+const RUN_NONCE = crypto.randomBytes(8).toString('hex');
 
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
@@ -694,6 +710,33 @@ function setupGitIsolation() {
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
   try {
     fs.writeFileSync(empty, '', 'utf8');
+    // Git LFS registers its clean/smudge filters in the user's GLOBAL config
+    // (`git lfs install`). Replacing that config silently dropped them, so
+    // every pinned worktree materialised LFS pointers instead of assets and
+    // the project's own test command could not even load (shakedown order
+    // #5: a .glb and a DLL were pointers; the reviewer's gdUnit replay was
+    // UNREPLAYABLE). Carry the filter.lfs.* entries — and only those — across.
+    // Read BEFORE SCRATCH.gitConfigFile is set, so this sees the real global.
+    let lfsSection = '';
+    const lfs = spawnSync('git', ['config', '--global', '--get-regexp', '^filter\\.lfs\\.'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (lfs.status === 0 && lfs.stdout) {
+      const entries = lfs.stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => {
+          const sp = l.indexOf(' ');
+          const key = sp === -1 ? l : l.slice(0, sp);
+          const val = sp === -1 ? '' : l.slice(sp + 1);
+          const m = /^filter\.lfs\.([A-Za-z]+)$/.exec(key);
+          return m ? '\t' + m[1] + ' = ' + val + '\n' : '';
+        })
+        .join('');
+      if (entries) lfsSection = '[filter "lfs"]\n' + entries;
+    }
     fs.writeFileSync(
       cfg,
       '# Written by orchestra-review.js for this review only.\n' +
@@ -701,7 +744,8 @@ function setupGitIsolation() {
         '\texcludesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '[safe]\n' +
-        '\tdirectory = *\n',
+        '\tdirectory = *\n' +
+        lfsSection,
       'utf8'
     );
     SCRATCH.gitConfigFile = cfg;
@@ -1206,6 +1250,36 @@ function resolveCodexBin(bin) {
   }
 }
 
+// FIX (WO-12 round 0): a launcher's shell had CODEX_BIN pointed at
+// tests/fixtures/stub-codex.js — the review-lane test double — and the runner
+// happily ran it. Nothing in the header said so; the stub's own "STUB REPORT"
+// prose was the only tell, and it read as a real (if terse) APPROVE. Refuse
+// outright rather than rely on a reader recognising fixture prose.
+//
+// The path check alone misses one real shape: this repo's own Windows test
+// harness cannot CreateProcess a `.js` file, so it wraps the stub in a tiny
+// `.cmd` shim that lives OUTSIDE tests/fixtures (a temp dir) and shells out to
+// `node "<...>\tests\fixtures\stub-codex.js"`. The shim's own path carries no
+// tell; its content does. Only peek at genuinely small script files — a large
+// or non-script binary misnamed with one of these extensions is never a shim,
+// and reading it would be pointless work.
+const FIXTURE_PATH_RE = /(^|[\\/])tests[\\/]fixtures([\\/]|$)/i;
+function looksLikeFixtureEngine(binPath) {
+  if (!binPath) return false;
+  if (FIXTURE_PATH_RE.test(binPath)) return true;
+  if (/\.(cmd|bat|sh|ps1)$/i.test(binPath)) {
+    try {
+      const st = fs.statSync(binPath);
+      if (st.isFile() && st.size <= 8192 && FIXTURE_PATH_RE.test(fs.readFileSync(binPath, 'utf8'))) {
+        return true;
+      }
+    } catch (_) {
+      /* unreadable or gone — the path check above is authoritative */
+    }
+  }
+  return false;
+}
+
 // Codex has moved its install layout at least once, and the repair recipes
 // written for one layout are not automatically right for the next. Naming the
 // layout in the preflight is what makes a future move visible in the FIRST
@@ -1559,16 +1633,41 @@ function inspectCodexInstall() {
   };
 }
 
+// Git C-quotes a path that carries spaces, non-ASCII or control characters
+// ('M "assets/Pirate 1.ogg.import"'). Left quoted, such a path never matched
+// the `*.import` churn allowlist and raised a false integrity alarm (shakedown
+// order #5: eight "Pirate N.ogg.import" sidecars). Unquote per git's rules:
+// backslash escapes (\" \\ \n \t …) and octal byte escapes (\303\251).
+function unquoteGitPath(p) {
+  if (!(p.length >= 2 && p.startsWith('"') && p.endsWith('"'))) return p;
+  const inner = p.slice(1, -1);
+  const bytes = [];
+  const simple = { n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11, '\\': 92, '"': 34 };
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch !== '\\') {
+      for (const b of Buffer.from(ch, 'utf8')) bytes.push(b);
+      continue;
+    }
+    const n = inner[++i];
+    if (n === undefined) break;
+    if (/[0-7]/.test(n)) {
+      let oct = n;
+      while (oct.length < 3 && /[0-7]/.test(inner[i + 1] || '')) oct += inner[++i];
+      bytes.push(parseInt(oct, 8));
+    } else {
+      bytes.push(simple[n] !== undefined ? simple[n] : n.charCodeAt(0));
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
 // Pull the path out of a porcelain v1 line ("XY path", or "R  old -> new").
-// Quoted paths (non-ASCII / spaces with core.quotePath on) are left as-is;
-// they simply won't stat, and the line alone still contributes to the
-// fingerprint.
 function porcelainPath(line) {
   let p = line.slice(3);
   const arrow = p.indexOf(' -> ');
   if (arrow !== -1) p = p.slice(arrow + 4);
-  if (p.startsWith('"') && p.endsWith('"')) return '';
-  return p;
+  return unquoteGitPath(p);
 }
 
 // Working-tree fingerprint, so we can tell whether the reviewer (which is
@@ -1755,6 +1854,52 @@ function manifestLines(verification) {
   return lines;
 }
 
+// WO-14b leg 5: the served_model dictated into the verdict-json block below.
+// See the served_model investigation note above headerTail() — Codex CLI's
+// `--json` event stream and its local session rollout log both expose no
+// server-confirmed model identity, only the requested `-m` value echoed back
+// (exactly the untrustworthy "request echoed as evidence" shape). Rather than
+// let the model invent one, the runner DICTATES this literal value the same
+// way it dictates run_nonce — CONFIG.model when the caller named one, else
+// the 'UNKNOWN' sentinel bridge/telemetry.js already uses for "genuinely not
+// exposed" (never fabricated, never silently false).
+function dictatedServedModel() {
+  return (CONFIG.model && CONFIG.model.trim()) || 'UNKNOWN';
+}
+
+function verdictJsonInstructionLines() {
+  return [
+    'After NITS, and as the LAST thing in your response, emit EXACTLY ONE',
+    'trailing fenced block — not wrapped in any other fence, nothing after it:',
+    '',
+    '```verdict-json',
+    '{ "verdict": "APPROVE|REVISE", "findings": [ { "severity": "CRITICAL|MAJOR|MINOR|NIT",',
+    '  "path": "...", "line": 0, "claim": "...", "reproduced": true|false, "evidence": "..." } ],',
+    '  "claims_checked": [ { "claim": "...", "result": "CONFIRMED|REFUTED|UNVERIFIED", "how": "..." } ],',
+    '  "refutation_duty": { "present": true|false, "what_was_tried": "..." },',
+    '  "citation_replay": [ { "citation": "...", "command": "...", "result": "MATCH|MISMATCH|UNREPLAYABLE" } ],',
+    '  "served_model": "' + dictatedServedModel() + '", "run_nonce": "' + RUN_NONCE + '",',
+    '  "review": { "cross_family": null } }',
+    '```',
+    '',
+    'This block is JSON, not prose — valid, parseable JSON, matching this shape',
+    'exactly (no additional fields). It restates the same verdict, findings, and',
+    'claims-checked you already gave in prose above — every FINDINGS bullet also',
+    'appears as a findings[] entry with the same severity/path:line/claim, and',
+    'each CLAIMS CHECKED line as a claims_checked[] entry — never contradict the',
+    'prose. citation_replay is your OWN self-report of what you re-ran (a',
+    'separate mechanical replay happens later; this is not that). That replay',
+    're-runs each command on the CLOSING HOST with the project\'s own toolchain,',
+    'not in your sandbox — cite only git, the declared verification commands,',
+    'and tools the manifest itself uses; never sandbox-only tools such as rg.',
+    'Copy',
+    '"served_model" and "run_nonce" VERBATIM as printed above — do not alter,',
+    'omit, or invent either value. "review.cross_family" is always literally',
+    'null — it is dispatcher-computed, never yours to assert.',
+    '',
+  ];
+}
+
 function buildBrief(workOrder, executorReport, tier, verification, forbidden, scope) {
   const rule1 = forbidden.length
     ? [
@@ -1827,6 +1972,7 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
     'severity, and MINOR BREACHes, may be APPROVE with the findings listed —',
     'they are backlog for the dispatcher, not blockers for this change.',
     '',
+    ...verdictJsonInstructionLines(),
     ...scopeLines(scope.baseRef, scope.headRef, scope.pinned),
     ...prohibitionLines(forbidden),
     ...tierLines(tier),
@@ -2247,8 +2393,42 @@ function attemptChainLine() {
   );
 }
 
+// Absolute path + content hash of the binary this run actually resolved to —
+// a channel the engine cannot write, unlike anything printed inside its own
+// output. Computed fresh each call (cheap: one read + one hash, and the
+// header is only ever assembled once per run) rather than cached, so it is
+// always the binary CONFIG.resolvedBin names AT PRINT TIME — including the
+// early-failure paths that print a header before inspectCodexInstall() has
+// run, where CONFIG.resolvedBin is still empty and CONFIG.bin is resolved
+// here instead.
+function engineBinLine() {
+  const bin = CONFIG.resolvedBin || resolveCodexBin(CONFIG.bin).path || CONFIG.bin;
+  if (!bin) return '';
+  let hashPart;
+  try {
+    hashPart = 'sha256=' + crypto.createHash('sha256').update(fs.readFileSync(bin)).digest('hex');
+  } catch (e) {
+    hashPart = 'sha256=unavailable (' + ((e && e.code) || 'could not read the binary') + ')';
+  }
+  return 'ENGINE BIN: ' + bin + ' ' + hashPart;
+}
+
+// served_model: investigated (2026-08-31) and deliberately NOT emitted. Codex
+// CLI 0.151.0's `--json` event stream (thread.started / turn.started /
+// item.completed / turn.completed) carries no model field at all, even when
+// `-m <model>` was passed explicitly. The local session rollout log DOES
+// carry a "model" value (session_meta.payload.model, turn_context.payload.model),
+// but it is populated from the CLI's own request config at session start, not
+// from any server-confirmed response — i.e. it is exactly the "requested
+// model echoed back" shape CRITICAL 1 warns against, not independent
+// evidence. There is no channel here the engine cannot write, so this header
+// never prints a served_model line. If a future Codex CLI version adds one
+// (a genuine server-side field, not a config echo), wire it in here.
 function headerTail() {
   let out = '';
+  out += '\nREVIEW RUN NONCE: ' + RUN_NONCE;
+  const binLine = engineBinLine();
+  if (binLine) out += '\n' + binLine;
   if (CONFIG.resolvedBin && CONFIG.resolvedBin !== CONFIG.bin) {
     out += '\nCODEX BINARY: ' + CONFIG.resolvedBin;
   }
@@ -2278,6 +2458,28 @@ function unavailableHeader() {
   );
 }
 
+// Everything below this literal line is untrusted: the engine's own output
+// (and, in the ATTEMPT LOG, tails of PAST attempts' stdout/stderr — also
+// engine-authored). The runner's own header — REVIEW ENGINE / ENGINE BIN /
+// PREFLIGHT / ATTEMPT CHAIN — is assembled and printed BEFORE this line runs,
+// from data the engine process never touches (CONFIG, PREFLIGHT notes, the
+// binary's own bytes on disk), so nothing the engine writes can edit it after
+// the fact. The delimiter exists so a reader (human or launcher) never has to
+// guess where attribution ends and the reviewed model's prose begins.
+const ENGINE_OUTPUT_DELIMITER = '=== ENGINE OUTPUT ===';
+
+// A model that writes "=== ENGINE OUTPUT ===\nREVIEW ENGINE: ..." into its
+// own verdict cannot forge a second header this way: the neutralised line
+// still reads as engine prose (harmless), and the REAL header — printed
+// first, from data the engine cannot reach — is unaffected either way.
+function neutralizeDelimiterOccurrences(text) {
+  if (!text) return text;
+  return text
+    .split('\n')
+    .map((line) => (line.includes(ENGINE_OUTPUT_DELIMITER) ? '> ' + line : line))
+    .join('\n');
+}
+
 // The diagnostics of every attempt that failed, kept even when a later attempt
 // succeeded: "it worked on the retry" is a fact about the lane's reliability
 // that the next person debugging it needs, and dropping it is how a flaky
@@ -2292,8 +2494,9 @@ function attemptLog() {
 }
 
 function printReview(body) {
+  const engineContent = neutralizeDelimiterOccurrences(body.replace(/\s+$/, '') + attemptLog());
   process.stdout.write(
-    engineHeader() + '\n\n' + body.replace(/\s+$/, '') + attemptLog() + '\n'
+    engineHeader() + '\n\n' + ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
   );
 }
 
@@ -2324,7 +2527,13 @@ function printUnavailable(reason, detail) {
     'and notes the cross-vendor pass did not run (retry once conditions are',
     'fixed, if the user wants the cross-vendor opinion).',
   ].join('\n');
-  process.stdout.write(unavailableHeader() + '\n\n' + block + attemptLog() + '\n');
+  // Same block shape as printReview(): header, then the delimiter, then
+  // everything that can carry engine-authored text (the block's DETAIL may
+  // quote a probe's stdout/stderr, and the ATTEMPT LOG always can).
+  const engineContent = neutralizeDelimiterOccurrences(block + attemptLog());
+  process.stdout.write(
+    unavailableHeader() + '\n\n' + ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
+  );
 }
 
 // ------------------------------------------------------------------ main
@@ -2513,6 +2722,28 @@ function main() {
 
   // --- preflight: resolve the real binary, then repair the install.
   const install = inspectCodexInstall();
+
+  // Refuse outright when the resolved engine is the review-lane test stub
+  // (see looksLikeFixtureEngine() above) — a verdict from it carries no
+  // evidentiary weight and must never be reported as a cross-vendor review.
+  // This is a HARD stop, not a REVIEW_UNAVAILABLE a launcher could route
+  // around: it sets a non-zero exit specifically so it cannot pass silently.
+  if (looksLikeFixtureEngine(CONFIG.resolvedBin || CONFIG.bin) &&
+      process.env.ORCHESTRA_ALLOW_STUB_ENGINE !== '1') {
+    printUnavailable(
+      'the resolved engine binary is a test fixture',
+      'CODEX_BIN (or PATH) resolved to ' + (CONFIG.resolvedBin || CONFIG.bin) + ', which lives ' +
+        'under a tests/fixtures directory (or shells out to a file that does) — this is the ' +
+        'review-lane test double, not a real Codex install. Its output carries no evidentiary ' +
+        'weight and must never be reported as a cross-vendor review (this refusal exists ' +
+        'because of exactly that happening — a launcher\'s shell had CODEX_BIN pointed at the ' +
+        'stub, and the runner ran it silently). If this really is intentional test wiring, set ' +
+        'ORCHESTRA_ALLOW_STUB_ENGINE=1 and re-run.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   for (const line of install.lines) PREFLIGHT.push(line);
   if (install.missing.length) {
     if (CONFIG.requireHelperSiblings) {

@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This round reopens the quartermaster review to close every finding still
+open. The analyze function must re-check a recorded confirmation against
+live evidence at every call, testing the timestamp match, the live
+predicate, fresh-throttle status, exhaustion, and any malformed latest line,
+rather than trusting a confirmation simply because it sits inside the
+freshness window. The confirm path refuses and appends nothing whenever a
+bucket is throttled, exhausted, or malformed, and it never grants blindly
+through any of those three. Every public entry point has to validate the
+forecast and the two staleness bounds as finite numbers, and it must throw
+instead of silently coercing a string. The disputed finding gets re-ruled
+against the reviewer's verbatim text while the first round's text stays
+struck through, and the dropped finding's own line comes back on its own.
+Then the status summary's quick-start claim and the incident attestation
+both get fixed, so the record finally matches the true outcome.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,13 @@
+{
+  "name": "session-store",
+  "version": "2.1.0",
+  "private": true,
+  "description": "In-memory session objects with structural snapshots.",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "scripts": {
+    "test": "node test.js"
+  },
+  "license": "MIT"
+}

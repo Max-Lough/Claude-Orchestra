@@ -1,0 +1,13 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+All three are fixed in the runner: Windows engine launches go through the
+command interpreter with each argument quoted, every path comparison
+resolves both sides including paths that do not yet exist, and a configured
+scratch root is validated before anything is created in it. The probe now
+separates a launch failure from a failed echo. A regression test reproduces
+the symlink shape on every platform and asserts nothing was written into the
+repository, across 96 checks.
+
+Verify the diff on its own merits.

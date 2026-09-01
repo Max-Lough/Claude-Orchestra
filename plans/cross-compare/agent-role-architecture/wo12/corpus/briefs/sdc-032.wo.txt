@@ -1,0 +1,21 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This change updates the project's release changelog in full. It records what
+the first hour of testing found, naming the four runner faults fixed in this
+release: the shell-launch fault, a path-comparison guarantee that failed
+under symlinks, a refusal path that wrote before it objected, and a sweep
+step that under-reported its own scope. The one negative-control check that
+reports itself inconclusive under one platform's shell gets a note too, so a
+future reader is not misled into mistaking it for a passing proof. A
+field-validation line then documents the shim case that testing can prove,
+and that same case still cannot be staged against a real user's own path
+directly. The changelog's stated check count gets brought into sync with the
+suite's actual total, moving from 94 to exactly 96 to match reality, and the
+change stays confined to documentation only.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

@@ -1,0 +1,9 @@
+{
+  "version": 3,
+  "fields": [
+    { "name": "id", "required": true },
+    { "name": "email", "required": true },
+    { "name": "region", "required": true },
+    { "name": "nickname", "required": false }
+  ]
+}

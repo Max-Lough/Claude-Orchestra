@@ -1,0 +1,19 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The pre-add records read now refuses before any registration exists, and a
+post-add read failure is retried before the ambiguous-records path is taken.
+The residual strand is proven self-healing by a new regression test that
+asserts an alias-created, never-active registration and its directory are
+both reclaimed by the following checkout. The round's verdict is recorded
+verbatim in the roster alongside the fix. The battery is green, with
+verifier at one hundred one, router at one hundred thirty-five, registry at
+31, and the review lane at one hundred sixteen.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Creation-time identity capture no longer degrades to a lexical guess:
+checkout creation determines the canonical path itself and refuses the
+checkout, with registration cleaned up, when that lookup fails, and a
+poisoned-real-path regression is pinned. Both review-lane kill branches now
+poll the actual registration lock instead of sleeping a fixed duration. The
+records were corrected to name the true pull-request-head run and the
+superseded run's real outcome. Verifier landed on 99 passed; registry and
+router held clean too. Review-lane, for its part, cleared both of its runs.
+
+Verify the diff on its own merits.

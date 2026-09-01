@@ -1,0 +1,15 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The engine choice was moved into a single configuration key supporting a
+default engine, an alternate cross-vendor engine with fallback to the
+default when unavailable, and a dual mode with arbitration. Swapping the key
+changes only who judges, while what gets checked stays exactly the same. A
+narrow read carve-out for the settings file was added to existing role law,
+since read access there was never guard-blocked before this change. The
+review-routing logic and the top-level documentation were updated to match,
+and 2 files carried the whole change.
+
+Verify the diff on its own merits.

@@ -53,6 +53,11 @@ process.on('exit', () => {
 });
 
 const router = createRouter();
+// WO-14b: Sweeper is BENCHED (defaultEnabled: false) on the default router —
+// a dedicated router with the seat override re-enabled is needed for the
+// documented-casting-set checks and any direct Sweeper cast()/dispatch()
+// exercise; DISABLED behavior itself is proved against the default router.
+const routerSweeperOn = createRouter({ seats: { Sweeper: true } });
 const G = router.allGreen();
 const FAM_OF = (m) => router.familyOf(m);
 
@@ -64,7 +69,10 @@ function order(cls, risk, extra) {
 // ---------------------------------------------------------------- 1. loading
 section('1. Loading fails closed');
 
-check('router loads clean over the shipped registry + casting tables', !!router.registry && Object.keys(router.castings.roles).length === 23);
+// WO-14b readiness-repair tranche (owner rulings, 2026-09-01): twelve roles
+// retired, merged into Builder/Investigator or (A1) a documented workflow —
+// eleven live roles remain (the roster's Keep list).
+check('router loads clean over the shipped registry + casting tables', !!router.registry && Object.keys(router.castings.roles).length === 11);
 
 {
   // Tampered registry (a class removed) must refuse to construct a router.
@@ -104,19 +112,22 @@ check('tampered castings: effort off the vendor ladder → refused',
 // ------------------------------------------------------------ 2. route(class)
 section('2. route(class) → role');
 
+// WO-14b leg 2b: twelve classes route through a mergedClasses target instead
+// of a dedicated role (A1 → no role at all, the retired workflow).
 const EXPECTED_ROLES = {
-  O0: 'Conductor', A0: 'Architect', A1: 'Synthesizer', N0: 'Scout', N1: 'Researcher',
-  N2: 'LC Analyst', I0: 'Investigator', M0: 'Archivist', E0: 'Operator', E1: 'Runner',
-  E2: 'Builder', E3: 'Principal', E4: 'Data Engineer', E5: 'Interface Artisan',
-  E6: 'Spatial Specialist', E7: 'Red Team', E8: 'Refactorer', Q0: 'Test Designer',
-  D0: 'Doc Writer', R0: 'Reviewer', S0: 'Sweeper', V0: 'Verifier', P0: 'Quartermaster',
+  O0: 'Conductor', A0: 'Architect', N0: 'Investigator', N1: 'Investigator',
+  N2: 'Investigator', I0: 'Investigator', M0: 'Investigator', E0: 'Builder', E1: 'Builder',
+  E2: 'Builder', E3: 'Builder', E4: 'Data Engineer', E5: 'Builder',
+  E6: 'Builder', E7: 'Red Team', E8: 'Builder', Q0: 'Test Designer',
+  D0: 'Builder', R0: 'Reviewer', S0: 'Sweeper', V0: 'Verifier', P0: 'Quartermaster',
 };
 {
   let bad = [];
   for (const [cls, role] of Object.entries(EXPECTED_ROLES)) {
     if (router.route(cls) !== role) bad.push(cls + '→' + router.route(cls));
   }
-  check('all 23 active classes route to their documented primary role', bad.length === 0, bad.join(', '));
+  check('all 22 non-retired-workflow active classes route to their documented (or merged) role', bad.length === 0, bad.join(', '));
+  check('A1 routes to no role — the retired workflow carries no casting', router.route('A1') === undefined);
 }
 check('alias I1 routes to the Investigator (merged class)', router.route('I1') === 'Investigator');
 check('unknown class identifier is rejected', (() => { try { router.route('Z9'); return false; } catch (e) { return /unknown class/.test(e.message); } })());
@@ -128,23 +139,14 @@ section('3. Every rung yields its documented casting set (Part 2, transcribed)')
 const EXPECTED_RUNGS = {
   'Conductor': { primary: 'anthropic|Fable 5|owner-set', mirror: 'openai|GPT-5.6 Sol|matched' },
   'Architect': { primary: 'openai|GPT-5.6 Sol|xhigh', nebulous: 'anthropic|Fable 5|high–xhigh', exhaustionFallback: 'anthropic|Opus 5|high', mirror: 'anthropic|Fable 5|high–xhigh', ceilingAnthropic: 'anthropic|Fable 5|xhigh', ceilingOpenai: 'openai|GPT-5.6 Sol|max' },
-  'Synthesizer': { primary: 'anthropic|Fable 5|xhigh', rationSpent: 'anthropic|Opus 5|high', mirror: 'openai|GPT-5.6 Sol|max' },
-  'Scout': { primary: 'anthropic|Haiku 4.5|off', mirror: 'openai|GPT-5.6 Luna|low' },
-  'Researcher': { primary: 'openai|GPT-5.6 Sol|med', deep: 'openai|GPT-5.6 Sol|high', mirror: 'anthropic|Opus 5|med' },
-  'LC Analyst': { primary: 'openai|GPT-5.6 Terra|med', dense: 'openai|GPT-5.6 Terra|high', mirror: 'anthropic|Opus 5|med' },
   'Investigator': { primary: 'anthropic|Opus 5|high', mirror: 'openai|GPT-5.6 Sol|high', ceiling: 'anthropic|Fable 5|high' },
-  'Archivist': { documents: 'openai|GPT-5.6 Terra|med', images: 'anthropic|Opus 5|med' },
-  'Operator': { primary: 'openai|GPT-5.6 Sol|high', tacticalRaise: 'openai|GPT-5.6 Sol|max', mirror: 'anthropic|Opus 5|high' },
-  'Runner': { primary: 'openai|GPT-5.6 Luna|low–med', mirror: 'anthropic|Haiku 4.5|off' },
-  'Builder': { preferredBounded: 'openai|GPT-5.6 Luna|xhigh–max', primary: 'anthropic|Sonnet 5|med', dense: 'anthropic|Sonnet 5|high', mirror: 'openai|GPT-5.6 Terra|med' },
-  'Principal': { primary: 'anthropic|Opus 5|high', effortPoint2: 'anthropic|Opus 5|xhigh', mirror: 'openai|GPT-5.6 Sol|high', ceiling: 'anthropic|Fable 5|high' },
+  'Builder': {
+    preferredBounded: 'openai|GPT-5.6 Luna|xhigh–max', primary: 'anthropic|Sonnet 5|med', dense: 'anthropic|Sonnet 5|high', mirror: 'openai|GPT-5.6 Terra|med',
+    denseMirror: 'openai|GPT-5.6 Terra|high', denseOverrideSol: 'openai|GPT-5.6 Sol|med', deepPrimary: 'anthropic|Opus 5|high', deepOverrideSol: 'openai|GPT-5.6 Sol|high',
+  },
   'Data Engineer': { primary: 'anthropic|Opus 5|high', reversibleT1: 'openai|GPT-5.6 Terra|high' },
-  'Interface Artisan': { primary: 'openai|GPT-5.6 Sol|med–high', closing: 'anthropic|Opus 5|high', critic: 'anthropic|Fable 5|high' },
-  'Spatial Specialist': { primary: 'anthropic|Opus 5|high', critic: 'anthropic|Fable 5|high', mirror: 'openai|GPT-5.6 Sol|high' },
   'Red Team': { primary: 'openai|GPT-5.6 Sol|high', threatModel: 'openai|GPT-5.6 Sol|max', mirror: 'anthropic|Opus 5|high' },
-  'Refactorer': { primary: 'openai|GPT-5.6 Terra|med', mirror: 'anthropic|Sonnet 5|med' },
   'Test Designer': { vsAnthropicAuthor: 'openai|GPT-5.6 Terra|med', vsOpenaiAuthor: 'anthropic|Sonnet 5|med' },
-  'Doc Writer': { primary: 'anthropic|Sonnet 5|med', deliverable: 'anthropic|Opus 5|med', ceiling: 'anthropic|Fable 5|med', mirror: 'openai|GPT-5.6 Sol|med' },
   'Sweeper': { primary: 'openai|GPT-5.6 Terra|med', mirror: 'anthropic|Sonnet 5|med' },
 };
 {
@@ -154,7 +156,8 @@ const EXPECTED_RUNGS = {
     for (const [rung, expected] of Object.entries(rungs)) {
       count++;
       const qc = buckets({ 'AU-opus': { state: 'Green', quartermasterConfirmation: true } });
-      const r = router.cast(role, qc, { rung });
+      const rt = role === 'Sweeper' ? routerSweeperOn : router;
+      const r = rt.cast(role, qc, { rung });
       const got = r.ok ? [r.casting.vendor, r.casting.model, r.casting.effort].join('|') : '<' + r.outcome + '>';
       if (got !== expected) bad.push(role + '.' + rung + ': ' + got + ' ≠ ' + expected);
     }
@@ -172,8 +175,12 @@ const EXPECTED_RUNGS = {
 }
 check('R0 casting is computed, never static — cast(Reviewer) refuses', (() => { try { router.cast('Reviewer', G); return false; } catch (e) { return /use reviewer\(\)/.test(e.message); } })());
 check('V0 and P0 are deterministic substrates', router.cast('Verifier', G).substrate === true && router.cast('Quartermaster', G).substrate === true);
-check('Archivist video/audio is typed UNAVAILABLE (declared no-mirror), never a model casting',
-  (() => { const r = router.cast('Archivist', G, { medium: 'videoAudio' }); return r.ok === false && r.outcome === 'UNAVAILABLE'; })());
+// Archivist (M0) is retired as a role (WO-14b readiness-repair tranche);
+// its declared videoAudio no-mirror exception was a per-rung refusal on
+// that role and has no restated equivalent on merged M0-mode Investigator
+// work in this order's spec — removed, not silently dropped.
+check('an unknown role is a typed throw, not a silent no-op (Archivist retired, merged into Investigator/M0)',
+  (() => { try { router.cast('Archivist', G, { medium: 'videoAudio' }); return false; } catch (e) { return /unknown role/.test(e.message); } })());
 check('Q0 vs human author takes the healthier pool, tie → the Anthropic lane',
   router.cast('Test Designer', G, { implementationAuthorFamily: 'human' }).casting.model === 'Sonnet 5' &&
   router.cast('Test Designer', buckets({ 'AU-all': 'Amber' }), { implementationAuthorFamily: 'human' }).casting.model === 'GPT-5.6 Terra');
@@ -209,19 +216,24 @@ check('Amber leaves review on the same bucket unchanged (last thing to sacrifice
   (() => { const r = router.cast('Investigator', buckets({ 'AU-opus': { state: 'Amber', quartermasterConfirmation: true } }), { purpose: 'review' }); return r.ok && r.casting.model === 'Opus 5'; })());
 check('Orange suspends authoring on the bucket (recast), review still draws',
   (() => {
+    // Operator (E0) is retired; Red Team (E7, still a live role) carries the
+    // same shape (Sol primary on OU, Opus mirror on AU-all/AU-opus).
     const b = buckets({ OU: 'Orange' });
-    const a = router.cast('Operator', b); // Sol-primary authoring → Opus mirror
-    const rev = router.cast('Operator', b, { purpose: 'review' });
+    const a = router.cast('Red Team', b); // Sol-primary authoring → Opus mirror
+    const rev = router.cast('Red Team', b, { purpose: 'review' });
     return a.ok && a.casting.model === 'Opus 5' && a.rung === 'mirror' && rev.ok && rev.casting.model === 'GPT-5.6 Sol';
   })());
 check('Orange defers ceiling rungs (AU-fable stops first)',
-  router.cast('Principal', buckets({ 'AU-fable': 'Orange' }), { rung: 'ceiling' }).outcome === 'DEFERRED' &&
+  // Principal (E3) is retired, absorbed into the Builder deep tier, which
+  // carries no ceiling rung — Investigator's own ceiling rung proves the
+  // same guardrail.
+  router.cast('Investigator', buckets({ 'AU-fable': 'Orange' }), { rung: 'ceiling' }).outcome === 'DEFERRED' &&
   router.cast('Architect', buckets({ 'AU-fable': 'Orange' }), { rung: 'ceilingAnthropic' }).outcome === 'DEFERRED');
 check('Red permits only closing calls on the bucket; authoring recasts or waits',
   (() => {
     const b = buckets({ OU: 'Red' });
-    const close = router.cast('Operator', b, { purpose: 'closing' });
-    const auth = router.cast('Operator', b);
+    const close = router.cast('Red Team', b, { purpose: 'closing' });
+    const auth = router.cast('Red Team', b);
     return close.ok && close.casting.model === 'GPT-5.6 Sol' && auth.ok && auth.rung === 'mirror';
   })());
 check('both pools Red: authoring waits (typed, never a forced casting)',
@@ -240,7 +252,10 @@ check('Conductor at AU-fable degradation re-casts to the Sol mirror from a signe
 
 // Never-rules hold under EVERY bucket-state combination.
 {
-  const NEVER = { 'Red Team': ['Fable 5'], 'Conductor': ['Opus 5', 'Haiku 4.5', 'Sonnet 5', 'GPT-5.6 Luna', 'GPT-5.6 Terra'], 'Doc Writer': ['GPT-5.6 Terra', 'GPT-5.6 Luna'], 'Researcher': ['GPT-5.6 Luna', 'Haiku 4.5'], 'Synthesizer': ['Haiku 4.5', 'GPT-5.6 Luna', 'GPT-5.6 Terra'] };
+  // Doc Writer, Researcher and Synthesizer are retired (WO-14b readiness-repair
+  // tranche) — their never-rules retired with the roles; Red Team and
+  // Conductor are the surviving live never-rules.
+  const NEVER = { 'Red Team': ['Fable 5'], 'Conductor': ['Opus 5', 'Haiku 4.5', 'Sonnet 5', 'GPT-5.6 Luna', 'GPT-5.6 Terra'] };
   let violations = [];
   let combos = 0;
   for (const s1 of STATES) for (const s2 of STATES) for (const s3 of STATES) for (const s4 of STATES) {
@@ -372,21 +387,34 @@ check('the risk-tier gate oracle fails CLOSED: a malformed tier never downgrades
 check('a malformed tier cannot dodge the Q0 tier trigger (fails closed to T3)',
   router.q0Required({ class: 'E2', risk: 'T3 ', integrity_nonce: 'x' }).required === true &&
   router.q0Required({ class: 'E2', risk: 'bogus', integrity_nonce: 'x' }).required === true);
-check('dispatch(): a Sol-authored E0 mutation gets the mandatory Opus review lane (flags.solAuthoredMutation)',
+check('dispatch(): a Sol-authored mutation gets the mandatory Opus review lane (flags.solAuthoredMutation)',
   (() => {
-    const d = router.dispatch(order('E0', 'T1'), G, { flags: { solAuthoredMutation: true } });
-    return d.ok && d.review_policy === 'mandatory' && d.review.casting.model === 'Opus 5' && d.review.review_cross_family === true;
+    // E0 (Operator) is retired and merges into Builder, whose standard-tier
+    // preferred casting is Sonnet (anthropic), not Sol — Architect (A0,
+    // still a live role, Sol primary) keeps the Sol-authored premise intact.
+    const d = router.dispatch(order('A0', 'T1'), G, { flags: { solAuthoredMutation: true } });
+    return d.ok && d.casting.casting.model === 'GPT-5.6 Sol' && d.review_policy === 'mandatory' && d.review.casting.model === 'Opus 5' && d.review.review_cross_family === true;
   })());
 
 // ------------------------------------------------- 8. context-shape rejection
 section('8. Context-shape violations rejected at dispatch');
 
-check('Runner is packet-only: a haystack (or even scoped) order is rejected',
+// WO-14b leg 2 fix round, finding 7 (MINOR, fixed): merging E1 (Runner
+// retired) into Builder used to let it inherit Builder's own wider shapes
+// (packet/scoped/subsystem) — the "hardest constraint in the roster"
+// (packet-only) did not survive the merge. mergedClasses.E1.
+// contextShapesOnly restores it as an EXACT override (never additive, unlike
+// E8's contextShapesAllowed below): everything past packet is rejected.
+check('E1 (Runner retired, merged into Builder) keeps its packet-only ceiling as an exact override (mergedClasses.E1.contextShapesOnly) — Builder’s own wider shapes (scoped/subsystem) do not leak through',
   (() => {
     const h = router.dispatch(order('E1', 'T1', { context_shape: 'haystack' }), G);
     const s = router.dispatch(order('E1', 'T1', { context_shape: 'scoped' }), G);
+    const sub = router.dispatch(order('E1', 'T1', { context_shape: 'subsystem' }), G);
     const p = router.dispatch(order('E1', 'T1', { context_shape: 'packet' }), G);
-    return h.ok === false && h.rejected === 'context-shape' && s.ok === false && p.ok === true;
+    return h.ok === false && h.rejected === 'context-shape' &&
+      s.ok === false && s.rejected === 'context-shape' &&
+      sub.ok === false && sub.rejected === 'context-shape' &&
+      p.ok === true;
   })());
 check('Scout is scoped-maximum: never haystack',
   router.dispatch(order('N0', 'T0', { context_shape: 'haystack' }), G).rejected === 'context-shape' &&
@@ -396,9 +424,16 @@ check('Builder may not be handed a repo shape',
   router.dispatch(order('E2', 'T1', { context_shape: 'repo' }), G).rejected === 'context-shape' &&
   router.dispatch(order('E2', 'T1', { context_shape: 'subsystem' }), G).ok === true);
 check('an unknown shape word is rejected outright', router.dispatch(order('E2', 'T1', { context_shape: 'universe' }), G).rejected === 'context-shape');
-check('the repo-shaped seats accept repo (Investigator, Principal, Reviewer)',
+check('the repo-shaped seats accept repo (Investigator, Reviewer)',
   router.dispatch(order('I0', 'T1', { context_shape: 'repo' }), G).ok === true &&
-  router.dispatch(order('E3', 'T1', { context_shape: 'repo' }), G).ok === true);
+  router.dispatch(order('R0', 'T1', { context_shape: 'repo' }), G, { reviewOf: { authorFamilies: ['openai'] } }).ok === true);
+check('E3 (Principal retired, merged into the Builder deep tier) keeps repo via mergedClasses.contextShapesAllowed — Conductor rider 2026-09-01: the merge absorbs the rung, not the shape restriction',
+  (() => { const r = router.dispatch(order('E3', 'T1', { context_shape: 'repo' }), G); return r.ok === true && r.role === 'Builder' && r.tier === 'deep' && r.mode === 'E3'; })());
+check('E3 still rejects a shape no Builder tier allows (haystack) — the rider adds repo only',
+  router.dispatch(order('E3', 'T1', { context_shape: 'haystack' }), G).rejected === 'context-shape');
+check('E8 (Refactorer retired, merged into Builder) keeps repo/haystack via mergedClasses.contextShapesAllowed',
+  router.dispatch(order('E8', 'T1', { context_shape: 'repo' }), G).ok === true &&
+  router.dispatch(order('E8', 'T1', { context_shape: 'haystack' }), G).ok === true);
 
 // ------------------------------------------------------ 9. automatic Q0 spawn
 section('9. Every trigger-matching implementation spawns Q0');
@@ -514,6 +549,33 @@ check('a missing charter fails the load closed',
     try { createRouter({ chartersFile: file }); } catch (err) { threw = err; }
     return !!threw && /no charter entry/.test(threw.message);
   })());
+// WO-14b leg 2 fix round, finding 8 (MINOR, fixed): router.charters used to
+// expose 23 entries (11 live + 12 retired, tolerated via RETIRED_ROLE_NAMES)
+// even though only 11 roles are routable. The retired entries are deleted
+// from charters.json and the tolerance list is gone — the cross-check is
+// strict again: exactly the 11 live roles, and an extra/unknown charter
+// entry (a retired-role leftover, or any other drift) fails load closed,
+// same as a missing one does.
+check('finding 8: router.charters exposes exactly the 11 live roles — no retired-role entries (Synthesizer, Scout, Principal, …) leak through',
+  (() => {
+    const names = Object.keys(router.charters.charters);
+    const retired = ['Synthesizer', 'Scout', 'Researcher', 'LC Analyst', 'Archivist', 'Operator', 'Runner', 'Principal', 'Interface Artisan', 'Spatial Specialist', 'Refactorer', 'Doc Writer'];
+    return names.length === 11 &&
+      names.every((n) => Object.prototype.hasOwnProperty.call(router.castings.roles, n)) &&
+      retired.every((n) => !names.includes(n));
+  })());
+check('finding 8: an extra charter entry (a retired role reappearing, or any unknown name) fails load closed — the tolerance list is gone',
+  (() => {
+    const ch = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charters.json'), 'utf8'));
+    ch.charters['Scout'] = { class: 'N0', purpose: 'x', owns: 'x', mustNotReceive: ['y'] };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-chart2-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'charters.json');
+    fs.writeFileSync(file, JSON.stringify(ch), 'utf8');
+    let threw = null;
+    try { createRouter({ chartersFile: file }); } catch (err) { threw = err; }
+    return !!threw && /charter names unknown role Scout/.test(threw.message);
+  })());
 {
   const misrouted = order('N2', 'T1', { task_id: 'rc-1' });
   const report = { status: 'RECLASSIFY', reclassify: { recommended_class: 'I0', evidence: 'deliverable is a causal mechanism, not a synthesis (charter: never live reproduction/causality)' } };
@@ -549,21 +611,36 @@ section('12. WO-14: alias layer and the roster kill switch');
     legacyEx.target.kind === 'legacy-agent' && legacyEx.target.agent === 'executor' && legacyEx.target.model === 'Sonnet 5' &&
     newEx.target.kind === 'new-roster' && newEx.target.role === 'Builder' && newEx.target.cast.ok && newEx.target.cast.casting.model === 'Sonnet 5');
   check('the flip is per-order, mid-session: same router, alternating flags, no reload',
-    router.resolveSeat('executor-heavy', { roster: 'new', buckets: qc }).target.role === 'Principal' &&
+    // Principal is retired (WO-14b): executor-heavy now targets the Builder
+    // deep tier, which absorbed Principal's primary rung (Opus 5 · high).
+    router.resolveSeat('executor-heavy', { roster: 'new', buckets: qc }).target.role === 'Builder' &&
     router.resolveSeat('executor-heavy', { roster: 'legacy' }).target.agent === 'executor-heavy' &&
     router.resolveSeat('executor-heavy', { roster: 'new', buckets: qc }).target.cast.casting.effort === 'high');
-  check('executor-heavy-xhigh maps to Principal’s routed xhigh effort point, not a second seat',
-    (() => { const r = router.resolveSeat('executor-heavy-xhigh', { roster: 'new', buckets: qc }); return r.target.rung === 'effortPoint2' && r.target.cast.casting.effort === 'xhigh'; })());
+  check('executor-heavy-xhigh maps to the Builder deep tier, its legacy xhigh point downgraded to high (ledgered)',
+    (() => {
+      const r = router.resolveSeat('executor-heavy-xhigh', { roster: 'new', buckets: qc });
+      return r.target.tier === 'deep' && r.target.cast.rung === 'deepPrimary' && r.target.cast.casting.effort === 'high' &&
+        /downgrade is deliberate/.test(r.target.note || '');
+    })());
   check('detective maps to the merged Investigator with the read-only pin carried',
     (() => { const r = router.resolveSeat('detective', { roster: 'new', buckets: qc }); return r.target.role === 'Investigator' && r.target.pin === 'read-only' && r.target.cast.casting.model === 'Opus 5'; })());
   check('reviewer and reviewer-codex resolve to the COMPUTED Reviewer, never a static casting',
     router.resolveSeat('reviewer', { roster: 'new' }).target.kind === 'computed-reviewer' &&
     router.resolveSeat('reviewer-codex', { roster: 'new' }).target.kind === 'computed-reviewer');
-  check('codex executors become mirror castings (Builder Terra, Principal Sol)',
-    router.resolveSeat('executor-codex', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Terra' &&
-    router.resolveSeat('executor-codex-heavy', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Sol');
-  check('modeler is promoted to the Spatial Specialist (Opus 5 · high)',
-    router.resolveSeat('modeler', { roster: 'new', buckets: qc }).target.cast.casting.model === 'Opus 5');
+  check('executor-codex becomes Builder’s Terra mirror casting',
+    router.resolveSeat('executor-codex', { roster: 'new', buckets: qc }).target.cast.casting.model === 'GPT-5.6 Terra');
+  check('executor-codex-heavy targets the Builder deep tier’s override-only Sol entry, FORBIDDEN without the reserve check, Sol with it',
+    (() => {
+      const noCheck = router.resolveSeat('executor-codex-heavy', { roster: 'new', buckets: qc });
+      const withCheck = router.resolveSeat('executor-codex-heavy', { roster: 'new', buckets: qc, castOpts: { reserveCheck: 'passed' } });
+      return noCheck.target.cast.ok === false && noCheck.target.cast.outcome === 'FORBIDDEN' && /Sol override requires/.test(noCheck.target.cast.reason) &&
+        withCheck.target.cast.ok === true && withCheck.target.cast.casting.model === 'GPT-5.6 Sol' && withCheck.target.cast.override === true;
+    })());
+  check('modeler is retired into the Builder standard tier (E6 mode, Sonnet 5 · med — the Opus casting does not survive)',
+    (() => {
+      const r = router.resolveSeat('modeler', { roster: 'new', buckets: qc });
+      return r.target.role === 'Builder' && r.target.tier === 'standard' && r.target.cast.casting.model === 'Sonnet 5';
+    })());
   check('every retired-name resolution emits ITS OWN deprecation text, under both flags',
     Object.keys(router.aliases.aliases).every((n) => {
       const dep = router.aliases.aliases[n].deprecation;
@@ -623,10 +700,10 @@ section('12. WO-14: alias layer and the roster kill switch');
       const r = router.resolveSeat('executor-heavy', { roster: 'new', buckets: buckets({ 'AU-opus': { state: 'Green', belowReserve: true } }) });
       return r.target.cast.ok === false && r.target.cast.outcome === 'GATED' && r.target.gate.allowed === false;
     })());
-  check('caller castOpts cannot override the alias’s declared rung',
+  check('caller castOpts cannot override the alias’s declared tier',
     (() => {
-      const r = router.resolveSeat('executor-heavy-xhigh', { roster: 'new', buckets: qc, castOpts: { rung: 'primary' } });
-      return r.target.rung === 'effortPoint2' && r.target.cast.rung === 'effortPoint2' && r.target.cast.casting.effort === 'xhigh';
+      const r = router.resolveSeat('executor-heavy-xhigh', { roster: 'new', buckets: qc, castOpts: { tier: 'bounded', rung: 'primary' } });
+      return r.target.tier === 'deep' && r.target.cast.rung === 'deepPrimary' && r.target.cast.casting.effort === 'high';
     })());
   check('pool degradation reaches the alias path (Amber AU-opus re-casts detective to the Sol mirror)',
     (() => {
@@ -743,9 +820,15 @@ check('inherited bucket values never satisfy the requirement (own properties onl
   (() => { try { router.cast('Builder', Object.create(G)); return false; } catch (e) { return /fail closed/.test(e.message); } })());
 check('bucketsFor never reads the prototype chain', router.bucketsFor('constructor') === null && router.bucketsFor('__proto__') === null);
 // R0-EX3 findings, pinned as regressions:
-check('R0-EX3: a §5.5 degradation recast never silently satisfies a P15 reserve stop (Amber+belowReserve GATES a Fable primary)',
+check('R0-EX3: a §5.5 degradation recast never silently satisfies a P15 reserve stop (belowReserve GATES a Fable primary on the requested rung, before any degradation output is accepted)',
   (() => {
-    const d = router.dispatch(order('A1', 'T1'), buckets({ 'AU-fable': { state: 'Amber', belowReserve: true } }));
+    // A1/Synthesizer is retired (WO-14b); Architect's nebulous rung is the
+    // live non-Conductor Fable-authoring casting. Its own mirror is
+    // SAME-family (Fable), so an Amber authoring purpose degrades to WAIT
+    // rather than a cross-family recast — Green+belowReserve isolates the
+    // reserve-on-the-requested-rung guarantee this pin is actually about,
+    // without that same-family degradation interaction in the way.
+    const d = router.dispatch(order('A0', 'T1'), buckets({ 'AU-fable': { state: 'Green', belowReserve: true } }), { castOpts: { rung: 'nebulous' } });
     return d.ok === false && d.outcome === 'GATED' && d.gate.gate === 'AU-F reserve (P15)';
   })());
 check('R0-EX3: the Conductor reserve path survives Amber+belowReserve — Sol mirror, disclosed, restrictions carried',
@@ -771,6 +854,453 @@ check('cast() uses the same risk oracle as every other risk read (sloppy T1 allo
     const no = router.cast('Data Engineer', G, { rung: 'reversibleT1', risk: 'T2 ' });
     const garbage = router.cast('Data Engineer', G, { rung: 'reversibleT1', risk: 'bogus' });
     return ok.ok === true && no.outcome === 'FORBIDDEN' && garbage.outcome === 'FORBIDDEN';
+  })());
+
+// ------------------------------------- 14. readiness-repair tranche (pins)
+section('14. Readiness-repair tranche: A(ii) security, D Q0-throw, F review-matrix load, G touch-trigger class gate, H fnv1a, I substrate review, C reserve parity');
+
+// ---- A(ii): securitySensitive derived from order.touches, and the
+// route-filter applies to whichever casting is actually served (requested
+// rung OR a §5.5 degradation recast), never only the requested rung.
+check('A(ii): securitySensitive derived from order.touches blocks a §5.5 degradation recast onto Fable — no castOpts at all (OU Amber, crypto touch)',
+  (() => {
+    const d = router.dispatch(order('A0', 'T1', { touches: ['crypto'] }), buckets({ OU: 'Amber' }), { q0OrderPresent: true });
+    return d.ok === false && d.outcome === 'FORBIDDEN';
+  })());
+check('A(ii): the same derivation blocks an explicitly-requested Fable rung at Green, with no castOpts.securitySensitive set by the caller',
+  (() => {
+    const d = router.dispatch(order('A0', 'T1', { touches: ['auth'] }), G, { q0OrderPresent: true, castOpts: { rung: 'nebulous' } });
+    return d.ok === false && d.outcome === 'FORBIDDEN';
+  })());
+check('A(ii): a non-security A0 still dispatches on the same Fable rung (the filter does not over-block)',
+  (() => {
+    const d = router.dispatch(order('A0', 'T1'), G, { q0OrderPresent: true, castOpts: { rung: 'nebulous' } });
+    return d.ok === true && d.casting.casting.model === 'Fable 5';
+  })());
+
+// ---- D: dispatch() of a Q0 order (the router's own createQ0Order() output,
+// or any hand-built Q0 order) casts opposite the PARENT IMPLEMENTATION's
+// author family — never the Q0 order's own author_family. Finding D
+// (MAJOR, fixed): the previous fix seeded castOpts.implementationAuthorFamily
+// from the Q0 order's own author_family (already opposite the
+// implementation), re-casting the Q0 opposite ITSELF and landing same-family
+// as the implementation — Q0 independence defeated. createQ0Order() now
+// stamps an explicit implementation_author_family field naming the parent
+// implementation's family, and dispatch() reads THAT (never author_family).
+check('D: Anthropic-authored implementation → dispatched Q0 casting vendor is openai (opposite)',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'anthropic' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
+    const d = router.dispatch(q0.order, G, { q0OrderPresent: true });
+    return d.ok === true && d.casting.casting.vendor === 'openai';
+  })());
+check('D: OpenAI-authored implementation → dispatched Q0 casting vendor is anthropic (opposite)',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'openai' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'openai' });
+    const d = router.dispatch(q0.order, G, { q0OrderPresent: true });
+    return d.ok === true && d.casting.casting.vendor === 'anthropic';
+  })());
+check('D: the family recorded on the Q0 order\'s own author_family stays the Q0\'s own casting family, never the implementation\'s',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'anthropic' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
+    return q0.order.author_family === 'openai' && q0.order.implementation_author_family === 'anthropic';
+  })());
+check('D: a caller-supplied castOpts.implementationAuthorFamily still wins over the order\'s own implementation_author_family',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'anthropic' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
+    const d = router.dispatch(q0.order, G, { q0OrderPresent: true, castOpts: { implementationAuthorFamily: 'openai' } });
+    return d.ok === true && d.casting.rung === 'vsOpenaiAuthor' && d.casting.casting.model === 'Sonnet 5';
+  })());
+check('D: a Q0 order with no attributable implementation_author_family is a typed ok:false refusal, never an uncaught throw',
+  (() => {
+    const o = order('Q0', 'T1');
+    delete o.author_family;
+    delete o.implementation_author_family;
+    let threw = false, d;
+    try { d = router.dispatch(o, G, { q0OrderPresent: true }); } catch (e) { threw = true; }
+    return !threw && !!d && d.ok === false && d.rejected === 'implementationAuthorFamily';
+  })());
+
+// ---- F: load-time validation reaches reviewMatrix / degradedSameFamilyCandidates
+// rows (including the nested .qualified/.untilQualified/.secondOpinion
+// shapes), not only castings.roles — table-driven over every drift class.
+{
+  const F_DRIFTS = [
+    ['same-family reviewMatrix row (anthropic author names an anthropic model)',
+      (c) => { c.reviewMatrix.anthropic.T2 = { vendor: 'anthropic', model: 'Opus 5', effort: 'high' }; }, /names a same-family/],
+    ['unknown model in a flat reviewMatrix row',
+      (c) => { c.reviewMatrix.openai.T2 = { vendor: 'anthropic', model: 'Opus 6 Imaginary', effort: 'high' }; }, /names unknown model/],
+    ['vendor/family mismatch in a reviewMatrix row',
+      (c) => { c.reviewMatrix.openai.T2 = { vendor: 'openai', model: 'Opus 5', effort: 'high' }; }, /disagrees with model family/],
+    ['off-ladder effort in a reviewMatrix row',
+      (c) => { c.reviewMatrix.openai.T2 = { vendor: 'anthropic', model: 'Opus 5', effort: 'ludicrous' }; }, /off the anthropic ladder/],
+    ['unknown model in the nested .qualified shape (anthropic T1)',
+      (c) => { c.reviewMatrix.anthropic.T1.qualified = { vendor: 'openai', model: 'Opus 6 Imaginary', effort: 'med' }; }, /qualified names unknown model/],
+    ['unknown model in the nested .secondOpinion shape (human T3)',
+      (c) => { c.reviewMatrix.human.T3.secondOpinion = { vendor: 'openai', model: 'Nope 1', effort: 'high' }; }, /secondOpinion names unknown model/],
+    ['unknown model in degradedSameFamilyCandidates',
+      (c) => { c.reviewMatrix.degradedSameFamilyCandidates.anthropic = [{ vendor: 'anthropic', model: 'Nope 1', effort: 'high' }]; }, /degradedSameFamilyCandidates\.anthropic\[0\] names unknown model/],
+    ['degradedSameFamilyCandidates row family drifts from its own key (an anthropic key holding valid, internally-consistent Terra/openai fields)',
+      (c) => { c.reviewMatrix.degradedSameFamilyCandidates.anthropic = [{ vendor: 'openai', model: 'GPT-5.6 Terra', effort: 'med' }]; }, /is filed under degradedSameFamilyCandidates\.anthropic but names a openai model.*actual family must equal the key/],
+  ];
+  let bad = [];
+  for (const [label, mutate, re] of F_DRIFTS) {
+    const e = tamperedCastings(mutate);
+    if (!e) bad.push(label + ' (loaded clean — did not refuse)');
+    else if (!re.test(e.message)) bad.push(label + ' (refused, but for the wrong reason: ' + e.message.split('\n')[0] + ')');
+  }
+  check('F: every reviewMatrix / degradedSameFamilyCandidates drift class refuses construction, table-driven', bad.length === 0, bad.join('\n'));
+}
+
+// ---- G: the Q0 touch trigger is gated on sourceChangeClasses, exactly like
+// the tier trigger already is — a read-only/doc class touching a trigger
+// area does not hard-block on a missing Q0.
+check('G: q0Required touch trigger does not fire for a read-only class (N0) touching auth',
+  router.q0Required({ class: 'N0', risk: 'T0', touches: ['auth'] }).required === false);
+check('G: q0Required touch trigger still fires for a real source-change class (E2) touching auth',
+  router.q0Required({ class: 'E2', risk: 'T0', touches: ['auth'] }).required === true);
+check('G: through dispatch, a read-only Scout order touching auth is no longer blocked on a missing Q0',
+  (() => { const d = router.dispatch(order('N0', 'T0', { touches: ['auth'] }), G, { q0OrderPresent: false }); return d.ok === true; })());
+
+// ---- H: fnv1a() matches the FNV-1a spec exactly (Math.imul, no lossy
+// float64 intermediate past 2^53), pinned against an exact BigInt reference
+// and against the downstream calibration draw's actual fire rate/spread.
+// NOTE (see DEVIATIONS in the builder report): no existing test or artifact
+// in this repo pins the OLD (broken) fnv1a digests — every existing
+// calibration test (section 9 above) searches dynamically for a
+// sampled/unsampled nonce using fnv1a() itself, so it is self-consistent
+// under either the broken or the fixed implementation and needed no change.
+{
+  const FNV_PRIME = 16777619n, MASK = 0xffffffffn;
+  function fnv1aRef(str) {
+    let h = 2166136261n;
+    for (let i = 0; i < str.length; i++) {
+      h ^= BigInt(str.charCodeAt(i));
+      h = (h * FNV_PRIME) & MASK;
+    }
+    return Number(h);
+  }
+  const VECTORS = ['', 'a', 'abc', 'nonce-cal-0', 'deadbeefdeadbeef', 'the quick brown fox',
+    '0123456789abcdef0123456789abcdef', String.fromCharCode(0, 1, 2, 255, 65535)];
+  const vecBad = VECTORS.filter((v) => fnv1a(v) !== fnv1aRef(v));
+  check('H: fnv1a() matches the exact BigInt FNV-1a reference over a pinned vector set', vecBad.length === 0, JSON.stringify(vecBad));
+
+  const nodeCrypto = require('crypto');
+  const N = 100000;
+  let hits = 0;
+  const residues = new Array(100).fill(0);
+  for (let i = 0; i < N; i++) {
+    const h = fnv1a(nodeCrypto.randomBytes(12).toString('hex')); // same shape as the dispatcher-minted nonce
+    residues[h % 100]++;
+    if (h % 100 < 25) hits++;
+  }
+  const fireRate = hits / N;
+  const emptyBuckets = residues.filter((c) => c === 0).length;
+  check('H: over ' + N + ' synthetic hex nonces the q0Required calibration fire-rate lands in [24%, 26%]',
+    fireRate >= 0.24 && fireRate <= 0.26, (fireRate * 100).toFixed(3) + '%');
+  check('H: no mod-100 residue bucket is empty over ' + N + ' nonces (no 16x skew)', emptyBuckets === 0, emptyBuckets + ' empty buckets');
+}
+
+// ---- I: dispatching a substrate class (V0 Verifier, P0 Quartermaster) at a
+// non-mandatory tier returns a typed substrate review verdict — never a
+// degraded same-family model review of code that has no author family.
+check('I: V0/P0 at T1 (non-mandatory) return a typed substrate review verdict, no model casting',
+  (() => {
+    const dv = router.dispatch(order('V0', 'T1'), G);
+    const dp = router.dispatch(order('P0', 'T1'), G);
+    return dv.ok && dv.review.substrate === true && dv.review.closes === true && dv.review.casting === null &&
+      dp.ok && dp.review.substrate === true && dp.review.closes === true && dp.review.casting === null;
+  })());
+check('I: V0/P0 T2/T3 anchors unchanged — still DOES_NOT_CLOSE (unattributed provenance at mandatory class)',
+  (() => {
+    const t2 = router.dispatch(order('V0', 'T2'), G);
+    const t3 = router.dispatch(order('P0', 'T3'), G);
+    return t2.ok && t2.review.closes === false && t2.review.outcome === 'DOES_NOT_CLOSE' &&
+      t3.ok && t3.review.closes === false && t3.review.outcome === 'DOES_NOT_CLOSE';
+  })());
+
+// ---- C: REPORT ONLY — the requiredReserve/redBelow parity under the
+// default forecast is a known, unchanged calibration fact, not a bug fixed
+// here. Pinned explicitly so it screams if either side moves silently.
+check('C: KNOWN PARITY (no independent signal under the default forecast) — requiredReserve(defaultForecast()) === poolStateLadder.thresholds.redBelow === 0.08',
+  (() => {
+    const qm = require(path.join(MASTER, 'quartermaster', 'quartermaster.js'));
+    const req = router.requiredReserve(qm.defaultForecast());
+    return req === router.castings.poolStateLadder.thresholds.redBelow && req === 0.08;
+  })());
+
+// ---------------------------- 15. WO-14b leg 2b: readiness-repair tranche pins
+section('15. WO-14b leg 2b: stale-family fix, Builder ladder, merged classes, toggles');
+
+// ---- Stale-family MAJOR (router.js, cycle-2 finding): a Q0 order's
+// author_family is the family of the SERVED Q0 casting at EVERY dispatch —
+// after any recast — never the family stamped at creation.
+{
+  const impl = order('E2', 'T2', { author_family: 'human' });
+  const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'human' });
+  check('stale-family: a human-authored Q0 created while both pools are Green ties to the Anthropic lane',
+    q0.order.author_family === 'anthropic' && q0.cast.casting.model === 'Sonnet 5');
+  const staleBuckets = buckets({ 'AU-all': 'Amber' });
+  const dRe = router.dispatch(q0.order, staleBuckets, { q0OrderPresent: true });
+  check('stale-family MAJOR (cycle-2, router.js): re-dispatched after AU-all turns Amber, the Q0 serves openai/Terra and author_family is UPDATED to "openai", never the stale "anthropic" it was created with',
+    dRe.ok && dRe.casting.casting.model === 'GPT-5.6 Terra' && dRe.order.author_family === 'openai' &&
+    q0.order.implementation_author_family === 'human' && dRe.order.implementation_author_family === 'human');
+}
+{
+  const impl = order('E2', 'T2', { author_family: 'anthropic' });
+  const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
+  const dRe = router.dispatch(q0.order, G, { q0OrderPresent: true });
+  check('stale-family mirror case (openai served): an anthropic implementation’s Q0 re-dispatched under unchanged (Green) pools serves openai/Terra and reports author_family "openai" (opposite anthropic, served)',
+    dRe.ok && dRe.casting.casting.model === 'GPT-5.6 Terra' && dRe.order.author_family === 'openai');
+  const implO = order('E2', 'T2', { author_family: 'openai' });
+  const q0O = router.createQ0Order(implO, G, { implementationAuthorFamily: 'openai' });
+  const dReO = router.dispatch(q0O.order, G, { q0OrderPresent: true });
+  check('stale-family mirror case (anthropic served): an openai implementation’s Q0 serves anthropic/Sonnet and reports author_family "anthropic"',
+    dReO.ok && dReO.casting.casting.model === 'Sonnet 5' && dReO.order.author_family === 'anthropic');
+}
+
+// ---- Builder ladder: each tier's preferred casting at Green; substitute
+// walk at Amber on the preferred bucket (disclosed); override-only entries
+// never reached by the walk; Sol override FORBIDDEN without the reserve
+// check, served with it; deep at Opus below reserve GATED, no override WAIT.
+check('Builder ladder: each tier’s preferred casting at Green',
+  router.cast('Builder', G, { tier: 'bounded' }).casting.model === 'GPT-5.6 Luna' &&
+  router.cast('Builder', G, { tier: 'standard' }).casting.model === 'Sonnet 5' &&
+  router.cast('Builder', G, { tier: 'dense' }).casting.model === 'Sonnet 5' && router.cast('Builder', G, { tier: 'dense' }).casting.effort === 'high' &&
+  router.cast('Builder', G, { tier: 'deep' }).casting.model === 'Opus 5' &&
+  router.cast('Builder', G, {}).casting.model === 'Sonnet 5' /* default tier: standard */);
+check('Builder ladder: requested is always the tier’s preferred casting, even when a substitute is served',
+  (() => {
+    const r = router.cast('Builder', buckets({ 'AU-all': 'Amber' }), { tier: 'standard' });
+    return r.ok && r.requested.model === 'Sonnet 5' && r.requested.rung === 'primary';
+  })());
+check('Builder ladder: each tier’s substitute walk fires on Amber (disclosed, recastFrom set)',
+  (() => {
+    // bounded's preferred (Luna) and first substitute (Terra mirror) both
+    // draw from OU — an OU degradation takes out both at once, so the walk
+    // lands on the SECOND substitute (Sonnet, AU-all) — a real consequence
+    // of the tier ladder as specified, not a test artifact.
+    const bounded = router.cast('Builder', buckets({ OU: 'Amber' }), { tier: 'bounded' });
+    const standard = router.cast('Builder', buckets({ 'AU-all': 'Amber' }), { tier: 'standard' }); // Sonnet (AU-all) degrades to Terra mirror
+    const dense = router.cast('Builder', buckets({ 'AU-all': 'Amber' }), { tier: 'dense' }); // Sonnet dense degrades to Terra denseMirror
+    return bounded.ok && bounded.casting.model === 'Sonnet 5' && bounded.rung === 'primary' && bounded.recastFrom === 'preferredBounded' &&
+      standard.ok && standard.casting.model === 'GPT-5.6 Terra' && standard.rung === 'mirror' && standard.recastFrom === 'primary' &&
+      dense.ok && dense.casting.model === 'GPT-5.6 Terra' && dense.casting.effort === 'high' && dense.rung === 'denseMirror' && dense.recastFrom === 'dense';
+  })());
+check('Builder ladder: the deep tier has no substitute — both pools degraded WAITs, never a silent walk to Sol',
+  (() => { const r = router.cast('Builder', buckets({ 'AU-all': 'Amber' }), { tier: 'deep' }); return r.ok === false && r.outcome === 'WAIT' && /deep tier ladder/.test(r.reason); })());
+check('Builder ladder: override-only entries (denseOverrideSol, deepOverrideSol) are never reached by the walk at any bucket state',
+  (() => {
+    const denseAllStates = STATES.every((s) => {
+      const r = router.cast('Builder', buckets({ 'AU-all': s, OU: s }), { tier: 'dense' });
+      return !(r.ok && r.casting.model === 'GPT-5.6 Sol');
+    });
+    const deepAllStates = STATES.every((s) => {
+      const r = router.cast('Builder', buckets({ 'AU-all': s, 'AU-opus': s }), { tier: 'deep' });
+      return !(r.ok && r.casting.model === 'GPT-5.6 Sol');
+    });
+    return denseAllStates && deepAllStates;
+  })());
+check('Builder ladder: a Sol override without castOpts.reserveCheck is typed FORBIDDEN, never walked',
+  (() => {
+    const dense = router.cast('Builder', G, { tier: 'dense', override: { rung: 'denseOverrideSol', reason: 'owner-directed' } });
+    const deep = router.cast('Builder', G, { tier: 'deep', override: { rung: 'deepOverrideSol', reason: 'owner-directed' } });
+    return dense.ok === false && dense.outcome === 'FORBIDDEN' && /Sol override requires/.test(dense.reason) &&
+      deep.ok === false && deep.outcome === 'FORBIDDEN' && /Sol override requires/.test(deep.reason);
+  })());
+check('Builder ladder: a Sol override WITH castOpts.reserveCheck === "passed" is served — a deliberate choice, never a degradation target',
+  (() => {
+    const dense = router.cast('Builder', G, { tier: 'dense', override: { rung: 'denseOverrideSol', reason: 'owner-directed' }, reserveCheck: 'passed' });
+    const deep = router.cast('Builder', G, { tier: 'deep', override: { rung: 'deepOverrideSol', reason: 'owner-directed' }, reserveCheck: 'passed' });
+    return dense.ok && dense.casting.model === 'GPT-5.6 Sol' && dense.override === true &&
+      deep.ok && deep.casting.model === 'GPT-5.6 Sol' && deep.override === true;
+  })());
+check('Builder ladder guardrail: bounded tier + underSpecified is still FORBIDDEN (Luna never receives under-specified work)',
+  router.cast('Builder', G, { tier: 'bounded', underSpecified: true }).outcome === 'FORBIDDEN');
+check('Builder ladder: deep tier at Opus below reserve is GATED through dispatch (P15), never silently walked',
+  (() => {
+    const d = router.dispatch(order('E3', 'T1'), buckets({ 'AU-opus': { state: 'Green', belowReserve: true } }));
+    return d.ok === false && d.outcome === 'GATED' && d.gate.gate === 'AU-O reserve (P15)';
+  })());
+check('Builder ladder: deep tier with Opus gated (Amber, unconfirmed) and no override → WAIT/GATED, never a silent substitution (as Principal behaved)',
+  (() => {
+    const d = router.dispatch(order('E3', 'T1'), buckets({ 'AU-opus': 'Amber' }));
+    return d.ok === false && (d.outcome === 'GATED' || d.outcome === 'WAIT');
+  })());
+
+// ---- Merged-class dispatch: class preserved, role/tier/mode set, review
+// row taken from the CLASS (E3/E4/E7 mandatory unchanged); A1 → RETIRED_WORKFLOW.
+check('merged-class dispatch: E0 preserves class E0, routes to Builder, tier standard (default), mode E0',
+  (() => {
+    const d = router.dispatch(order('E0', 'T1'), G);
+    return d.ok && d.class === 'E0' && d.role === 'Builder' && d.tier === 'standard' && d.mode === 'E0' && d.casting.casting.model === 'Sonnet 5';
+  })());
+check('merged-class dispatch: an explicit order.tier overrides the merged default (E0 + tier:"dense")',
+  (() => {
+    const d = router.dispatch(order('E0', 'T1', { tier: 'dense' }), G);
+    return d.ok && d.tier === 'dense' && d.casting.casting.effort === 'high';
+  })());
+check('merged-class dispatch: E3 keeps its mandatory review row (class carries the review, not the role) — Q0 still auto-spawns',
+  (() => {
+    const d = router.dispatch(order('E3', 'T1'), G);
+    return d.ok && d.class === 'E3' && d.role === 'Builder' && d.tier === 'deep' && d.mode === 'E3' && d.review_policy === 'mandatory' && !!d.q0;
+  })());
+check('merged-class dispatch: N0 routes to Investigator, mode N0, carrying the read-only pin',
+  (() => {
+    const d = router.dispatch(order('N0', 'T0'), G);
+    return d.ok && d.class === 'N0' && d.role === 'Investigator' && d.mode === 'N0' && d.pin === 'read-only' && d.casting.casting.model === 'Opus 5';
+  })());
+check('merged-class dispatch: N1/N2/M0 all route to Investigator with their own mode, no tier field (Investigator is not tiered)',
+  ['N1', 'N2', 'M0'].every((cls) => {
+    const d = router.dispatch(order(cls, 'T1'), G);
+    return d.ok && d.role === 'Investigator' && d.mode === cls && d.tier === undefined;
+  }));
+// WO-14b leg 2 fix round, finding 6 (MAJOR, fixed): merging M0 into
+// Investigator dropped the retired Archivist's raw video/audio UNAVAILABLE
+// capability boundary (noMirrorFor.videoAudio) — an M0 order carrying
+// castOpts.medium:'videoAudio' used to dispatch ok:true through Investigator
+// instead of the typed refusal. mergedClasses.M0.unavailable restores the
+// original reason text verbatim.
+check('finding 6: M0 + castOpts.medium:"videoAudio" → typed UNAVAILABLE with the original noMirrorFor.videoAudio reason text preserved',
+  (() => {
+    const d = router.dispatch(order('M0', 'T1'), G, { castOpts: { medium: 'videoAudio' } });
+    return d.ok === false && d.outcome === 'UNAVAILABLE' && d.class === 'M0' && d.role === 'Investigator' &&
+      /raw video and audio go below the model layer/.test(d.reason);
+  })());
+check('finding 6: M0 + castOpts.medium:"documents" (or no medium at all) dispatches ok through Investigator, unaffected',
+  (() => {
+    const withDocs = router.dispatch(order('M0', 'T1'), G, { castOpts: { medium: 'documents' } });
+    const withNone = router.dispatch(order('M0', 'T1'), G);
+    return withDocs.ok === true && withDocs.role === 'Investigator' && withNone.ok === true && withNone.role === 'Investigator';
+  })());
+
+// WO-14b leg 2 fix round 2 (finding 3, MAJOR, fixed): review #2 found the M0
+// UNAVAILABLE guard unreachable through the public contract — only an
+// internal castOpts.medium injection could reach it, since
+// dispatch-request.schema.json rejected `medium` as an additional property.
+// order.schema.json now carries an optional `medium` field; dispatch() must
+// read order.medium too — either order.medium OR castOpts.medium names the
+// unavailable medium refuses.
+check('finding 3: M0 order carrying order.medium:"videoAudio" (the public-contract path, no castOpts) → typed UNAVAILABLE',
+  (() => {
+    const d = router.dispatch(order('M0', 'T1', { medium: 'videoAudio' }), G);
+    return d.ok === false && d.outcome === 'UNAVAILABLE' && d.class === 'M0' && d.role === 'Investigator' &&
+      /raw video and audio go below the model layer/.test(d.reason);
+  })());
+check('finding 3: M0 order carrying order.medium:"documents" dispatches ok through Investigator',
+  (() => {
+    const d = router.dispatch(order('M0', 'T1', { medium: 'documents' }), G);
+    return d.ok === true && d.role === 'Investigator';
+  })());
+check('finding 3: order.medium and castOpts.medium are both live triggers — a mismatched pair where EITHER names the unavailable medium still refuses',
+  (() => {
+    const viaOrderOnly = router.dispatch(order('M0', 'T1', { medium: 'videoAudio' }), G, { castOpts: { medium: 'documents' } });
+    const viaCastOptsOnly = router.dispatch(order('M0', 'T1', { medium: 'documents' }), G, { castOpts: { medium: 'videoAudio' } });
+    return viaOrderOnly.ok === false && viaOrderOnly.outcome === 'UNAVAILABLE' &&
+      viaCastOptsOnly.ok === false && viaCastOptsOnly.outcome === 'UNAVAILABLE';
+  })());
+check('A1 dispatch returns typed RETIRED_WORKFLOW, never a casting',
+  (() => {
+    const d = router.dispatch(order('A1', 'T1'), G);
+    return d.ok === false && d.outcome === 'RETIRED_WORKFLOW' && d.class === 'A1' && /Conductor \+ both Reviewer lanes/.test(d.reason);
+  })());
+
+// ---- Seat toggles: DISABLED (never a recast), S0/A0 fallback disclosures,
+// override map re-enables Sweeper.
+check('Sweeper is disabled by default (defaultEnabled: false) — cast() returns typed DISABLED, never a recast',
+  (() => { const r = router.cast('Sweeper', G); return r.ok === false && r.outcome === 'DISABLED' && r.role === 'Sweeper'; })());
+check('dispatch() of an S0 order with Sweeper disabled carries fallback:"verifier-census", disclosed',
+  (() => {
+    const d = router.dispatch(order('S0', 'T1'), G);
+    return d.ok === false && d.outcome === 'DISABLED' && d.fallback === 'verifier-census' && /Verifier.*census/.test(d.reason);
+  })());
+check('the seats override map re-enables Sweeper (createRouter({ seats }))',
+  (() => {
+    const r = routerSweeperOn.cast('Sweeper', G);
+    return r.ok === true && r.casting.model === 'GPT-5.6 Terra';
+  })());
+check('an owner-disabled Architect (A0) yields fallback:"conductor-self-plan", disclosed',
+  (() => {
+    const routerNoArchitect = createRouter({ seats: { Architect: false } });
+    const d = routerNoArchitect.dispatch(order('A0', 'T1'), G);
+    return d.ok === false && d.outcome === 'DISABLED' && d.fallback === 'conductor-self-plan' && /Conductor plans in its own voice/.test(d.reason);
+  })());
+check('resolveSeat() on a disabled seat also returns the typed DISABLED shape (propagated through target.cast)',
+  (() => {
+    const r = router.resolveSeat('modeler', { roster: 'new', buckets: G }); // modeler → Builder (enabled); prove via a Sweeper-targeted alias-shaped call instead
+    // No shipped alias targets Sweeper; exercise resolveSeat’s propagation directly through a disabled-seat router + a live alias (executor → Builder).
+    const routerNoBuilder = createRouter({ seats: { Builder: false } });
+    const d = routerNoBuilder.resolveSeat('executor', { roster: 'new', buckets: G });
+    return d.target.cast.ok === false && d.target.cast.outcome === 'DISABLED' && d.target.cast.role === 'Builder';
+  })());
+// WO-14b leg 2 fix round, finding 3 (MAJOR, fixed): resolveSeat() called
+// with a DIRECT role name (no alias indirection — the branch above only
+// exercised the alias path, which already routed through cast()) used to
+// skip the seat-toggle check entirely and hand back a usable
+// { kind: 'role', role: name } target even for a disabled seat. It must now
+// return the SAME typed DISABLED shape cast()/dispatch() return, including
+// the S0/A0 fallback disclosure text, never a usable role target.
+check('finding 3: resolveSeat("Sweeper") — a direct role name, no alias — returns typed DISABLED with the S0 fallback text on the default (Sweeper-disabled) router',
+  (() => {
+    const r = router.resolveSeat('Sweeper', { roster: 'new', buckets: G });
+    return r.ok === false && r.outcome === 'DISABLED' && r.role === 'Sweeper' &&
+      r.fallback === 'verifier-census' && /Verifier.*census/.test(r.reason) &&
+      r.target === undefined; // never a usable role target
+  })());
+check('finding 3: the seats override map re-enables direct-role resolveSeat("Sweeper") too — a live { kind: "role" } target, not DISABLED',
+  (() => {
+    const r = routerSweeperOn.resolveSeat('Sweeper', { roster: 'new', buckets: G });
+    return r.ok !== false && r.alias === false && r.target && r.target.kind === 'role' && r.target.role === 'Sweeper';
+  })());
+check('finding 3: resolveSeat("Architect") on an owner-disabled Architect router returns typed DISABLED with the A0 fallback text',
+  (() => {
+    const routerNoArchitect2 = createRouter({ seats: { Architect: false } });
+    const r = routerNoArchitect2.resolveSeat('Architect', { roster: 'new', buckets: G });
+    return r.ok === false && r.outcome === 'DISABLED' && r.role === 'Architect' &&
+      r.fallback === 'conductor-self-plan' && /Conductor plans in its own voice/.test(r.reason);
+  })());
+
+// ---- registry cross-check refusing an unmapped class: a class present in
+// the registry but neither owned by a role nor declared in mergedClasses
+// must refuse construction (drift still fails closed).
+check('registry cross-check refuses a class that is neither owned nor merged',
+  (() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-unmapped-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const c = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'castings.json'), 'utf8'));
+    delete c.mergedClasses.N0; // N0 now owned by nothing and merged into nothing
+    const file = path.join(dir, 'castings.json');
+    fs.writeFileSync(file, JSON.stringify(c), 'utf8');
+    let threw = null;
+    try { createRouter({ castingsFile: file }); } catch (e) { threw = e; }
+    return !!threw && /active class has no casting-table entry: N0/.test(threw.message);
+  })());
+check('mergedClasses cross-check refuses a class owned by BOTH a role and mergedClasses',
+  (() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-doubled-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const c = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'castings.json'), 'utf8'));
+    c.mergedClasses['E2'] = { role: 'Builder', tier: 'standard', mode: 'E2' }; // E2 is already owned by Builder
+    const file = path.join(dir, 'castings.json');
+    fs.writeFileSync(file, JSON.stringify(c), 'utf8');
+    let threw = null;
+    try { createRouter({ castingsFile: file }); } catch (e) { threw = e; }
+    return !!threw && /both owned by a role and listed in mergedClasses/.test(threw.message);
+  })());
+check('mergedClasses cross-check refuses a merged entry targeting an unknown role',
+  (() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-badtarget-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const c = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'castings.json'), 'utf8'));
+    c.mergedClasses.N0.role = 'Ghost Role';
+    const file = path.join(dir, 'castings.json');
+    fs.writeFileSync(file, JSON.stringify(c), 'utf8');
+    let threw = null;
+    try { createRouter({ castingsFile: file }); } catch (e) { threw = e; }
+    return !!threw && /targets unknown role/.test(threw.message);
   })());
 
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

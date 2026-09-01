@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "runSeed": "8d39e02c77bd4084dca8e16e3c25afc4",
+  "lane": "X-Sol",
+  "phase": 0,
+  "tokenHexLength": 12,
+  "map": {
+    "sdc-001": "75115e6dd89c",
+    "sdc-004": "aad8e43fd6ac",
+    "sdc-006": "16047ac9aa0a",
+    "sdc-011": "030568f4545f",
+    "sdc-008": "eb8480385613",
+    "sdc-010": "9e3a79cc10f4",
+    "sdc-005": "275fe1d84f3d",
+    "sdc-002": "057770c54d34",
+    "sdc-012": "1b314e302c23",
+    "sdc-003": "1663c256476f",
+    "sdc-007": "36cf6ee3fcdc",
+    "sdc-009": "39e8a6d14f99"
+  },
+  "byToken": {
+    "75115e6dd89c": "sdc-001",
+    "aad8e43fd6ac": "sdc-004",
+    "16047ac9aa0a": "sdc-006",
+    "030568f4545f": "sdc-011",
+    "eb8480385613": "sdc-008",
+    "9e3a79cc10f4": "sdc-010",
+    "275fe1d84f3d": "sdc-005",
+    "057770c54d34": "sdc-002",
+    "1b314e302c23": "sdc-012",
+    "1663c256476f": "sdc-003",
+    "36cf6ee3fcdc": "sdc-007",
+    "39e8a6d14f99": "sdc-009"
+  }
+}

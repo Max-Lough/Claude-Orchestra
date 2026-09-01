@@ -1,0 +1,17 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Both documents went in as wholly new material under the roster directory
+today. They add up to one hundred nineteen lines between them, and no file
+outside that pair was touched anywhere in the rest of the tree. The earlier
+fix commit and the one that follows it anchor this pass from end to end, so
+nothing before that pair matters. The runner's locked-worktree, single-force
+sweep limitation was set down as its own follow-on note for that lane.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

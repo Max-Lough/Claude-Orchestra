@@ -1,0 +1,24 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Add memory files to the Director's authoring exceptions in the guard hook:
+the project's memory file and its local sibling, user-level memory under the
+assistant's config directory, and any project path matching a new
+directorMemoryPatterns knob. Blocking memory writes breaks the built-in
+auto-memory that the Director alone maintains. Document it in the protocol
+and README, reusing the plan carve-out's containment discipline of resolved,
+traversal-checked paths inside the project or config directory. Fence the
+carve-out with a single rule — simulate each write, with Write, Edit and
+MultiEdit semantics, and deny the result unless the whole
+ORCHESTRA:BEGIN/ORCHESTRA:END block arrives byte-for-byte. Surviving marker
+lines are not by themselves sufficient evidence, since the text between them
+must come through intact too. Keep the new denial model-aware, and leave
+non-memory paths blocked exactly as today. Separately add harness
+versioning, with a VERSION file as the single source of truth, stamped by
+the installer into the protocol header and surfaced by /orchestra-status.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

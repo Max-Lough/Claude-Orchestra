@@ -1,0 +1,21 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Earlier rounds already carry their own closed verdicts, so this fourth
+review of the round three fixes has no call to revisit them; its whole
+boundary is the commit pair framing round two and round three, and only what
+changed across that pair belongs in the audit. Write the order alongside the
+executor's notes; neither one exists yet, and both match how the other
+passes in this series are shaped, changing nothing already sitting in
+roster/, since every earlier round's record stays exactly as that round left
+it. Make clear, near the end, that a clear call against that framing pair is
+the single fact that lets the pending pair leave revise status, giving the
+pass exactly one downstream consequence up front; past that single fact, the
+record carries nothing more, and nothing less, regardless of how the diff
+itself reads.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

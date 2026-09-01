@@ -1,0 +1,20 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This one runs through the cross-vendor lane instead of the usual track. Pair
+an order with the account of the cross-vendor pass reviewing the round 2
+diff, and bound both by the commit pair anchoring the initial round through
+the round two fixes. What the audit covers stops at that pair and never
+reaches back beyond it, but the call must be unambiguous, and the verdict on
+that anchoring pair settles, outright, whether the two open work orders
+leave revise status. There is no middle reading of the diff that can stand
+in for that single call, because this cross-vendor pass is the gate the
+earlier rounds were building toward all along. Put both documents into the
+roster directory, and treat them as material that did not exist before this
+pass. The pass alters only those two files, while the rest stays put.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

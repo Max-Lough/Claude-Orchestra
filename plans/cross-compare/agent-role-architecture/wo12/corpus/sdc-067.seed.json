@@ -1,0 +1,29 @@
+{
+  "id": "sdc-067",
+  "kind": "seeded",
+  "phase": 3,
+  "variant": "V3",
+  "base": "0f5c0a08225f417305b395cabdd54fa5528e3b17",
+  "commit": "c4312747b5ea534153da63bc337bce04c8c78cc6",
+  "subject": "Draw the WO-7b synthetic corpus and pre-register the misroute-recovery gates",
+  "seed": {
+    "type": "RC",
+    "severity": "CRITICAL",
+    "locator": {
+      "file": "plans/cross-compare/agent-role-architecture/wo7b/score.js",
+      "lines": [30, 88],
+      "symbol": "module top-level — results load and the per-item scoring loop over corpus.items"
+    },
+    "consequence": "The hop-0 results file is now read with an exists-then-read check and no wait for the producer to finish, and an item whose decision has not yet been flushed is silently skipped instead of aborting the run, so a scorer started while the probe is still writing scores only the subset that happens to be on disk while still printing full-corpus denominators — a run missing every gate-relevant item reports \"G1 PASS 13/13 caught\" and \"G2 PASS — 0 gate-relevant misroutes, 0 crossed\" and exits 0.",
+    "rationale": "G1/G2/G3 are pre-registered gates whose verdict is the load-bearing output of this commit; the fail-closed abort on a missing per-item decision was the only thing tying the reported denominators to the decisions actually read. Converting it to a skip turns a partially-written or not-yet-existing results file from a loud failure into a silently green gate verdict, which is a corrupted result on a decision path rather than merely incorrect behavior.",
+    "hazard_terms": [
+      "read-after-write ordering",
+      "check-then-act window",
+      "missing wait on a producer",
+      "partially written input treated as complete",
+      "silently skipped work in a scored loop"
+    ]
+  },
+  "suite_at_variant": "G1 recovery: PASS — 13/13 seeded misroutes caught / G2 no gate crossing: PASS — 4 gate-relevant misroutes, 0 crossed; tier-borne gates identical under both dispatches for all items: yes / G3 hops: PASS — P95 hop count 1 (≤1 required); 13/13 caught misroutes landed with hop-1 ACCEPT; escalations: none / ALL PRE-REGISTERED GATES PASS (exit 0)",
+  "design_note": "The commit adds only corpus.json (data) and score.js, so the seed had to live in the scorer; score.js performs no writes of its own, which ruled out the write-then-rename form of the type and left the read-side ordering form. The injection is two hunks that read as one coherent (wrong) tolerance policy: the hop-0 read is made exists-guarded like the hop-1 and classifier reads, and the per-item fail-closed abort becomes a continue justified by an incremental-append comment. Verified green on the real WO-7b results set at C' with output byte-identical to C, and verified silently green with all four gate-relevant items removed from the hop-0 file — the same input aborts with 'missing hop-0 result for M3' and exit 1 at C."
+}

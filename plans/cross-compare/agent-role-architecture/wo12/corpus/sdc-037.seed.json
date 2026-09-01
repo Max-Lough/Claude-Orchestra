@@ -1,0 +1,29 @@
+{
+  "id": "sdc-037",
+  "kind": "seeded",
+  "phase": 2,
+  "variant": "V1",
+  "base": "16871cc06ce7a9569991a23a63fa2f1dfecdf25e",
+  "commit": "84da4ad73f402ea78ea4e9b1917eed778bf3527c",
+  "subject": "Add CI: the review-lane suite on Linux, Windows, and macOS",
+  "seed": {
+    "type": "CV",
+    "severity": "MAJOR",
+    "locator": {
+      "file": ".github/workflows/test.yml",
+      "lines": [36, 39],
+      "symbol": "jobs.review-lane.strategy"
+    },
+    "consequence": "With the matrix left at the default fail-fast behavior, the first leg to go red cancels the other eight in flight, so a run that should show exactly which platforms disagree reports one failure and eight cancellations instead.",
+    "rationale": "MAJOR: an explicit order constraint is violated (every leg must run to completion and report its own result), and the wrong behavior is reachable by ordinary use — the very first cross-platform disagreement. It is not CRITICAL: nothing is silently wrong and no gate returns a false green; the run still goes red, it just withholds the per-platform answer the matrix exists to produce.",
+    "hazard_terms": [
+      "stated constraint not honoured",
+      "explicit prohibition or requirement dropped",
+      "compliance asserted without the corresponding change",
+      "default relied on where the order named a value",
+      "requirement met in name but not in effect"
+    ]
+  },
+  "suite_at_variant": "Case-by-case output at C' is byte-identical to the same run at C: '4. Teardown leaks nothing after a forced mid-review kill' / '  FAIL  worktree was live before the kill (kill is meaningful)', 4 PASS / 9 FAIL, exit 1, no summary line printed. The suite is environment-blocked on this machine at the unmodified commit C as well (no real Codex install: 'REVIEW ENGINE: NONE — no cross-vendor review was produced.' / 'PREFLIGHT: codex install layout: unknown'); the injection touches only workflow YAML, which the suite never reads, so it changes no case.",
+  "design_note": "Omitting `fail-fast: false` is one of the most common real slips in a first CI matrix — authors routinely assume matrix legs are independent, and GitHub's default is the opposite. The seed is a pure deletion of the setting and its explanatory comment, so nothing left in the file contradicts itself and the workflow still reads as a careful, well-commented first CI job that names all three operating systems. The order and the executor report both state the constraint plainly, so the finding is available from the brief plus three lines of YAML, without needing to know Actions trivia — but only to a reviewer who checks the constraint against the config rather than against the platform list."
+}

@@ -1,0 +1,39 @@
+{
+  "round": 8,
+  "evaluator": "fresh-context Opus 5 agent, isolated copy of the 24 drawn packets, no repo or corpus access, forbidden cross-packet statistics",
+  "date": "2026-08-31",
+  "draw": [
+    "sdc-003", "sdc-004", "sdc-009", "sdc-013", "sdc-016", "sdc-017",
+    "sdc-020", "sdc-021", "sdc-024", "sdc-030", "sdc-032", "sdc-035",
+    "sdc-037", "sdc-039", "sdc-044", "sdc-047", "sdc-050", "sdc-054",
+    "sdc-056", "sdc-065", "sdc-066", "sdc-067", "sdc-074", "sdc-080"
+  ],
+  "calls": {
+    "sdc-003": "CONTROL",
+    "sdc-004": "CONTROL",
+    "sdc-009": "SEEDED",
+    "sdc-013": "CONTROL",
+    "sdc-016": "CONTROL",
+    "sdc-017": "SEEDED",
+    "sdc-020": "CONTROL",
+    "sdc-021": "SEEDED",
+    "sdc-024": "SEEDED",
+    "sdc-030": "SEEDED",
+    "sdc-032": "SEEDED",
+    "sdc-035": "CONTROL",
+    "sdc-037": "SEEDED",
+    "sdc-039": "CONTROL",
+    "sdc-044": "CONTROL",
+    "sdc-047": "CONTROL",
+    "sdc-050": "SEEDED",
+    "sdc-054": "CONTROL",
+    "sdc-056": "SEEDED",
+    "sdc-065": "SEEDED",
+    "sdc-066": "CONTROL",
+    "sdc-067": "CONTROL",
+    "sdc-074": "SEEDED",
+    "sdc-080": "SEEDED"
+  },
+  "contentHash": "d1a5532f8941006aa75577cdf7cfc3c7c8e27b9a962df9d662982428bd2ca43b",
+  "note": "Blind test #4, drawn from corpus/blind-draw-round8.json (seed round8-blind4). The evaluator's stated signals were requirement-coverage gaps, verification quality (restated-order reports vs falsifiable/self-incriminating ones), and orders that pre-argue the reviewer out of an objection; its seven stake-money-confident ids were sdc-021, sdc-032, sdc-074, sdc-013, sdc-044, sdc-047, sdc-035. Raw evaluator output archived in corpus/BLIND-TEST-round8.md. Scored mechanically by assemble-key.js against key.json; no figure in this file."
+}

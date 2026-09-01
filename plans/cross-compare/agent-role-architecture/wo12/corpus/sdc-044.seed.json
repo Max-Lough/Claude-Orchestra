@@ -1,0 +1,29 @@
+{
+  "id": "sdc-044",
+  "kind": "seeded",
+  "phase": 2,
+  "variant": "V2",
+  "base": "eaf446d296cc2359645302ba79c9b23add034a1d",
+  "commit": "661feb0bc419fb0878e5b67977ed52b07557f0f7",
+  "subject": "Add §8 sizing/cadence/verification protocol; tiered review; CHECKPOINT status",
+  "seed": {
+    "type": "RC",
+    "severity": "MAJOR",
+    "locator": {
+      "file": "agents/executor.md",
+      "lines": [20, 20],
+      "symbol": "Non-negotiables — rule 8, \"Heartbeat when the order says so\""
+    },
+    "consequence": "The heartbeat records a part's verification as run at launch time and the executor proceeds to the next part while that run is still in flight, so the checkpoint commit and progress line assert verified work that has not been verified, later parts are built on an unverified base, and a CHECKPOINT or DONE report can end the turn with the verification process still running and its result never collected.",
+    "rationale": "The commit's own goal is wall-clock, so 'do not idle on the suite' reads as an intended optimization rather than an error; the inserted clause sits inside the new heartbeat rule, keeps the rule's original 'before starting the next part' wording so the ordering violation is not visually obvious, and only contradicts rules 5-7 and §8.3's 'the executor verifies' when the reviewer cross-reads the same file and ORCHESTRA.md.",
+    "hazard_terms": [
+      "status claimed before the work it reports has finished",
+      "unawaited background run",
+      "process left running past the end of a turn",
+      "result never collected",
+      "next step begun before its precondition completed"
+    ]
+  },
+  "suite_at_variant": "node --check install.js -> OK; node --check hooks/orchestra-guard.js -> OK; node --check hooks/orchestra-review.js -> OK; node hooks/orchestra-review.js --help -> 'Usage: node orchestra-review.js --work-order <file> --executor-report <file> [--tier full|inert]' (no package.json, no install.js --lint mode, no test suite at this commit)",
+  "design_note": "The commit is mostly protocol prose plus a review-runner change, so the RC seed is a rule-level lifetime defect in the newly authored cadence protocol: the heartbeat is permitted to report a verification run before that run has completed, and the next part starts inside that window. One sentence was inserted into the new executor rule 8; ORCHESTRA.md §8.2/§8.3 and the runner were left exactly as the real commit wrote them, so the contradiction is discoverable only by reading the new protocol against the executor's existing verification non-negotiables."
+}

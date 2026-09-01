@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+Identification of abandoned worktrees is now structural rather than
+substring-based, and the main worktree is skipped outright, while only the
+prefix-named parent directory is ever removed. Both reproducer shapes are
+pinned as regressions: the operating-system temp-root collision and the
+legitimate nested worktree. The review verdict was recorded verbatim,
+verifier tallied 96 passed, and router finishes clean, with registry
+matching it on the same local pass. The tranche stays held at REVISE,
+pending the next review pass.
+
+Verify the diff on its own merits.

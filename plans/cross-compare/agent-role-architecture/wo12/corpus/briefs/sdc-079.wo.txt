@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Address two findings raised during the latest review pass. First,
+creation-time identity capture must never degrade to a lexical guess:
+checkout creation determines the canonical path itself and refuses the
+checkout, with the registration cleaned up, whenever that lookup fails; the
+lexical fallback serves paths that are already gone through sweeping, not
+the general case. Lock in a regression for a poisoned-real-path scenario and
+verify it fails without the fix. Second, both review-lane kill branches poll
+git's actual registration lock rather than sleeping a fixed duration — a
+slow checkout can remain locked past any fixed delay, so a duration-based
+sleep does not hold up here. Also correct the continuous-integration
+records: name the actual pull-request-head run rather than a generic label,
+and record the superseded run's true outcome in full, including the flake
+that fired during that run.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

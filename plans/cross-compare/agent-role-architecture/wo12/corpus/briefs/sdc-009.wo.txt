@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+This work builds the Quartermaster's own deterministic P0 substrate.
+Recorded allowance readings go in, and the router's bucket-state shape comes
+out, so the module has to carry zero dependencies and stay plain CommonJS,
+mirroring the existing verifier and router substrates that are already fully
+in place. Its state must derive only from real recorded readings across both
+vendors, never a fabricated denominator, while ledger attribution stays out
+of scope entirely, since it is impossible today and remains a registered
+follow-on. The allGreen function stays exported as a test affordance, and
+the router's own scoring module stays untouched, so nothing downstream has
+to change. No registry schema gets added, since the entry contract belongs
+in this module's own file and nowhere else, and the two new runtime data
+files get ignored so they stay out of every commit. Interop then gets proven
+end to end against the real router, wired into the pipeline right after it.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

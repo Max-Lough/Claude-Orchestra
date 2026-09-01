@@ -1,0 +1,10 @@
+{
+  "name": "svc-config",
+  "version": "4.2.0",
+  "private": true,
+  "description": "Reads the exported service configuration.",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "license": "MIT"
+}

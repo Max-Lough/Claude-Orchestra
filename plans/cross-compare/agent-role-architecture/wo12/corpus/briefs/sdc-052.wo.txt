@@ -1,0 +1,21 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Cover the round-5c fixes in the eighth review of this series. Anchor the
+pass to the earlier fix commit and the one that follows it, the pair
+bounding round-5b and round-5c. Set the reference runner's own limitation
+down as a distinct follow-on note tied to that runner's lane, since its
+sweep only manages a single locked-worktree force pass, but that fact
+predates this fix and must stay uncounted as a finding against it. Both
+documents are wholly new, placed fresh under the roster directory, and no
+other file in that directory is touched by this pass. Keep the audit narrow
+to just that bounding pair, while nothing beyond it and nothing borrowed
+from earlier rounds ever enters the record. Record, without qualification,
+that an unqualified verdict at this point is what the pair of orders in
+revise needs.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

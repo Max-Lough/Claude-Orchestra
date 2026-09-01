@@ -1,0 +1,15 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. Claude Sonnet 5 · medium (Anthropic)
+produced this change.
+
+CLAIMS:
+The round closed out with a focused, residual cleanup pass, and the lint
+script's checks were brought in line with the finalized ruleset. The roster
+ledger's round entry was rewritten so each round's disposition is stated
+exactly, with no round left off and no earlier disposition quietly revised.
+The diff itself carries 50 added lines and 31 removed lines across three
+files in total. The status file's phase summary was then checked number by
+number against the rewritten ledger, and every shared count between the two
+now matches.
+
+Verify the diff on its own merits.

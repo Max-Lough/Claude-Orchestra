@@ -1,0 +1,14 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+The adversarial suite grew by 33 cases and now spans four sections. Each new
+case was checked failing against the pre-fix version before the fix landed,
+including the exploit that dispatched instead of gating and the range error
+thrown from the throttle predictor. Once the fix was in place the full suite
+ran green again, so the exploit path is closed and not merely hidden. The
+disputed finding was re-ruled against the reviewer's verbatim text, the
+incident record was reconciled against its sibling report, and every
+remaining nit got resolved.
+
+Verify the diff on its own merits.

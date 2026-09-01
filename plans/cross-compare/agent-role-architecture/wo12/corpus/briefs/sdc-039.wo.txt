@@ -1,0 +1,22 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Fix all four findings from the latest cross-vendor review round and record
+its verdict. Make the touches lint compare path elements one by one rather
+than joining them into a collision-prone comma string. Have the deep-plan
+glob matcher reproduce the retired regular expression's line-terminator
+classes exactly, so the replacement matches what its predecessor matched.
+Give the checkout module a startup sweep that reclaims abandoned worktrees
+whose directories are still on disk, since pruning alone clears only the
+registrations whose directory has already gone missing, and keep the
+checkouts this process is actively using exempt from that sweep. Correct the
+wording future review orders use, so an order enumerates every commit inside
+its pinned range and never describes that range as a single commit. Record
+the review verdict verbatim in the roster, hold the tranche at REVISE
+pending the next round, and leave the suites green.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

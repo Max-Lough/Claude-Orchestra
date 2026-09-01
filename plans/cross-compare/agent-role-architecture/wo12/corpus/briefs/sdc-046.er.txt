@@ -1,0 +1,19 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+All five seats were exercised, and the results were recorded fully. Scout
+and Investigator ran in-harness and both passed, across 9 files touched
+altogether, with nothing outside that set moved. The first run of the
+Researcher seat fabricated citations while its own verification admitted the
+command runner was down, so that run was discarded outright. The retry under
+a stricter check correctly returned a blocked result instead of a false
+pass, and two runs hit the same transient tooling fault, noted as a
+follow-on.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

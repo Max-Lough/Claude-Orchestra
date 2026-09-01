@@ -158,7 +158,17 @@ staleness in this contract is refusal, not disclosure:
   never reaches `bucketState()`'s return value.
 
 A **future-dated** reading is also refused: clock skew or tamper, either way not
-evidence.
+evidence. So is a **future-dated throttle or confirmation** — triage fix Q4
+closed a gap where those two record kinds were merely *filtered* out of their
+respective freshness-window checks (the same `now - t.at >= 0` shape a
+future-dated reading is refused on, not filtered on) rather than failing the
+bucket closed: a HARD throttle timestamped ahead of now used to simply vanish
+— no disclosure, no refusal, the bucket published Green as if it had never
+been recorded. All three record kinds now get the identical treatment: a
+future timestamp on ANY of them fails the whole bucket closed, naming the
+record and the clock-skew/tamper explanation, exactly like a future-dated
+reading. `confirm()` refuses the same way when a future-dated throttle is on
+file for the bucket it is asked to confirm.
 
 `maxStaleMs` is **retired as a routing parameter** — `analyze()`/
 `bucketState()` no longer accept or read it at all, so passing one is inert
@@ -268,9 +278,15 @@ rubber stamp, which is the exact failure P15 exists to prevent. The ruling:
 
 > **Confirmation is evidence, not permission.** `confirm(bucket)` is granted
 > only when a **fresh** (≤ `maxFreshMs`) reading exists for that bucket **and**
-> that reading is **strictly above** `poolStateLadder.thresholds.orangeBelow`
-> (0.20) — i.e. the bucket is genuinely in the Amber band the gate was written
-> for, not sliding through Orange or Red behind a stale number.
+> that reading is **strictly inside the Amber band** — above
+> `poolStateLadder.thresholds.orangeBelow` (0.20) **and** below
+> `poolStateLadder.thresholds.amberBelow` (0.40) — i.e. the bucket is
+> genuinely in the Amber band the gate was written for, not sliding through
+> Orange or Red behind a stale number, and not sitting in Green where no
+> confirmation is even needed. (Triage fix Q1: the upper bound was missing
+> entirely before this revision — a Green-band 0.92 reading minted a real,
+> arm-lifting confirmation, contradicting this very paragraph's own "the
+> Amber band only" claim.)
 
 `confirm()` also REFUSES — appending nothing — on three more facts the round-1
 review demonstrated it used to grant through: a throttle (soft **or** hard)
@@ -295,19 +311,32 @@ NOW, not merely at grant time:
 2. its `evidenceTs` equals the bucket's **current** latest valid reading's
    `ts` — a newer reading landing since the grant **voids** it (superseded
    evidence);
-3. that current reading's own fraction still satisfies the R5 predicate
-   (strictly above `orangeBelow`) — checked against the LIVE reading, never
-   against the confirmation's own recorded fraction;
-4. no throttle is fresh and the bucket is not exhausted, right now;
-5. the bucket carries no malformed-latest poison (structural: a poisoned
+3. that current reading's own fraction still satisfies the R5 predicate —
+   strictly inside the Amber band, above `orangeBelow` **and** below
+   `amberBelow` (triage fix Q1: the upper bound was missing here too, mirroring
+   the same gap in `confirm()` itself) — checked against the LIVE reading,
+   never against the confirmation's own recorded fraction;
+4. the bucket is not `belowReserve` right now (triage fix Q2: without this
+   clause the published contract could carry `{reserveBreached: true}` — a
+   poolState of Red — **and** `quartermasterConfirmation: true` on the SAME
+   bucket at once, an asserted arm-lift on a bucket the router itself calls
+   Red, shielded from actually mattering only by gate-evaluation ORDER in
+   `router.js`, which is the router's business, not a reason for this seat to
+   publish a self-contradicting contract);
+5. no throttle is fresh and the bucket is not exhausted, right now;
+6. the bucket carries no malformed-latest poison (structural: a poisoned
    bucket already fails the whole bucket closed before confirmation logic
    runs at all);
-6. *(round 4)* the live reading is itself fresh — structural, same as (5): a
+7. *(round 4)* the live reading is itself fresh — structural, same as (6): a
    bucket whose latest reading is past `maxFreshMs` already fails the whole
    bucket closed at R3's age check, before confirmation logic is reached at
    all. Listed for completeness and to keep `confirm()`'s own predicate and
    `analyze()` consistent, even though it can never actually fire from this
    call site.
+8. *(triage fix Q4)* the confirmation entry itself is not dated in the
+   future — structural, same shape as (6)/(7): a future-dated confirmation
+   fails the whole bucket closed before this code is reached, rather than
+   being silently filtered out as merely "not fresh".
 
 Any violation voids the confirmation — the state publishes without it, and
 both `bucketStateDetail()`'s analysis and the human report state exactly why
@@ -471,7 +500,7 @@ is what skips prediction for refused buckets, not `predictThrottle()` itself.
 
 ## Proof
 
-`node tests/quartermaster.test.js` — **195 checks**, all on `mkdtemp` fixtures.
+`node tests/quartermaster.test.js` — **216 checks**, all on `mkdtemp` fixtures.
 The load-bearing ones are the **interop** section, which feeds a P0-produced
 state into the real `router/router.js`:
 
@@ -509,6 +538,26 @@ freshness window, never refreshed, evaluated once the reading itself has
 gone stale) now refuses at `bucketState()` before confirmation logic is ever
 reached — closing the round-3 gap where a stale-but-disclosed reading still
 reached the router indistinguishable from a fresh one.
+
+**Readiness-repair tranche (post-round-4 triage), five defects, each with a
+pinning test:** Q4 CRITICAL — future-dated throttles and confirmations now
+fail the whole bucket closed at all three sites that used to silently filter
+them out (analyze()'s throttle window, analyze()'s confirmation window, and
+confirm()'s own throttle check), exactly like a future-dated reading, rather
+than vanishing with zero disclosure (§3). Q1 — `confirm()` and `analyze()`'s
+confirmation void-chain now enforce the FULL Amber band (both bounds), not
+only the lower one — a Green-band 0.92 reading can no longer mint a real,
+arm-lifting confirmation (§8, §13(f)). Q2 — a confirmation is now voided
+whenever the bucket is `belowReserve` at `analyze()` time, closing the gap
+where the published contract could carry `{reserveBreached: true,
+quartermasterConfirmation: true}` simultaneously (§13(f)). Q6 — the
+`forecast` option is now gated on identity (`=== undefined`), never
+truthiness — `null`/`0`/`''`/`false` are refused as malformed caller-supplied
+options rather than silently substituted with the default reserve (§15). Q7 —
+`predictThrottle()` now refuses outright when the latest reading is
+future-dated, before the staleness check, rather than producing a confident
+ETA (even an "already crossed" rung) from a record `analyze()` itself refuses
+(§16).
 
 ## Plan and work-order citations
 

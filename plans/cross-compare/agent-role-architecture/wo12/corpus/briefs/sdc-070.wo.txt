@@ -1,0 +1,23 @@
+REVIEW PACKET — review a completed, already-merged change.
+
+Change under review: the commit checked out at HEAD in this checkout,
+compared against its parent.
+
+ORDER:
+Complete a blind validation pass against the pre-registered follow-on
+corpus. Save and fingerprint the independent pass before the sealed corpus
+file is unsealed, then compare it against the primary pass to report
+agreement, disagreement, and ambiguity counts against the full-gate
+threshold of eighteen out of twenty items. Separately grade the sealed
+subset drawn to validate the second class redraw against its own gate,
+keeping that subset apart from the full-corpus tally. Where the full pass
+misses items outside that subset, draw a narrowly scoped third redraw
+limited to those misses, sharpening one classifier's evidence-object
+definition and defining the diagnosis corollary's threshold for when a cause
+counts as stated. Add exactly one new classifier for the newly implicated
+class pair, but leave the three other named classifiers unchanged. Mark the
+corpus closed once graded, and require a fresh blinded corpus before the
+downstream work order proceeds.
+
+Audit the diff between base and head against the order above: correctness,
+unexplained changes, and concrete failure scenarios.

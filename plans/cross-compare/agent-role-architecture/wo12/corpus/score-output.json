@@ -1,0 +1,881 @@
+{
+  "generatedAt": "2026-09-01T00:32:46.303Z",
+  "keyPath": "C:\\Users\\maxtl\\Projects\\Claude-Orchestra\\plans\\cross-compare\\agent-role-architecture\\wo12\\corpus\\key.json",
+  "resultsDir": "C:\\Users\\maxtl\\Projects\\Claude-Orchestra\\plans\\cross-compare\\agent-role-architecture\\wo12",
+  "lanes": [
+    "S-Opus",
+    "S-Sonnet",
+    "X-Sol"
+  ],
+  "recallByLane": {
+    "S-Opus": {
+      "hits": 5,
+      "n": 5,
+      "p": 1,
+      "lo": 0.5655175352168252,
+      "hi": 1
+    },
+    "S-Sonnet": {
+      "hits": 5,
+      "n": 5,
+      "p": 1,
+      "lo": 0.5655175352168252,
+      "hi": 1
+    },
+    "X-Sol": {
+      "hits": 4,
+      "n": 5,
+      "p": 0.8,
+      "lo": 0.37553462976252533,
+      "hi": 0.9637758913675698
+    }
+  },
+  "recallBySeverity": {
+    "S-Opus": {
+      "MAJOR": {
+        "hits": 5,
+        "n": 5,
+        "p": 1,
+        "lo": 0.5655175352168252,
+        "hi": 1
+      }
+    },
+    "S-Sonnet": {
+      "MAJOR": {
+        "hits": 5,
+        "n": 5,
+        "p": 1,
+        "lo": 0.5655175352168252,
+        "hi": 1
+      }
+    },
+    "X-Sol": {
+      "MAJOR": {
+        "hits": 4,
+        "n": 5,
+        "p": 0.8,
+        "lo": 0.37553462976252533,
+        "hi": 0.9637758913675698
+      }
+    }
+  },
+  "recallByType": {
+    "S-Opus": {
+      "CV": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "FT": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "RC": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "HF": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "LC": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      }
+    },
+    "S-Sonnet": {
+      "CV": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "FT": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "RC": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "HF": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "LC": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      }
+    },
+    "X-Sol": {
+      "CV": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "FT": {
+        "hits": 0,
+        "n": 1,
+        "p": 0,
+        "lo": 0,
+        "hi": 0.7934506856227626
+      },
+      "RC": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "HF": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      },
+      "LC": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      }
+    }
+  },
+  "recallByVariant": {
+    "S-Opus": {
+      "V1": {
+        "hits": 2,
+        "n": 2,
+        "p": 1,
+        "lo": 0.3423802275066531,
+        "hi": 1
+      },
+      "V3": {
+        "hits": 2,
+        "n": 2,
+        "p": 1,
+        "lo": 0.3423802275066531,
+        "hi": 1
+      },
+      "V2": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      }
+    },
+    "S-Sonnet": {
+      "V1": {
+        "hits": 2,
+        "n": 2,
+        "p": 1,
+        "lo": 0.3423802275066531,
+        "hi": 1
+      },
+      "V3": {
+        "hits": 2,
+        "n": 2,
+        "p": 1,
+        "lo": 0.3423802275066531,
+        "hi": 1
+      },
+      "V2": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      }
+    },
+    "X-Sol": {
+      "V1": {
+        "hits": 1,
+        "n": 2,
+        "p": 0.5,
+        "lo": 0.09453120573423071,
+        "hi": 0.9054687942657693
+      },
+      "V3": {
+        "hits": 2,
+        "n": 2,
+        "p": 1,
+        "lo": 0.3423802275066531,
+        "hi": 1
+      },
+      "V2": {
+        "hits": 1,
+        "n": 1,
+        "p": 1,
+        "lo": 0.20654931437723742,
+        "hi": 1
+      }
+    }
+  },
+  "stability": {
+    "S-Opus": {
+      "total": 11,
+      "unavailableCount": 0,
+      "rate": 0,
+      "maxStreak": 0,
+      "ids": []
+    },
+    "S-Sonnet": {
+      "total": 11,
+      "unavailableCount": 0,
+      "rate": 0,
+      "maxStreak": 0,
+      "ids": []
+    },
+    "X-Sol": {
+      "total": 11,
+      "unavailableCount": 1,
+      "rate": 0.09090909090909091,
+      "maxStreak": 1,
+      "ids": [
+        "sdc-004"
+      ]
+    }
+  },
+  "integrityByLane": {
+    "S-Opus": {
+      "count": 0,
+      "ids": []
+    },
+    "S-Sonnet": {
+      "count": 0,
+      "ids": []
+    },
+    "X-Sol": {
+      "count": 0,
+      "ids": []
+    }
+  },
+  "identityByLane": {
+    "S-Opus": {
+      "completed": 11,
+      "matched": 0,
+      "unknown": 11,
+      "mismatched": 0,
+      "expectedModel": "claude-opus-5",
+      "ids": [
+        "sdc-001",
+        "sdc-004",
+        "sdc-006",
+        "sdc-011",
+        "sdc-008",
+        "sdc-010",
+        "sdc-005",
+        "sdc-012",
+        "sdc-003",
+        "sdc-007",
+        "sdc-009"
+      ],
+      "count": 11
+    },
+    "S-Sonnet": {
+      "completed": 11,
+      "matched": 0,
+      "unknown": 11,
+      "mismatched": 0,
+      "expectedModel": "claude-sonnet-5",
+      "ids": [
+        "sdc-001",
+        "sdc-004",
+        "sdc-006",
+        "sdc-011",
+        "sdc-008",
+        "sdc-010",
+        "sdc-005",
+        "sdc-012",
+        "sdc-003",
+        "sdc-007",
+        "sdc-009"
+      ],
+      "count": 11
+    },
+    "X-Sol": {
+      "completed": 10,
+      "matched": 10,
+      "unknown": 0,
+      "mismatched": 0,
+      "expectedModel": "gpt-5.6-sol",
+      "ids": [],
+      "count": 0
+    }
+  },
+  "pathMatchByLane": {
+    "S-Opus": {
+      "exactPath": 5,
+      "basenameOnly": 0
+    },
+    "S-Sonnet": {
+      "exactPath": 5,
+      "basenameOnly": 0
+    },
+    "X-Sol": {
+      "exactPath": 4,
+      "basenameOnly": 0
+    }
+  },
+  "nearMissByLane": {
+    "S-Opus": {
+      "path": 0,
+      "severity": 0,
+      "ids": []
+    },
+    "S-Sonnet": {
+      "path": 0,
+      "severity": 0,
+      "ids": []
+    },
+    "X-Sol": {
+      "path": 0,
+      "severity": 0,
+      "ids": []
+    }
+  },
+  "lenientPaths": false,
+  "strictPaths": true,
+  "identityExclusions": {
+    "excludedIds": [
+      "sdc-002"
+    ],
+    "excludedDetail": {
+      "sdc-002": [
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ]
+    },
+    "pendingRerunIds": [
+      "sdc-001",
+      "sdc-002",
+      "sdc-003",
+      "sdc-004",
+      "sdc-005",
+      "sdc-006",
+      "sdc-007",
+      "sdc-008",
+      "sdc-009",
+      "sdc-010",
+      "sdc-011",
+      "sdc-012"
+    ],
+    "pendingRerunDetail": {
+      "sdc-001": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-004": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-006": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-011": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-008": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-010": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-005": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-002": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        }
+      ],
+      "sdc-012": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-003": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-007": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ],
+      "sdc-009": [
+        {
+          "lane": "S-Opus",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-opus-5"
+        },
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ]
+    }
+  },
+  "emptyFindings": [],
+  "adjudicatedPromotions": [],
+  "adjudicatedPromotionsRejected": [],
+  "duplicateRecords": [],
+  "gate12f": {
+    "complete": false,
+    "items": [
+      {
+        "n": 1,
+        "name": "hits(X-Terra) ≥ hits(X-Sol) − 1 (30 seeds)",
+        "status": "INCOMPLETE",
+        "detail": "X-Sol hits 4/5; X-Terra hits 0/0 (corpus not complete: need 29 seeds scored on both X-lanes)"
+      },
+      {
+        "n": 2,
+        "name": "zero missed CRITICAL seeds by X-Terra",
+        "status": "INCOMPLETE",
+        "detail": "0 missed of 6 CRITICAL seed(s) (corpus not complete: need all 6 CRITICAL seeds scored on X-Terra)"
+      },
+      {
+        "n": 3,
+        "name": "false-blocker rate(X-Terra) ≤ 10%",
+        "status": "INCOMPLETE",
+        "detail": "NOT ADJUDICATED (no --adjudication file supplied)"
+      },
+      {
+        "n": 4,
+        "name": "zero INTEGRITY WARNINGs on X-Terra",
+        "status": "INCOMPLETE",
+        "detail": "0 run(s) with an INTEGRITY WARNING (corpus not complete)"
+      },
+      {
+        "n": 5,
+        "name": "exact model identity on every counted X-Terra run",
+        "status": "INCOMPLETE",
+        "identityEvidence": "none",
+        "detail": "0 counted run(s) whose served model is not the lane's model; 1 artifact(s) EXCLUDED from BOTH lanes per §3.1 item 5: sdc-002 (corpus not complete)"
+      },
+      {
+        "n": 6,
+        "name": "UNAVAILABLE ≤ 10% after retry, no streak ≥ 3 (X-Terra)",
+        "status": "INCOMPLETE",
+        "detail": "0/0 = n/a; max streak 0 (corpus not complete)"
+      }
+    ],
+    "overall": "INCOMPLETE",
+    "countedArtifacts": 83,
+    "totalArtifacts": 84,
+    "countedSeeds": 29,
+    "excludedIds": [
+      "sdc-002"
+    ],
+    "excludedDetail": {
+      "sdc-002": [
+        {
+          "lane": "S-Sonnet",
+          "identity": "UNKNOWN",
+          "servedModel": null,
+          "expectedModel": "claude-sonnet-5"
+        }
+      ]
+    },
+    "pendingRerunIds": [
+      "sdc-001",
+      "sdc-002",
+      "sdc-003",
+      "sdc-004",
+      "sdc-005",
+      "sdc-006",
+      "sdc-007",
+      "sdc-008",
+      "sdc-009",
+      "sdc-010",
+      "sdc-011",
+      "sdc-012"
+    ]
+  },
+  "gate12d": {
+    "xPresent": [
+      "X-Sol"
+    ],
+    "sPresent": [
+      "S-Sonnet",
+      "S-Opus"
+    ],
+    "xUnionRecall": {
+      "hits": 4,
+      "n": 29,
+      "p": 0.13793103448275862,
+      "lo": 0.054974399641119644,
+      "hi": 0.30558993720352023
+    },
+    "sUnionRecall": {
+      "hits": 5,
+      "n": 29,
+      "p": 0.1724137931034483,
+      "lo": 0.07597857252891228,
+      "hi": 0.34548439890195237
+    },
+    "gainForX": -1,
+    "xOnlyTypes": [],
+    "sOnlyTypes": [
+      "FT"
+    ],
+    "reading": "null result (gap -1 seed(s), within ±1) — narrows the preferred band, never relaxes the mandatory set",
+    "union": [
+      {
+        "id": "sdc-001",
+        "type": "CV",
+        "severity": "MAJOR",
+        "category": "both"
+      },
+      {
+        "id": "sdc-003",
+        "type": "LC",
+        "severity": "MAJOR",
+        "category": "both"
+      },
+      {
+        "id": "sdc-004",
+        "type": "FT",
+        "severity": "MAJOR",
+        "category": "S-only"
+      },
+      {
+        "id": "sdc-005",
+        "type": "HF",
+        "severity": "MAJOR",
+        "category": "both"
+      },
+      {
+        "id": "sdc-006",
+        "type": "RC",
+        "severity": "MAJOR",
+        "category": "both"
+      },
+      {
+        "id": "sdc-013",
+        "type": "CV",
+        "severity": "CRITICAL",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-014",
+        "type": "CV",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-015",
+        "type": "OO",
+        "severity": "CRITICAL",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-016",
+        "type": "OO",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-017",
+        "type": "LC",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-018",
+        "type": "FT",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-019",
+        "type": "HF",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-020",
+        "type": "RC",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-037",
+        "type": "CV",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-038",
+        "type": "OO",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-039",
+        "type": "LC",
+        "severity": "CRITICAL",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-040",
+        "type": "LC",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-041",
+        "type": "FT",
+        "severity": "CRITICAL",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-042",
+        "type": "FT",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-043",
+        "type": "HF",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-044",
+        "type": "RC",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-061",
+        "type": "CV",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-062",
+        "type": "OO",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-063",
+        "type": "LC",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-064",
+        "type": "FT",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-065",
+        "type": "HF",
+        "severity": "CRITICAL",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-066",
+        "type": "HF",
+        "severity": "MAJOR",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-067",
+        "type": "RC",
+        "severity": "CRITICAL",
+        "category": "neither"
+      },
+      {
+        "id": "sdc-068",
+        "type": "RC",
+        "severity": "MAJOR",
+        "category": "neither"
+      }
+    ],
+    "suspects": [
+      "sdc-013",
+      "sdc-014",
+      "sdc-015",
+      "sdc-016",
+      "sdc-017",
+      "sdc-018",
+      "sdc-019",
+      "sdc-020",
+      "sdc-037",
+      "sdc-038",
+      "sdc-039",
+      "sdc-040",
+      "sdc-041",
+      "sdc-042",
+      "sdc-043",
+      "sdc-044",
+      "sdc-061",
+      "sdc-062",
+      "sdc-063",
+      "sdc-064",
+      "sdc-065",
+      "sdc-066",
+      "sdc-067",
+      "sdc-068"
+    ],
+    "suspectsWithheldReason": null,
+    "excludedIds": [
+      "sdc-002"
+    ]
+  },
+  "unknownIds": [],
+  "malformedFiles": [],
+  "adjudicationLoaded": false,
+  "scoredCount": 36,
+  "countedCount": 33
+}

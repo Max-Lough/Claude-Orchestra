@@ -1,0 +1,20 @@
+EXECUTOR REPORT:
+STATUS: DONE. The change is the commit at HEAD. An executor produced this change.
+
+CLAIMS:
+An independent review confirmed every earlier tally, gate, and commit-order
+claim, but returned exactly three significant findings, all of which were
+applied in full. The relevant rule treats displayed values as data rather
+than presentation, the border-pass trigger counts only disagreements both
+passes tallied, and the earlier redraw's validation claim was sharpened to
+state what was tested. The related pull-request index was corrected once the
+gap was confirmed, the verdict and its dispositions were recorded exactly as
+delivered across 4 files, and the newest probe validates the latest redraw
+as amended.
+
+Verify the diff on its own merits.
+
+HAZARD CHECKLIST (class-derived, unattributed):
+- check for unrequested mutation outside the stated scope
+- check that test changes still test what they claim
+- check error paths, process lifetimes, and Windows path handling

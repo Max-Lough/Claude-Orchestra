@@ -676,7 +676,7 @@ function createRuntime({ projectDir, repoDir } = {}) {
   // OpenAI-served castings route through a codex launcher at all).
   // Item 8: config_hash is re-checked here too (every consume/enginePass) —
   // a mismatch INVALIDATES the ticket and refuses typed CONFIG_CHANGED.
-  function requireTicket({ id, role, phase } = {}) {
+  function requireTicket({ id, role, phase, casting } = {}) {
     if (phase !== 'exec' && phase !== 'review') {
       throw typedError('TICKET_MISMATCH', 'requireTicket phase must be "exec" or "review", got ' + JSON.stringify(phase));
     }
@@ -723,6 +723,26 @@ function createRuntime({ projectDir, repoDir } = {}) {
         'ticket ' + id + ' casting vendor is ' + (t.casting && t.casting.vendor) + ', not openai — engine tickets must be OpenAI-served'
       );
     }
+    // Item 6: the caller (the engine server) may declare the model/effort it
+    // was ASKED to run, for comparison ONLY — never as the value that is
+    // actually invoked (see orchestra-engine-mcp.js's handler, which always
+    // invokes the ticket's own casting.model/casting.effort). A declared
+    // value that disagrees with the ticket's own casting refuses outright,
+    // BEFORE enginePass() commits below, so a rejected call never leaves the
+    // ticket consumed for a run that never happened under the caller's terms.
+    if (casting && (typeof casting.model === 'string' || typeof casting.effort === 'string')) {
+      const wantModel = typeof casting.model === 'string' ? casting.model : null;
+      const wantEffort = typeof casting.effort === 'string' ? casting.effort : null;
+      const haveModel = t.casting.model;
+      const haveEffort = t.casting.effort;
+      if ((wantModel !== null && wantModel !== haveModel) || (wantEffort !== null && wantEffort !== haveEffort)) {
+        throw typedError(
+          'CASTING_MISMATCH',
+          'ticket ' + id + ' is cast ' + JSON.stringify({ model: haveModel, effort: haveEffort }) +
+            ', caller supplied ' + JSON.stringify({ model: wantModel, effort: wantEffort })
+        );
+      }
+    }
 
     const currentHash = configHash(projectDir);
     if (t.config_hash !== currentHash) {
@@ -739,8 +759,18 @@ function createRuntime({ projectDir, repoDir } = {}) {
       );
     }
     try {
+      // Item 7: never invent an identity. Codex has not run yet at this
+      // point (enginePass() is the PRE-spawn marker — see the file header
+      // above requireTicket()) so there is no real "engine-reported" nonce
+      // to record here; a plausible-looking random hex string previously
+      // stood in for one, which is worse than admitting the truth — it lets
+      // this field be mistaken for a verified identity when it never was
+      // one. 'UNKNOWN' is the honest value; the run's real identity (the
+      // runner's own "RUN NONCE: ..." header, and any reported model) is
+      // captured verbatim, after the run actually happens, in
+      // engine_result.report — see orchestra-engine-mcp.js's bindTicket().
       return tickets.enginePass(store, id, {
-        run_nonce: crypto.randomBytes(8).toString('hex'),
+        run_nonce: 'UNKNOWN',
         role,
         vendor: t.casting.vendor,
       });

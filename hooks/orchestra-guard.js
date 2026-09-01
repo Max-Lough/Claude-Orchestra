@@ -1590,7 +1590,20 @@ process.stdin.on('data', (chunk) => (raw += chunk));
 process.stdin.on('end', () => {
   try {
     main(raw);
-  } catch (_) {
-    allow(); // never brick the session on a guard bug
+  } catch (e) {
+    // WO-14b repair A item 9: a guard bug must not silently stand the
+    // guard down under roster:new, where Director law is supposed to be
+    // ALWAYS active (see the file header) — the old unconditional allow()
+    // here opened the gate on every internal error regardless of roster.
+    // Legacy has no fixed policy to fall back to and never has (see
+    // denyMalformedInput()'s own comment on the same asymmetry), so it
+    // still fails open here, exactly as documented.
+    if (rosterFromArgv() === 'new') {
+      return deny(
+        'Orchestra: the guard hit an internal error under roster:new — failing closed rather than ' +
+          'standing down: ' + (e && e.message ? e.message : String(e))
+      );
+    }
+    allow(); // legacy: never brick the session on a guard bug
   }
 });

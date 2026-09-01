@@ -1374,6 +1374,26 @@ function enginePass(store, id, { run_nonce, role, vendor } = {}) {
     };
     if (!t) return fail('unknown ticket ' + id);
     if (t.status !== 'LAUNCHED') return fail('ticket ' + id + ' is ' + t.status + ', enginePass requires LAUNCHED (bound via the Agent tool Pre/PostToolUse hooks before the launcher calls the engine)');
+    // WO-14b repair A item 5: the same expires_at check launch()/resolve()
+    // already make (see those functions above), mirrored here — a ticket
+    // LAUNCHED before expiry but enginePass()'d afterward transitions to
+    // EXPIRED (a lawful LAUNCHED -> EXPIRED edge), never silently accepted.
+    // Checked before the vendor/role/replay checks below so an expired
+    // ticket refuses on expiry regardless of what else is true about it.
+    if (Date.parse(at) >= Date.parse(t.expires_at)) {
+      const from = t.status;
+      const reason = 'ticket ' + id + ' expired at ' + t.expires_at + ' — launched but not enginePass()\'d before expiry';
+      t.status = 'EXPIRED';
+      t.outcome = { code: 'EXPIRED', reason, at };
+      t.attempts.push({ at, event: 'enginePass', reason });
+      const events = [
+        { at, id, from, to: 'EXPIRED', event: 'expire', data: { expires_at: t.expires_at, trigger: 'enginePass' } },
+        { at, id, from: 'EXPIRED', to: 'EXPIRED', event: 'denied', data: { attempted: 'enginePass', reason } },
+      ];
+      const err = new TicketTransitionError(reason, { id, ticket: t });
+      err.code = 'TICKET_EXPIRED';
+      throw new TicketWriteAndThrow(data, events, err);
+    }
     if (!t.casting || t.casting.vendor !== 'openai') return fail('ticket ' + id + ' casting vendor is ' + (t.casting && t.casting.vendor) + ', not openai — engine tickets must be OpenAI-served');
     if (role !== t.role) return fail('ticket ' + id + ' is for role ' + t.role + ', not ' + role);
     if (t.engine_pass !== null) return fail('ticket ' + id + ' engine_pass already recorded at ' + t.engine_pass.at + ' — replay refused', 'TICKET_REPLAY');

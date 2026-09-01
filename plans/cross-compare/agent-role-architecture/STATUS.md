@@ -895,8 +895,9 @@ to Sonnet, work delivered green (`902ed9e2`+`904aa036` on `fix/bkw5a-explosion-s
 out-of-band Opus review APPROVE, 1 MINOR: missing test `.gd.uid`), but its telemetry is ALSO
 lost: the builder's branch checkout made the manifest untrusted exactly when the report arrived
 (PL-15, bound a housekeeping reply), plus Stop-block spam (PL-16), stale-base commits that can
-never pass the claimed-changes replay (PL-17), and the codex lane dead on this ChatGPT-plan
-account (PL-18, owner decision). PL-15/16 fixed in code, PL-17 in builder.md + conductor rule.
+never pass the claimed-changes replay (PL-17), and a codex-lane 400 (PL-18 — RESOLVED
+2026-09-02: a fresh `codex login` fixed it, stale token; Sol/Terra/Luna all probe ok, so the
+cross-family review lane is live). PL-15/16 fixed in code, PL-17 in builder.md + conductor rule.
 **No order has reached CLOSED yet.** **Next: (1) owner merges `feat/mortar-vfx-scale` then
 `fix/bkw5a-explosion-scale-guard` into target main (+ commit the test's `.gd.uid`); (2) owner
 issues order #4 — small, code-bearing, tests named — under a fresh `claude --model fable`.**

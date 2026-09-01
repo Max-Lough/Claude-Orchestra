@@ -22,6 +22,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
 const MASTER = path.resolve(__dirname, '..');
@@ -316,7 +317,7 @@ const EXEC_REPORT = 'STATUS: DONE — reformatted add(), committed.';
 
 // ------------------------------------------------------------------- cases
 
-// 1. The handshake and the tool surface: four tools, correct requireds. A
+// 1. The handshake and the tool surface: five tools, correct requireds. A
 //    launcher can only call what tools/list advertises, so the surface IS the
 //    lane's API.
 async function case1() {
@@ -330,8 +331,8 @@ async function case1() {
   const list = await s.rpc('tools/list');
   const tools = (list.result && list.result.tools) || [];
   const names = tools.map((t) => t.name).sort();
-  check('tools/list names the four lanes',
-    JSON.stringify(names) === JSON.stringify(['orchestra_crossplan', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
+  check('tools/list names the five lanes (WO-14b leg 4: + orchestra_dispatch)',
+    JSON.stringify(names) === JSON.stringify(['orchestra_crossplan', 'orchestra_dispatch', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
     JSON.stringify(names));
   const review = tools.find((t) => t.name === 'orchestra_review');
   check('orchestra_review requires work_order and executor_report',
@@ -766,6 +767,122 @@ async function case9() {
   s.close();
 }
 
+// 10. WO-14b leg 4b: the engine ticket lifecycle under roster:new. A temp
+//     project pinned as roster:new (owner pin + hash-matching manifest),
+//     wired with the same .claude/orchestra/{bridge,router,registry,
+//     verifier,quartermaster}/ substrate layout install.js --roster new
+//     produces, so requireEngineTicket()'s loadBridgeRuntime()/
+//     loadBridgeManifestModule() resolve for real (not the source-tree
+//     fallback the other cases exercise). Drives orchestra_exec over stdio
+//     against a real router/tickets.js store: unticketed, a valid
+//     exec-phase ticket, and a reviewer-kind ticket used for phase 'exec'.
+async function case10() {
+  section("10. WO-14b leg 4b: engine ticket lifecycle under roster:new (TICKET_REQUIRED / consumed+RESOLVED / TICKET_MISMATCH)");
+  const fx = makeRepo();
+
+  // Lay out the installed-copy substrate under .claude/orchestra/ — the FIRST
+  // candidate loadBridgeRuntime()/loadBridgeManifestModule() check.
+  const orchestraDir = path.join(fx.repo, '.claude', 'orchestra');
+  for (const sub of ['bridge', 'router', 'registry', 'verifier', 'quartermaster']) {
+    fs.cpSync(path.join(MASTER, sub), path.join(orchestraDir, sub), { recursive: true });
+  }
+
+  const manifestPath = path.join(fx.repo, '.claude', 'orchestra.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+
+  // Owner pin (bridge/manifest.js's contract): PIN_DIR/<sha256(realpath(project))>.json
+  // carrying manifestSha256 of the manifest file's own bytes.
+  const pinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-pins-'));
+  cleanups.push(() => fs.rmSync(pinDir, { recursive: true, force: true }));
+  const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
+  const pinHash = crypto.createHash('sha256').update(fs.realpathSync(fx.repo)).digest('hex');
+  fs.writeFileSync(path.join(pinDir, pinHash + '.json'), JSON.stringify({
+    projectDir: fx.repo, manifestSha256, roster: 'new', rosterGeneration: 1, seats: {},
+    writtenAt: new Date().toISOString(), by: 'mcp-lane.test.js case10 fixture',
+  }));
+
+  const T = require(path.join(MASTER, 'router', 'tickets.js'));
+  const store = T.createTicketStore({ dir: path.join(orchestraDir, 'tickets'), init: true });
+  const CFG_HASH = crypto.createHash('sha256').update('mcp-lane case10 fixture').digest('hex');
+  function issueTicket(overrides) {
+    return T.issue(store, Object.assign({
+      kind: 'implementation', task_id: 'mcp-lane-case10', class: 'E2', role: 'codex-exec',
+      rung: 'primary', casting: { vendor: 'openai', model: 'gpt-5.6-terra', effort: 'med' },
+      author_family: 'openai', config_hash: CFG_HASH,
+    }, overrides || {}));
+  }
+
+  // STUB_CODEX_ATTEMPT_FILE doubles as an invocation counter here: the stub
+  // increments it on EVERY invocation (probe or real), so "the file was never
+  // created/incremented" is exactly "codex was never invoked".
+  function makeAttemptFile() {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-attempts-'));
+    cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+    return path.join(d, 'attempts');
+  }
+  function invocationCount(f) {
+    try { return parseInt(fs.readFileSync(f, 'utf8').trim(), 10) || 0; } catch (_) { return 0; }
+  }
+
+  // --- 10a. no ticket at all -> TICKET_REQUIRED, codex never invoked.
+  {
+    const af = makeAttemptFile();
+    const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
+    await s.start();
+    const res = await s.rpc('tools/call', { name: 'orchestra_exec', arguments: { work_order: 'do the thing' } });
+    const text = resultText(res);
+    check('no ticket under roster:new -> TICKET_REQUIRED',
+      res.result && res.result.isError && /^TICKET_REQUIRED:/.test(text), text.slice(0, 300));
+    s.close();
+    check('no ticket -> the stub was never invoked', invocationCount(af) === 0, 'invocations=' + invocationCount(af));
+  }
+
+  // --- 10b. a valid exec-phase ticket -> stub invoked once, ticket ends
+  //     RESOLVED with launched.agent_id === 'codex:' + the report's own nonce.
+  {
+    const af = makeAttemptFile();
+    const ticket = issueTicket();
+    const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
+    await s.start();
+    const res = await s.rpc('tools/call', {
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: ticket.id },
+    }, 180000);
+    const text = resultText(res);
+    check('valid exec ticket -> not a transport error', !(res.result && res.result.isError), text.slice(0, 400));
+    check('valid exec ticket -> the stub was invoked exactly once', invocationCount(af) === 1, 'invocations=' + invocationCount(af));
+    const nonceMatch = /RUN NONCE: ([0-9a-f]+)/.exec(text);
+    check('the exec runner\'s own header carries a RUN NONCE', !!nonceMatch, text.slice(0, 500));
+    s.close();
+    const after = T.get(store, ticket.id);
+    check('the ticket ends RESOLVED', after && after.status === 'RESOLVED', after && after.status);
+    check("launched.agent_id is 'codex:' + the report's own nonce",
+      !!(after && after.launched && nonceMatch && after.launched.agent_id === 'codex:' + nonceMatch[1]),
+      after && after.launched && after.launched.agent_id);
+    check('resolved.last_assistant_message is the exact report text relayed to the caller',
+      !!(after && after.resolved && after.resolved.last_assistant_message === text),
+      after && after.resolved && after.resolved.last_assistant_message.slice(0, 200));
+  }
+
+  // --- 10c. a reviewer-kind ticket used for phase 'exec' -> TICKET_MISMATCH,
+  //     zero invocations, the ticket is never consumed.
+  {
+    const af = makeAttemptFile();
+    const reviewerTicket = issueTicket({ kind: 'reviewer', role: 'codex-review' });
+    const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
+    await s.start();
+    const res = await s.rpc('tools/call', {
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: reviewerTicket.id },
+    });
+    const text = resultText(res);
+    check('a reviewer ticket used for phase exec -> TICKET_MISMATCH',
+      res.result && res.result.isError && /^TICKET_MISMATCH:/.test(text), text.slice(0, 300));
+    s.close();
+    check('wrong-phase ticket -> the stub was never invoked', invocationCount(af) === 0, 'invocations=' + invocationCount(af));
+    const after = T.get(store, reviewerTicket.id);
+    check('the mismatched ticket stays OPEN (never consumed)', after && after.status === 'OPEN', after && after.status);
+  }
+}
+
 // ------------------------------------------------------------------- driver
 
 function finish() {
@@ -786,6 +903,7 @@ async function main() {
   await case7();
   await case8();
   await case9();
+  await case10();
 }
 
 main().then(finish, (e) => {

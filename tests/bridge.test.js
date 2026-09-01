@@ -12,11 +12,21 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const MASTER = path.resolve(__dirname, '..');
 const { createRuntime } = require(path.join(MASTER, 'bridge', 'runtime.js'));
 const T = require(path.join(MASTER, 'router', 'tickets.js'));
+const { pinFileFor } = require(path.join(MASTER, 'bridge', 'manifest.js'));
+
+// WO-14b leg 4b: every runtime here must resolve its owner pin from the SAME
+// temp directory this suite writes pins into — set once, process-wide, so
+// both in-process createRuntime() calls and the ticket-gate.js subprocess
+// (section 4, which inherits process.env) agree on PIN_DIR.
+const PIN_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-test-pins-'));
+process.env.ORCHESTRA_PIN_DIR = PIN_DIR;
+process.on('exit', () => { try { fs.rmSync(PIN_DIR, { recursive: true, force: true }); } catch (_) { /* best effort */ } });
 
 let failures = 0;
 let passes = 0;
@@ -50,9 +60,37 @@ function tmpProject(prefix) {
   fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
   return dir;
 }
+// WO-14b leg 4b: writes a PIN matching the manifest's own bytes hash
+// alongside it, so every existing section below (all written against
+// writeManifest()) keeps behaving exactly as it did before the pin
+// requirement landed — trusted:true, roster/rosterGeneration/seats read
+// from the manifest. Sections 13/14 test the pin mechanism itself and
+// deliberately do NOT go through this helper unmodified (see there).
+function writePin(dir, manifest, overrides) {
+  const manifestPath = path.join(dir, '.claude', 'orchestra.json');
+  const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
+  const pin = Object.assign(
+    {
+      projectDir: dir,
+      manifestSha256,
+      roster: manifest.roster,
+      rosterGeneration: manifest.rosterGeneration,
+      seats: manifest.seats,
+      writtenAt: new Date().toISOString(),
+      by: 'bridge.test.js fixture',
+    },
+    overrides || {}
+  );
+  const pinPath = pinFileFor(dir);
+  fs.mkdirSync(path.dirname(pinPath), { recursive: true });
+  fs.writeFileSync(pinPath, JSON.stringify(pin, null, 2));
+  return pin;
+}
+
 function writeManifest(dir, overrides) {
   const manifest = Object.assign({ roster: 'new', rosterGeneration: 1, seats: {} }, overrides || {});
   fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify(manifest, null, 2));
+  writePin(dir, manifest);
   return manifest;
 }
 const GREEN = { 'AU-all': 0.95, 'AU-opus': 0.95, 'AU-fable': 0.95, 'OU': 0.95 };
@@ -63,8 +101,24 @@ function seedReadings(dir, fractions) {
   }));
   fs.writeFileSync(file, lines.join('\n') + '\n');
 }
+// Pre-existing flakiness fix (found while adding sections 13/14): class E2 at
+// risk T1 is castings.json's own Q0 CALIBRATION SAMPLE (q0Triggers.
+// calibrationSample: rate 0.25, riskTiers:['T1'], classes:['E2','E5','E6']) —
+// router.js mints a fresh integrity_nonce per dispatch() and rolls it, so an
+// "ordinary" E2/T1 request randomly (genuinely ~25% per call, keyed on the
+// router's own nonce, not this file's) comes back carrying a Q0 companion the
+// implementation ticket then can't consume until the Q0 is LAUNCHED — which
+// every section here that expects a PLAIN, Q0-free happy path (2, 3, 7, 14)
+// neither sets up nor wants. class E1 dispatches through the identical
+// Builder role (router.js's own comment: "E0/E1/E3/E5/E6/E8 still trigger
+// exactly as before ... through Builder via mergedClasses") but sits outside
+// every q0Triggers list (classes/riskTiers/calibrationSample.classes), so at
+// risk T1 it is DETERMINISTICALLY never Q0-required — verified empirically
+// against router.js directly (20/20 runs, zero Q0) before landing this fix.
+// Section 11 (the dedicated Q0 test) sets touches:['auth'] itself and does
+// not use this default.
 function baseRequest(overrides) {
-  return Object.assign({ class: 'E2', risk: 'T1', goal: 'fix the thing', acceptance_criteria: ['tests pass'] }, overrides || {});
+  return Object.assign({ class: 'E1', risk: 'T1', goal: 'fix the thing', acceptance_criteria: ['tests pass'] }, overrides || {});
 }
 function openTicketsCount(dir) {
   const store = { dir: path.join(dir, '.claude', 'orchestra', 'tickets') };
@@ -360,6 +414,103 @@ section('12. DISABLED seat passes through with the router\'s fallback text');
   const runtime = createRuntime({ projectDir: dir });
   const result = runtime.dispatch(baseRequest({ class: 'A0', risk: 'T1' }));
   check('a disabled seat returns typed DISABLED with a fallback', result.ok === false && result.outcome === 'DISABLED' && typeof result.fallback === 'string', JSON.stringify(result));
+}
+
+// ============================== 13. WO-14b leg 4b: unpinned manifest -> LEGACY
+
+section("13. Manifest pin verification — NO pin at all: roster forced 'legacy' regardless of the manifest's own roster:new");
+
+{
+  const dir = tmpProject('bridge-unpinned-');
+  // roster:new written directly to disk, WITHOUT writePin() — this project
+  // was never pinned by an installer (or the pin was lost/removed).
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+  seedReadings(dir, GREEN);
+  const runtime = createRuntime({ projectDir: dir });
+
+  check('doctor() reports roster legacy despite the manifest saying new',
+    runtime.doctor().roster === 'legacy', JSON.stringify(runtime.doctor()));
+  check("doctor() reports pin.trusted:false, reason:'unpinned'",
+    runtime.doctor().pin.trusted === false && runtime.doctor().pin.reason === 'unpinned', JSON.stringify(runtime.doctor().pin));
+  check('doctor() pin.failClosed is false (unpinned forces legacy — inert, not fail-closed)',
+    runtime.doctor().pin.failClosed === false, JSON.stringify(runtime.doctor().pin));
+
+  check('dispatch() refuses (roster reads as legacy, not new)',
+    runtime.dispatch(baseRequest()).ok === false && runtime.dispatch(baseRequest()).outcome === 'INVALID_REQUEST');
+
+  const pre = runtime.gate(preEvent('TICKET=tkt-aa11bb22cc33dd44', 'builder', 'tu-unpinned'));
+  check('gate() is inert for PreToolUse(Agent) — the gate never engages without a pin',
+    JSON.stringify(pre) === JSON.stringify({ inert: true }), JSON.stringify(pre));
+  const stop = runtime.gate(stopEvent(false, []));
+  check('gate() is inert for Stop too', JSON.stringify(stop) === JSON.stringify({ inert: true }), JSON.stringify(stop));
+
+  let threw = null;
+  try { runtime.requireTicket({ id: 'tkt-aa11bb22cc33dd44', phase: 'exec' }); } catch (e) { threw = e; }
+  check("requireTicket() throws TICKET_NOT_REQUIRED (roster reads as legacy)",
+    threw && threw.code === 'TICKET_NOT_REQUIRED', threw && threw.code + ': ' + threw.message);
+}
+
+// ==================== 14. WO-14b leg 4b: pinned but tampered manifest -> UNTRUSTED, fail-closed
+
+section('14. Manifest pin verification — pin present, manifest hash mismatch: UNTRUSTED and fail-closed under roster:new');
+
+{
+  const dir = tmpProject('bridge-untrusted-');
+  writeManifest(dir); // roster:new, gen 1, hash-matching pin written
+  seedReadings(dir, GREEN);
+
+  // Issue a real ticket BEFORE tampering, exactly as an installed project
+  // would have open tickets at the moment its manifest is corrupted/tampered.
+  const trustedRuntime = createRuntime({ projectDir: dir });
+  const preTamperDispatch = trustedRuntime.dispatch(baseRequest({ task_id: 'pre-tamper' }));
+  check('dispatch() succeeds while still trusted (fixture sanity check)', preTamperDispatch.ok === true, JSON.stringify(preTamperDispatch));
+  const ticketId = preTamperDispatch.tickets.implementation.id;
+
+  // Tamper the LIVE manifest without updating the pin — the exact scenario
+  // roster/wo14b-leg3-redteam-1.md's [HIGH] finding describes: an in-project
+  // file an attacker (or corruption) can rewrite with nothing to detect it.
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: { Architect: false } }, null, 2));
+
+  const runtime = createRuntime({ projectDir: dir }); // a fresh runtime, as a fresh hook/MCP process would be
+
+  const doc = runtime.doctor();
+  check('doctor() reports roster new (from the PIN, not the tampered manifest)', doc.roster === 'new', JSON.stringify(doc));
+  check('doctor() reports pin.trusted:false', doc.pin.trusted === false, JSON.stringify(doc.pin));
+  check("doctor() reports reason 'manifest untrusted (hash mismatch)'", doc.pin.reason === 'manifest untrusted (hash mismatch)', JSON.stringify(doc.pin));
+  check('doctor() reports pin.failClosed:true (roster:new + untrusted)', doc.pin.failClosed === true, JSON.stringify(doc.pin));
+
+  const dispatchResult = runtime.dispatch(baseRequest({ task_id: 'post-tamper' }));
+  check("dispatch() refuses with typed MANIFEST_UNTRUSTED, nothing routed",
+    dispatchResult.ok === false && dispatchResult.outcome === 'MANIFEST_UNTRUSTED', JSON.stringify(dispatchResult));
+
+  const preGate = runtime.gate(preEvent('TICKET=' + ticketId, 'builder', 'tu-untrusted'));
+  check('gate() denies PreToolUse(Agent) even for a real, otherwise-valid ticket (fail-closed, not ticket-logic)',
+    preGate.hookSpecificOutput && preGate.hookSpecificOutput.permissionDecision === 'deny' &&
+      /manifest untrusted/.test(preGate.hookSpecificOutput.permissionDecisionReason),
+    JSON.stringify(preGate));
+  const stillOpen = T.get({ dir: path.join(dir, '.claude', 'orchestra', 'tickets') }, ticketId);
+  check('the ticket itself is untouched by the fail-closed deny (stays OPEN)', stillOpen.status === 'OPEN', stillOpen.status);
+
+  const stopGate = runtime.gate(stopEvent(false, []));
+  check('gate() blocks Stop unconditionally under fail-closed (not open-ticket-driven)',
+    stopGate.decision === 'block' && /manifest untrusted/.test(stopGate.reason), JSON.stringify(stopGate));
+
+  let threw = null;
+  try { runtime.requireTicket({ id: ticketId, phase: 'exec' }); } catch (e) { threw = e; }
+  check('requireTicket() throws TICKET_REQUIRED naming the untrusted manifest (never consumes)',
+    threw && threw.code === 'TICKET_REQUIRED' && /manifest untrusted/.test(threw.message), threw && threw.code + ': ' + threw.message);
+  const stillOpen2 = T.get({ dir: path.join(dir, '.claude', 'orchestra', 'tickets') }, ticketId);
+  check('...and the ticket is still OPEN after that refused requireTicket() call', stillOpen2.status === 'OPEN', stillOpen2.status);
+
+  // Re-pinning (what install.js would do to legitimately re-trust a changed
+  // manifest) restores normal operation.
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'orchestra.json'), 'utf8'));
+  writePin(dir, manifest);
+  const restoredRuntime = createRuntime({ projectDir: dir });
+  check('re-pinning restores trust: doctor() reports trusted:true again',
+    restoredRuntime.doctor().pin.trusted === true, JSON.stringify(restoredRuntime.doctor().pin));
+  check('...and dispatch() routes again (the newly-pinned seats: Architect disabled)',
+    restoredRuntime.dispatch(baseRequest({ class: 'A0', risk: 'T1', task_id: 'post-repin' })).outcome === 'DISABLED');
 }
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed.');

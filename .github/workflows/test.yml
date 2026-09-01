@@ -127,6 +127,21 @@ jobs:
         # update across two processes, and fail-closed on a corrupted store.
         run: node tests/tickets.test.js
 
+      - name: Bridge suite (activation runtime)
+        # WO-14b leg 4/4b: the shared activation runtime core
+        # (dispatch/gate/requireTicket/generationCheck/doctor) and its
+        # ticket-gate hook adapter. Proves the leg-1 payload lifecycle end to
+        # end (dispatch -> Pre consume -> Post launch -> SubagentStop resolve
+        # -> Stop not blocked), every Pre denial class, generation
+        # invalidation, Q0-before-implementation ordering, DISABLED-seat
+        # passthrough, and — leg 4b — the owner-pinned manifest: no pin
+        # forces roster:legacy (inert gate) regardless of what the manifest
+        # says, and a pin present with a manifest hash mismatch fails every
+        # gate/dispatch/ticket decision closed rather than trusting a
+        # tamperable in-project file (roster/wo14b-leg3-redteam-1.md's [HIGH]
+        # finding).
+        run: node tests/bridge.test.js
+
       - name: Quartermaster suite
         # WO-11: the P0 allowance substrate — recorded readings in, the
         # router's bucket_state out. Proves it fails CLOSED on absent, stale,

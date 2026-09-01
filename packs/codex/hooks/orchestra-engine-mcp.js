@@ -73,11 +73,39 @@ function loadBridgeRuntime() {
   return null;
 }
 
+// bridge/manifest.js ships alongside runtime.js in both layouts (see
+// loadBridgeRuntime above) — same two candidate paths, same load-or-null
+// contract.
+function loadBridgeManifestModule() {
+  for (const p of [
+    path.join(ROOT, '.claude', 'orchestra', 'bridge', 'manifest.js'),
+    path.join(ROOT, 'bridge', 'manifest.js'),
+  ]) {
+    if (fs.existsSync(p)) {
+      try { return require(p); } catch (_) { return null; }
+    }
+  }
+  return null;
+}
+
+// WO-14b leg 4b: goes through bridge/manifest.js's readTrustedManifest()
+// exactly as bridge/runtime.js's own createRuntime() does — the manifest's
+// OWN roster field is never trusted without a matching owner pin (see
+// bridge/manifest.js and roster/wo14b-leg3-redteam-1.md's [HIGH] finding).
+// Returns readTrustedManifest()'s shape ({manifest, trusted, roster,
+// rosterGeneration, seats, reason}); a missing bridge/manifest.js (an
+// installed project pre-dating leg 4b) degrades to the unpinned/legacy shape
+// rather than throwing.
 function readOrchestraManifest() {
+  const mod = loadBridgeManifestModule();
+  if (!mod) return { manifest: {}, trusted: false, roster: 'legacy', rosterGeneration: null, seats: {}, reason: 'unpinned' };
   try {
-    return JSON.parse(fs.readFileSync(path.join(ROOT, '.claude', 'orchestra.json'), 'utf8'));
-  } catch (_) {
-    return {};
+    return mod.readTrustedManifest({ projectDir: ROOT });
+  } catch (e) {
+    return {
+      manifest: {}, trusted: false, roster: 'legacy', rosterGeneration: null, seats: {},
+      reason: 'readTrustedManifest() threw: ' + (e && e.message ? e.message : String(e)),
+    };
   }
 }
 
@@ -195,10 +223,38 @@ function textResult(id, text, isError) {
   send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], isError: !!isError } });
 }
 
+// The server's own voice. Prefixed so it can never be read as engine output,
+// attributes no cause it did not measure, and names no engine. Returns the
+// composed text (not just sends it) so callers that also need it for ticket
+// bookkeeping (see bindTicket below) build it exactly once.
+function composeTransportText(lines) {
+  return ['MCP TRANSPORT ERROR (orchestra-engine server, not the engine):', ...lines].join('\n');
+}
+
 function transportError(id, lines) {
-  // The server's own voice. Prefixed so it can never be read as engine
-  // output, attributes no cause it did not measure, and names no engine.
-  textResult(id, ['MCP TRANSPORT ERROR (orchestra-engine server, not the engine):', ...lines].join('\n'), true);
+  textResult(id, composeTransportText(lines), true);
+}
+
+/* --------------------------------------- WO-14b leg 4b: engine ticketing -- */
+
+// Pull the RUN NONCE / served-model header fields a runner report exposes,
+// for binding the engine ticket lifecycle (see bindTicket in runRunner()
+// below). Neither field is guaranteed present:
+//   - orchestra-exec.js prints "RUN NONCE: <hex>" in EVERY header
+//     (headerTail(), success and failure paths alike).
+//   - orchestra-review.js deliberately prints NO run nonce and NO
+//     served_model line at all (its own header.js comment: Codex CLI's
+//     --json event stream carries no server-confirmed model field, so
+//     inventing one would be "the requested model echoed back" — exactly
+//     the kind of unverifiable claim this file's reports refuse to make).
+// A missing/absent match returns null; callers supply their own fallback.
+function extractRunNonce(text) {
+  const m = /RUN NONCE: ([0-9a-f]+)/.exec(String(text || ''));
+  return m ? m[1] : null;
+}
+function extractReportedModel(text) {
+  const m = /model:\s*([^,()\n]+)/.exec(String(text || ''));
+  return m ? m[1].trim() : null;
 }
 
 /* ------------------------------------------------- in-flight run registry -- */
@@ -379,9 +435,74 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
 
 const OUTPUT_CAP = 4 * 1024 * 1024; // per stream; a runner report is a few KB
 
-function runRunner(id, lane, args, progressToken, extraEnv, prefixText) {
+// ticketBinding: { runtime, id, dir } — set by orchestra_review/orchestra_exec
+// ONLY when requireEngineTicket() actually consumed a ticket for this call
+// (roster:new; undefined under legacy or for the ungated crossplan/doctor
+// lanes). Binds the CONSUMED ticket through this run's outcome:
+//   - success / nonzero-exit / empty-output: launch() then resolve() — the
+//     run genuinely happened (codex was invoked and produced SOME captured
+//     output, even if it was a transport-class failure), so the ticket
+//     records who ran (agent_id 'codex:'+the run's nonce, or a synthesized
+//     one when the header carries none — see extractRunNonce above) and
+//     what it said (the exact text this tool call is about to return).
+//   - cancelled / backstop: denied('engine-cancelled'|'engine-backstop', ...)
+//     only — the ticket is left CONSUMED/never-LAUNCHED (or LAUNCHED but
+//     never RESOLVED, if a nonce did surface before the kill) for its own
+//     TTL to expire, per the order: "leave the ticket for expiry".
+//   - spawn never happened at all (runner missing, spawn() threw, or the
+//     OS-level 'error' event) — no codex process, and so no nonce, ever
+//     existed. Treated the same as cancelled/backstop (denied()-only, left
+//     for expiry) rather than fabricating a launch/resolve for a run that
+//     never occurred; this is an extension of the order's five named
+//     branches, documented here because the order does not name it.
+// Every call is best-effort: a TicketTransitionError/TicketStoreError here
+// (e.g. the ticket already expired) is caught and never allowed to affect
+// the MCP response already sent, and never fabricates success.
+function bindTicket(ticketBinding, branch, text, reason) {
+  if (!ticketBinding) return;
+  // Idempotence guard: node emits 'close' after 'error' even for a runner
+  // that failed at the OS level (see the comment above the 'close' handler),
+  // so a spawn-error branch's bindTicket() call must not be followed by a
+  // second, contradictory one from 'close' re-deriving a different branch
+  // for the same run. Whichever fires first wins; the ticket is bound once.
+  if (ticketBinding._bound) return;
+  ticketBinding._bound = true;
+  const { runtime, id: ticketId, dir } = ticketBinding;
+  try {
+    if (branch === 'cancelled' || branch === 'backstop' || branch === 'spawn-error') {
+      try {
+        runtime.denied(ticketId, 'engine-' + branch, reason || branch);
+      } catch (e) {
+        process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} denied()-bookkeeping failed (${branch}): ${e && e.message}\n`);
+      }
+      return;
+    }
+    // success / nonzero-exit / empty-output: the run happened (or at least a
+    // process ran to completion) — bind LAUNCHED then RESOLVED.
+    const nonce = extractRunNonce(text) || ('no-nonce-' + path.basename(dir || 'run'));
+    const model = extractReportedModel(text) || 'UNKNOWN';
+    const agentId = 'codex:' + nonce;
+    try {
+      runtime.launch(ticketId, { agent_id: agentId, served_model: model });
+    } catch (e) {
+      process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} launch()-bookkeeping failed (${branch}): ${e && e.message}\n`);
+    }
+    try {
+      runtime.resolve(ticketId, { agent_id: agentId, last_assistant_message: text, agent_transcript_path: dir });
+    } catch (e) {
+      process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} resolve()-bookkeeping failed (${branch}): ${e && e.message}\n`);
+    }
+  } catch (e) {
+    // Never let ticket bookkeeping affect (or throw out of) the completion
+    // handler — the MCP response to the caller is already authoritative.
+    process.stderr.write(`MCP TRANSPORT: engine ticket ${ticketId} bookkeeping threw (${branch}): ${e && e.message}\n`);
+  }
+}
+
+function runRunner(id, lane, args, progressToken, extraEnv, prefixText, ticketBinding) {
   const runner = RUNNERS[lane === 'doctor' ? 'review' : lane];
   if (!fs.existsSync(runner)) {
+    bindTicket(ticketBinding, 'spawn-error', null, 'runner not found at ' + runner);
     transportError(id, [
       `the ${lane} runner was not found at ${runner}`,
       `hooks dir: ${HOOKS_DIR}`,
@@ -407,6 +528,7 @@ function runRunner(id, lane, args, progressToken, extraEnv, prefixText) {
       detached: process.platform !== 'win32',
     });
   } catch (e) {
+    bindTicket(ticketBinding, 'spawn-error', null, 'spawn() threw: ' + e.message);
     transportError(id, [`the runner process could not be spawned: ${e.message}`]);
     return;
   }
@@ -460,6 +582,7 @@ function runRunner(id, lane, args, progressToken, extraEnv, prefixText) {
     // deliver the accurate one instead of a misleading "failed to launch"
     // ahead of it. run.killTimer is deliberately NOT cleared — see killTree.
     if (run.cancelled) return;
+    bindTicket(ticketBinding, 'spawn-error', null, 'OS-level error: ' + e.message);
     transportError(id, [`the runner process failed to launch or crashed at the OS level: ${e.message}`]);
   });
 
@@ -493,6 +616,13 @@ function runRunner(id, lane, args, progressToken, extraEnv, prefixText) {
       if (!run.treeConfirmed) lines.push(unconfirmed);
       lines.push(`runner stdout tail:\n${tail(out, 4000) || '(empty)'}`);
       lines.push(`runner stderr tail:\n${tail(err, 2000) || '(empty)'}`);
+      // Ticket bookkeeping runs BEFORE the response is sent (not after): the
+      // response reaches the caller over a separate pipe the moment it is
+      // written, and a caller/test that reacts immediately (closing the
+      // session, querying the ticket) must never be able to observe a report
+      // whose ticket lifecycle hasn't landed yet.
+      bindTicket(ticketBinding, 'cancelled', null,
+        `cancelled after ${elapsed}ms` + (run.cancelReason ? ` — ${run.cancelReason}` : ''));
       transportError(id, lines);
       return;
     }
@@ -506,6 +636,8 @@ function runRunner(id, lane, args, progressToken, extraEnv, prefixText) {
       if (!run.treeConfirmed) lines.push(unconfirmed);
       lines.push(`runner stdout tail:\n${tail(out, 4000) || '(empty)'}`);
       lines.push(`runner stderr tail:\n${tail(err, 2000) || '(empty)'}`);
+      bindTicket(ticketBinding, 'backstop', null,
+        `killed by the server's kill-backstop after ${elapsed}ms (backstop ${killAfter}ms, runner cap ${capMs}ms)`);
       transportError(id, lines);
       return;
     }
@@ -521,24 +653,29 @@ function runRunner(id, lane, args, progressToken, extraEnv, prefixText) {
       // The runners exit 0 on every report path; anything else is a
       // transport-class anomaly. Everything the process wrote is included,
       // clearly labelled — shown, never promoted to a report.
-      transportError(id, [
+      const lines = [
         `the runner exited abnormally (code=${code}, signal=${signal || 'none'}) after ${elapsed}ms — the runners exit 0 on every report path, so this output is NOT a runner report.`,
         `captured stdout${outTruncated ? ' (truncated)' : ''}:\n${out || '(empty)'}`,
         `captured stderr${errTruncated ? ' (truncated)' : ''}:\n${tail(err, 4000) || '(empty)'}`,
-      ]);
+      ];
+      bindTicket(ticketBinding, 'nonzero-exit', composeTransportText(lines), `runner exited code=${code} signal=${signal || 'none'}`);
+      transportError(id, lines);
       return;
     }
 
     if (!out.trim()) {
-      transportError(id, [
+      const lines = [
         `the runner exited 0 after ${elapsed}ms but wrote nothing to stdout — no report exists for this call.`,
         `stderr tail:\n${tail(err, 4000) || '(empty)'}`,
-      ]);
+      ];
+      bindTicket(ticketBinding, 'empty-output', composeTransportText(lines), 'runner exited 0 with empty stdout');
+      transportError(id, lines);
       return;
     }
 
     let text = out;
     if (outTruncated) text += '\n\nMCP TRANSPORT NOTE: runner stdout exceeded the 4MB capture cap and was truncated.';
+    bindTicket(ticketBinding, 'success', text, null);
     textResult(id, text, false);
   });
 }
@@ -598,10 +735,10 @@ const TOOLS = [
       // roster:new: consumes the reviewer ticket named by `ticket` BEFORE any
       // spawn — a missing/mismatched ticket returns typed TICKET_REQUIRED/
       // TICKET_MISMATCH and never reaches runRunner (codex is never
-      // invoked). gated.consumed is the now-CONSUMED ticket; leg 4 does not
-      // yet bind launched/resolved back onto it once the runner completes
-      // (see bridge/README.md and the leg-4 report CONCERNS) — that wiring
-      // is left for a follow-on pass rather than guessed here.
+      // invoked). gated.consumed is the now-CONSUMED ticket; WO-14b leg 4b
+      // binds it through LAUNCHED/RESOLVED (or denied()+left-for-expiry) once
+      // the runner completes — see bindTicket() in runRunner() above and
+      // bridge/README.md "engine ticket lifecycle".
       const gated = requireEngineTicket(id, 'review', a && a.ticket);
       if (!gated.ok) return;
       const dir = makeRunDir('review');
@@ -616,7 +753,8 @@ const TOOLS = [
       if (a.no_tests) args.push('--no-tests');
       pushForbids(args, a.forbid);
       if (typeof a.warmup_cmd === 'string' && a.warmup_cmd.trim()) args.push('--warmup-cmd', a.warmup_cmd);
-      runRunner(id, 'review', args, progressToken);
+      const ticketBinding = (gated.runtime && gated.consumed) ? { runtime: gated.runtime, id: gated.consumed.id, dir } : undefined;
+      runRunner(id, 'review', args, progressToken, undefined, undefined, ticketBinding);
     },
   },
   {
@@ -655,7 +793,8 @@ const TOOLS = [
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);
       if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
       if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', a.effort);
-      runRunner(id, 'exec', args, progressToken);
+      const ticketBinding = (gated.runtime && gated.consumed) ? { runtime: gated.runtime, id: gated.consumed.id, dir } : undefined;
+      runRunner(id, 'exec', args, progressToken, undefined, undefined, ticketBinding);
     },
   },
   {

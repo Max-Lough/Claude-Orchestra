@@ -220,6 +220,17 @@ function case1_legacyCensusUnchanged() {
   check('no .claude/ORCHESTRA-CONDUCTOR.md under a legacy install', !cPlain.includes('.claude/ORCHESTRA-CONDUCTOR.md'), cPlain.join('\n'));
   check('no .claude/orchestra/ runtime directory under a legacy install', !cPlain.some((f) => f.startsWith('.claude/orchestra/')), cPlain.join('\n'));
 
+  // WO-14b leg 3R, item 1: the guard's roster:new path is selected ONLY by
+  // its own --roster new invocation argument — a legacy install must write
+  // the argument-less command line.
+  const legacySettings = readJson(path.join(plain, '.claude', 'settings.json'));
+  const legacyGuardEntry = (legacySettings.hooks.PreToolUse || []).find((e) => /orchestra-guard\.js/.test(e.hooks[0].command));
+  check(
+    'legacy install writes the guard PreToolUse command WITHOUT --roster new',
+    !!legacyGuardEntry && legacyGuardEntry.hooks[0].command === 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js"',
+    legacyGuardEntry && JSON.stringify(legacyGuardEntry)
+  );
+
   // A second re-run (idempotent update) must ALSO create no orchestra.json —
   // the census guarantee isn't just a first-run fluke.
   const rAgain = install(plain, ['--no-packs', '--no-specialists']);
@@ -297,6 +308,16 @@ function case2_newRosterCensus() {
     Array.isArray(settings.hooks.PreToolUse) && settings.hooks.PreToolUse.length === 2, JSON.stringify(settings.hooks.PreToolUse));
   const preGate = (settings.hooks.PreToolUse || []).find((e) => e.matcher === 'Agent');
   check('PreToolUse gate entry has matcher "Agent"', !!preGate, JSON.stringify(settings.hooks.PreToolUse));
+
+  // WO-14b leg 3R, item 1: --roster new writes the guard's OWN PreToolUse
+  // entry (matcher '') with the --roster new argument appended — this, and
+  // only this, is what selects the guard's roster:new path at runtime.
+  const guardEntryNew = (settings.hooks.PreToolUse || []).find((e) => e.matcher === '' && /orchestra-guard\.js/.test(e.hooks[0].command));
+  check(
+    '--roster new install writes the guard PreToolUse command WITH --roster new',
+    !!guardEntryNew && guardEntryNew.hooks[0].command === 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js" --roster new',
+    guardEntryNew && JSON.stringify(guardEntryNew)
+  );
   check('PreToolUse gate entry command runs ticket-gate.js PreToolUse',
     !!preGate && preGate.hooks[0].command.indexOf('ticket-gate.js') !== -1 && / PreToolUse$/.test(preGate.hooks[0].command),
     preGate && JSON.stringify(preGate));
@@ -373,6 +394,14 @@ function case3_flipBumpsGenerationLeavesFiles() {
     Array.isArray(settingsAfterFlip.hooks.PreToolUse) && settingsAfterFlip.hooks.PreToolUse.length === 1 &&
       settingsAfterFlip.hooks.PreToolUse[0].matcher === '',
     JSON.stringify(settingsAfterFlip.hooks.PreToolUse));
+  // WO-14b leg 3R, item 1: the flip also rewrites the guard's OWN command
+  // line to drop --roster new — mode selection must not lag the manifest
+  // flip by even one stale argument.
+  check(
+    'flip to legacy rewrites the guard command WITHOUT --roster new',
+    settingsAfterFlip.hooks.PreToolUse[0].hooks[0].command === 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js"',
+    JSON.stringify(settingsAfterFlip.hooks.PreToolUse[0])
+  );
   check('flip to legacy removes PostToolUse/SubagentStop/Stop entirely (no user entries there)',
     !settingsAfterFlip.hooks.PostToolUse && !settingsAfterFlip.hooks.SubagentStop && !settingsAfterFlip.hooks.Stop,
     JSON.stringify(settingsAfterFlip.hooks));
@@ -388,6 +417,12 @@ function case3_flipBumpsGenerationLeavesFiles() {
     settingsAfterReflip.hooks.PreToolUse.length === 2 && settingsAfterReflip.hooks.PostToolUse.length === 1 &&
       settingsAfterReflip.hooks.SubagentStop.length === 1 && settingsAfterReflip.hooks.Stop.length === 1,
     JSON.stringify(settingsAfterReflip.hooks));
+  const guardEntryReflip = settingsAfterReflip.hooks.PreToolUse.find((e) => e.matcher === '');
+  check(
+    'flipping back to new restores --roster new on the guard command',
+    !!guardEntryReflip && guardEntryReflip.hooks[0].command === 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js" --roster new',
+    guardEntryReflip && JSON.stringify(guardEntryReflip)
+  );
   const r2 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
   const genIdempotent = readJson(path.join(target, '.claude', 'orchestra.json')).rosterGeneration;
   check('re-running --roster new with no flip does NOT bump generation again', ok(r2) && genIdempotent === genFlippedBack, 'before=' + genFlippedBack + ' after=' + genIdempotent);
@@ -889,6 +924,15 @@ function case17_manifestPin() {
   const rMatch = spawnSync(process.execPath, [INSTALLER, target, '--verify-pin'], { encoding: 'utf8', timeout: 60000, env });
   check('--verify-pin reports MATCH right after install', /MATCH/.test(out(rMatch)) && ok(rMatch), out(rMatch));
 
+  // WO-14b leg 3R, item 7: runtimeSha256 is removed from the pin — the
+  // guard no longer require()s any project-tree runtime file, so a hash
+  // pinning it to a trusted copy is no longer meaningful.
+  const pinFiles = fs.readdirSync(pinDir).filter((f) => f.endsWith('.json'));
+  for (const pf of pinFiles) {
+    const pinObj = readJson(path.join(pinDir, pf));
+    check('pin file ' + pf + ' carries no runtimeSha256 field', !('runtimeSha256' in pinObj), JSON.stringify(pinObj));
+  }
+
   const manifestPath = path.join(target, '.claude', 'orchestra.json');
   const manifest = readJson(manifestPath);
   manifest.seats.Architect = false;
@@ -1003,6 +1047,36 @@ function caseB1_junctionContainment() {
   check('the victim file reached THROUGH the junction SURVIVES', fs.existsSync(victimFile), '');
   check('warnings name the skipped reparse-point entry', /SKIPPED/i.test(out(r)) && /reparse/i.test(out(r)), out(r));
   check('the one legitimate mixed-in entry (agents/architect.md) IS removed', !fs.existsSync(path.join(target, '.claude', 'agents', 'architect.md')), '');
+}
+
+function caseB1b_dotClaudeItselfJunctionRefused() {
+  section('B1b. WO-14b leg 3R, item 7: --uninstall refuses outright when .claude itself is a reparse point (junction) rather than deleting through it');
+
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+
+  // Move the real .claude aside, then plant a junction AT .claude/ itself
+  // pointing at a decoy copy outside the project — the class the prior
+  // anchor (realish(.claude)) could not detect: it trusted .claude's OWN
+  // resolved location as the anchor instead of the real project root, so if
+  // .claude itself was the reparse point, that anchor was already outside
+  // the project and everything "inside" it passed trivially.
+  const realDotClaude = path.join(target, '.claude');
+  const decoyDir = tmpdir('orchestra-dotclaude-decoy-');
+  fs.rmSync(decoyDir, { recursive: true, force: true });
+  fs.cpSync(realDotClaude, decoyDir, { recursive: true });
+  fs.rmSync(realDotClaude, { recursive: true, force: true });
+
+  const mk = spawnSync('cmd', ['/c', 'mklink', '/J', realDotClaude, decoyDir], { encoding: 'utf8', timeout: 15000 });
+  if (mk.status !== 0) {
+    console.log('  SKIPPED B1b (OS refused to create a directory junction: ' + (mk.stderr || mk.stdout || 'unknown reason').trim() + ')');
+    return;
+  }
+
+  const r = install(target, ['--uninstall']);
+  check('uninstall REFUSES (non-zero exit) when .claude itself is a junction', !ok(r), out(r));
+  check('the refusal names .claude as a reparse point', /symlink\/junction \(reparse point\)/.test(out(r)), out(r));
+  check('the decoy directory (the junction target) still has its files — nothing was deleted through it', fs.existsSync(path.join(decoyDir, 'agents', 'architect.md')), '');
 }
 
 function case20_uninstallPinUntrustedFallback() {
@@ -1513,6 +1587,7 @@ try {
   case23_ignoreManifest();
   case24_uninstallRemovesGateHooks();
   caseB1_junctionContainment();
+  caseB1b_dotClaudeItselfJunctionRefused();
   caseB2_deletedManifestStrandsNothing();
   caseB4_userOwnedPermissionsHonoredByFallback();
   caseB5_patternKeyValidation();

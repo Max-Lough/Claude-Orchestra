@@ -783,23 +783,6 @@ function gitPinFilePath(rootCommitHash) {
 // not install (roster:legacy, or a pre-leg-4 project with no bridge/ at
 // all) is simply omitted from the result, never a null placeholder, so the
 // guard's "missing entry" check has something concrete to fail on.
-function computeRuntimeSha256(projectDir) {
-  const bridgeDir = path.join(projectDir, '.claude', ORCHESTRA_RUNTIME_DIRNAME, ROSTER_BRIDGE_DIRNAME);
-  const files = {
-    'bridge/runtime.js': path.join(bridgeDir, 'runtime.js'),
-    'bridge/hooks/ticket-gate.js': path.join(bridgeDir, 'hooks', 'ticket-gate.js'),
-  };
-  const out = {};
-  for (const key of Object.keys(files)) {
-    try {
-      out[key] = crypto.createHash('sha256').update(fs.readFileSync(files[key])).digest('hex');
-    } catch (_) {
-      /* not installed here — omitted */
-    }
-  }
-  return out;
-}
-
 // Writes/refreshes the pin for `projectDir` from the manifest file as JUST
 // WRITTEN to disk (the hash covers the exact bytes written, indentation and
 // all). Returns the path-keyed pin file path. Called after every write to
@@ -816,7 +799,9 @@ function writePin(projectDir, manifestFile, manifestObj) {
     rosterGeneration: typeof manifestObj.rosterGeneration === 'number' ? manifestObj.rosterGeneration : 0,
     seats: manifestObj.seats || {},
     projectId: typeof manifestObj.projectId === 'string' && manifestObj.projectId ? manifestObj.projectId : null,
-    runtimeSha256: computeRuntimeSha256(projectDir),
+    // WO-14b leg 3R, item 7: runtimeSha256 is removed — the guard no longer
+    // require()s or executes any project-tree runtime file (delegateAgentGate()
+    // is gone), so a hash pinning it to a trusted copy is no longer meaningful.
     writtenAt: new Date().toISOString(),
     by: 'install.js',
   };
@@ -1315,15 +1300,29 @@ function rememberFormat(file) {
 // Empty matcher = the hook fires on every main-session tool call; the guard
 // script is the single source of truth for policy (including orchestra.json
 // MCP patterns). Subagent tool calls never trigger project PreToolUse hooks.
-const HOOK_ENTRY = {
-  matcher: '',
-  hooks: [
-    {
-      type: 'command',
-      command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js"',
-    },
-  ],
-};
+//
+// WO-14b leg 3R: the guard's roster:new path is now selected ONLY by this
+// invocation's own `--roster new` argument (hooks/orchestra-guard.js's
+// rosterFromArgv()) — never by `.claude/orchestra.json`, a pin, an on-disk
+// fingerprint, or transcript content. A `--roster new` install writes the
+// argument onto the command line below; the legacy flip rewrites the entry
+// WITHOUT it (see isOurHookEntry()/GUARD_MARK — a re-run always replaces the
+// whole entry, so a roster flip never leaves a stale argument behind).
+function guardHookEntry(roster) {
+  const command =
+    roster === 'new'
+      ? 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js" --roster new'
+      : 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js"';
+  return {
+    matcher: '',
+    hooks: [
+      {
+        type: 'command',
+        command: command,
+      },
+    ],
+  };
+}
 
 // The bridge's ticket-gate hook (WO-14b leg 4c) — registered into
 // .claude/settings.json ONLY under --roster new (the gate is inert under
@@ -1596,6 +1595,33 @@ function isOurGateHookEntry(entry) {
       (h) => h && typeof h.command === 'string' && h.command.includes(GATE_HOOK_MARK)
     )
   );
+}
+
+// WO-14b leg 3R, item 7: re-reads .claude/settings.json fresh off disk (not
+// the in-memory `settings` object the install just mutated) and confirms
+// all four gate hook events carry an entry this installer recognizes
+// (isOurGateHookEntry) — the same identification the guard's own
+// verifyGateHooksRegistered() uses at Agent-call time. This does not
+// duplicate that registration (done above, by the pre-existing leg-4c
+// code); it only proves the write actually landed.
+function verifyGateHooksWritten(targetDir) {
+  const settingsPath = path.join(targetDir, '.claude', 'settings.json');
+  let onDisk;
+  try {
+    onDisk = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch (e) {
+    return { ok: false, reason: 'settings.json unreadable after write (' + e.message + ')' };
+  }
+  if (!onDisk || typeof onDisk !== 'object' || Array.isArray(onDisk) || !onDisk.hooks || typeof onDisk.hooks !== 'object') {
+    return { ok: false, reason: 'no hooks object in settings.json after write' };
+  }
+  for (const eventName of GATE_HOOK_EVENTS) {
+    const list = Array.isArray(onDisk.hooks[eventName]) ? onDisk.hooks[eventName] : [];
+    if (!list.some((e) => isOurGateHookEntry(e))) {
+      return { ok: false, reason: eventName + ' gate hook entry missing after write' };
+    }
+  }
+  return { ok: true };
 }
 
 function stringList(value) {
@@ -2646,7 +2672,7 @@ if (!uninstall) {
   if (typeof settings.hooks !== 'object' || settings.hooks === null) settings.hooks = {};
   const pre = Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : [];
   const kept = pre.filter((e) => !isOurHookEntry(e));
-  kept.push(HOOK_ENTRY);
+  kept.push(guardHookEntry(roster));
   settings.hooks.PreToolUse = kept;
 
   // 2a. The bridge's ticket-gate hook entries (leg 4c) — registered under
@@ -2761,6 +2787,27 @@ if (!uninstall) {
       (pre.length - kept.length + 1 > 1 ? 'replaced existing entry' : 'added') +
       ', other settings preserved)'
   );
+  // WO-14b leg 3R, item 7: under --roster new, hooks/orchestra-guard.js's
+  // Agent handling is fail-closed on these same four entries (it re-checks
+  // them itself, fresh, on every Agent call — see its
+  // verifyGateHooksRegistered()) — but the install itself must not exit 0
+  // having silently failed to write them (a settings.json write that lost
+  // data to a concurrent editor, a permissions.json race, or a logic bug in
+  // the merge above). Re-read what was just written and confirm the four
+  // gate entries are present with the exact command the guard expects
+  // (registration itself is the existing leg-4c code above — this verifies,
+  // it does not duplicate).
+  if (roster === 'new') {
+    const gateVerify = verifyGateHooksWritten(target);
+    if (!gateVerify.ok) {
+      fail(
+        'gate hook entries were not verified in .claude/settings.json after writing (' +
+          gateVerify.reason + '). Refusing to report a successful --roster new install with an ' +
+          'unverifiable Agent gate — re-run the installer, and if this persists, check for another ' +
+          'process editing .claude/settings.json concurrently.'
+      );
+    }
+  }
   if (grantsFile !== settingsFile) writeJson(grantsFile, grantsSettings);
   did(
     'git permissions for the executor (' +
@@ -2943,6 +2990,45 @@ if (!uninstall) {
     );
   }
 } else {
+  // WO-14b leg 3R, item 7: anchor every deletion beneath realpath(project
+  // root), and refuse outright when .claude itself is a reparse point — a
+  // symlink/junction planted at .claude/ could otherwise redirect every
+  // "contained" deletion below it to a location outside the project
+  // entirely. The prior containment anchor (realish(.claude), used by the
+  // installedFiles check further down) trusted .claude's OWN resolved
+  // location as the anchor instead of the real project root — if .claude
+  // itself was the reparse point, that anchor was already outside the
+  // project, and everything checked "inside" it passed trivially. Refusing
+  // before anything is deleted closes that: only a real, project-contained
+  // .claude/ is ever used as the containment anchor from here on.
+  let uninstallRealRoot;
+  try {
+    uninstallRealRoot = fs.realpathSync(target);
+  } catch (_) {
+    uninstallRealRoot = target;
+  }
+  try {
+    const dotClaudeLstat = fs.lstatSync(dotClaude);
+    if (dotClaudeLstat.isSymbolicLink()) {
+      fail(
+        '.claude is a symlink/junction (reparse point) at ' + dotClaude + ' — refusing to ' +
+          'uninstall through it. Point --uninstall at the real project directory, or remove the ' +
+          'reparse point yourself first.'
+      );
+    }
+    const dotClaudeRealForAnchor = realish(dotClaude);
+    const relDotClaudeToRoot = path.relative(uninstallRealRoot, dotClaudeRealForAnchor);
+    if (relDotClaudeToRoot === '' || relDotClaudeToRoot.startsWith('..') || path.isAbsolute(relDotClaudeToRoot)) {
+      fail(
+        '.claude (resolved: ' + dotClaudeRealForAnchor + ') does not resolve inside the project ' +
+          'root (resolved: ' + uninstallRealRoot + ') — refusing to uninstall through a path ' +
+          'that would place deletions outside the project.'
+      );
+    }
+  } catch (_) {
+    /* .claude doesn't exist at all — nothing to refuse on, nothing to uninstall either */
+  }
+
   // Uninstall order (A.5, sdc-012 MINOR): grants, then hook/MCP entries, then
   // files — reversed from the pre-leg-3 installer, which deleted every owned
   // file BEFORE ever reading settings, so a crash or malformed settings.json

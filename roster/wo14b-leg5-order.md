@@ -21,9 +21,24 @@ back to the sidecar (same write-all discipline) instead of being truncated away,
 `afterRename`) are honoured only when `process.env.ORCHESTRA_TICKETS_TEST_HOOKS === '1'`;
 otherwise the constructor refuses `_fs` with a typed `TicketStoreError`. Pin both.
 
+## Rider from leg-3 fix round 3 (guard pin rules tightened after leg 4c aligned to round 2)
+
+`bridge/manifest.js` (+ `tests/bridge.test.js`) must mirror the guard's round-3 rules exactly:
+(i) a project carrying any roster:new fingerprint (`.claude/orchestra/`, `ORCHESTRA-CONDUCTOR.md`,
+any of the eleven roster role files under `.claude/agents/`, or a manifest with projectId /
+installedFiles / installedPermissions / installedHooks / rosterGeneration) and no resolvable pin
+→ untrusted-new, reason 'installed roster:new project without a pin' — never 'unpinned';
+(ii) strict pin schema (projectDir string, manifestSha256 64 lowercase hex, roster ∈ {new,legacy},
+rosterGeneration non-negative int, writtenAt date, by string) — anything else is an invalid pin →
+untrusted-new; (iii) third lookup key `git-<sha256(root commit)>.json` after path and id;
+(iv) a pin found by id or git-root with a differing projectDir enforces roster but never honours
+loosening keys (the runtime has no loosening keys, so record `moved:true` on the state and expose it
+in `doctor()`). Pin every branch.
+
 ## FILES
 
 `router/tickets.js` + `tests/tickets.test.js` (the rider above only),
+`bridge/manifest.js` + `tests/bridge.test.js` (the pin-rule rider only),
 `bridge/runtime.js` (replace the leg-4 `close` stub), `bridge/close.js` (new — the
 closure logic), `bridge/telemetry.js` (new — the two schema-validated writers),
 `bridge/cli.js` (add `close`), `bridge/README.md`, `packs/codex/hooks/

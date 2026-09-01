@@ -203,13 +203,39 @@ same fsync'd append, and commits at
 `newSeq = max(state.seq, maxOrphanSeq) + 1` — so the log always reads
 `[orphan(s)…, reconcile, this-event]` and an orphan seq is never reused by a
 real commit. If the lock can't be acquired at all, no reconciliation
-happens. Invariant: committed seq is monotonic; every seq in the log appears
+happens. **Invariant: the events log is always newline-terminated at the
+start of a locked write; a torn tail is closed and recorded as a reconcile
+with torn_tail.** Committed seq is monotonic; every seq in the log appears
 at most once as a non-orphan; orphans are always followed by a reconcile
 marker written under the lock. Typed refusals are logged the same way as
 successful transitions, including a `denied` event alongside the `expire`
 transition for a launch/resolve that arrives after `expires_at` (finding 3)
 — `events [issue, consume, expire, denied]` with `attempts [launch]`, not
 just the bare `expire`.
+
+**Fix round 4 (review #4).** A torn JSONL tail (`tickets.js:396`, MAJOR) — a
+partial last line left by a writer that crashed or short-wrote mid-append,
+no trailing `\n` — used to be silently concatenated onto by the next
+append, undocumented. `withStore()` now detects it right after acquiring
+the lock and, as part of its own fsync'd append, closes the boundary (a
+leading `\n`) and names the fragment on that write's reconcile line as
+`data.torn_tail = { bytes, sha256 }`; an unlocked reader sees the same
+detection mirrored onto `store.tornTail` (via `get`/`list`/`openTickets`)
+without ever repairing it itself. Post-commit lock-ownership loss
+(`tickets.js:600`, MINOR) — a confirmed token mismatch discovered at
+release, after the mutation already committed — is no longer silently
+swallowed: it's recorded on `store.lastLockAnomaly`, and the *next* locked
+write logs it as a `lock_anomaly` event (before its own event line) and
+clears the flag only once that write itself commits; a caller never sees an
+already-committed mutation reported as a failure. The release path also
+now best-effort removes a confirmed-foreign lock via the same CAS
+tombstone-rename mechanic `acquireLock()` uses, but only when that foreign
+owner's pid is provably dead — never while it's alive. Tombstone
+accumulation (`tickets.js:318`, MINOR) — a takeover's own best-effort
+`rmSync` could leave a `.tomb-*` dir behind forever if it failed — is now
+swept on every successful acquisition (best-effort, `.tomb-*` siblings
+older than `lockStaleMs`; a fresh tombstone is left alone). NIT: the
+unknown-holder timeout message no longer duplicates "for > budget".
 
 ## WO-6 defaults where the plan is silent
 

@@ -15,7 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const MASTER = path.resolve(__dirname, '..');
 const T = require(path.join(MASTER, 'router', 'tickets.js'));
@@ -1116,3 +1116,180 @@ check('a wrong-kind Q0 reference (finding 5) is refused AND recorded as an event
     const wrongKindLine = lines.filter((l) => l.id === impl.id).pop();
     return !!wrongKindLine && wrongKindLine.event === 'consume' && /to have kind 'q0'/.test(wrongKindLine.data.reason);
   })());
+
+// ==================================================== 20. torn JSONL tail
+
+section('20. Fix round 4 (review #4, MAJOR, tickets.js:396) — a torn JSONL tail is closed and recorded as a reconcile with torn_tail');
+
+{
+  const store = freshStore('tkt-torn-');
+  const t = T.issue(store, baseFields()); // seq 0 -> 1, one event line, newline-terminated
+  const eventsPath = path.join(store.dir, 'tickets.events.jsonl');
+  const beforeBuf = fs.readFileSync(eventsPath);
+  check('20: sanity — the events log ends with a newline before the simulated crash', beforeBuf[beforeBuf.length - 1] === 0x0a);
+
+  // Simulate a short-write: chop the last few bytes (closing brace + \n),
+  // leaving a torn, non-newline-terminated tail — exactly what a crash
+  // mid-append leaves behind.
+  const tornBuf = beforeBuf.slice(0, beforeBuf.length - 8);
+  fs.writeFileSync(eventsPath, tornBuf);
+  const idx = tornBuf.lastIndexOf(0x0a);
+  const fragmentBuf = tornBuf.slice(idx + 1);
+  const expectedBytes = fragmentBuf.length;
+  const expectedSha256 = crypto.createHash('sha256').update(fragmentBuf).digest('hex');
+
+  check('20: pin — a torn tail NOT followed by a mutation is reported (store.tornTail) by an unlocked read, without writing anything',
+    (() => {
+      const beforeReadEvents = fs.readFileSync(eventsPath);
+      const beforeReadState = fs.readFileSync(path.join(store.dir, 'tickets.json'));
+      T.get(store, t.id);
+      const afterReadEvents = fs.readFileSync(eventsPath);
+      const afterReadState = fs.readFileSync(path.join(store.dir, 'tickets.json'));
+      return store.tornTail === true && beforeReadEvents.equals(afterReadEvents) && beforeReadState.equals(afterReadState);
+    })());
+
+  const consumed = T.consume(store, t.id, { tool_use_id: 'tu-torn', role: 'Builder' });
+  const afterBuf = fs.readFileSync(eventsPath);
+  check('20: pin — exactly one \\n was inserted to close the torn boundary before this write\'s own lines',
+    afterBuf.slice(0, tornBuf.length).equals(tornBuf) && afterBuf[tornBuf.length] === 0x0a, 'tornBuf.length=' + tornBuf.length);
+
+  const restLines = afterBuf.slice(tornBuf.length + 1).toString('utf8').split('\n').filter(Boolean);
+  const parsedRest = restLines.map((l) => JSON.parse(l)); // must ALL parse cleanly — never a concatenated pair
+  check('20: everything after the repaired boundary parses as clean, individual JSON lines', parsedRest.length === restLines.length);
+
+  const reconcileLines = parsedRest.filter((l) => l.event === 'reconcile');
+  check('20: pin — one reconcile line was appended, naming the torn fragment (bytes + sha256), no ordinary dropped orphans',
+    reconcileLines.length === 1 &&
+    Array.isArray(reconcileLines[0].data.dropped) && reconcileLines[0].data.dropped.length === 0 &&
+    !!reconcileLines[0].data.torn_tail &&
+    reconcileLines[0].data.torn_tail.bytes === expectedBytes &&
+    reconcileLines[0].data.torn_tail.sha256 === expectedSha256,
+    JSON.stringify(reconcileLines));
+  const rec = reconcileLines[0];
+
+  const consumeLine = parsedRest.find((l) => l.event === 'consume');
+  check('20: pin — the mutation\'s own event is parseable, on its own line, after the reconcile line',
+    !!consumeLine && consumeLine.id === t.id && consumeLine.to === 'CONSUMED' && parsedRest.indexOf(consumeLine) > parsedRest.indexOf(rec));
+
+  const stateAfter = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+  check('20: pin — state committed with the right seq (mutation seq === reconcile seq + 1)',
+    !!consumeLine && stateAfter.seq === consumeLine.seq && consumeLine.seq === rec.seq + 1 && consumed.status === 'CONSUMED');
+
+  check('20: post-repair, ordinary reads still work fine despite the historical torn fragment remaining embedded (never removed, just bounded)',
+    (() => {
+      let ok = true;
+      try { T.list(store, {}); T.get(store, t.id); } catch (e) { ok = false; }
+      return ok;
+    })());
+}
+
+// ==================================================== 21. post-commit lock-ownership loss
+
+section('21. Fix round 4 (review #4, MINOR, tickets.js:600) — post-commit lock-ownership loss is recorded, not swallowed');
+
+{
+  const dir = tmpDir('tkt-anomaly-');
+  const lockDirPath = T._internal.lockFile(dir);
+  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+  const deadPid = dead.pid;
+  check('21: sanity — the throwaway probe process is confirmed dead', typeof deadPid === 'number' && T._internal.isPidAlive(deadPid) === false);
+
+  // Inject the foreign-takeover at the exact "post-commit" window: the
+  // event line has genuinely been written (fsync'd) already, but the state
+  // rename hasn't happened yet — swapping owner.json here, from inside the
+  // fsHooks.appendFileSync used by the real write path, reproduces "the
+  // owner token changes after commit" without racing a second real process.
+  let swapped = false;
+  const store = T.createTicketStore({
+    dir, init: true,
+    _fs: {
+      appendFileSync: (file, text) => {
+        fs.appendFileSync(file, text);
+        if (!swapped) {
+          swapped = true;
+          fs.writeFileSync(path.join(lockDirPath, 'owner.json'), JSON.stringify({ pid: deadPid, token: 'foreign-token-xyz', at: Date.now(), host: 'other-host' }));
+        }
+      },
+    },
+  });
+  store.lockStaleMs = 2000;
+  store.lockBudgetMs = 3000;
+
+  let threw = null, issued;
+  try { issued = T.issue(store, baseFields()); } catch (e) { threw = e; }
+  check('21: pin — the call returns success; a post-commit ownership loss never surfaces as a caller-visible failure',
+    threw === null && !!issued && issued.status === 'OPEN', threw && threw.message);
+  check('21: pin — lastLockAnomaly is set with the expected shape', !!(store.lastLockAnomaly &&
+    store.lastLockAnomaly.detail === 'lock ownership lost after commit' &&
+    typeof store.lastLockAnomaly.expectedToken === 'string' &&
+    store.lastLockAnomaly.foundOwner && store.lastLockAnomaly.foundOwner.token === 'foreign-token-xyz'),
+    JSON.stringify(store.lastLockAnomaly));
+  check('21: pin — a dead foreign owner\'s lock is cleaned up at release time (best-effort tombstone), so the following writer need not wait out staleness',
+    !fs.existsSync(lockDirPath));
+
+  const t0 = Date.now();
+  const t2 = T.issue(store, baseFields());
+  const elapsed = Date.now() - t0;
+  check('21: pin — the following writer does NOT time out (or even wait meaningfully) when the foreign owner is dead', elapsed < 1000, 'elapsed=' + elapsed + 'ms');
+
+  check('21: pin — that next write logs lock_anomaly (naming the recorded anomaly) BEFORE its own event, and clears the flag',
+    (() => {
+      const lines = fs.readFileSync(path.join(dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      const anomalyLine = lines.find((l) => l.event === 'lock_anomaly');
+      const issueLine = lines.find((l) => l.event === 'issue' && l.id === t2.id);
+      return !!anomalyLine && !!issueLine && lines.indexOf(anomalyLine) < lines.indexOf(issueLine) &&
+        anomalyLine.data.foundOwner && anomalyLine.data.foundOwner.token === 'foreign-token-xyz' &&
+        anomalyLine.seq === issueLine.seq && store.lastLockAnomaly === undefined;
+    })());
+}
+
+// ==================================================== 22. tombstone sweep
+
+section('22. Fix round 4 (review #4, MINOR, tickets.js:318) — stale .tomb-* siblings are swept on every successful acquisition');
+
+{
+  const dir = tmpDir('tkt-tombsweep-');
+  T.createTicketStore({ dir, init: true });
+  const STALE_MS = 3000;
+
+  const staleNames = ['tickets.lock.tomb-111-a', 'tickets.lock.tomb-222-b', 'tickets.lock.tomb-333-c'];
+  for (const name of staleNames) {
+    fs.mkdirSync(path.join(dir, name));
+    fs.writeFileSync(path.join(dir, name, 'marker.txt'), 'stale');
+  }
+  const oldTime = new Date(Date.now() - (STALE_MS + 5000));
+  for (const name of staleNames) {
+    fs.utimesSync(path.join(dir, name), oldTime, oldTime);
+  }
+
+  const freshName = 'tickets.lock.tomb-999-fresh';
+  fs.mkdirSync(path.join(dir, freshName)); // created just now — must survive this sweep
+
+  const store = { dir, lockStaleMs: STALE_MS, lockBudgetMs: 5000 };
+  T.bumpGeneration(store, 'tombstone-sweep-probe'); // one acquisition
+
+  check('22: pin — three pre-existing stale tombstones are swept away by a single acquisition',
+    staleNames.every((name) => !fs.existsSync(path.join(dir, name))), fs.readdirSync(dir).join(','));
+  check('22: pin — a fresh tombstone (age <= staleMs) survives that same acquisition', fs.existsSync(path.join(dir, freshName)));
+}
+
+// ==================================================== 23. NIT: duplicate wording
+
+section('23. Fix round 4 (review #4, NIT) — unknown-holder timeout message no longer duplicates "for > budget"');
+
+{
+  const dir = tmpDir('tkt-nitmsg-');
+  T.createTicketStore({ dir, init: true });
+  const lockDir = T._internal.lockFile(dir);
+  fs.mkdirSync(lockDir); // no owner.json at all — "unknown holder", fresh
+  const BUDGET = 150;
+  const store = { dir, lockStaleMs: 10000, lockBudgetMs: BUDGET };
+  let threw = null;
+  try { T.bumpGeneration(store, 'probe-nit'); } catch (e) { threw = e; }
+  check('23: pin — the unknown-holder timeout message names "for > budget" exactly once, not twice',
+    !!threw && threw instanceof T.TicketStoreError &&
+    /by an unknown holder for > budget/.test(threw.message) &&
+    !/for > budget for > budget/.test(threw.message),
+    threw && threw.message);
+  fs.rmSync(lockDir, { recursive: true, force: true });
+}

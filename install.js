@@ -639,16 +639,20 @@ const GIT_PERMISSIONS = [
 // recognize and strip a grant an older installer version left behind; it is
 // never written to a target again.
 const GIT_PUSH_PERMISSION = 'Bash(git push:*)';
-// --grant-push now grants exactly these four invocations — no `:*` prefix,
+// --grant-push now grants exactly these two invocations — no `:*` prefix,
 // so nothing outside this literal list matches and anything else prompts.
 // This is the fix for the class above: an allowlist of exact safe strings
 // cannot be defeated by an option abbreviation or a refspec trick the way a
-// prefix allow (or a deny blacklist trying to cover one) can.
+// prefix allow (or a deny blacklist trying to cover one) can. WO-14b leg-3
+// fix round 2B item 6 (Red Team MEDIUM) drops the bare `Bash(git push)` and
+// the `--set-upstream` spelling: both omit an explicit refspec, so what they
+// push is decided by `.git/config` (`remote.origin.push`, `push.default`)
+// rather than by the string Claude Code matched — a config-driven grant is
+// not the same guarantee as an exact-match one. `-u`/`origin HEAD` names the
+// branch explicitly and is kept.
 const GIT_PUSH_SAFE_ALLOW = [
-  'Bash(git push)',
   'Bash(git push origin HEAD)',
   'Bash(git push -u origin HEAD)',
-  'Bash(git push --set-upstream origin HEAD)',
 ];
 // Belt-and-braces: kept and extended even though the allowlist above no
 // longer needs a blacklist to be safe, in case a project's own permission
@@ -696,11 +700,25 @@ function pinFilePath(projectDir) {
   return path.join(PIN_DIR, hash + '.json');
 }
 
+// Item 5 (WO-14b leg-3 fix round 2B): a second pin keyed on the manifest's
+// own `projectId` (minted once, at the first --roster new, and preserved
+// thereafter) rather than the project's real path. The path-keyed pin above
+// goes stale the instant a project directory moves or is re-cloned
+// elsewhere; the id-keyed copy survives that unchanged, so --verify-pin can
+// tell "never pinned" apart from "pinned, then moved" instead of reporting
+// NO-PIN for a project the owner genuinely already vouched for.
+function idPinFilePath(projectId) {
+  const hash = crypto.createHash('sha256').update(String(projectId), 'utf8').digest('hex');
+  return path.join(PIN_DIR, 'id-' + hash + '.json');
+}
+
 // Writes/refreshes the pin for `projectDir` from the manifest file as JUST
 // WRITTEN to disk (the hash covers the exact bytes written, indentation and
-// all). Returns the pin file path. Called after every write to
+// all). Returns the path-keyed pin file path. Called after every write to
 // orchestra.json that carries roster/seat information — never for a plain
-// legacy install, which writes no manifest and therefore gets no pin.
+// legacy install, which writes no manifest and therefore gets no pin. Writes
+// BOTH the path-keyed and (when the manifest carries a projectId) the
+// id-keyed pin, with identical content.
 function writePin(projectDir, manifestFile, manifestObj) {
   const bytes = fs.readFileSync(manifestFile);
   const pin = {
@@ -709,22 +727,117 @@ function writePin(projectDir, manifestFile, manifestObj) {
     roster: manifestObj.roster || 'legacy',
     rosterGeneration: typeof manifestObj.rosterGeneration === 'number' ? manifestObj.rosterGeneration : 0,
     seats: manifestObj.seats || {},
+    projectId: typeof manifestObj.projectId === 'string' && manifestObj.projectId ? manifestObj.projectId : null,
     writtenAt: new Date().toISOString(),
     by: 'install.js',
   };
+  const body = JSON.stringify(pin, null, 2) + '\n';
   const pf = pinFilePath(projectDir);
   fs.mkdirSync(path.dirname(pf), { recursive: true });
-  fs.writeFileSync(pf, JSON.stringify(pin, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(pf, body, 'utf8');
+  if (pin.projectId) {
+    const idPf = idPinFilePath(pin.projectId);
+    fs.mkdirSync(path.dirname(idPf), { recursive: true });
+    fs.writeFileSync(idPf, body, 'utf8');
+  }
   return pf;
 }
 
-function removePin(projectDir) {
+// Removes both the path-keyed and (if discoverable) the id-keyed pin for a
+// project. `knownProjectId` lets a caller that already has the manifest's
+// projectId (e.g. --uninstall, reading orchestra.json before it clears the
+// file) remove the id-keyed copy even if the path-keyed one is already gone
+// (a moved project that was never --repin'd).
+function removePin(projectDir, knownProjectId) {
   const pf = pinFilePath(projectDir);
+  let projectId = knownProjectId || null;
+  let removedAny = false;
+  let removedPath = null;
   if (fs.existsSync(pf)) {
+    if (!projectId) {
+      try {
+        const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
+        if (pin && pin.projectId) projectId = pin.projectId;
+      } catch (_) {
+        /* unreadable pin — still remove it below */
+      }
+    }
     fs.unlinkSync(pf);
-    return pf;
+    removedPath = pf;
+    removedAny = true;
   }
-  return null;
+  if (projectId) {
+    const idPf = idPinFilePath(projectId);
+    if (fs.existsSync(idPf)) {
+      fs.unlinkSync(idPf);
+      removedAny = true;
+      if (!removedPath) removedPath = idPf;
+    }
+  }
+  return removedAny ? removedPath : null;
+}
+
+// The shared status computation behind --verify-pin AND --uninstall's
+// pin-before-ledger check (item 2). Returns
+// { status: 'MATCH'|'MISMATCH'|'NO-PIN'|'MOVED', ... } — never throws.
+//
+//   MATCH     — the path-keyed pin exists and its hash + projectDir agree
+//               with the manifest on disk right now.
+//   MISMATCH  — a pin exists (by path, or by id) but its hash disagrees
+//               with the manifest on disk, or the manifest is gone.
+//   NO-PIN    — no pin was ever recorded for this project, by either key.
+//   MOVED     — no path-keyed pin here, but the manifest's own projectId
+//               resolves to an id-keyed pin elsewhere whose hash MATCHES
+//               the manifest on disk now — a relocated, still-trusted
+//               project (item 5's guard-side rule: trusted iff hash
+//               matches). --repin promotes this to a fresh path-keyed pin.
+function verifyPinStatus(target, orchestraJsonFile) {
+  const pf = pinFilePath(target);
+  const realDir = projectRealPath(target);
+  const manifestBytes = () => fs.readFileSync(orchestraJsonFile);
+  if (fs.existsSync(pf)) {
+    let pin;
+    try {
+      pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
+    } catch (e) {
+      return { status: 'NO-PIN', pf, reason: 'pin file exists but is not valid JSON (' + pf + ': ' + e.message + ')' };
+    }
+    if (!fs.existsSync(orchestraJsonFile)) {
+      return { status: 'MISMATCH', pf, pin, realDir, reason: '.claude/orchestra.json no longer exists here' };
+    }
+    const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
+    if (actualSha === pin.manifestSha256 && realDir === pin.projectDir) {
+      return { status: 'MATCH', pf, pin, actualSha, realDir };
+    }
+    return { status: 'MISMATCH', pf, pin, actualSha, realDir };
+  }
+  // No path-keyed pin here — check whether the manifest's own projectId
+  // resolves to an id-keyed pin (a relocated project).
+  if (fs.existsSync(orchestraJsonFile)) {
+    let manifest = null;
+    try {
+      manifest = JSON.parse(fs.readFileSync(orchestraJsonFile, 'utf8'));
+    } catch (_) {
+      /* unparseable manifest — treated as NO-PIN below, same as before */
+    }
+    if (manifest && typeof manifest.projectId === 'string' && manifest.projectId) {
+      const idPf = idPinFilePath(manifest.projectId);
+      if (fs.existsSync(idPf)) {
+        let idPin;
+        try {
+          idPin = JSON.parse(fs.readFileSync(idPf, 'utf8'));
+        } catch (e) {
+          return { status: 'NO-PIN', pf, reason: 'id-pin file exists but is not valid JSON (' + idPf + ': ' + e.message + ')' };
+        }
+        const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
+        if (actualSha === idPin.manifestSha256) {
+          return { status: 'MOVED', pf, idPf, pin: idPin, actualSha, realDir };
+        }
+        return { status: 'MISMATCH', pf, idPf, pin: idPin, actualSha, realDir };
+      }
+    }
+  }
+  return { status: 'NO-PIN', pf };
 }
 
 // Every write to orchestra.json that carries roster/seat information goes
@@ -767,15 +880,35 @@ function listFilesRecursive(dir) {
 // raw JSON text (string contents masked out first, so a numeral inside a
 // string is never mistaken for a literal) for every bare numeric token and
 // flags one that would not survive a parse/stringify round trip.
+// WO-14b leg-3 fix round 2B item 4c: normalizes exactly two purely-cosmetic
+// differences a byte round trip should not be judged lossy on — the
+// exponent marker's case, and a redundant '+' immediately after it — plus a
+// trailing ".0" fractional part, which JSON.stringify never writes back for
+// a value that is a whole number. Everything else in the literal's digits
+// must survive the round trip unchanged, or it is lossy.
+function canonicalNumericLiteral(tok) {
+  return tok.replace(/E/, 'e').replace(/e\+/, 'e').replace(/\.0(?=$|e)/, '');
+}
+
 function findUnsafeNumericLiterals(raw) {
   let masked = '';
   let inStr = false;
   let esc = false;
   for (const ch of raw) {
     if (inStr) {
-      masked += ch === '"' && !esc ? '"' : '_';
-      esc = !esc && ch === '\\';
-      if (ch === '"' && !esc) inStr = false;
+      // WO-14b leg-3 fix round 2B item 4a (Red Team HIGH): test ch === '"'
+      // && !esc using the escape state as of the character BEFORE this one,
+      // then recompute esc for the next character afterward. The old code
+      // recomputed esc first, so an escaped quote (\") cleared esc and was
+      // then read as an unescaped closing quote — ending the string early;
+      // the real closing quote a few characters later then re-opened string
+      // state, masking out everything after it, including the very literal
+      // this guard exists to catch (pinned fixture:
+      // {"a":"z\"", "big": 9007199254740993}).
+      const wasEscaped = esc;
+      masked += ch === '"' && !wasEscaped ? '"' : '_';
+      if (ch === '"' && !wasEscaped) inStr = false;
+      esc = !wasEscaped && ch === '\\';
       continue;
     }
     if (ch === '"') {
@@ -790,8 +923,19 @@ function findUnsafeNumericLiterals(raw) {
   let m;
   while ((m = NUM_RE.exec(masked))) {
     const tok = m[1];
-    if (/[.eE]/.test(tok)) continue; // fractional/exponent — float precision is expected, not this guard's concern
     const n = Number(tok);
+    if (/[.eE]/.test(tok)) {
+      // Fractional/exponent form (items 4b/4c, Red Team/cross-vendor review
+      // MEDIUM x2): the old code exempted every such token as "float
+      // precision is expected, not this guard's concern" — but Infinity
+      // re-serializes as `null` (a TYPE change, strictly worse than the
+      // integer rounding this guard was written to stop: 1e400/-1e400/1E400
+      // all become null), and a finite-but-lossy float silently rewrites to
+      // a different number (1.7976931348623159e308, 12345678901234567890.5,
+      // 1.00000000000000000001 all lose digits). Refuse both.
+      if (!Number.isFinite(n) || String(n) !== canonicalNumericLiteral(tok)) bad.push(tok);
+      continue;
+    }
     if (String(n) !== tok || !Number.isSafeInteger(n)) bad.push(tok);
   }
   return bad;
@@ -934,19 +1078,24 @@ function refuseIfTargetMalformed(files) {
     if (!f || !fs.existsSync(f)) continue;
     const raw = fs.readFileSync(f, 'utf8').trim();
     if (raw === '') continue;
+    // Item 7 (WO-14b leg-3 fix round 2B, Red Team LOW): a caller may attach
+    // a hint naming the actual remedy — spelled out here rather than left
+    // for the reader to infer, since the prior message said only "fix it
+    // first" with no hint that deleting the file IS fixing it.
+    const hint = spec.hint ? ' ' + spec.hint : '';
     let parsed;
     try {
       parsed = JSON.parse(raw);
     } catch (e) {
       fail(
         f + ' exists but is not valid JSON (' + e.message + '). Refusing to touch ' +
-          'anything in this project (nothing copied or deleted) — fix it first.'
+          'anything in this project (nothing copied or deleted) — fix it first.' + hint
       );
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       fail(
         f + ' must contain a JSON object at the top level, found ' + JSON.stringify(parsed) +
-          '. Refusing to touch anything in this project (nothing copied or deleted) — fix it first.'
+          '. Refusing to touch anything in this project (nothing copied or deleted) — fix it first.' + hint
       );
     }
     const badNums = findUnsafeNumericLiterals(raw);
@@ -1001,6 +1150,19 @@ function isOurHookEntry(entry) {
 
 function stringList(value) {
   return Array.isArray(value) ? value.filter((s) => typeof s === 'string' && s.trim()) : [];
+}
+
+// installedPermissions/installedDeny entries (WO-14b leg-3 fix round 2B item
+// 3, cross-vendor review #2 MAJOR): {file, entry} pairs rather than bare
+// strings, so uninstall can tell "Orchestra added this string to
+// settings.json" apart from "the user independently added the identical
+// string to settings.local.json" — a flat string list could not distinguish
+// the two, so removing a tracked entry removed BOTH copies.
+function permEntryList(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((e) => e && typeof e === 'object' && typeof e.file === 'string' && typeof e.entry === 'string' && e.entry.trim())
+    .map((e) => ({ file: e.file, entry: e.entry }));
 }
 
 function stripMarkerBlock(text) {
@@ -1287,6 +1449,8 @@ let rosterArg = null; // null = not given (defaults to "legacy" below)
 let grantPushFlag = false;
 let grantsLocalFlag = false;
 let verifyPinFlag = false;
+let repinFlag = false;
+let ignoreManifestFlag = false;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--uninstall') uninstall = true;
@@ -1307,12 +1471,15 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--grant-push') grantPushFlag = true;
   else if (a === '--grants-local') grantsLocalFlag = true;
   else if (a === '--verify-pin') verifyPinFlag = true;
+  else if (a === '--repin') repinFlag = true;
+  else if (a === '--ignore-manifest') ignoreManifestFlag = true;
   else if (a.startsWith('--')) {
     fail(
       'Unknown flag: ' + a +
         ' (expected --uninstall, --packs <names>, --no-packs, --specialists <names>,' +
         ' --no-specialists, --scan <dir>, --update, --depth <n>, --lint [dir],' +
-        ' --roster legacy|new, --grant-push, --grants-local, or --verify-pin)'
+        ' --roster legacy|new, --grant-push, --grants-local, --verify-pin, --repin,' +
+        ' or --uninstall --ignore-manifest)'
     );
   } else if (!dirArg) dirArg = a;
   else fail('Unexpected extra argument: ' + a);
@@ -1329,6 +1496,17 @@ if (grantsLocalFlag && uninstall) {
 }
 if (verifyPinFlag && (uninstall || scanArg !== null || lintFlag || updateFlag)) {
   fail('--verify-pin runs alone against one target: node install.js [targetDir] --verify-pin');
+}
+if (repinFlag && (uninstall || scanArg !== null || lintFlag || updateFlag)) {
+  fail('--repin runs alone against one target: node install.js [targetDir] --repin');
+}
+// --ignore-manifest (item 7, WO-14b leg-3 fix round 2B): the escape hatch
+// for a malformed .claude/orchestra.json that otherwise locks --uninstall
+// out entirely (refuseIfTargetMalformed refuses the WHOLE run, uninstall
+// included, on a file the owner cannot fix without hand-editing it first).
+// Only means something paired with --uninstall.
+if (ignoreManifestFlag && !uninstall) {
+  fail('--ignore-manifest only means something with --uninstall: node install.js [targetDir] --uninstall --ignore-manifest');
 }
 
 // --- lint mode: the frontmatter check on its own, for CI and contributors.
@@ -1442,34 +1620,56 @@ const orchestraRuntimeDir = path.join(dotClaude, ORCHESTRA_RUNTIME_DIRNAME);
 // bytes and a hash — it does not need the manifest to be well-formed to
 // report MISMATCH/NO-PIN honestly).
 if (verifyPinFlag) {
-  const pf = pinFilePath(target);
-  if (!fs.existsSync(pf)) {
-    console.log('NO-PIN — no pin recorded for this project (looked for ' + pf + ')');
+  const status = verifyPinStatus(target, orchestraJsonFile);
+  if (status.status === 'NO-PIN') {
+    console.log('NO-PIN — no pin recorded for this project' + (status.reason ? ' (' + status.reason + ')' : ' (looked for ' + status.pf + ')'));
     process.exit(1);
   }
-  let pin;
-  try {
-    pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
-  } catch (e) {
-    console.log('NO-PIN — pin file exists but is not valid JSON (' + pf + ': ' + e.message + ')');
-    process.exit(1);
-  }
-  if (!fs.existsSync(orchestraJsonFile)) {
-    console.log('MISMATCH — pin recorded at ' + pf + ' but .claude/orchestra.json no longer exists here');
-    process.exit(1);
-  }
-  const actualSha = crypto.createHash('sha256').update(fs.readFileSync(orchestraJsonFile)).digest('hex');
-  const realDir = projectRealPath(target);
-  if (actualSha === pin.manifestSha256 && realDir === pin.projectDir) {
-    console.log('MATCH — .claude/orchestra.json matches the pin recorded ' + pin.writtenAt + ' (' + pf + ')');
+  if (status.status === 'MATCH') {
+    console.log('MATCH — .claude/orchestra.json matches the pin recorded ' + status.pin.writtenAt + ' (' + status.pf + ')');
     process.exit(0);
   }
-  console.log('MISMATCH — .claude/orchestra.json has changed since the pin was written (' + pf + ')');
-  console.log('  pin projectDir:     ' + pin.projectDir);
-  console.log('  actual projectDir:  ' + realDir);
-  console.log('  pin manifestSha256: ' + pin.manifestSha256);
-  console.log('  actual sha256:      ' + actualSha);
+  if (status.status === 'MOVED') {
+    console.log('MOVED — no pin at this path, but the manifest\'s projectId resolves to a pin recorded ' + status.pin.writtenAt + ' at a different location, and its hash MATCHES the manifest here (' + status.idPf + ')');
+    console.log('  pinned projectDir (old): ' + status.pin.projectDir);
+    console.log('  actual projectDir (new): ' + status.realDir);
+    console.log('  Trusted (item 5: found by id, hash matches). Run --repin to also write a path-keyed pin for this location.');
+    process.exit(0);
+  }
+  // MISMATCH
+  console.log('MISMATCH — .claude/orchestra.json has changed since the pin was written (' + (status.pf && fs.existsSync(status.pf) ? status.pf : status.idPf) + ')');
+  console.log('  pin projectDir:     ' + status.pin.projectDir);
+  console.log('  actual projectDir:  ' + status.realDir);
+  console.log('  pin manifestSha256: ' + status.pin.manifestSha256);
+  console.log('  actual sha256:      ' + (status.actualSha || '(unavailable — ' + (status.reason || 'manifest missing') + ')'));
   process.exit(1);
+}
+
+// --repin (item 5): promotes a MOVED verdict (a relocated project, still
+// trusted because its hash matches the id-keyed pin) into a fresh
+// path-keyed pin at the new location — never usable to manufacture trust:
+// refused unless verifyPinStatus itself already says MOVED.
+if (repinFlag) {
+  const status = verifyPinStatus(target, orchestraJsonFile);
+  if (status.status !== 'MOVED') {
+    console.log('--repin refused: pin status here is ' + status.status + ', not MOVED. Nothing changed.');
+    process.exit(1);
+  }
+  const newPin = Object.assign({}, status.pin, {
+    projectDir: status.realDir,
+    writtenAt: new Date().toISOString(),
+  });
+  const body = JSON.stringify(newPin, null, 2) + '\n';
+  const pf = pinFilePath(target);
+  fs.mkdirSync(path.dirname(pf), { recursive: true });
+  fs.writeFileSync(pf, body, 'utf8');
+  if (newPin.projectId) {
+    const idPf = idPinFilePath(newPin.projectId);
+    fs.mkdirSync(path.dirname(idPf), { recursive: true });
+    fs.writeFileSync(idPf, body, 'utf8');
+  }
+  console.log('REPINNED — path-keyed pin written for the new location (' + pf + ')');
+  process.exit(0);
 }
 
 // Refuse before touching ANYTHING — settings.json, settings.local.json (if
@@ -1477,12 +1677,27 @@ if (verifyPinFlag) {
 // items 5/6/7). Runs for both install and uninstall, before any fs mutation
 // below (including the frontmatter lint's own file reads, which touch
 // nothing in the target either way).
+// Item 7 (WO-14b leg-3 fix round 2B): --uninstall --ignore-manifest skips
+// this check for orchestra.json specifically — a malformed manifest must
+// never lock the owner out of removing the harness, and the whole point of
+// --ignore-manifest is running the uninstall's untracked path WITHOUT
+// reading this file at all (not even to validate it).
+const manifestMalformedCheck = uninstall && ignoreManifestFlag ? [] : [
+  {
+    file: orchestraJsonFile,
+    checkRosterGeneration: true,
+    hint: uninstall
+      ? '.claude/orchestra.json may simply be deleted to proceed — --uninstall handles a project ' +
+        'with no manifest cleanly once it is gone — or re-run with --uninstall --ignore-manifest ' +
+        'to remove Orchestra without ever reading this file.'
+      : '.claude/orchestra.json may simply be deleted to proceed, if you do not need its contents preserved.',
+  },
+];
 refuseIfTargetMalformed([
   { file: settingsFile, checkPermissions: true },
   { file: settingsLocalFile, checkPermissions: true },
   { file: mcpFile },
-  { file: orchestraJsonFile, checkRosterGeneration: true },
-]);
+].concat(manifestMalformedCheck));
 // Remember each file's own indentation BEFORE anything below rewrites it —
 // writeJson() re-uses this so a rewrite preserves the source formatting
 // (2-space / 4-space / tab) instead of always re-serializing at 2 spaces.
@@ -1715,6 +1930,13 @@ if (!uninstall) {
       const hadSeats = manifest.seats !== undefined;
       manifest.roster = 'new';
       if (!hadSeats) manifest.seats = Object.assign({}, DEFAULT_SEATS);
+      // Item 5 (WO-14b leg-3 fix round 2B): mint projectId once, at the
+      // first --roster new install, and preserve it on every later run —
+      // it is what lets a pin survive the project directory moving (see
+      // "Manifest pin" / --repin).
+      if (typeof manifest.projectId !== 'string' || !manifest.projectId) {
+        manifest.projectId = crypto.randomUUID();
+      }
       const flipped = prevRoster !== 'new';
       if (flipped) {
         manifest.rosterGeneration =
@@ -1908,6 +2130,41 @@ if (!uninstall) {
   kept.push(HOOK_ENTRY);
   settings.hooks.PreToolUse = kept;
 
+  const grantsManifestExisted = fs.existsSync(orchestraJsonFile);
+  const grantsPriorManifest = grantsManifestExisted ? readJson(orchestraJsonFile) : {};
+  const userOwnedPerms = stringList(grantsPriorManifest.userOwnedPermissions);
+  // Item 3 (WO-14b leg-3 fix round 2B, cross-vendor review #2 MAJOR):
+  // installedPermissions/installedDeny are now {file, entry} pairs, not bare
+  // strings — see permEntryList's comment.
+  const priorTrackedPerms = permEntryList(grantsPriorManifest.installedPermissions);
+  const priorTrackedDeny = permEntryList(grantsPriorManifest.installedDeny);
+
+  // Upgrade fix (sdc-012 MAJOR / item 2, extended by item 3): a pre-existing
+  // broad Bash(git push:*) is, on every install, an artifact of an
+  // installer version that predates --grant-push and the exact-match
+  // allowlist — dfcfc9b granted it unconditionally, and an earlier revision
+  // of this master granted it under --grant-push. It is superseded either
+  // way, so it is stripped unconditionally from settings.json AND
+  // settings.local.json on EVERY install — not only the file this run
+  // happens to write grants into (cross-vendor review #2 MAJOR: an upgrade
+  // that ran with --grants-local left the broad grant standing forever in
+  // the OTHER file, since only the selected grants file was ever checked) —
+  // unless the manifest marks it user-owned ("userOwnedPermissions", a
+  // hand-authored escape hatch nothing sets automatically).
+  const strippedStalePushFiles = [];
+  if (!userOwnedPerms.includes(GIT_PUSH_PERMISSION)) {
+    for (const gf of [settingsFile, settingsLocalFile]) {
+      const isSettingsFile = gf === settingsFile;
+      if (!isSettingsFile && !fs.existsSync(gf)) continue;
+      const s = isSettingsFile ? settings : readJson(gf);
+      if (s.permissions && Array.isArray(s.permissions.allow) && s.permissions.allow.includes(GIT_PUSH_PERMISSION)) {
+        s.permissions.allow = s.permissions.allow.filter((p) => p !== GIT_PUSH_PERMISSION);
+        strippedStalePushFiles.push(path.basename(gf));
+        if (!isSettingsFile) writeJson(gf, s); // settingsFile itself is written below, once, with the hook merge
+      }
+    }
+  }
+
   // Merge git permission grants so the executor can commit (and, opt-in,
   // push) when a work order says to (relayed authorization is not enough —
   // see GIT_PERMISSIONS). settings.json by default; --grants-local (item 10)
@@ -1918,43 +2175,25 @@ if (!uninstall) {
   // evaluation, so the allowlist can never authorize --force/-f/--delete/
   // --mirror even in a guard stand-down window.
   const grantsFile = grantsLocalFlag ? settingsLocalFile : settingsFile;
+  const grantsFileName = path.basename(grantsFile);
   const grantsSettings = grantsFile === settingsFile ? settings : readJson(grantsFile);
   if (typeof grantsSettings.permissions !== 'object' || grantsSettings.permissions === null) {
     grantsSettings.permissions = {};
   }
-  let allow = Array.isArray(grantsSettings.permissions.allow) ? grantsSettings.permissions.allow : [];
+  const allow = Array.isArray(grantsSettings.permissions.allow) ? grantsSettings.permissions.allow : [];
 
-  // Upgrade fix (sdc-012 MAJOR / item 2): a pre-existing broad
-  // Bash(git push:*) is, on every install, an artifact of an installer
-  // version that predates --grant-push and the exact-match allowlist (item
-  // 3 below) — dfcfc9b granted it unconditionally, and this master's own
-  // prior revision (5ac3835) granted it under --grant-push. It is
-  // superseded either way, so it is stripped unconditionally — a rerun WITH
-  // --grant-push gets the new exact-match set instead, never this string
-  // again — unless the manifest marks it user-owned ("userOwnedPermissions",
-  // a hand-authored escape hatch nothing sets automatically).
-  const grantsManifestExisted = fs.existsSync(orchestraJsonFile);
-  const grantsPriorManifest = grantsManifestExisted ? readJson(orchestraJsonFile) : {};
-  const priorTrackedPerms = stringList(grantsPriorManifest.installedPermissions);
-  const userOwnedPerms = stringList(grantsPriorManifest.userOwnedPermissions);
-  let strippedStalePush = false;
-  if (allow.includes(GIT_PUSH_PERMISSION) && !userOwnedPerms.includes(GIT_PUSH_PERMISSION)) {
-    allow = allow.filter((p) => p !== GIT_PUSH_PERMISSION);
-    strippedStalePush = true;
-  }
-
-  // Push allowlist (item 3): an allowlist of exact safe invocations, never a
-  // `:*` prefix — a deny blacklist over free-form shell cannot be completed
-  // against a prefix allow (Red Team HIGH, 2026-09-01: -d, --del, --mir,
-  // +refspec, :branch, origin --delete all defeated the five original deny
-  // patterns while still matching `Bash(git push:*)`).
+  // Push allowlist (item 3, narrowed further by item 6): an allowlist of
+  // exact safe invocations, never a `:*` prefix — a deny blacklist over
+  // free-form shell cannot be completed against a prefix allow (Red Team
+  // HIGH, 2026-09-01: -d, --del, --mir, +refspec, :branch, origin --delete
+  // all defeated the five original deny patterns while still matching
+  // `Bash(git push:*)`).
   const desiredAllow = GIT_PERMISSIONS.slice();
   if (grantPushFlag) desiredAllow.push(...GIT_PUSH_SAFE_ALLOW);
   const missingPerms = desiredAllow.filter((p) => !allow.includes(p));
   grantsSettings.permissions.allow = allow.concat(missingPerms);
 
   let missingDeny = [];
-  const priorTrackedDeny = stringList(grantsPriorManifest.installedDeny);
   if (grantPushFlag) {
     const deny = Array.isArray(grantsSettings.permissions.deny) ? grantsSettings.permissions.deny : [];
     missingDeny = GIT_PUSH_DENY_PATTERNS.filter((p) => !deny.includes(p));
@@ -1973,19 +2212,19 @@ if (!uninstall) {
       desiredAllow.join(', ') +
       ') ' +
       (missingPerms.length ? 'merged into' : 'already present in') +
-      ' .claude/' + path.basename(grantsFile) + ' permissions.allow' +
+      ' .claude/' + grantsFileName + ' permissions.allow' +
       (grantsLocalFlag ? ' (--grants-local: per-developer, git-ignored, not on clone)' : '') +
       (grantPushFlag
         ? '; deny counterweight (' + GIT_PUSH_DENY_PATTERNS.join(', ') + ') ' +
           (missingDeny.length ? 'merged into' : 'already present in') + ' permissions.deny'
         : ' (push NOT granted — pass --grant-push for the exact-match allowlist, with its deny counterweight)')
   );
-  if (strippedStalePush) {
+  if (strippedStalePushFiles.length) {
     did(
-      'removed the broad Bash(git push:*) grant from .claude/' + path.basename(grantsFile) +
-        ' — installer-added by an older Orchestra version that granted push unconditionally ' +
-        '(a deny blacklist over a prefix allow cannot be completed; see README "Push is ' +
-        'opt-in").' +
+      'removed the broad Bash(git push:*) grant from .claude/' + strippedStalePushFiles.join(' and .claude/') +
+        ' (checked both settings.json and settings.local.json — item 3) — installer-added by an ' +
+        'older Orchestra version that granted push unconditionally (a deny blacklist over a ' +
+        'prefix allow cannot be completed; see README "Push is opt-in").' +
         (grantPushFlag
           ? ' Replaced by the exact-match allowlist above.'
           : ' Pass --grant-push to get the exact-match allowlist instead, or add ' +
@@ -1994,28 +2233,39 @@ if (!uninstall) {
   }
 
   // installedPermissions / installedDeny bookkeeping (A.5, sdc-012 Sonnet
-  // MINOR; items 1 and 4): tracked ONLY when this install writes, or has
-  // already written, a manifest for grant purposes — --roster new,
-  // --grant-push, or a project this installer already tracks from an
-  // earlier run. A byte-for-byte legacy install (no --roster new, no
-  // --grant-push, no prior tracking) must NOT create .claude/orchestra.json
-  // at all — that is the pinned legacy census (item 1). Its --uninstall
-  // instead falls back to the pre-existing exact-string removal of the
-  // add/commit pair (documented, sdc-012 Sonnet MINOR).
+  // MINOR; items 1 and 4; reshaped to {file, entry} pairs by item 3): tracked
+  // ONLY when this install writes, or has already written, a manifest for
+  // grant purposes — --roster new, --grant-push, or a project this
+  // installer already tracks from an earlier run. A byte-for-byte legacy
+  // install (no --roster new, no --grant-push, no prior tracking) must NOT
+  // create .claude/orchestra.json at all — that is the pinned legacy census
+  // (item 1). Its --uninstall instead falls back to the pre-existing
+  // exact-string removal of the add/commit pair (documented, sdc-012 Sonnet
+  // MINOR).
+  const newPermObjs = missingPerms.map((entry) => ({ file: grantsFileName, entry }));
+  const newDenyObjs = missingDeny.map((entry) => ({ file: grantsFileName, entry }));
+  const mergeUniquePermEntries = (prior, fresh) => {
+    const out = prior.slice();
+    for (const o of fresh) {
+      if (!out.some((e) => e.file === o.file && e.entry === o.entry)) out.push(o);
+    }
+    return out;
+  };
   const trackingActive =
     roster === 'new' || grantPushFlag || priorTrackedPerms.length > 0 || priorTrackedDeny.length > 0;
   if (trackingActive) {
-    const trackedPerms = Array.from(new Set(priorTrackedPerms.concat(missingPerms)));
-    const trackedDeny = grantPushFlag
-      ? Array.from(new Set(priorTrackedDeny.concat(missingDeny)))
-      : priorTrackedDeny;
+    const trackedPerms = mergeUniquePermEntries(priorTrackedPerms, newPermObjs);
+    const trackedDeny = grantPushFlag ? mergeUniquePermEntries(priorTrackedDeny, newDenyObjs) : priorTrackedDeny;
     const manifest = Object.assign({}, grantsPriorManifest, { installedPermissions: trackedPerms });
     if (trackedDeny.length) manifest.installedDeny = trackedDeny;
     else delete manifest.installedDeny;
     writeManifestAndPin(target, orchestraJsonFile, manifest);
     did(
-      '.claude/orchestra.json: installedPermissions tracks (' + trackedPerms.join(', ') + ')' +
-        (trackedDeny.length ? ', installedDeny tracks (' + trackedDeny.join(', ') + ')' : '') +
+      '.claude/orchestra.json: installedPermissions tracks (' +
+        trackedPerms.map((e) => e.file + ':' + e.entry).join(', ') + ')' +
+        (trackedDeny.length
+          ? ', installedDeny tracks (' + trackedDeny.map((e) => e.file + ':' + e.entry).join(', ') + ')'
+          : '') +
         ' for a clean --uninstall'
     );
   } else if (missingPerms.length) {
@@ -2145,67 +2395,121 @@ if (!uninstall) {
   // left to stand between the Director and the repo. refuseIfTargetMalformed()
   // above already refused on bad JSON before any of this runs.
 
-  // 1. Grants — installer-tracked only (sdc-012 Sonnet MINOR; items 1/2/4):
-  // an identical string the USER added independently (not recorded in
-  // orchestra.json's installedPermissions/installedDeny) survives; only
-  // entries this installer itself put there come out. Grants may live in
-  // settings.json or settings.local.json (item 10, --grants-local) — the
-  // manifest does not record which, so both are checked.
-  const priorManifest = fs.existsSync(orchestraJsonFile) ? readJson(orchestraJsonFile) : {};
-  const trackedPerms = stringList(priorManifest.installedPermissions);
-  const trackedDeny = stringList(priorManifest.installedDeny);
+  // 0. Read the manifest (unless --ignore-manifest, item 7) and check the pin
+  // it wrote BEFORE trusting any of its ledgers (item 2, Red Team HIGH): the
+  // manifest is an ordinary project file, so a MISMATCH or NO-PIN state
+  // means installedPermissions/installedDeny/installedFiles could be an
+  // attacker-supplied list rather than the truth. --ignore-manifest never
+  // even reads this file.
+  const manifestExistsForUninstall = !ignoreManifestFlag && fs.existsSync(orchestraJsonFile);
+  const priorManifest = manifestExistsForUninstall ? readJson(orchestraJsonFile) : {};
+  let ledgerTrusted = true;
+  let pinUntrustedReport = '';
+  if (manifestExistsForUninstall) {
+    const pinStatus = verifyPinStatus(target, orchestraJsonFile);
+    ledgerTrusted = pinStatus.status === 'MATCH' || pinStatus.status === 'MOVED';
+    if (!ledgerTrusted) {
+      pinUntrustedReport =
+        pinStatus.status + ' — this project\'s pin does not vouch for the .claude/orchestra.json on disk now (' +
+        (pinStatus.status === 'NO-PIN'
+          ? 'a manifest exists but no pin was ever recorded for it'
+          : 'the pin recorded ' + ((pinStatus.pin && pinStatus.pin.writtenAt) || '(unknown time)') + ' does not match') +
+        '). Refusing to trust installedPermissions/installedDeny/installedFiles — falling back to ' +
+        'the untracked exact-string grant removal and canonical roster-file removal instead.';
+      console.error('  ! ' + pinUntrustedReport);
+    }
+  }
+
+  // 1. Grants — installer-tracked only (sdc-012 Sonnet MINOR; items 1/2/4;
+  // reshaped to {file, entry} pairs by item 3): an identical string the USER
+  // added independently in either file (not recorded in orchestra.json's
+  // installedPermissions/installedDeny AGAINST THAT FILE) survives; only the
+  // (file, entry) pair this installer itself recorded comes out of that same
+  // file — a matching string tracked against settings.json is never used to
+  // remove a user-owned copy of it in settings.local.json, or vice versa
+  // (cross-vendor review #2 MAJOR).
+  const trackedPerms = ledgerTrusted ? permEntryList(priorManifest.installedPermissions) : [];
+  const trackedDeny = ledgerTrusted ? permEntryList(priorManifest.installedDeny) : [];
   const grantFiles = [settingsFile, settingsLocalFile];
 
   if (trackedPerms.length || trackedDeny.length) {
-    // Manifest-tracked install: remove exactly what is tracked.
+    // Manifest-tracked install with a trusted pin: remove exactly the
+    // (file, entry) pairs tracked against EACH file, never the other one's.
     for (const gf of grantFiles) {
       if (!fs.existsSync(gf)) continue;
-      const settings = readJson(gf);
+      const gfName = path.basename(gf);
+      const settingsG = readJson(gf);
       let changed = false;
-      if (trackedPerms.length && settings.permissions && Array.isArray(settings.permissions.allow)) {
-        const keptAllow = settings.permissions.allow.filter((p) => !trackedPerms.includes(p));
-        if (keptAllow.length !== settings.permissions.allow.length) {
-          if (keptAllow.length > 0) settings.permissions.allow = keptAllow;
-          else delete settings.permissions.allow;
+      const permsForFile = trackedPerms.filter((e) => e.file === gfName).map((e) => e.entry);
+      const denyForFile = trackedDeny.filter((e) => e.file === gfName).map((e) => e.entry);
+      if (permsForFile.length && settingsG.permissions && Array.isArray(settingsG.permissions.allow)) {
+        const keptAllow = settingsG.permissions.allow.filter((p) => !permsForFile.includes(p));
+        if (keptAllow.length !== settingsG.permissions.allow.length) {
+          if (keptAllow.length > 0) settingsG.permissions.allow = keptAllow;
+          else delete settingsG.permissions.allow;
           changed = true;
         }
       }
-      if (trackedDeny.length && settings.permissions && Array.isArray(settings.permissions.deny)) {
-        const keptDeny = settings.permissions.deny.filter((p) => !trackedDeny.includes(p));
-        if (keptDeny.length !== settings.permissions.deny.length) {
-          if (keptDeny.length > 0) settings.permissions.deny = keptDeny;
-          else delete settings.permissions.deny;
+      if (denyForFile.length && settingsG.permissions && Array.isArray(settingsG.permissions.deny)) {
+        const keptDeny = settingsG.permissions.deny.filter((p) => !denyForFile.includes(p));
+        if (keptDeny.length !== settingsG.permissions.deny.length) {
+          if (keptDeny.length > 0) settingsG.permissions.deny = keptDeny;
+          else delete settingsG.permissions.deny;
           changed = true;
         }
       }
       if (changed) {
-        if (settings.permissions && Object.keys(settings.permissions).length === 0) delete settings.permissions;
-        writeJson(gf, settings);
-        did('removed installer-added git permission grant(s) from .claude/' + path.basename(gf) + ' (identical user-added entries, if any, are preserved)');
+        if (settingsG.permissions && Object.keys(settingsG.permissions).length === 0) delete settingsG.permissions;
+        writeJson(gf, settingsG);
+        did('removed installer-added git permission grant(s) from .claude/' + gfName + ' (identical user-added entries — in this file or the other one — are preserved; ownership is tracked per file, item 3)');
       }
     }
   } else {
-    // Legacy fallback (item 1): a plain install never wrote a manifest, so
-    // there is nothing to consult — remove the add/commit pair by EXACT
-    // string match, matching the pre-leg-3 installer byte-for-byte
-    // (documented limitation, sdc-012 Sonnet MINOR: an identical string the
-    // user added independently is removed too).
+    // Untracked fallback (item 1: a plain legacy install never wrote a
+    // manifest; item 2: a manifest exists but its pin does not vouch for
+    // it) — remove the known Orchestra-authored strings by EXACT match
+    // instead of trusting a ledger that might not be ours: the add/commit
+    // pair (matching the pre-leg-3 installer byte-for-byte) plus the push
+    // exact-match allowlist and its deny counterweight (item 2: the
+    // Red Team's stranded-push-grant reproduction — installedPermissions
+    // edited to `[]` used to leave every push allow/deny entry behind
+    // forever). Documented limitation, sdc-012 Sonnet MINOR: an identical
+    // string the user added independently is removed too.
+    const fallbackAllow = GIT_PERMISSIONS.concat(GIT_PUSH_SAFE_ALLOW);
+    const fallbackDeny = GIT_PUSH_DENY_PATTERNS;
     for (const gf of grantFiles) {
       if (!fs.existsSync(gf)) continue;
-      const settings = readJson(gf);
-      if (settings.permissions && Array.isArray(settings.permissions.allow)) {
-        const keptAllow = settings.permissions.allow.filter((p) => !GIT_PERMISSIONS.includes(p));
-        if (keptAllow.length !== settings.permissions.allow.length) {
-          if (keptAllow.length > 0) settings.permissions.allow = keptAllow;
-          else delete settings.permissions.allow;
-          if (Object.keys(settings.permissions).length === 0) delete settings.permissions;
-          writeJson(gf, settings);
-          did('removed Bash(git add:*)/Bash(git commit:*) from .claude/' + path.basename(gf) + ' by exact string match (legacy install, untracked — sdc-012 Sonnet MINOR)');
+      const settingsG = readJson(gf);
+      let changed = false;
+      if (settingsG.permissions && Array.isArray(settingsG.permissions.allow)) {
+        const keptAllow = settingsG.permissions.allow.filter((p) => !fallbackAllow.includes(p));
+        if (keptAllow.length !== settingsG.permissions.allow.length) {
+          if (keptAllow.length > 0) settingsG.permissions.allow = keptAllow;
+          else delete settingsG.permissions.allow;
+          changed = true;
         }
+      }
+      if (settingsG.permissions && Array.isArray(settingsG.permissions.deny)) {
+        const keptDeny = settingsG.permissions.deny.filter((p) => !fallbackDeny.includes(p));
+        if (keptDeny.length !== settingsG.permissions.deny.length) {
+          if (keptDeny.length > 0) settingsG.permissions.deny = keptDeny;
+          else delete settingsG.permissions.deny;
+          changed = true;
+        }
+      }
+      if (changed) {
+        if (settingsG.permissions && Object.keys(settingsG.permissions).length === 0) delete settingsG.permissions;
+        writeJson(gf, settingsG);
+        did(
+          'removed Bash(git add:*)/Bash(git commit:*)/the push allowlist+deny by exact string match from ' +
+            '.claude/' + path.basename(gf) + ' (' +
+            (manifestExistsForUninstall ? 'pin-untrusted fallback, item 2' : 'legacy install, untracked — sdc-012 Sonnet MINOR') +
+            ')'
+        );
       }
     }
   }
-  if (fs.existsSync(orchestraJsonFile) && (priorManifest.installedPermissions !== undefined || priorManifest.installedDeny !== undefined)) {
+  if (ledgerTrusted && fs.existsSync(orchestraJsonFile) && (priorManifest.installedPermissions !== undefined || priorManifest.installedDeny !== undefined)) {
     const manifest = Object.assign({}, priorManifest);
     delete manifest.installedPermissions;
     delete manifest.installedDeny;
@@ -2278,28 +2582,81 @@ if (!uninstall) {
   }
 
   // roster:new files (role files, conductor file, runtime substrates, item
-  // 4) — removed strictly by the manifest's OWN record of what it installed
-  // (installedFiles), never by asking the CURRENT master what a roster:new
-  // install would contain today. A plain legacy install that never ran
-  // --roster new tracks no installedFiles, so this section removes nothing,
-  // leaving any file that happens to share a roster role name (e.g. a
-  // hand-authored .claude/agents/architect.md, or
+  // 4, containment-checked per item 1) — removed strictly by the manifest's
+  // OWN record of what it installed (installedFiles), never by asking the
+  // CURRENT master what a roster:new install would contain today. A plain
+  // legacy install that never ran --roster new tracks no installedFiles, so
+  // this section removes nothing, leaving any file that happens to share a
+  // roster role name (e.g. a hand-authored .claude/agents/architect.md, or
   // .claude/orchestra/user-data.txt) untouched (Red Team MAJOR,
   // 2026-09-01). Directories are removed only once they are empty — never a
   // wholesale recursive delete of .claude/orchestra/ or .claude/agents/*.
-  const trackedInstalledFiles = stringList(priorManifest.installedFiles);
   let removedRosterCount = 0;
   const touchedDirs = new Set();
-  for (const rel of trackedInstalledFiles) {
-    const f = path.join(dotClaude, rel);
-    if (fs.existsSync(f) && fs.statSync(f).isFile()) {
-      fs.unlinkSync(f);
-      removedRosterCount++;
-      touchedDirs.add(path.dirname(f));
+  if (ledgerTrusted) {
+    const trackedInstalledFiles = stringList(priorManifest.installedFiles);
+    let skippedUnsafeCount = 0;
+    for (const rel of trackedInstalledFiles) {
+      // Item 1 (Red Team HIGH, 2026-09-01): installedFiles is an ordinary
+      // manifest field an attacker (a hostile cloned repo, a compromised
+      // subagent) can edit, so before deleting anything at the joined path
+      // it must be proven to still resolve inside .claude/ — a `..`
+      // sequence with no depth limit, or a Windows/POSIX absolute path,
+      // reproduced deleting files entirely outside the project. Containment
+      // is checked on the RESOLVED path, never on the raw string.
+      const resolved = path.resolve(dotClaude, rel);
+      const relToDot = path.relative(dotClaude, resolved);
+      if (!relToDot || relToDot.startsWith('..') || path.isAbsolute(relToDot)) {
+        skippedUnsafeCount++;
+        console.error('  ! SKIPPED unsafe installedFiles entry (would resolve outside .claude/, never deleted): ' + rel);
+        continue;
+      }
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+        fs.unlinkSync(resolved);
+        removedRosterCount++;
+        touchedDirs.add(path.dirname(resolved));
+      }
     }
-  }
-  if (removedRosterCount) {
-    did('removed ' + removedRosterCount + " roster:new file(s) tracked in orchestra.json's installedFiles");
+    if (skippedUnsafeCount) {
+      did('SKIPPED ' + skippedUnsafeCount + ' unsafe installedFiles entr' + (skippedUnsafeCount === 1 ? 'y' : 'ies') + ' that would have resolved outside .claude/ — nothing outside the project was touched (item 1)');
+    }
+    if (removedRosterCount) {
+      did('removed ' + removedRosterCount + " roster:new file(s) tracked in orchestra.json's installedFiles");
+    }
+  } else if (manifestExistsForUninstall) {
+    // Untracked fallback (item 2): the ledger is not trusted, so remove
+    // only the KNOWN Orchestra roster:new item names — the eleven roster
+    // role files, ORCHESTRA-CONDUCTOR.md, and the named substrate
+    // directories — never the manifest's own (possibly attacker-supplied)
+    // installedFiles list.
+    for (const f of rosterRoleFiles()) {
+      if (f === ROSTER_CONDUCTOR_FILE) continue;
+      const p = path.join(agentsDir, f);
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        fs.unlinkSync(p);
+        removedRosterCount++;
+        touchedDirs.add(path.dirname(p));
+      }
+    }
+    if (fs.existsSync(conductorFile) && fs.statSync(conductorFile).isFile()) {
+      fs.unlinkSync(conductorFile);
+      removedRosterCount++;
+      touchedDirs.add(path.dirname(conductorFile));
+    }
+    for (const sub of ROSTER_SUBSTRATE_DIRS.concat([ROSTER_BRIDGE_DIRNAME])) {
+      const d = path.join(orchestraRuntimeDir, sub);
+      if (fs.existsSync(d)) {
+        fs.rmSync(d, { recursive: true, force: true });
+        removedRosterCount++;
+      }
+    }
+    if (removedRosterCount) {
+      did(
+        'pin untrusted — removed ' + removedRosterCount + ' known Orchestra roster:new item(s) by ' +
+          'canonical name/path (the eleven roster role files, ORCHESTRA-CONDUCTOR.md, the named ' +
+          'substrate directories) instead of trusting installedFiles (item 2)'
+      );
+    }
   }
   const dirsToCheck = new Set();
   for (const d of touchedDirs) {
@@ -2365,10 +2722,15 @@ if (!uninstall) {
     }
   }
 
-  // Pin (item 9): removed on uninstall even though orchestra.json itself is
-  // left in place below — the guard is no longer installed to honor it, and
-  // a stale pin would only cause a false MISMATCH/NO-PIN confusion later.
-  const removedPin = removePin(target);
+  // Pin (item 9, extended by item 5): removed on uninstall even though
+  // orchestra.json itself is left in place below — the guard is no longer
+  // installed to honor it, and a stale pin would only cause a false
+  // MISMATCH/NO-PIN/MOVED confusion later. Removes BOTH the path-keyed and
+  // id-keyed copies; the manifest's own projectId (when readable) lets the
+  // id-keyed copy be found even if the path-keyed one is already gone (a
+  // moved project that was never --repin'd).
+  const knownProjectId = manifestExistsForUninstall && typeof priorManifest.projectId === 'string' ? priorManifest.projectId : undefined;
+  const removedPin = removePin(target, knownProjectId);
   if (removedPin) did('removed pin (' + removedPin + ')');
 
   if (fs.existsSync(orchestraJsonFile)) {

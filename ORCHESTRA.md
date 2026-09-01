@@ -10,7 +10,7 @@ Find the line "You are powered by the model named …" in your system prompt/env
 
 - **Fable** → **MODE A** — full orchestra, Fable directs.
 - **Opus** → **MODE B** — Opus directs and owns review judgment.
-- **Sonnet, Haiku, or anything else** → Orchestra is **DORMANT**: this session's model is cast as a specialist, not a director. Tell the user in one line that the Orchestra needs Fable or Opus at the helm (`claude --model opus`), then operate as a normal session. The guard hook reads the session model itself and enforces only on positive evidence of a director model, so normal tools work with no pause file needed — including on the very first turn of a fresh session, when the model isn't in the transcript yet. (Any denial on a Sonnet/Haiku session means detection failed: tell the user to relaunch or pause the harness, see §6.)
+- **Sonnet, Haiku, or anything else** → Orchestra is **DORMANT**: this session's model is cast as a specialist, not a director. Tell the user in one line that the Orchestra needs Fable or Opus at the helm (`claude --model opus`), then operate as a normal session. The guard hook reads the session model itself and enforces only on positive evidence of a director model, so normal tools work with no pause file needed — including on the very first turn of a fresh session, when the model isn't in the transcript yet. That first-turn stand-down is the **legacy** default only: a project whose owner has pinned `roster: "new"` denies instead of standing down on that same undetermined-model turn (it clears on your next turn, once the model reaches the transcript). (Any denial on a Sonnet/Haiku session means detection failed: tell the user to relaunch or pause the harness, see §6.)
 
 ## 2. The company
 

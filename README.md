@@ -357,10 +357,30 @@ The installer is **idempotent** — run it again anytime to update a project to 
 **What these grants reach.** `permissions.allow` in `settings.json` is **session-wide** — it is not scoped to the executor agent, and it applies in every window where the guard hook is not actively enforcing Director law, not only when an executor is running. Three such windows exist today:
 
 - a non-director model at the helm (`claude --model sonnet`) — the guard stands down entirely, so the grants apply to the plain main session too;
-- a session's first turn, before any assistant model reaches the transcript (`model === null`) — same stand-down, for one turn;
+- a session's first turn, before any assistant model reaches the transcript (`model === null`) — same stand-down, for one turn, under the **legacy** roster only. Under a pinned `roster: "new"` this window does not stand down — it **denies** instead (see "Owner pin" below), which is the whole reason roster:new exists;
 - the pause switch, `.claude/orchestra.pause` or `ORCHESTRA_PAUSE=1` — the guard stands down for the whole session by design.
 
+A **fourth window existed and is now closed**: `latestMainModel()` used to read only the last 256 KB of the session transcript, so one oversized entry (e.g. a large tool result) could evict the real assistant turn out of that tail and land back on "undetermined" — an attacker-chosen stand-down rather than a user-chosen one. The guard now reads the whole transcript (bounded — see the code comment on `MAX_TRANSCRIPT_BYTES`) instead of a fixed-size tail, so an oversized entry can no longer evict the model marker.
+
 None of these are exotic: a quick `claude --model sonnet` for an unrelated one-liner, or a paused session for harness debugging, both carry the same `git add`/`git commit` (and, if granted, `git push`) authorization the executor has. This is not a defect to work around — it is what a session-wide `permissions.allow` grant means — but it is why `--grant-push` is opt-in rather than default, and why the deny counterweight travels with it unconditionally rather than being left to the reader's judgment.
+
+**Owner pin — `roster: "new"` only takes effect when pinned.** `.claude/orchestra.json` lives inside the project, so anything that can write into the project (a hostile cloned repo, pre-placement before the guard ever runs) can rewrite it. The manifest alone can therefore never grant `roster:new` or loosen the default blocklist — it can only do either when an **owner pin**, written outside the project, says so:
+
+```
+PIN_DIR = $ORCHESTRA_PIN_DIR || ~/.claude/orchestra/pins
+pin file = <PIN_DIR>/<sha256 hex of the project's real path>.json
+{ "projectDir": <real path>, "manifestSha256": <sha256 of the manifest's bytes>,
+  "roster": "new"|"legacy", "rosterGeneration": <int>, "seats": {...},
+  "writtenAt": <ISO>, "by": "install.js" }
+```
+
+The guard resolves policy from this pin, not the raw manifest:
+
+- **no pin file** → the project is **legacy** regardless of what the manifest claims, and the manifest's loosening keys (`directorAllowedTools`, `directorPlanPatterns`, `directorMemoryPatterns`) are honoured exactly as before the pin existed — an "unpinned legacy install" is a default-on-request, not an enforcement boundary;
+- **pin present, manifest bytes hash-match** the pin's `manifestSha256` → the manifest is trusted and honoured in full, but `roster` still comes from the pin;
+- **pin present, manifest missing/unreadable/hash-mismatched** → the manifest is **untrusted**: every loosening key is ignored, `roster`/`seats`/`rosterGeneration` come from the pin instead, and denial messages append `manifest untrusted (<reason>)`. Under a pinned `roster:new`, an undetermined session model still denies in this state.
+
+Even a trusted manifest can never remove `Bash`/`PowerShell` from the block set while `roster:new` is in effect — leg 4's ticket gate assumes those two are always enforceable once pinned. Everything else `directorAllowedTools` names can still be loosened.
 
 ### Uninstall
 
@@ -587,7 +607,8 @@ This trades tokens for quality and control, deliberately:
 
 | Symptom | Cause / fix |
 |---|---|
-| "Orchestra: the Director does not use X" denials | Working as intended on Fable/Opus — the session should delegate. On Sonnet/Haiku the guard stands down automatically, including on a fresh session's first turn (the guard enforces only on positive evidence of a director model). Any denial on Sonnet/Haiku means model detection failed — pause (above) and file a bug against the master. |
+| "Orchestra: the Director does not use X" denials | Working as intended on Fable/Opus — the session should delegate. On Sonnet/Haiku the guard stands down automatically, including on a fresh session's first turn under the legacy roster (the guard enforces only on positive evidence of a director model). Any denial on Sonnet/Haiku means model detection failed — pause (above) and file a bug against the master. |
+| "…undetermined session model … denies … rather than standing down" on a fresh session's first turn | Working as intended under a pinned `roster: "new"` — see "Owner pin" above. Legacy projects never see this; it clears itself on your next turn once the model reaches the transcript. |
 | "…would alter or remove the managed Orchestra block" denial | Working as intended — memory files are Director-editable, but the `<!-- ORCHESTRA:BEGIN/END -->` import block in `CLAUDE.md` is harness wiring and yours alone. The Director edits around it; removing the harness is `--uninstall`, pausing is `.claude/orchestra.pause`. |
 | Hook seems inactive | Did you approve project hooks at first launch? Check `/hooks` in Claude Code; confirm `.claude/settings.json` has the `orchestra-guard` entry. |
 | Executor/scout/detective getting blocked | Should never happen — project-settings PreToolUse hooks fire only for the main session, and the guard additionally exempts any call carrying subagent identity (`agent_id`/`agent_type`). If it does, pause the harness and re-run the installer to get the latest guard; failing that, file it as a bug against the master copy. |

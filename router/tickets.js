@@ -834,35 +834,49 @@ function appendAnomalySidecar(dir, anomaly) {
 }
 
 // Called only from inside withStore(), under the lock. Tolerant read, same
-// shape as readEventsRaw(): a missing file is "no anomalies"; a corrupt
-// trailing line (e.g. a concurrent appendAnomalySidecar() caught mid-write
-// by a reader that isn't holding this store's lock — cannot happen for THIS
-// store's own lock, but keeps the reader honest regardless) is skipped, not
-// this read's job to repair.
+// shape as readEventsRaw(): a missing file is "no anomalies". A corrupt/
+// unparseable line (e.g. a concurrent appendAnomalySidecar() caught
+// mid-write by a reader that isn't holding this store's lock — cannot
+// happen for THIS store's own lock, but keeps the reader honest regardless)
+// is NEVER silently dropped — rider from leg-2 review #6: the drain must
+// never lose a record it could not parse. Returns both channels so the
+// caller can (a) emit a normal lock_anomaly for every parsed record and (b)
+// emit a torn:true lock_anomaly naming each unparseable line, then write
+// the unparseable lines BACK to the sidecar (see truncateAnomaliesSidecar)
+// instead of truncating them away.
 function readAnomaliesSidecar(dir) {
   const file = anomaliesFile(dir);
   let raw;
   try {
     raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
-    return [];
+    return { records: [], torn: [] };
   }
-  const out = [];
+  const records = [];
+  const torn = [];
   for (const line of raw.split('\n')) {
     if (!line) continue;
-    try { out.push(JSON.parse(line)); } catch (e) { /* tolerate a corrupt trailing line */ }
+    try { records.push(JSON.parse(line)); } catch (e) { torn.push(line); }
   }
-  return out;
+  return { records, torn };
 }
 
 // Called only from withStore(), only once the write that consumed the
 // sidecar's contents (by emitting lock_anomaly lines for them) has actually
 // committed — mirrors exactly when store.lastLockAnomaly itself is cleared.
-// Best-effort: a failure here just means the same lines get re-emitted (as
-// harmless duplicate lock_anomaly audit lines) on the next write, never a
-// correctness problem.
-function truncateAnomaliesSidecar(dir) {
-  try { fs.writeFileSync(anomaliesFile(dir), ''); } catch (e) { /* best-effort */ }
+// `tornLines` (raw, unparseable line text — see readAnomaliesSidecar) is
+// written BACK verbatim rather than discarded: the drain must never lose a
+// record it could not parse (rider from leg-2 review #6). Write-all
+// discipline: the full replacement content is written in one call, never an
+// incremental edit, so a reader never observes a partially-rewritten
+// sidecar. Best-effort (matches this function's original contract): a
+// failure here just means the same lines get re-emitted (as harmless
+// duplicate lock_anomaly audit lines) on the next write, never a
+// correctness problem — the parsed records this call is asked to clear have
+// ALREADY been durably logged as lock_anomaly events before this runs.
+function truncateAnomaliesSidecar(dir, tornLines) {
+  const content = tornLines && tornLines.length ? tornLines.join('\n') + '\n' : '';
+  try { fs.writeFileSync(anomaliesFile(dir), content); } catch (e) { /* best-effort */ }
 }
 
 // Run `fn(data)` under the cross-process lock, persisting whatever `fn`
@@ -966,10 +980,22 @@ function withStore(store, fn) {
     // capture would be wrong here since we want whatever's on disk NOW,
     // under the lock. `store.lastLockAnomaly` (same-process fast path) is a
     // fallback only for the rare case the sidecar append itself failed.
-    const anomalyRecords = readAnomaliesSidecar(store.dir);
+    const sidecarDrain = readAnomaliesSidecar(store.dir);
+    const anomalyRecords = sidecarDrain.records;
+    const tornLines = sidecarDrain.torn;
     if (!anomalyRecords.length && store.lastLockAnomaly) anomalyRecords.push(store.lastLockAnomaly);
     for (const anomaly of anomalyRecords) {
       preLines.push(JSON.stringify({ at: nowIso(), id: null, from: null, to: null, event: 'lock_anomaly', data: anomaly, seq: next.seq }));
+    }
+    // Rider from leg-2 review #6: a line the sidecar drain could not parse is
+    // never silently lost — name it in its own lock_anomaly event (data.torn:
+    // true), and write it back to the sidecar below rather than truncating it
+    // away.
+    for (const raw of tornLines) {
+      preLines.push(JSON.stringify({
+        at: nowIso(), id: null, from: null, to: null, event: 'lock_anomaly',
+        data: { torn: true, raw }, seq: next.seq,
+      }));
     }
 
     const evList = (events || []).map((ev) => Object.assign({}, ev, { seq: next.seq }));
@@ -1003,9 +1029,13 @@ function withStore(store, fn) {
       try { fsHooks.afterRename({ dir: store.dir, lockDir, token }); } catch (e) { /* test-only hook; never let it mask a real commit */ }
     }
 
-    // Only clear/truncate once this write's anomaly line(s) are logged AND
-    // the state commit above actually succeeded.
-    if (anomalyRecords.length) truncateAnomaliesSidecar(store.dir);
+    // Only clear/rewrite once this write's anomaly line(s) are logged AND
+    // the state commit above actually succeeded. Fires whenever the sidecar
+    // had ANYTHING in it — parsed records (now cleared) or torn lines (now
+    // written back verbatim, never truncated away) — not just when there
+    // were parseable records (an all-torn sidecar must rewrite too, not be
+    // skipped).
+    if (anomalyRecords.length || tornLines.length) truncateAnomaliesSidecar(store.dir, tornLines);
     if (store.lastLockAnomaly) delete store.lastLockAnomaly;
 
     if (pendingErr) throw pendingErr;
@@ -1053,8 +1083,22 @@ function recordAttempt(data, id, event, reason, at) {
 
 // -------------------------------------------------------------- store admin
 
+// Rider from leg-2 review #6: `_fs` (incl. its `afterRename` hook) is a
+// test-only backdoor into this store's low-level filesystem calls — honoured
+// ONLY when the caller has explicitly opted in via
+// process.env.ORCHESTRA_TICKETS_TEST_HOOKS === '1'. A production caller
+// (hook process, MCP server, CLI) never sets this env var, so an accidental
+// or malicious `_fs` passed from outside a test harness is refused outright
+// rather than silently accepted — the alternative is a typed backdoor that
+// bypasses this store's own write-all-or-throw integrity checks in a
+// context nobody meant to enable them.
 function createTicketStore({ dir, init, lockStaleMs, lockBudgetMs, _fs } = {}) {
   if (!dir) throw new TicketStoreError('createTicketStore requires { dir }');
+  if (_fs && process.env.ORCHESTRA_TICKETS_TEST_HOOKS !== '1') {
+    throw new TicketStoreError(
+      'createTicketStore: _fs test hooks require process.env.ORCHESTRA_TICKETS_TEST_HOOKS === \'1\' — refusing to honour a caller-supplied _fs override outside a test harness'
+    );
+  }
   const file = ticketsFile(dir);
   const staleMs = lockStaleMs || DEFAULT_LOCK_STALE_MS;
   const budgetMs = lockBudgetMs || (staleMs + LOCK_BUDGET_PAD_MS);

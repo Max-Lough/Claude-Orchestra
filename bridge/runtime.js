@@ -40,6 +40,7 @@ const { createRouter } = require(path.join(SUBSTRATE_ROOT, 'router', 'router.js'
 const quartermaster = require(path.join(SUBSTRATE_ROOT, 'quartermaster', 'quartermaster.js'));
 const { validate } = require(path.join(SUBSTRATE_ROOT, 'verifier', 'schema-check.js'));
 const { readTrustedManifest, pinFileFor } = require(path.join(__dirname, 'manifest.js'));
+const closeModule = require(path.join(__dirname, 'close.js'));
 
 const CASTINGS_FILE = path.join(SUBSTRATE_ROOT, 'router', 'castings.json');
 const ALIASES_FILE = path.join(SUBSTRATE_ROOT, 'router', 'aliases.json');
@@ -209,10 +210,15 @@ function findByAgentId(store, agentId) {
 
 // ----------------------------------------------------------------- runtime
 
-function createRuntime({ projectDir } = {}) {
+function createRuntime({ projectDir, repoDir } = {}) {
   if (!projectDir || typeof projectDir !== 'string') {
     throw typedError('RUNTIME_CONFIG', 'createRuntime requires { projectDir }');
   }
+  // WO-14b leg 5: close() needs a git repo to verify commits against. It is
+  // almost always the project dir itself (the installed, single-repo case);
+  // `repoDir` exists only for the rare split layout, and defaults to
+  // `projectDir` so every leg-4 caller (which never passed it) is unaffected.
+  const effectiveRepoDir = repoDir && typeof repoDir === 'string' ? repoDir : projectDir;
   const ticketsDir = path.join(projectDir, ...TICKETS_DIR_REL);
   let storeCache = null;
   let routerCache = null;
@@ -630,6 +636,7 @@ function createRuntime({ projectDir } = {}) {
         reason: state.reason,
         file: pinFileFor(projectDir),
         failClosed: state.failClosed,
+        moved: state.moved === true, // WO-14b leg 5 Rider 2 (round-3 rule iv)
       },
     };
     try {
@@ -645,10 +652,18 @@ function createRuntime({ projectDir } = {}) {
 
   // ------------------------------------------------------------------ close
 
-  // Leg 5's job (verification + two-stage closure). This stub exists so
-  // adapters have a stable shape to call against today; it always refuses.
-  function close() {
-    throw typedError('NOT_IMPLEMENTED', 'close() is leg 5 work (verification + two-stage closure) — not implemented in leg 4');
+  // WO-14b leg 5: two-stage closure (bridge/close.js). `ticketId` names a
+  // RESOLVED ticket already bound by gate()'s SubagentStop handling (or the
+  // engine lifecycle wrappers above, for a codex-lane ticket) — this never
+  // accepts a caller-supplied report or verdict, only the id.
+  function close(ticketId) {
+    if (typeof ticketId !== 'string' || !ticketId.trim()) {
+      throw typedError('CLOSE_CONFIG', 'close() requires a ticket id');
+    }
+    const store = getStore();
+    const t = tickets.get(store, ticketId);
+    if (!t) throw typedError('CLOSE_CONFIG', 'unknown ticket ' + ticketId);
+    return closeModule.close({ ticket: t, projectDir, repoDir: effectiveRepoDir, store });
   }
 
   return {

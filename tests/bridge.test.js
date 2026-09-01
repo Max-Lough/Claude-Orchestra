@@ -18,7 +18,7 @@ const { spawnSync } = require('child_process');
 const MASTER = path.resolve(__dirname, '..');
 const { createRuntime } = require(path.join(MASTER, 'bridge', 'runtime.js'));
 const T = require(path.join(MASTER, 'router', 'tickets.js'));
-const { pinFileFor } = require(path.join(MASTER, 'bridge', 'manifest.js'));
+const { pinFileFor, readTrustedManifest } = require(path.join(MASTER, 'bridge', 'manifest.js'));
 
 // WO-14b leg 4b: every runtime here must resolve its owner pin from the SAME
 // temp directory this suite writes pins into — set once, process-wide, so
@@ -437,30 +437,30 @@ section("13. Manifest pin verification — manifest claims roster:new, NO pin at
   const doc = runtime.doctor();
   check("doctor() reports roster 'new' (forced, from the manifest's own claim — never a legacy downgrade)",
     doc.roster === 'new', JSON.stringify(doc));
-  check("doctor() reports pin.trusted:false, reason:'manifest claims new without a pin' (never 'unpinned')",
-    doc.pin.trusted === false && doc.pin.reason === 'manifest claims new without a pin', JSON.stringify(doc.pin));
+  check("doctor() reports pin.trusted:false, reason:'installed roster:new project without a pin' (never 'unpinned') [round-3]",
+    doc.pin.trusted === false && doc.pin.reason === 'installed roster:new project without a pin', JSON.stringify(doc.pin));
   check('doctor() pin.failClosed is true (roster:new + untrusted)',
     doc.pin.failClosed === true, JSON.stringify(doc.pin));
 
   const dispatchResult = runtime.dispatch(baseRequest());
   check('dispatch() refuses with typed MANIFEST_UNTRUSTED naming the reason',
     dispatchResult.ok === false && dispatchResult.outcome === 'MANIFEST_UNTRUSTED' &&
-      dispatchResult.reason === 'manifest claims new without a pin',
+      dispatchResult.reason === 'installed roster:new project without a pin',
     JSON.stringify(dispatchResult));
 
   const pre = runtime.gate(preEvent('TICKET=tkt-aa11bb22cc33dd44', 'builder', 'tu-unpinned'));
   check('gate() DENIES PreToolUse(Agent) rather than standing down (fail closed, not inert)',
     pre.hookSpecificOutput && pre.hookSpecificOutput.permissionDecision === 'deny' &&
-      /manifest claims new without a pin/.test(pre.hookSpecificOutput.permissionDecisionReason),
+      /installed roster:new project without a pin/.test(pre.hookSpecificOutput.permissionDecisionReason),
     JSON.stringify(pre));
   const stop = runtime.gate(stopEvent(false, []));
   check('gate() BLOCKS Stop unconditionally (fail closed, not inert)',
-    stop.decision === 'block' && /manifest claims new without a pin/.test(stop.reason), JSON.stringify(stop));
+    stop.decision === 'block' && /installed roster:new project without a pin/.test(stop.reason), JSON.stringify(stop));
 
   let threw = null;
   try { runtime.requireTicket({ id: 'tkt-aa11bb22cc33dd44', phase: 'exec' }); } catch (e) { threw = e; }
   check('requireTicket() throws TICKET_REQUIRED naming the untrusted manifest (never TICKET_NOT_REQUIRED)',
-    threw && threw.code === 'TICKET_REQUIRED' && /manifest claims new without a pin/.test(threw.message),
+    threw && threw.code === 'TICKET_REQUIRED' && /installed roster:new project without a pin/.test(threw.message),
     threw && threw.code + ': ' + threw.message);
 }
 
@@ -583,7 +583,8 @@ section("17. Manifest pin verification — a pin found by the PATH key whose own
   const pinPath = pinFileFor(dir);
   fs.mkdirSync(path.dirname(pinPath), { recursive: true });
   fs.writeFileSync(pinPath, JSON.stringify({
-    projectDir: 'C:/somewhere/else/entirely', manifestSha256: 'a'.repeat(64), roster: 'legacy', by: 'ATTACKER',
+    projectDir: 'C:/somewhere/else/entirely', manifestSha256: 'a'.repeat(64), roster: 'legacy',
+    rosterGeneration: 1, writtenAt: new Date().toISOString(), by: 'ATTACKER',
   }));
   const runtime = createRuntime({ projectDir: dir });
 
@@ -613,7 +614,7 @@ section("18. Manifest pin verification — ORCHESTRA_PIN_DIR pointing at a nonex
     process.env.ORCHESTRA_PIN_DIR = savedPinDir;
   }
   check('a nonexistent ORCHESTRA_PIN_DIR combined with a manifest claiming new -> UNTRUSTED-NEW (same as no pin dir configured at all)',
-    doc.roster === 'new' && doc.pin.trusted === false && doc.pin.reason === 'manifest claims new without a pin',
+    doc.roster === 'new' && doc.pin.trusted === false && doc.pin.reason === 'installed roster:new project without a pin',
     JSON.stringify(doc));
 }
 
@@ -671,6 +672,204 @@ section("20. Manifest pin verification — moved project whose manifest was ALSO
   check('reason names both the hash mismatch and the move',
     /manifest untrusted \(hash mismatch\)/.test(doc.pin.reason) && /project moved since pinning/.test(doc.pin.reason), doc.pin.reason);
   check('doctor() pin.failClosed is true (roster:new + untrusted)', doc.pin.failClosed === true, JSON.stringify(doc.pin));
+}
+
+// ============ 21. Rider 2 (round-3): roster:new fingerprint via .claude/orchestra/, no roster field at all
+
+section('21. Rider 2 round-3 — roster:new fingerprint via .claude/orchestra/ (a populated substrate dir, e.g. router/), manifest omits `roster` entirely, no pin: UNTRUSTED-NEW');
+
+{
+  const dir = tmpProject('bridge-fingerprint-dir-');
+  // A real install populates .claude/orchestra/ with substrate directories
+  // (router/, registry/, verifier/, quartermaster/, bridge/). The ticket
+  // bridge runtime itself lazily creates only a `tickets/` subdirectory
+  // there as an operational side effect (doctor()/dispatch() -> getStore())
+  // — that side effect must never itself count as the fingerprint (a plain
+  // legacy project whose doctor()/gate() merely got called once would
+  // otherwise flip roster:new on its very next read — see the second half
+  // of this section).
+  fs.mkdirSync(path.join(dir, '.claude', 'orchestra', 'router'), { recursive: true });
+  // Deliberately no orchestra.json at all — the fingerprint must be detected
+  // from the directory alone, independent of any manifest field.
+  const state = readTrustedManifest({ projectDir: dir });
+  check('fingerprint via a populated .claude/orchestra/ forces UNTRUSTED-NEW',
+    state.trusted === false && state.roster === 'new' && state.reason === 'installed roster:new project without a pin',
+    JSON.stringify(state));
+  check('moved is false (no pin at all)', state.moved === false, JSON.stringify(state));
+
+  // The runtime's OWN `.claude/orchestra/tickets/` side effect, alone, must
+  // NOT be read as a fingerprint (self-poisoning guard).
+  const dirTicketsOnly = tmpProject('bridge-fingerprint-ticketsonly-');
+  fs.mkdirSync(path.join(dirTicketsOnly, '.claude', 'orchestra', 'tickets'), { recursive: true });
+  const stateTicketsOnly = readTrustedManifest({ projectDir: dirTicketsOnly });
+  check('.claude/orchestra/tickets/ alone (the runtime\'s own side effect) is NOT a roster:new fingerprint',
+    stateTicketsOnly.roster === 'legacy' && stateTicketsOnly.reason === 'unpinned', JSON.stringify(stateTicketsOnly));
+}
+
+// ============ 22. Rider 2 (round-3): fingerprint via ORCHESTRA-CONDUCTOR.md alone
+
+section('22. Rider 2 round-3 — roster:new fingerprint via .claude/ORCHESTRA-CONDUCTOR.md alone, no pin: UNTRUSTED-NEW');
+
+{
+  const dir = tmpProject('bridge-fingerprint-conductor-');
+  fs.writeFileSync(path.join(dir, '.claude', 'ORCHESTRA-CONDUCTOR.md'), '# conductor\n');
+  const state = readTrustedManifest({ projectDir: dir });
+  check('fingerprint via ORCHESTRA-CONDUCTOR.md alone forces UNTRUSTED-NEW',
+    state.trusted === false && state.roster === 'new' && state.reason === 'installed roster:new project without a pin',
+    JSON.stringify(state));
+}
+
+// ============ 23. Rider 2 (round-3): fingerprint via a non-core file under .claude/agents/
+
+section('23. Rider 2 round-3 — roster:new fingerprint via a roster role file under .claude/agents/ (not one of the core six), no pin: UNTRUSTED-NEW');
+
+{
+  const dir = tmpProject('bridge-fingerprint-agents-');
+  fs.mkdirSync(path.join(dir, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.claude', 'agents', 'architect.md'), '# architect\n');
+  const state = readTrustedManifest({ projectDir: dir });
+  check('fingerprint via a roster role file forces UNTRUSTED-NEW',
+    state.trusted === false && state.roster === 'new' && state.reason === 'installed roster:new project without a pin',
+    JSON.stringify(state));
+
+  const dirCore = tmpProject('bridge-corefiles-only-');
+  fs.mkdirSync(path.join(dirCore, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(dirCore, '.claude', 'agents', 'scout.md'), '# scout\n');
+  fs.writeFileSync(path.join(dirCore, '.claude', 'agents', 'reviewer.md'), '# reviewer\n');
+  const stateCore = readTrustedManifest({ projectDir: dirCore });
+  check('the core six alone (e.g. scout.md, reviewer.md) is NOT a roster:new fingerprint',
+    stateCore.roster === 'legacy' && stateCore.reason === 'unpinned', JSON.stringify(stateCore));
+}
+
+// ============ 24. Rider 2 (round-3): installedPermissions/installedDeny alone are NOT a fingerprint (legacy installs write these too)
+
+section('24. Rider 2 round-3 — installedPermissions/installedDeny alone must NOT be read as a roster:new fingerprint (legacy installs also write them)');
+
+{
+  const dir = tmpProject('bridge-legacy-perms-');
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({
+    roster: 'legacy', installedPermissions: [{ file: 'settings.json', entry: 'Bash(git:*)' }], installedDeny: [{ file: 'settings.json', entry: 'Bash(rm:*)' }],
+  }, null, 2));
+  const state = readTrustedManifest({ projectDir: dir });
+  check('installedPermissions/installedDeny alone -> still plain unpinned legacy, not UNTRUSTED-NEW',
+    state.roster === 'legacy' && state.trusted === false && state.reason === 'unpinned', JSON.stringify(state));
+}
+
+// ============ 25. Rider 2 (round-3): strict pin schema — each way a pin can be invalid
+
+section('25. Rider 2 round-3 — strict pin schema: each malformed field makes the pin invalid (never partially trusted)');
+
+{
+  const base = (dir, manifestPath) => {
+    const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
+    return { projectDir: dir, manifestSha256, roster: 'new', rosterGeneration: 1, writtenAt: new Date().toISOString(), by: 'install.js' };
+  };
+  const cases = [
+    ['manifestSha256 uppercase hex (case-sensitive comparison rejects it)', (p) => { p.manifestSha256 = p.manifestSha256.toUpperCase(); }],
+    ['manifestSha256 wrong length', (p) => { p.manifestSha256 = 'ab12'; }],
+    ['roster outside the enum', (p) => { p.roster = 'newish'; }],
+    ['rosterGeneration not an integer', (p) => { p.rosterGeneration = 1.5; }],
+    ['rosterGeneration negative', (p) => { p.rosterGeneration = -1; }],
+    ['rosterGeneration missing', (p) => { delete p.rosterGeneration; }],
+    ['writtenAt not a valid date', (p) => { p.writtenAt = 'not-a-date'; }],
+    ['writtenAt missing', (p) => { delete p.writtenAt; }],
+    ['by missing', (p) => { delete p.by; }],
+    ['projectDir not a string', (p) => { p.projectDir = 12345; }],
+  ];
+  for (const [label, mutate] of cases) {
+    const dir = tmpProject('bridge-invalidpin-');
+    fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+    const pin = base(dir, path.join(dir, '.claude', 'orchestra.json'));
+    mutate(pin);
+    const pinPath = pinFileFor(dir);
+    fs.mkdirSync(path.dirname(pinPath), { recursive: true });
+    fs.writeFileSync(pinPath, JSON.stringify(pin));
+    const state = readTrustedManifest({ projectDir: dir });
+    check('invalid pin (' + label + ') -> untrusted-new, never partially trusted',
+      state.trusted === false && state.roster === 'new' && state.reason === 'corrupt pin', JSON.stringify(state));
+  }
+  // The control: the same shape, unmutated, IS valid.
+  const okDir = tmpProject('bridge-validpin-control-');
+  fs.writeFileSync(path.join(okDir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+  const okPin = base(okDir, path.join(okDir, '.claude', 'orchestra.json'));
+  const okPinPath = pinFileFor(okDir);
+  fs.mkdirSync(path.dirname(okPinPath), { recursive: true });
+  fs.writeFileSync(okPinPath, JSON.stringify(okPin));
+  const okState = readTrustedManifest({ projectDir: okDir });
+  check('control: the same shape, unmutated, is a VALID pin -> trusted', okState.trusted === true, JSON.stringify(okState));
+}
+
+// ============ 26. Rider 2 (round-3): third lookup key — git-<sha256(root commit)>.json
+
+section('26. Rider 2 round-3 — third pin lookup key: git-<sha256(root commit)>.json, tried after path and id both miss');
+
+{
+  const dir = tmpProject('bridge-gitkey-');
+  spawnSync('git', ['init', '-q', dir]);
+  spawnSync('git', ['-C', dir, 'config', 'user.email', 'test@example.com']);
+  spawnSync('git', ['-C', dir, 'config', 'user.name', 'test']);
+  fs.writeFileSync(path.join(dir, '.gitkeep'), '');
+  spawnSync('git', ['-C', dir, 'add', '.']);
+  spawnSync('git', ['-C', dir, 'commit', '-q', '-m', 'root']);
+  const rootRev = spawnSync('git', ['-C', dir, 'rev-list', '--max-parents=0', 'HEAD'], { encoding: 'utf8' });
+  const rootSha = String(rootRev.stdout || '').split('\n')[0].trim();
+  check('fixture sanity: root commit resolved', /^[0-9a-f]{7,40}$/i.test(rootSha), rootSha);
+
+  const manifestObj = { roster: 'new', rosterGeneration: 1, seats: {} };
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify(manifestObj, null, 2));
+  seedReadings(dir, GREEN);
+  const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, '.claude', 'orchestra.json'))).digest('hex');
+
+  const gitPinHash = crypto.createHash('sha256').update(rootSha, 'utf8').digest('hex');
+  const gitPinPath = path.join(PIN_DIR, 'git-' + gitPinHash + '.json');
+  // Same projectDir as `dir` — path key would normally hit first; write it
+  // ONLY under the git key to prove the git-key lookup itself resolves and
+  // is honoured (path/id both absent for this project).
+  fs.writeFileSync(gitPinPath, JSON.stringify({
+    projectDir: fs.realpathSync(dir), manifestSha256, roster: 'new', rosterGeneration: 1, writtenAt: new Date().toISOString(), by: 'install.js',
+  }));
+
+  const state = readTrustedManifest({ projectDir: dir });
+  check('a pin resolvable only by the git-root key is honoured -> trusted, not moved (projectDir agrees)',
+    state.trusted === true && state.moved === false, JSON.stringify(state));
+}
+
+// ============ 27. Rider 2 (round-3): git-keyed pin with a differing projectDir -> moved:true, trusted iff hash matches
+
+section('27. Rider 2 round-3 — git-keyed pin whose own projectDir differs from the current project: moved:true, trusted iff the manifest hash still matches');
+
+{
+  const oldDir = tmpProject('bridge-gitmoved-old-');
+  const newDir = tmpProject('bridge-gitmoved-new-');
+  spawnSync('git', ['init', '-q', newDir]);
+  spawnSync('git', ['-C', newDir, 'config', 'user.email', 'test@example.com']);
+  spawnSync('git', ['-C', newDir, 'config', 'user.name', 'test']);
+  fs.writeFileSync(path.join(newDir, '.gitkeep'), '');
+  spawnSync('git', ['-C', newDir, 'add', '.']);
+  spawnSync('git', ['-C', newDir, 'commit', '-q', '-m', 'root']);
+  const rootRev = spawnSync('git', ['-C', newDir, 'rev-list', '--max-parents=0', 'HEAD'], { encoding: 'utf8' });
+  const rootSha = String(rootRev.stdout || '').split('\n')[0].trim();
+
+  const manifestObj = { roster: 'new', rosterGeneration: 1, seats: {} };
+  fs.writeFileSync(path.join(newDir, '.claude', 'orchestra.json'), JSON.stringify(manifestObj, null, 2));
+  seedReadings(newDir, GREEN);
+  const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(path.join(newDir, '.claude', 'orchestra.json'))).digest('hex');
+
+  const gitPinHash = crypto.createHash('sha256').update(rootSha, 'utf8').digest('hex');
+  const gitPinPath = path.join(PIN_DIR, 'git-' + gitPinHash + '.json');
+  fs.writeFileSync(gitPinPath, JSON.stringify({
+    projectDir: fs.realpathSync(oldDir), manifestSha256, roster: 'new', rosterGeneration: 1, writtenAt: new Date().toISOString(), by: 'install.js',
+  }));
+
+  const state = readTrustedManifest({ projectDir: newDir });
+  check('git-keyed pin with a differing projectDir, hash MATCHES -> trusted:true, moved:true',
+    state.trusted === true && state.moved === true, JSON.stringify(state));
+
+  // Now the same setup but the manifest bytes no longer match the pin.
+  fs.writeFileSync(path.join(newDir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: { Architect: false } }, null, 2));
+  const state2 = readTrustedManifest({ projectDir: newDir });
+  check('git-keyed pin with a differing projectDir, hash MISMATCHES -> trusted:false, moved:true (still exposed)',
+    state2.trusted === false && state2.moved === true, JSON.stringify(state2));
 }
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed.');

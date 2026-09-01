@@ -331,8 +331,8 @@ async function case1() {
   const list = await s.rpc('tools/list');
   const tools = (list.result && list.result.tools) || [];
   const names = tools.map((t) => t.name).sort();
-  check('tools/list names the five lanes (WO-14b leg 4: + orchestra_dispatch)',
-    JSON.stringify(names) === JSON.stringify(['orchestra_crossplan', 'orchestra_dispatch', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
+  check('tools/list names the six lanes (WO-14b leg 5: + orchestra_close)',
+    JSON.stringify(names) === JSON.stringify(['orchestra_close', 'orchestra_crossplan', 'orchestra_dispatch', 'orchestra_doctor', 'orchestra_exec', 'orchestra_review']),
     JSON.stringify(names));
   const review = tools.find((t) => t.name === 'orchestra_review');
   check('orchestra_review requires work_order and executor_report',
@@ -883,6 +883,128 @@ async function case10() {
   }
 }
 
+// 11. WO-14b leg 5: orchestra_close — NOT_CLOSED on a non-RESOLVED ticket, and
+//    CLOSED end-to-end (close #1 PASS -> REVIEW_PENDING -> synthetic APPROVE
+//    verdict -> close #2 CLOSED) driven entirely over the MCP stdio tool.
+async function case11() {
+  section('11. WO-14b leg 5: orchestra_close');
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-close-'));
+  cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repo = path.join(root, 'project');
+  fs.mkdirSync(repo);
+  git(['init', '-q', '-b', 'main'], repo);
+  git(['config', 'user.email', 'test@example.com'], repo);
+  git(['config', 'user.name', 'Orchestra Test'], repo);
+  git(['config', 'commit.gpgsign', 'false'], repo);
+  fs.mkdirSync(path.join(repo, '.claude'));
+  // The verifier manifest (commands/coverage/versions) lives at the BASE
+  // commit only — close #1 passes manifestRef = the base ref (ruling 1a: the
+  // manifest is pinned OUTSIDE the audited commit), never the head tree.
+  fs.writeFileSync(path.join(repo, '.claude', 'orchestra.json'), JSON.stringify({
+    commands: [{ command: 'node -e "process.exit(0)"' }], coverage: 'complete', versions: [],
+  }, null, 2));
+  fs.writeFileSync(path.join(repo, 'lib.js'), 'module.exports = { ok: true };\n');
+  git(['add', '-A'], repo);
+  git(['commit', '-qm', 'base'], repo);
+  fs.writeFileSync(path.join(repo, 'feature.js'), 'module.exports = { feature: true };\n');
+  git(['add', '-A'], repo);
+  git(['commit', '-qm', 'add feature'], repo);
+  const closeHead = git(['rev-parse', 'HEAD'], repo);
+
+  // Installed-copy substrate under .claude/orchestra/ so loadBridgeRuntime()
+  // (ORCHESTRA_MCP_ROOT === repo below) can require bridge/runtime.js.
+  const orchestraDir = path.join(repo, '.claude', 'orchestra');
+  for (const sub of ['bridge', 'router', 'registry', 'verifier', 'quartermaster']) {
+    fs.cpSync(path.join(MASTER, sub), path.join(orchestraDir, sub), { recursive: true });
+  }
+  const readingsFile = path.join(repo, '.claude', 'orchestra-pool-readings.jsonl');
+  fs.writeFileSync(readingsFile, ['AU-all', 'AU-opus', 'AU-fable', 'OU'].map((bucket) => JSON.stringify({
+    ts: new Date().toISOString(), kind: 'reading', bucket, remainingFraction: 0.95, source: 'mcp-lane.test.js case11 fixture',
+  })).join('\n') + '\n');
+
+  const T = require(path.join(MASTER, 'router', 'tickets.js'));
+  const store = T.createTicketStore({ dir: path.join(orchestraDir, 'tickets'), init: true });
+  const CFG_HASH = crypto.createHash('sha256').update('mcp-lane case11 fixture').digest('hex');
+
+  function issueImpl(overrides) {
+    return T.issue(store, Object.assign({
+      kind: 'implementation', task_id: 'mcp-close-task', class: 'E2', role: 'builder',
+      rung: 'dense', tier: null, casting: { vendor: 'anthropic', model: 'claude-sonnet-5', effort: 'high' },
+      author_family: 'anthropic', config_hash: CFG_HASH,
+    }, overrides || {}));
+  }
+  function driveToResolved(ticketId, role, message, servedModel) {
+    T.consume(store, ticketId, { tool_use_id: 'tu-' + ticketId, role });
+    T.launch(store, ticketId, { agent_id: 'agent-' + ticketId, served_model: servedModel || 'claude-sonnet-5-20260101' });
+    return T.resolve(store, ticketId, {
+      agent_id: 'agent-' + ticketId, last_assistant_message: message,
+      agent_transcript_path: path.join(root, 'transcript-' + ticketId + '.jsonl'),
+    });
+  }
+  function bandCReport(status, commit) {
+    return [
+      'STATUS: ' + status, 'COMMIT: ' + commit, '',
+      'CHANGES', '- feature.js:1 — added feature', '',
+      'VERIFICATION', '- node -e "process.exit(0)" -> exit 0', '',
+      'DEVIATIONS', '- none', '', 'CONCERNS', '- none', '',
+    ].join('\n');
+  }
+  function verdictBlock(obj) { return '```verdict-json\n' + JSON.stringify(obj, null, 2) + '\n```\n'; }
+  function approveVerdict(overrides) {
+    return Object.assign({
+      verdict: 'APPROVE', findings: [],
+      claims_checked: [{ claim: 'change compiles', result: 'CONFIRMED', how: 'ran node -e' }],
+      refutation_duty: { present: true, what_was_tried: 'considered a no-op alternative; rejected' },
+      citation_replay: [{ citation: 'trivial pass', command: 'node -e "process.exit(0)"', result: 'MATCH' }],
+      served_model: 'gpt-5.6-sol', run_nonce: null, review: { cross_family: null },
+    }, overrides || {});
+  }
+  function writeRoutingEvent(ticketId, request) {
+    const file = path.join(orchestraDir, 'tickets', 'routing.events.jsonl');
+    fs.appendFileSync(file, JSON.stringify({ request, outcome: { tickets: { implementation: { id: ticketId } } } }) + '\n');
+  }
+
+  const s = mcpSession({ fx: { repo } });
+  await s.start();
+
+  // --- 11a. NOT_CLOSED on a non-RESOLVED ticket.
+  {
+    const openTicket = issueImpl();
+    const res = await s.rpc('tools/call', { name: 'orchestra_close', arguments: { ticket: openTicket.id } });
+    const text = resultText(res);
+    check('orchestra_close on a non-RESOLVED ticket -> NOT_CLOSED (RESOLVED required)',
+      /"outcome":\s*"NOT_CLOSED"/.test(text) && /RESOLVED/.test(text), text.slice(0, 400));
+  }
+
+  // --- 11b. CLOSED end-to-end: PASS -> REVIEW_PENDING -> synthetic APPROVE verdict -> CLOSED.
+  {
+    const impl = issueImpl();
+    writeRoutingEvent(impl.id, { risk: 'T2', class: 'E2' });
+    driveToResolved(impl.id, 'builder', bandCReport('DONE', closeHead), 'claude-sonnet-5-20260101');
+    const r1 = await s.rpc('tools/call', { name: 'orchestra_close', arguments: { ticket: impl.id } });
+    const t1 = resultText(r1);
+    check('close #1 over MCP -> REVIEW_PENDING', /"stage":\s*"REVIEW_PENDING"/.test(t1), t1.slice(0, 500));
+    let parsed1;
+    try { parsed1 = JSON.parse(t1); } catch (_) { parsed1 = null; }
+    const reviewerId = parsed1 && parsed1.reviewer_ticket && parsed1.reviewer_ticket.id;
+    check('close #1 issued a reviewer ticket id', !!reviewerId, t1.slice(0, 500));
+    if (reviewerId) {
+      driveToResolved(reviewerId, 'reviewer-openai',
+        'REVIEW ENGINE: OpenAI via Codex CLI\nREVIEW RUN NONCE: nonce-mcp-case11\n\n' +
+          verdictBlock(approveVerdict({ run_nonce: 'nonce-mcp-case11' })),
+        'UNKNOWN');
+      const r2 = await s.rpc('tools/call', { name: 'orchestra_close', arguments: { ticket: reviewerId } });
+      const t2 = resultText(r2);
+      check('close #2 over MCP -> CLOSED', /"outcome":\s*"CLOSED"/.test(t2) && /"ok":\s*true/.test(t2), t2.slice(0, 500));
+      check('both tickets transitioned to CLOSED on disk',
+        T.get(store, impl.id).status === 'CLOSED' && T.get(store, reviewerId).status === 'CLOSED');
+    }
+  }
+
+  s.close();
+}
+
 // ------------------------------------------------------------------- driver
 
 function finish() {
@@ -904,6 +1026,7 @@ async function main() {
   await case8();
   await case9();
   await case10();
+  await case11();
 }
 
 main().then(finish, (e) => {

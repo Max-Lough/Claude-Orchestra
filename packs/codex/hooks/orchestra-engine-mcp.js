@@ -882,6 +882,42 @@ const TOOLS = [
     },
   },
   {
+    name: 'orchestra_close',
+    description:
+      'WO-14b leg 5: two-stage ticket closure. On a RESOLVED implementation ticket, validates the bound ' +
+      'executor report and runs verifier.runVerification against it; on PASS, issues the computed opposite-' +
+      'family reviewer ticket and returns stage REVIEW_PENDING. On a RESOLVED reviewer ticket, parses its ' +
+      'mandatory trailing verdict-json block, constructs the verdict audit deterministically from replayed ' +
+      'citation evidence and dispatcher-owned family facts, and CLOSES both tickets only for a genuinely ' +
+      'closing verdict (APPROVE, cross-family, audit-valid, no blocking finding). Returns bridge/runtime.js\'s ' +
+      'close() result verbatim — every non-closing outcome is a typed NOT_CLOSED with a reason, never an ' +
+      'exception. Never accepts a caller-supplied report or verdict — only the ticket id; the bound report is ' +
+      'the one the host recorded at SubagentStop (or the engine run log for codex tickets).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string', description: 'The ticket id to close (an implementation or reviewer ticket already RESOLVED).' },
+      },
+      required: ['ticket'],
+    },
+    handler(id, a) {
+      const bridge = loadBridgeRuntime();
+      if (!bridge) {
+        transportError(id, ['the bridge runtime (bridge/runtime.js or .claude/orchestra/bridge/runtime.js) could not be loaded']);
+        return;
+      }
+      let result;
+      try {
+        const runtime = bridge.createRuntime({ projectDir: ROOT });
+        result = runtime.close((a && a.ticket) || '');
+      } catch (e) {
+        transportError(id, ['orchestra_close failed: ' + (e && e.message ? e.message : String(e))]);
+        return;
+      }
+      textResult(id, JSON.stringify(result, null, 2), result && result.ok === false);
+    },
+  },
+  {
     name: 'orchestra_doctor',
     description:
       'Check the Codex install without spending a review: resolves the real codex binary, names the install ' +

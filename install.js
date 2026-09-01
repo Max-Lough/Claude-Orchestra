@@ -630,6 +630,15 @@ const IMPORT_BLOCK = BEGIN + '\n@.claude/ORCHESTRA.md\n' + END;
 const GIT_PERMISSIONS = [
   'Bash(git add:*)',
   'Bash(git commit:*)',
+  // PL-13 (shakedown finding #6, 2026-09-02): the roster:new close path
+  // requires the builder to name a commit on a feature branch, but the
+  // permission classifier denied the builder's `git checkout -b` (only the
+  // PowerShell spelling was allowed in the target), so the order could not
+  // close and produced no telemetry. Branch CREATION from HEAD is the only
+  // form granted: `-b`/`-c` never discard work; `-B`/`-C` (reset an existing
+  // branch) and bare `git checkout <path>` (discards edits) do not match.
+  'Bash(git checkout -b:*)',
+  'Bash(git switch -c:*)',
 ];
 // The broad prefix allow this installer shipped before WO-14b leg-3 fix
 // round B — a deny blacklist over free-form shell can never be completed
@@ -1978,7 +1987,13 @@ for (let i = 0; i < args.length; i++) {
 if (rosterArg !== null && rosterArg !== 'legacy' && rosterArg !== 'new') {
   fail('--roster must be "legacy" or "new", got: ' + JSON.stringify(rosterArg));
 }
-const roster = rosterArg || 'legacy';
+// PL-14 (shakedown finding #7, 2026-09-02): a plain re-run used to default
+// to "legacy" and silently DOWNGRADED a roster:new install — gate hooks
+// removed, generation bumped, enforcement gone — while packs/specialists were
+// remembered. The roster is now inherited from the installed manifest
+// (.claude/orchestra.json "roster", the flag the runtime reads) when no
+// --roster is given; resolved below once the target paths exist.
+let roster = rosterArg; // null = inherit from the installed manifest, else "legacy"
 if (grantPushFlag && uninstall) {
   fail('--grant-push does nothing with --uninstall — grants are removed by uninstall itself.');
 }
@@ -2252,6 +2267,14 @@ function isOurGitattributes(raw) {
 const priorState = readJson(stateFile);
 const priorPacks = stringList(priorState.packs);
 const priorSpecialists = stringList(priorState.specialists);
+// PL-14: no --roster given → keep whatever generation is installed. The
+// manifest is the authority (it is what the guard/runtime read); the state
+// file is a fallback for a manifest that went missing. Never installed → legacy.
+if (roster === null) {
+  const priorManifestRoster = (readJsonSafe(orchestraJsonFile) || {}).roster;
+  const recorded = priorManifestRoster === 'new' || priorManifestRoster === 'legacy' ? priorManifestRoster : priorState.roster;
+  roster = recorded === 'new' ? 'new' : 'legacy';
+}
 
 // Explicit flag wins; otherwise inherit the recorded selection.
 const specialists = specialistsArg === null ? priorSpecialists : parseList(specialistsArg);
@@ -2905,8 +2928,9 @@ if (!uninstall) {
     version: VERSION || null,
     packs: packs.slice().sort(),
     specialists: specialists.slice().sort(),
+    roster: roster,
   });
-  did('selection recorded in .claude/' + STATE_FILE + ' (re-runs keep it; change it with --packs / --specialists)');
+  did('selection recorded in .claude/' + STATE_FILE + ' (re-runs keep it, roster included; change it with --packs / --specialists / --roster)');
 
   console.log('\nDone. Notes:');
   console.log(

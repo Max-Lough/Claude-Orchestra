@@ -438,6 +438,29 @@ function createRuntime({ projectDir, repoDir } = {}) {
       return result;
     }
 
+    // PL-12 (shakedown finding #5, 2026-09-02): route() returns
+    // `casting: null` for a COMPUTED role — R0 Reviewer, whose casting is
+    // derived from the author family set at close #1 and never cast here.
+    // A Conductor that dispatches class R0 directly must get a typed
+    // outcome, not a crash on `result.casting.casting` below; reviewer
+    // tickets are issued only by close() on a RESOLVED implementation ticket.
+    if (!result.casting || !result.casting.casting) {
+      const typed = {
+        ok: false,
+        outcome: 'COMPUTED_CASTING',
+        class: result.class,
+        role: result.role,
+        reason: 'class ' + request.class + ' (' + result.role + ') has a computed casting and cannot be dispatched ' +
+          'directly — reviewer tickets are issued by orchestra_close on the RESOLVED implementation ticket',
+      };
+      try {
+        appendRoutingEvent(projectDir, { request, buckets_digest: digestBuckets(buckets), outcome: typed });
+      } catch (e) {
+        return { ok: false, outcome: e.code || 'ROUTING_LOG_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
+      }
+      return typed;
+    }
+
     // Item 9: fail closed on a missing/unreadable store rather than
     // silently reinitialising one — checked here, right before any ticket
     // would be issued (a routing outcome that isn't ok:true, or fails

@@ -881,8 +881,18 @@ found the feature already shipped, so no builder ran; recon tickets cannot close
 telemetry for recon-only orders). #2 (mortar explosion VFX +30%) — reached the builder, then the
 builder's `checkout -B … origin/main` removed the local-only harness under the session (PL-11);
 target repaired (`tools/shakedown/` + `roster/wo14b-activation-bridge-progress.md` last lines),
-push done. **Next: the owner restarts `claude --model fable` in the target and re-issues order
-#2 (VFX only, tests named).** Expected: builder → close #1 → Verifier → ticketed OpenAI reviewer
+push done. #2 re-run (2026-09-02, Fable helm) — spine through investigator → builder (Sonnet 5,
+DONE, 3180/3180 green) → RESOLVED, then stuck: the classifier denied the builder's Bash
+`git checkout -b`, so the bound report names no commit and close #1 can never pass (PL-13); the
+helm then tried to review by dispatching class R0 and crashed the server (PL-12). Both fixed the
+same day (typed `COMPUTED_CASTING`; installer grants `git checkout -b:*` / `git switch -c:*`),
+PL-7 docs rewritten, and PL-14 found+fixed while reinstalling (a plain `install.js` re-run
+downgraded the target to legacy — always verify `gate hooks: 4` / doctor `roster=new` after any
+reinstall). The mortar change is committed by hand as `843a29d5` on `feat/mortar-vfx-scale` and
+was reviewed out-of-band (Opus, APPROVE, 5 NITs) — **its telemetry is lost; no order has reached
+CLOSED yet.** Target now v2.4.1 roster:new generation 3, pin MATCH. **Next: the owner restarts
+`claude --model fable` in the target and issues order #3 — small, code-bearing, tests named.**
+Expected: builder commits on a feature branch → close #1 → Verifier → ticketed OpenAI reviewer
 → close #2 → CLOSED, and the FIRST `casting-record` + `verdict-audit` files under
 `<target>/.claude/orchestra/ledger/<task_id>/`. Read them; anything off → punch list.
 
@@ -896,11 +906,16 @@ tools/list + orchestra_doctor of the INSTALLED server), `ppp-call.js <project> <
 or `git restore --source=<tree> -- .` in the target: the first swept the harness (PL-9 fail-open:
 Claude Code treats a MISSING gate script as a non-blocking hook error and Agent launches proceed
 unticketed), the second removed 4,477 tracked files (restore matches the pathspec to the source
-tree). Recovery is always from HEAD/stash — nothing was lost. (3) A Sonnet helm is enforced too
-but told it is dormant (PL-7) — use Fable. (4) `enableAllProjectMcpServers: true` in the
-target's `settings.local.json` means no MCP approval prompt (PL-8). (5) Post-shakedown fix #1 =
-PL-9 (guard must require the gate script to exist); #2 = PL-11 installer `.gitignore`; #3 = PL-10
-recon close path.
+tree). Recovery is always from HEAD/stash — nothing was lost. (3) PL-7 FIXED: `ORCHESTRA.md` §1
+now says roster:new enforces every model and names the dispatch loop — a fresh helm should no
+longer open with an unticketed `scout`. (4) `enableAllProjectMcpServers: true` in the
+target's `settings.local.json` means no MCP approval prompt (PL-8). (5) Remaining post-shakedown
+fixes: #1 = PL-9 (guard must require the gate script to exist); #2 = PL-11 installer
+`.gitignore`; #3 = PL-10 recon close path. PL-12/13/14 are done. (6) Reinstalling into the
+target: `node install.js <target>` now inherits roster:new (PL-14), but still verify after any
+reinstall: `gate hooks: 4` in `settings.json`, `ppp-doctor` says `roster=new`, `--verify-pin`
+MATCH. A reinstall bumps the generation (all open tickets INVALIDATED) — do it between orders.
+(7) Never dispatch class R0 from the helm: reviewer tickets come only from `orchestra_close`.
 
 Branch **`claude/wo14b-bridge`** (off `claude/wo12-trials`). Read, in this order, and nothing else
 first:

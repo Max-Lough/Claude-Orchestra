@@ -627,7 +627,8 @@ function case9_installedPermissionsTracking() {
 
   install(target, ['--grant-push', '--no-packs', '--no-specialists']);
   const manifest = readJson(path.join(target, '.claude', 'orchestra.json'));
-  const expectedTracked = ['Bash(git add:*)'].concat(PUSH_SAFE_ALLOW).sort();
+  // PL-13: branch-creation grants ride along with add (commit is user-owned here).
+  const expectedTracked = ['Bash(git add:*)', 'Bash(git checkout -b:*)', 'Bash(git switch -c:*)'].concat(PUSH_SAFE_ALLOW).sort();
   // Item 3 (WO-14b leg-3 fix round 2B): installedPermissions/installedDeny
   // are now {file, entry} pairs, not bare strings.
   check(
@@ -1411,6 +1412,31 @@ function caseB5_patternKeyValidation() {
   check('--uninstall is NOT blocked by a broken pattern key', ok(rUninstall), out(rUninstall));
 }
 
+function case26_plainRerunKeepsRosterNew() {
+  section('26. PL-14 — a plain re-run (no --roster) keeps a roster:new install on roster:new; --roster legacy still flips it');
+
+  const target = tmpdir('orchestra-install-');
+  const rNew = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('(setup) --roster new install succeeds', ok(rNew), out(rNew));
+  const m1 = readJson(path.join(target, '.claude', 'orchestra.json'));
+  check('(setup) manifest roster is new', m1.roster === 'new', JSON.stringify(m1.roster));
+  const state1 = readJson(path.join(target, '.claude', 'orchestra-install.json'));
+  check('the state file records roster: new', state1.roster === 'new', JSON.stringify(state1));
+
+  const rPlain = install(target, []);
+  check('plain re-run succeeds', ok(rPlain), out(rPlain));
+  const m2 = readJson(path.join(target, '.claude', 'orchestra.json'));
+  check('plain re-run KEEPS roster: new (no silent downgrade)', m2.roster === 'new', JSON.stringify(m2.roster));
+  check('plain re-run keeps the generation (no bump on an unchanged roster)', m2.rosterGeneration === m1.rosterGeneration, m1.rosterGeneration + ' -> ' + m2.rosterGeneration);
+  const settings = readJson(path.join(target, '.claude', 'settings.json'));
+  const gateEntries = JSON.stringify(settings.hooks || {}).split('ticket-gate.js').length - 1;
+  check('plain re-run keeps the four ticket-gate hook entries', gateEntries === 4, 'gate entries: ' + gateEntries);
+  check('plain re-run keeps the packless selection too', Array.isArray(readJson(path.join(target, '.claude', 'orchestra-install.json')).packs), 'state file unreadable');
+
+  const rLegacy = install(target, ['--roster', 'legacy']);
+  check('an explicit --roster legacy still flips the roster', ok(rLegacy) && readJson(path.join(target, '.claude', 'orchestra.json')).roster === 'legacy', out(rLegacy));
+}
+
 function case24_gitRootPinKey() {
   section('24. Third pin key — git root commit (item 3)');
 
@@ -1593,6 +1619,7 @@ try {
   caseB5_patternKeyValidation();
   case24_gitRootPinKey();
   case25_userOwnHookBasenameCollisionSurvives();
+  case26_plainRerunKeepsRosterNew();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

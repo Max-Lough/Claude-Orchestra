@@ -401,6 +401,31 @@ section('10. INVALID_REQUEST on a request carrying integrity_nonce (dispatch-req
   check('dispatch() refuses a request carrying integrity_nonce', result.ok === false && result.outcome === 'INVALID_REQUEST', JSON.stringify(result));
 }
 
+// ==================================================== 10b. COMPUTED_CASTING (PL-12)
+
+section('10b. COMPUTED_CASTING on a direct R0 dispatch — typed outcome, nothing issued (PL-12, shakedown finding #5)');
+
+{
+  const dir = tmpProject('bridge-r0-');
+  writeManifest(dir);
+  seedReadings(dir, GREEN);
+  const runtime = createRuntime({ projectDir: dir });
+  let result;
+  let threw = null;
+  try {
+    result = runtime.dispatch(baseRequest({ class: 'R0', goal: 'review the mortar VFX change' }));
+  } catch (e) {
+    threw = e;
+  }
+  check('dispatch() of class R0 does not throw', threw === null, threw && threw.message);
+  check('dispatch() returns typed COMPUTED_CASTING', !!result && result.ok === false && result.outcome === 'COMPUTED_CASTING', JSON.stringify(result));
+  check('the reason points at orchestra_close', !!result && /orchestra_close/.test(String(result.reason)), result && result.reason);
+  check('no ticket was issued', openTicketsCount(dir) === 0 && T.list({ dir: path.join(dir, '.claude', 'orchestra', 'tickets') }).length === 0);
+  const eventsFile = path.join(dir, '.claude', 'orchestra', 'tickets', 'routing.events.jsonl');
+  const events = fs.existsSync(eventsFile) ? fs.readFileSync(eventsFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+  check('the non-routing outcome is still logged as a routing event', events.length === 1 && events[0].outcome && events[0].outcome.outcome === 'COMPUTED_CASTING', JSON.stringify(events));
+}
+
 // ==================================================== 11. Q0 companion ordering
 
 section('11. Q0 companion: two tickets issued; the implementation is unusable until the Q0 ticket is LAUNCHED');

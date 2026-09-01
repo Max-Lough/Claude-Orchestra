@@ -203,9 +203,10 @@ same fsync'd append, and commits at
 `newSeq = max(state.seq, maxOrphanSeq) + 1` — so the log always reads
 `[orphan(s)…, reconcile, this-event]` and an orphan seq is never reused by a
 real commit. If the lock can't be acquired at all, no reconciliation
-happens. **Invariant: the events log is always newline-terminated at the
-start of a locked write; a torn tail is closed and recorded as a reconcile
-with torn_tail.** Committed seq is monotonic; every seq in the log appears
+happens. **Invariant: the last line of the events log is a complete JSON
+record at the start of a locked write; a torn tail is closed (if it doesn't
+already end in a physical newline) and recorded as a reconcile with
+torn_tail.** Committed seq is monotonic; every seq in the log appears
 at most once as a non-orphan; orphans are always followed by a reconcile
 marker written under the lock. Typed refusals are logged the same way as
 successful transitions, including a `denied` event alongside the `expire`
@@ -236,6 +237,37 @@ accumulation (`tickets.js:318`, MINOR) — a takeover's own best-effort
 swept on every successful acquisition (best-effort, `.tomb-*` siblings
 older than `lockStaleMs`; a fresh tombstone is left alone). NIT: the
 unknown-holder timeout message no longer duplicates "for > budget".
+
+**Fix round 5 (review #5).** A short `writeSync()` (`tickets.js:625`,
+MAJOR) — Node's `fs.writeSync()` may write fewer bytes than asked without
+throwing, and the old append path never checked the return value, so a
+short write during a multi-event append (e.g. `bumpGeneration()`) could
+leave a partial line on disk while the caller committed `tickets.json` as
+though the whole payload had landed. The append now loops `writeSync` from
+a tracked byte offset until the payload is fully written, then confirms via
+`fstatSync` that the file actually grew by exactly that many bytes;
+otherwise it throws `TicketStoreError` before any state change (write-ahead
+ordering already means the state commit is unreachable once this throws).
+Cross-process anomaly durability (`tickets.js:769`, MINOR) — `lastLockAnomaly`
+lived only on the process-local `store` object, so a hook process that
+observed a post-commit ownership mismatch and then exited took the record
+with it. It's now also appended, durably and without a lock, to a sidecar
+`tickets.anomalies.jsonl`; the next locked write, in any process, reads the
+sidecar under the lock, emits one `lock_anomaly` event per surviving line,
+and truncates the sidecar once that write commits. Test timing
+(`tests/tickets.test.js:1206`, MINOR) — the post-commit-loss test used to
+swap `owner.json` from inside the write-ahead append hook, i.e. before the
+state rename, never exercising the actual post-commit window; `withStore()`
+now calls a test-only `_fs.afterRename` hook immediately after the rename
+and before release, so the test can pin the real timing boundary.
+Torn-tail parseability (`tickets.js:524`, MINOR) — "the file ends in `\n`"
+is not proof the last line is a complete record: a crash can leave a raw,
+unescaped newline byte inside an unterminated JSON string as the literal
+last byte written. `detectTornTail()` now requires the last non-empty line
+to actually `JSON.parse`; if it doesn't, everything from the start of that
+line to EOF is the torn fragment, whether or not it happens to end in a
+physical `\n` (an already-newline-terminated fragment gets no redundant
+boundary newline on repair).
 
 ## WO-6 defaults where the plan is silent
 

@@ -1185,7 +1185,7 @@ section('20. Fix round 4 (review #4, MAJOR, tickets.js:396) — a torn JSONL tai
 
 // ==================================================== 21. post-commit lock-ownership loss
 
-section('21. Fix round 4 (review #4, MINOR, tickets.js:600) — post-commit lock-ownership loss is recorded, not swallowed');
+section('21. Fix round 4/5 (review #4 MINOR tickets.js:600, review #5 MINOR tickets.js:769+tests:1206) — post-commit lock-ownership loss is recorded, not swallowed, durably and at the right timing window');
 
 {
   const dir = tmpDir('tkt-anomaly-');
@@ -1194,17 +1194,19 @@ section('21. Fix round 4 (review #4, MINOR, tickets.js:600) — post-commit lock
   const deadPid = dead.pid;
   check('21: sanity — the throwaway probe process is confirmed dead', typeof deadPid === 'number' && T._internal.isPidAlive(deadPid) === false);
 
-  // Inject the foreign-takeover at the exact "post-commit" window: the
-  // event line has genuinely been written (fsync'd) already, but the state
-  // rename hasn't happened yet — swapping owner.json here, from inside the
-  // fsHooks.appendFileSync used by the real write path, reproduces "the
-  // owner token changes after commit" without racing a second real process.
+  // Fix round 5 (review #5, MINOR, tests/tickets.test.js:1206): review #4's
+  // version of this test swapped owner.json from inside the
+  // fsHooks.appendFileSync used by the write-ahead event append — i.e.
+  // BEFORE writeStore()'s commit rename, not after. That never actually
+  // exercised the post-commit timing window the behavior is supposed to
+  // cover. `_fs.afterRename` is a test-only hook withStore() calls
+  // immediately after the state rename commits and before release — swap
+  // the token there instead, so this test pins the real window.
   let swapped = false;
   const store = T.createTicketStore({
     dir, init: true,
     _fs: {
-      appendFileSync: (file, text) => {
-        fs.appendFileSync(file, text);
+      afterRename: () => {
         if (!swapped) {
           swapped = true;
           fs.writeFileSync(path.join(lockDirPath, 'owner.json'), JSON.stringify({ pid: deadPid, token: 'foreign-token-xyz', at: Date.now(), host: 'other-host' }));
@@ -1226,6 +1228,13 @@ section('21. Fix round 4 (review #4, MINOR, tickets.js:600) — post-commit lock
     JSON.stringify(store.lastLockAnomaly));
   check('21: pin — a dead foreign owner\'s lock is cleaned up at release time (best-effort tombstone), so the following writer need not wait out staleness',
     !fs.existsSync(lockDirPath));
+  check('21: pin — the anomaly is ALSO durably recorded in the tickets.anomalies.jsonl sidecar (fix round 5, MINOR, tickets.js:769)',
+    (() => {
+      const sidecarPath = path.join(dir, 'tickets.anomalies.jsonl');
+      if (!fs.existsSync(sidecarPath)) return false;
+      const lines = fs.readFileSync(sidecarPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      return lines.length === 1 && lines[0].foundOwner && lines[0].foundOwner.token === 'foreign-token-xyz';
+    })());
 
   const t0 = Date.now();
   const t2 = T.issue(store, baseFields());
@@ -1240,6 +1249,63 @@ section('21. Fix round 4 (review #4, MINOR, tickets.js:600) — post-commit lock
       return !!anomalyLine && !!issueLine && lines.indexOf(anomalyLine) < lines.indexOf(issueLine) &&
         anomalyLine.data.foundOwner && anomalyLine.data.foundOwner.token === 'foreign-token-xyz' &&
         anomalyLine.seq === issueLine.seq && store.lastLockAnomaly === undefined;
+    })());
+  check('21: pin — the sidecar is truncated once that next write commits',
+    (() => {
+      const sidecarPath = path.join(dir, 'tickets.anomalies.jsonl');
+      return !fs.existsSync(sidecarPath) || fs.readFileSync(sidecarPath, 'utf8').trim() === '';
+    })());
+}
+
+// ==================================================== 21b. cross-process durability of the anomaly sidecar
+
+section('21b. Fix round 5 (review #5, MINOR, tickets.js:769) — the anomaly sidecar survives the observing process exiting: a fresh store object on the same dir still emits lock_anomaly');
+
+{
+  const dir2 = tmpDir('tkt-anomaly-crossproc-');
+  const lockDirPath2 = T._internal.lockFile(dir2);
+  const dead2 = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+  const deadPid2 = dead2.pid;
+
+  let swapped2 = false;
+  const storeA = T.createTicketStore({
+    dir: dir2, init: true,
+    _fs: {
+      afterRename: () => {
+        if (!swapped2) {
+          swapped2 = true;
+          fs.writeFileSync(path.join(lockDirPath2, 'owner.json'), JSON.stringify({ pid: deadPid2, token: 'foreign-token-crossproc', at: Date.now(), host: 'other-host' }));
+        }
+      },
+    },
+  });
+  storeA.lockStaleMs = 2000;
+  storeA.lockBudgetMs = 3000;
+  T.issue(storeA, baseFields()); // storeA observes the post-commit mismatch; sets storeA.lastLockAnomaly AND appends the sidecar line
+
+  check('21b: sanity — the sidecar file carries the anomaly durably on disk after storeA\'s write',
+    (() => {
+      const sidecarPath = path.join(dir2, 'tickets.anomalies.jsonl');
+      return fs.existsSync(sidecarPath) && fs.readFileSync(sidecarPath, 'utf8').trim().length > 0;
+    })());
+
+  // "Process A observes the mismatch and exits" — simulated here with a
+  // completely fresh createTicketStore() object on the same dir: it carries
+  // NO store.lastLockAnomaly of its own (that field only ever lived on
+  // storeA), so if the next write still emits lock_anomaly, it can only
+  // have come from the durable sidecar, not an in-process flag.
+  const storeB = T.createTicketStore({ dir: dir2 });
+  check('21b: sanity — the fresh store object carries no in-process anomaly flag', storeB.lastLockAnomaly === undefined);
+
+  const tB = T.issue(storeB, baseFields());
+  check('21b: pin — process B\'s write emits lock_anomaly (sourced from the sidecar, not an in-process flag) and truncates the sidecar under the lock',
+    (() => {
+      const lines = fs.readFileSync(path.join(dir2, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      const anomalyLine = lines.find((l) => l.event === 'lock_anomaly' && l.data && l.data.foundOwner && l.data.foundOwner.token === 'foreign-token-crossproc');
+      const issueLine = lines.find((l) => l.event === 'issue' && l.id === tB.id);
+      const sidecarPath = path.join(dir2, 'tickets.anomalies.jsonl');
+      const sidecarNowEmpty = !fs.existsSync(sidecarPath) || fs.readFileSync(sidecarPath, 'utf8').trim() === '';
+      return !!anomalyLine && !!issueLine && lines.indexOf(anomalyLine) < lines.indexOf(issueLine) && sidecarNowEmpty;
     })());
 }
 
@@ -1292,4 +1358,120 @@ section('23. Fix round 4 (review #4, NIT) — unknown-holder timeout message no 
     !/for > budget for > budget/.test(threw.message),
     threw && threw.message);
   fs.rmSync(lockDir, { recursive: true, force: true });
+}
+
+// ==================================================== 24. short writeSync is detected
+
+section('24. Fix round 5 (review #5, MAJOR, tickets.js:625) — a short writeSync is detected, not silently treated as complete');
+
+{
+  const store = freshStore('tkt-shortwrite-');
+  T.issue(store, baseFields()); // seq 0 -> 1
+  T.issue(store, baseFields()); // seq 1 -> 2
+  T.issue(store, baseFields()); // seq 2 -> 3
+  const eventsPath = path.join(store.dir, 'tickets.events.jsonl');
+  const statePath = path.join(store.dir, 'tickets.json');
+  const beforeEvents = fs.readFileSync(eventsPath);
+  const beforeState = fs.readFileSync(statePath);
+
+  // A multi-event bumpGeneration() append (one bumpGeneration line + three
+  // invalidate lines, all sharing one seq) whose writeSync short-writes
+  // exactly up to the end of the first line — a genuine partial write,
+  // Node's fs.writeSync CAN report fewer bytes than asked — and then throws
+  // on the retry, simulating the underlying write failing before the
+  // payload completes. Review #5's exact repro shape.
+  let calls = 0;
+  store._fs = {
+    writeSync: (fd, buf, offset, length) => {
+      calls++;
+      if (calls === 1) {
+        const text = buf.toString('utf8', offset, offset + length);
+        const nl = text.indexOf('\n');
+        const shortLen = nl >= 0 ? nl + 1 : length; // include the newline itself
+        return fs.writeSync(fd, buf, offset, shortLen); // a genuine, real short write
+      }
+      throw new Error('simulated write failure after the short write');
+    },
+  };
+
+  let threw = null;
+  try { T.bumpGeneration(store, 'short-write-probe'); } catch (e) { threw = e; }
+  check('24: pin — the mutation throws a TicketStoreError naming the short write', !!threw && threw instanceof T.TicketStoreError && /short write/.test(threw.message), threw && threw.message);
+  check('24: pin — writeSync was retried past the first short write (offset-tracking loop actually called again)', calls >= 2);
+
+  const afterState = fs.readFileSync(statePath);
+  check('24: pin — tickets.json is byte-identical after the throw — no state change results from a short write', beforeState.equals(afterState));
+
+  const afterEvents = fs.readFileSync(eventsPath);
+  check('24: pin — the events log grew (the short write itself DID land bytes) but the mutation never committed to tickets.json',
+    afterEvents.length > beforeEvents.length && afterEvents.slice(0, beforeEvents.length).equals(beforeEvents));
+
+  // Repair: the next locked write (no injected fault) reconciles whatever
+  // the short write left behind — either as a dropped-orphan seq (if it
+  // landed on a clean line boundary) or as a torn_tail (if it didn't) —
+  // either way the log is fully parseable and consistent again afterward.
+  delete store._fs;
+  let repaired = null;
+  try { repaired = T.bumpGeneration(store, 'post-short-write-repair'); } catch (e) { repaired = null; }
+  check('24: pin — the next locked write succeeds and repairs the log', !!repaired);
+
+  const finalLines = fs.readFileSync(eventsPath, 'utf8').trim().split('\n').filter(Boolean);
+  const finalParsed = finalLines.map((l) => JSON.parse(l));
+  check('24: pin — every line in the repaired log parses cleanly', finalParsed.length === finalLines.length);
+  check('24: pin — the repair produced a reconcile line accounting for the short write\'s leftover content',
+    finalParsed.some((l) => l.event === 'reconcile'));
+}
+
+// ==================================================== 25. torn-tail: parseability, not just trailing '\n'
+
+section('25. Fix round 5 (review #5, MINOR, tickets.js:524) — "ends with \\n" is not proof of a complete last line');
+
+{
+  // Case A: the file's last byte IS a physical '\n', but that newline is
+  // embedded raw inside an unterminated JSON string (as a crash mid-write
+  // could leave behind) — the old "last byte === '\n'" heuristic would have
+  // missed this entirely and treated the log as healthy.
+  const store = freshStore('tkt-embednl-');
+  const t = T.issue(store, baseFields());
+  const eventsPath = path.join(store.dir, 'tickets.events.jsonl');
+  const beforeBuf = fs.readFileSync(eventsPath);
+  check('25: sanity — the healthy log ends with a newline before corruption', beforeBuf[beforeBuf.length - 1] === 0x0a);
+
+  const brokenFragment = '{"at":"2026-01-01T00:00:00.000Z","id":"' + t.id + '","from":"OPEN","to":"CONSUMED","event":"consume","data":{"reason":"line one';
+  const corrupted = Buffer.concat([beforeBuf, Buffer.from(brokenFragment + '\n', 'utf8')]);
+  fs.writeFileSync(eventsPath, corrupted);
+  check('25: sanity — the corrupted file\'s last physical byte is still \'\\n\' (the old heuristic\'s blind spot)', corrupted[corrupted.length - 1] === 0x0a);
+
+  check('25: pin — an unlocked read detects the torn tail even though the file ends in \'\\n\' (store.tornTail true), without writing anything',
+    (() => {
+      const before2 = fs.readFileSync(eventsPath);
+      T.get(store, t.id);
+      const after2 = fs.readFileSync(eventsPath);
+      return store.tornTail === true && before2.equals(after2);
+    })());
+
+  const expectedFragment = Buffer.from(brokenFragment + '\n', 'utf8');
+  const expectedBytes = expectedFragment.length;
+  const expectedSha256 = crypto.createHash('sha256').update(expectedFragment).digest('hex');
+
+  T.consume(store, t.id, { tool_use_id: 'tu-embednl', role: 'Builder' });
+  const afterBuf = fs.readFileSync(eventsPath);
+  check('25: pin — no extra boundary \'\\n\' was inserted — the fragment already ended in a physical newline',
+    afterBuf.slice(0, corrupted.length).equals(corrupted));
+
+  const restLines = afterBuf.slice(corrupted.length).toString('utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const rec = restLines.find((l) => l.event === 'reconcile');
+  check('25: pin — the reconcile line names the fragment by bytes/sha256, including its own trailing newline',
+    !!rec && rec.data.torn_tail && rec.data.torn_tail.bytes === expectedBytes && rec.data.torn_tail.sha256 === expectedSha256,
+    JSON.stringify(rec));
+
+  const consumeLine = restLines.find((l) => l.event === 'consume');
+  check('25: pin — the mutation\'s own event is intact and parseable after the repair', !!consumeLine && consumeLine.id === t.id && consumeLine.to === 'CONSUMED');
+
+  // Case B: a healthy last line (complete JSON, trailing '\n') must NOT be
+  // flagged — no false positive.
+  const store2 = freshStore('tkt-nofalsepos-');
+  T.issue(store2, baseFields());
+  T.get(store2, 'tkt-0000000000000000');
+  check('25: pin — a valid, complete last line reports no torn tail (no false positive)', store2.tornTail === false);
 }

@@ -85,9 +85,12 @@
  * most once as a non-orphan (i.e. as the seq some write actually committed
  * as its state.seq); orphans are always followed by a reconcile marker
  * written under the lock, and the write that follows an orphan always
- * carries a seq strictly greater than every orphan it named. The events log
- * is always newline-terminated at the start of a locked write; a torn tail
- * is closed and recorded as a reconcile with torn_tail (fix round 4, below).
+ * carries a seq strictly greater than every orphan it named. The last line
+ * of the events log is always a complete JSON record at the start of a
+ * locked write (fix round 5 corrected this from the weaker "always
+ * newline-terminated" — see below); a torn tail is closed (if it doesn't
+ * already end in a physical newline) and recorded as a reconcile with
+ * torn_tail (fix round 4, below).
  *
  * WO-14b leg 2 fix round 4 (review #4, MAJOR + MINOR x2 + NIT, fixed):
  *
@@ -130,6 +133,70 @@
  * (d) [NIT] The unknown-holder timeout message no longer duplicates
  * "for > budget" (it was being appended both by the caller and by
  * waitOrThrow() itself).
+ *
+ * WO-14b leg 2 fix round 5 (review #5, MAJOR + MINOR x3, fixed):
+ *
+ * (a) [MAJOR, tickets.js:625] appendEventsOrThrow()'s default path used to
+ * call fs.writeSync() exactly once and assume the whole payload landed —
+ * writeSync is permitted to write fewer bytes than asked (short write) and
+ * the old code never checked its return value, so a short-write left a torn
+ * partial line on disk while the caller proceeded to commit tickets.json as
+ * though the append had fully succeeded (review #5's exact repro: a
+ * multi-event bumpGeneration() append short-writes after its first
+ * newline — three tickets go INVALIDATED and state commits, but only the
+ * bump event is durably logged). The write loop now tracks a byte offset
+ * and keeps calling writeSync from that offset until every byte of the
+ * payload is written; after the loop, fs.fstatSync(fd).size is compared
+ * against the pre-append size + payload length as a belt-and-braces
+ * integrity check — a mismatch (writeSync reporting more progress than
+ * actually landed, in principle impossible but not to be trusted blindly)
+ * throws TicketStoreError('short write...') BEFORE any state change, same
+ * as any other append failure: write-ahead ordering means withStore() never
+ * reaches writeStore() when this throws. A test-only `_fs.writeSync` (and
+ * optionally `_fs.openSync`/`_fs.fsyncSync`/`_fs.closeSync`/`_fs.fstatSync`)
+ * override lets a test inject a short/throwing writeSync against a REAL fd
+ * without relying on OS permission bits.
+ *
+ * (b) [MINOR, tickets.js:769] `lastLockAnomaly` used to live only on the
+ * process-local `store` object — a hook process that observed a post-commit
+ * ownership mismatch and then exited took the record with it; the next hook
+ * process opens the directory with a brand-new store object and never knew.
+ * releaseLockIfOwned()'s caller now ALSO durably appends the anomaly to a
+ * sidecar `tickets.anomalies.jsonl` (no lock needed — append-only, same
+ * write-all-or-throw discipline as appendEventsOrThrow, but best-effort:
+ * never lets a failure here mask the write that already committed) in
+ * addition to setting `store.lastLockAnomaly` (kept for same-process
+ * introspection). The NEXT locked write, in ANY process, reads the sidecar
+ * under the lock, emits one `lock_anomaly` event per surviving line into
+ * the main events log (before its own event line(s)), and truncates the
+ * sidecar once that write actually commits — mirroring exactly when
+ * `store.lastLockAnomaly` itself is cleared.
+ *
+ * (c) [MINOR, tickets.js:524] detectTornTail() used to treat "the file's
+ * last byte is '\n'" as proof the last line is a complete JSON record. It
+ * isn't: a crash can leave a raw, unescaped newline byte INSIDE an
+ * unterminated JSON string as the literal last byte written, which read as
+ * "newline-terminated" and slipped through uncaught. The check now also
+ * requires the last non-empty '\n'-delimited segment to JSON.parse; if it
+ * doesn't, that segment (plus everything after it, to EOF) is the torn
+ * fragment, named the same way (bytes/sha256) regardless of whether it
+ * happens to end in a physical '\n'. Because that fragment may already end
+ * in a real newline, the returned descriptor now also carries
+ * `needsBoundaryNewline` so withStore() only prepends its own boundary '\n'
+ * when the file doesn't already end in one — no redundant blank line.
+ *
+ * (d) [MINOR, tests/tickets.test.js:1206] The review-#4 post-commit-loss
+ * test injected the owner.json swap from inside the append hook, i.e.
+ * BEFORE writeStore()'s commit rename — it never actually exercised the
+ * post-rename timing window the behavior is supposed to cover. withStore()
+ * now calls a test-only `_fs.afterRename(ctx)` hook (never used in
+ * production) immediately after the state rename commits and before
+ * release, so the test can swap the token at exactly that boundary.
+ *
+ * INVARIANT (restated): the last line of the events log is a complete JSON
+ * record at the start of a locked write — not merely "the file ends in
+ * '\n'"; a torn tail (whether or not its own last byte is a physical '\n')
+ * is closed and recorded as a reconcile with torn_tail.
  *
  * Pure Node >= 20, no dependencies.
  */
@@ -221,6 +288,10 @@ function sleepSync(ms) {
 
 function ticketsFile(dir) { return path.join(dir, 'tickets.json'); }
 function eventsFile(dir) { return path.join(dir, 'tickets.events.jsonl'); }
+// Fix round 5 (review #5, MINOR, tickets.js:769): durable, cross-process
+// carrier for a post-commit lock-ownership anomaly — see
+// appendAnomalySidecar()/readAnomaliesSidecar()/truncateAnomaliesSidecar().
+function anomaliesFile(dir) { return path.join(dir, 'tickets.anomalies.jsonl'); }
 // Fix round 3: this is now a DIRECTORY path, not a file path — kept the
 // name (and the _internal export name) for continuity with fix-round-2
 // callers/docs that already say "tickets.lock".
@@ -501,18 +572,28 @@ function readEventsRaw(dir) {
   return out;
 }
 
-// Fix round 4 (review #4, MAJOR, tickets.js:396): read-only detection of a
-// torn JSONL tail — the events file is non-empty and its last byte isn't
-// '\n', meaning the last line is a partial write (crash or short-write
+// Fix round 4 (review #4, MAJOR, tickets.js:396) / fix round 5 (review #5,
+// MINOR, tickets.js:524): read-only detection of a torn JSONL tail — the
+// last non-empty '\n'-delimited segment of the events file fails to
+// JSON.parse, meaning it's a partial write (crash or short-write
 // mid-append), not a complete-but-uncommitted event (that case is
-// findOrphanSeqs()'s job). Returns null when there's nothing torn (file
-// missing, empty, or already newline-terminated); otherwise
-// { bytes, sha256 } describing the raw torn fragment (the bytes after the
-// last '\n', or the whole file if it contains no '\n' at all) — forensic
-// enough to name the gap without trying to parse or repair it here. Safe to
-// call unlocked: it never writes. Repairing it (closing the boundary,
-// recording the fragment in a reconcile line) only ever happens inside
-// withStore(), under the lock.
+// findOrphanSeqs()'s job). Fix round 5 corrected the fix-round-4 heuristic
+// ("last byte isn't '\n'") — that missed a crash that leaves a raw,
+// unescaped newline byte INSIDE an unterminated JSON string as the file's
+// literal last byte: it reads as "newline-terminated" while the content is
+// still a torn fragment. Parseability of the last real line is now the
+// actual test; the physical trailing-newline check only decides whether a
+// repair needs to add its own boundary '\n' (`needsBoundaryNewline`) or not
+// (the fragment may already end in one).
+//
+// Returns null when there's nothing torn (file missing, empty, blank, or
+// the last real line parses cleanly); otherwise
+// { bytes, sha256, needsBoundaryNewline } describing the raw torn fragment
+// (everything from the start of that unparseable last segment to EOF) —
+// forensic enough to name the gap without trying to parse or repair it
+// here. Safe to call unlocked: it never writes. Repairing it (closing the
+// boundary if needed, recording the fragment in a reconcile line) only ever
+// happens inside withStore(), under the lock.
 function detectTornTail(dir) {
   const file = eventsFile(dir);
   let raw;
@@ -521,10 +602,26 @@ function detectTornTail(dir) {
   } catch (e) {
     return null; // no log yet — nothing to be torn
   }
-  if (raw.length === 0 || raw[raw.length - 1] === 0x0a) return null;
-  const idx = raw.lastIndexOf(0x0a);
-  const fragment = raw.slice(idx + 1);
-  return { bytes: fragment.length, sha256: crypto.createHash('sha256').update(fragment).digest('hex') };
+  if (raw.length === 0) return null;
+  const text = raw.toString('utf8');
+  const segments = text.split('\n');
+  let lastIdx = segments.length - 1;
+  while (lastIdx >= 0 && segments[lastIdx] === '') lastIdx--;
+  if (lastIdx < 0) return null; // nothing but blank lines/newlines
+  const lastLine = segments[lastIdx];
+  try {
+    JSON.parse(lastLine);
+    return null; // the last real line is a complete, parseable JSON record
+  } catch (e) {
+    const prefix = segments.slice(0, lastIdx).join('\n') + (lastIdx > 0 ? '\n' : '');
+    const prefixBytes = Buffer.byteLength(prefix, 'utf8');
+    const fragment = raw.slice(prefixBytes);
+    return {
+      bytes: fragment.length,
+      sha256: crypto.createHash('sha256').update(fragment).digest('hex'),
+      needsBoundaryNewline: raw[raw.length - 1] !== 0x0a,
+    };
+  }
 }
 
 // Which logged seqs exceed the given committed seq? Read-only, no side
@@ -604,6 +701,31 @@ function writeStore(dir, data) {
 // boundary as the very first bytes of this single fsync'd append, so
 // nothing this write writes can ever land concatenated onto a prior torn
 // fragment.
+// Fix round 5 (review #5, MAJOR, tickets.js:625): the default path used to
+// call fs.writeSync() once and trust its return value's absence — writeSync
+// may write FEWER bytes than asked (a short write) without throwing, and
+// the old code never checked the count, so a short write left a torn
+// partial line on disk while the caller proceeded as though the whole
+// payload had landed. The write loop below tracks a byte offset and keeps
+// calling writeSync from that offset until every byte is written; a
+// zero/negative/non-finite progress report is treated as a hard failure
+// (not an infinite retry). After the loop, fs.fstatSync(fd).size is
+// compared against the pre-append size + payload length as a
+// belt-and-braces integrity check — a mismatch throws
+// TicketStoreError('tickets.events.jsonl short write...') BEFORE returning,
+// so (write-ahead ordering) withStore() never reaches the state commit.
+//
+// `fsHooks` (store._fs) supports two override shapes, both test-only:
+//  - `appendFileSync`: bypasses the write loop entirely (a full custom
+//    single-call append, used when a test wants to inject a real side
+//    effect mid-append via a wrapped fs.appendFileSync — e.g. the
+//    post-commit lock-anomaly probe). No fsync in this path.
+//  - `openSync`/`writeSync`/`fsyncSync`/`closeSync`/`fstatSync`: individual
+//    overrides of the low-level calls the write loop makes, defaulting to
+//    the real `fs.*` for anything not overridden — lets a test simulate a
+//    genuine short write (or a throw) against a REAL fd without relying on
+//    OS permission bits, which Windows does not enforce the same way a
+//    chmod would on POSIX.
 function appendEventsOrThrow(dir, fsHooks, lines, prefixNewline) {
   const file = eventsFile(dir);
   const text = (prefixNewline ? '\n' : '') + lines.join('\n') + '\n';
@@ -615,20 +737,132 @@ function appendEventsOrThrow(dir, fsHooks, lines, prefixNewline) {
     }
     return;
   }
+
+  const openSync = (fsHooks && fsHooks.openSync) || fs.openSync;
+  const writeSync = (fsHooks && fsHooks.writeSync) || fs.writeSync;
+  const fsyncSync = (fsHooks && fsHooks.fsyncSync) || fs.fsyncSync;
+  const closeSync = (fsHooks && fsHooks.closeSync) || fs.closeSync;
+  const fstatSync = (fsHooks && fsHooks.fstatSync) || fs.fstatSync;
+
+  let fd;
+  try {
+    fd = openSync(file, 'a');
+  } catch (e) {
+    throw new TicketStoreError('tickets.events.jsonl append failed: ' + e.message);
+  }
+
+  let preSize = null;
+  try {
+    preSize = fstatSync(fd).size;
+  } catch (e) {
+    // Non-fatal: the post-loop integrity check below just degrades to
+    // "unknown" (skipped) if we couldn't establish a baseline size.
+  }
+
+  const buf = Buffer.from(text, 'utf8');
+  let offset = 0;
+  try {
+    while (offset < buf.length) {
+      let written;
+      try {
+        written = writeSync(fd, buf, offset, buf.length - offset);
+      } catch (e) {
+        throw new TicketStoreError('tickets.events.jsonl append failed (short write at byte ' + offset + '/' + buf.length + '): ' + e.message);
+      }
+      if (!Number.isFinite(written) || written <= 0) {
+        throw new TicketStoreError('tickets.events.jsonl append failed: writeSync made no progress at byte ' + offset + '/' + buf.length);
+      }
+      offset += written;
+    }
+    fsyncSync(fd);
+  } catch (e) {
+    try { closeSync(fd); } catch (e2) { /* best effort */ }
+    throw e instanceof TicketStoreError ? e : new TicketStoreError('tickets.events.jsonl append failed: ' + e.message);
+  }
+
+  let postSize = null;
+  try {
+    postSize = fstatSync(fd).size;
+  } catch (e) {
+    // Non-fatal — see preSize above.
+  }
+  try { closeSync(fd); } catch (e) { /* best effort */ }
+
+  if (preSize !== null && postSize !== null && postSize !== preSize + buf.length) {
+    throw new TicketStoreError(
+      'tickets.events.jsonl short write: expected size ' + (preSize + buf.length) + ' after append but file is ' + postSize + ' bytes ' +
+      '(writeSync reported full progress that fstatSync did not confirm)'
+    );
+  }
+}
+
+// Fix round 5 (review #5, MINOR, tickets.js:769): durable, cross-process
+// carrier for a post-commit lock-ownership anomaly. `store.lastLockAnomaly`
+// alone only survives within the process that observed it — a hook process
+// that records it and then exits takes the record with it, and the next
+// hook process opens a brand-new store object that never knew. Appended
+// under the same write-all-or-throw discipline as appendEventsOrThrow's
+// default path (loop writeSync to a real fd until every byte lands, fsync),
+// but best-effort end-to-end: this runs from inside withStore()'s `finally`
+// (see below), where a failure here must never mask the write that already
+// committed, so every failure is swallowed rather than thrown. No lock is
+// taken or needed — this file is append-only, and the only reader
+// (readAnomaliesSidecar(), below) only ever runs under the ticket-store
+// lock itself.
+function appendAnomalySidecar(dir, anomaly) {
+  const file = anomaliesFile(dir);
+  const buf = Buffer.from(JSON.stringify(anomaly) + '\n', 'utf8');
   let fd;
   try {
     fd = fs.openSync(file, 'a');
   } catch (e) {
-    throw new TicketStoreError('tickets.events.jsonl append failed: ' + e.message);
+    return; // best-effort — store.lastLockAnomaly (same-process) is still set
   }
   try {
-    fs.writeSync(fd, text);
+    let offset = 0;
+    while (offset < buf.length) {
+      const written = fs.writeSync(fd, buf, offset, buf.length - offset);
+      if (!Number.isFinite(written) || written <= 0) break; // give up quietly; best-effort
+      offset += written;
+    }
     fs.fsyncSync(fd);
   } catch (e) {
-    try { fs.closeSync(fd); } catch (e2) { /* best effort */ }
-    throw new TicketStoreError('tickets.events.jsonl append failed: ' + e.message);
+    /* best-effort */
+  } finally {
+    try { fs.closeSync(fd); } catch (e2) { /* best-effort */ }
   }
-  fs.closeSync(fd);
+}
+
+// Called only from inside withStore(), under the lock. Tolerant read, same
+// shape as readEventsRaw(): a missing file is "no anomalies"; a corrupt
+// trailing line (e.g. a concurrent appendAnomalySidecar() caught mid-write
+// by a reader that isn't holding this store's lock — cannot happen for THIS
+// store's own lock, but keeps the reader honest regardless) is skipped, not
+// this read's job to repair.
+function readAnomaliesSidecar(dir) {
+  const file = anomaliesFile(dir);
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    return [];
+  }
+  const out = [];
+  for (const line of raw.split('\n')) {
+    if (!line) continue;
+    try { out.push(JSON.parse(line)); } catch (e) { /* tolerate a corrupt trailing line */ }
+  }
+  return out;
+}
+
+// Called only from withStore(), only once the write that consumed the
+// sidecar's contents (by emitting lock_anomaly lines for them) has actually
+// committed — mirrors exactly when store.lastLockAnomaly itself is cleared.
+// Best-effort: a failure here just means the same lines get re-emitted (as
+// harmless duplicate lock_anomaly audit lines) on the next write, never a
+// correctness problem.
+function truncateAnomaliesSidecar(dir) {
+  try { fs.writeFileSync(anomaliesFile(dir), ''); } catch (e) { /* best-effort */ }
 }
 
 // Run `fn(data)` under the cross-process lock, persisting whatever `fn`
@@ -715,26 +949,33 @@ function withStore(store, fn) {
     if (orphanSeqs.length || tornTail) {
       if (orphanSeqs.length) baseSeq = Math.max(readSeq, orphanSeqs[orphanSeqs.length - 1]);
       const recData = { dropped: orphanSeqs };
-      if (tornTail) recData.torn_tail = tornTail;
+      if (tornTail) recData.torn_tail = { bytes: tornTail.bytes, sha256: tornTail.sha256 };
       preLines.push(JSON.stringify({ at: nowIso(), id: null, from: null, to: null, event: 'reconcile', data: recData, seq: baseSeq }));
     }
 
     next.seq = baseSeq + 1;
 
-    // Fix round 4 (MINOR, tickets.js:600): a lock anomaly recorded by a
-    // PRIOR write's release (post-commit ownership loss — see withStore()'s
-    // finally, below) is surfaced here, on the very next locked write, as
-    // its own event line before this write's own event(s). Cleared only
-    // once this write actually commits (below), never merely queued.
-    const pendingAnomaly = store.lastLockAnomaly || null;
-    if (pendingAnomaly) {
-      preLines.push(JSON.stringify({ at: nowIso(), id: null, from: null, to: null, event: 'lock_anomaly', data: pendingAnomaly, seq: next.seq }));
+    // Fix round 4 (MINOR, tickets.js:600) / fix round 5 (review #5, MINOR,
+    // tickets.js:769): a lock anomaly recorded by a PRIOR write's release
+    // (post-commit ownership loss — see withStore()'s finally, below) is
+    // surfaced here, on the very next locked write, as its own event line
+    // (one per surviving sidecar entry, in file order) before this write's
+    // own event(s). The sidecar is the durable, cross-process source of
+    // truth — it carries the anomaly even when the process that observed it
+    // has since exited and this is a brand-new store object; `readSeq`-time
+    // capture would be wrong here since we want whatever's on disk NOW,
+    // under the lock. `store.lastLockAnomaly` (same-process fast path) is a
+    // fallback only for the rare case the sidecar append itself failed.
+    const anomalyRecords = readAnomaliesSidecar(store.dir);
+    if (!anomalyRecords.length && store.lastLockAnomaly) anomalyRecords.push(store.lastLockAnomaly);
+    for (const anomaly of anomalyRecords) {
+      preLines.push(JSON.stringify({ at: nowIso(), id: null, from: null, to: null, event: 'lock_anomaly', data: anomaly, seq: next.seq }));
     }
 
     const evList = (events || []).map((ev) => Object.assign({}, ev, { seq: next.seq }));
     const allLines = preLines.concat(evList.map((ev) => JSON.stringify(ev)));
     if (allLines.length) {
-      appendEventsOrThrow(store.dir, fsHooks, allLines, !!tornTail);
+      appendEventsOrThrow(store.dir, fsHooks, allLines, !!(tornTail && tornTail.needsBoundaryNewline));
     }
 
     // Immediately before the commit rename: re-read the on-disk seq.
@@ -751,7 +992,21 @@ function withStore(store, fn) {
     }
 
     writeStore(store.dir, next); // the commit point
-    if (pendingAnomaly) delete store.lastLockAnomaly; // only clear once logged AND committed
+
+    // Fix round 5 (review #5, MINOR, tests/tickets.test.js:1206): a
+    // test-only hook, never used in production, that fires immediately
+    // after the state rename commits and before release — lets a test
+    // inject a lock-ownership change at exactly the post-commit timing
+    // window the anomaly-recording behavior is supposed to cover, rather
+    // than faking it earlier (mid-append) as fix round 4's test did.
+    if (fsHooks && typeof fsHooks.afterRename === 'function') {
+      try { fsHooks.afterRename({ dir: store.dir, lockDir, token }); } catch (e) { /* test-only hook; never let it mask a real commit */ }
+    }
+
+    // Only clear/truncate once this write's anomaly line(s) are logged AND
+    // the state commit above actually succeeded.
+    if (anomalyRecords.length) truncateAnomaliesSidecar(store.dir);
+    if (store.lastLockAnomaly) delete store.lastLockAnomaly;
 
     if (pendingErr) throw pendingErr;
     return result;
@@ -766,12 +1021,18 @@ function withStore(store, fn) {
         // Fix round 4 (MINOR, tickets.js:600): record it instead of merely
         // swallowing it — the NEXT locked write logs it as `lock_anomaly`
         // (see above) and clears this flag once that write commits.
-        store.lastLockAnomaly = {
+        // Fix round 5 (review #5, MINOR, tickets.js:769): ALSO append it to
+        // the durable sidecar (tickets.anomalies.jsonl) — store.lastLockAnomaly
+        // alone doesn't survive this process exiting before the next write,
+        // which is exactly the shape a separate hook-process caller takes.
+        const anomaly = {
           at: nowIso(),
           detail: 'lock ownership lost after commit',
           expectedToken: e && e.expectedToken,
           foundOwner: e && e.foundOwner,
         };
+        store.lastLockAnomaly = anomaly;
+        appendAnomalySidecar(store.dir, anomaly);
       }
     }
   }

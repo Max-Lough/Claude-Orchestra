@@ -59,10 +59,10 @@ const telemetry = require(path.join(__dirname, 'telemetry.js'));
 const REPORT_SCHEMA = JSON.parse(fs.readFileSync(path.join(SUBSTRATE_ROOT, 'registry', 'schemas', 'report.schema.json'), 'utf8'));
 const VERDICT_SCHEMA = JSON.parse(fs.readFileSync(path.join(SUBSTRATE_ROOT, 'registry', 'schemas', 'verdict.schema.json'), 'utf8'));
 const ORDER_SCHEMA = JSON.parse(fs.readFileSync(path.join(SUBSTRATE_ROOT, 'registry', 'schemas', 'order.schema.json'), 'utf8'));
+const CASTINGS = JSON.parse(fs.readFileSync(path.join(SUBSTRATE_ROOT, 'router', 'castings.json'), 'utf8'));
 
 const REPORT_STATUSES = REPORT_SCHEMA.properties.status.enum;
 const TICKETS_DIR_REL = ['.claude', 'orchestra', 'tickets'];
-const LEDGER_DIR_REL = ['.claude', 'orchestra', 'ledger'];
 
 function typedError(code, message, extra) {
   const e = new Error(message);
@@ -125,6 +125,7 @@ function parseBandCReport(text) {
     raw: s,
     status,
     changes,
+    changesRaw,
     verificationRaw,
     deviationsRaw,
     concernsRaw,
@@ -179,6 +180,23 @@ function findRoutingEvent(projectDir, ticketId) {
   return null;
 }
 
+// ------------------------------------------------------------- envelope
+
+// WO-14b repair B item 1/2: the dispatch envelope bridge/runtime.js's
+// dispatch() writes before issuing any ticket, keyed by task_id (already a
+// required field on every ticket) — closure locates it directly, never by
+// searching routing.events.jsonl.
+function envelopeFile(projectDir, taskId) {
+  return path.join(telemetry.ledgerDir(projectDir, taskId), 'envelope.json');
+}
+function readEnvelope(projectDir, taskId) {
+  try {
+    return JSON.parse(fs.readFileSync(envelopeFile(projectDir, taskId), 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
 // ------------------------------------------------------------- git helpers
 
 function resolveParentRef(repoDir, commit) {
@@ -187,15 +205,9 @@ function resolveParentRef(repoDir, commit) {
   return String(r.stdout || '').trim() || null;
 }
 
-function ledgerDir(projectDir, ticketId) {
-  return path.join(projectDir, ...LEDGER_DIR_REL, String(ticketId));
-}
-function atomicWriteJson(file, obj) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = file + '.tmp-' + process.pid + '-' + Date.now();
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n');
-  fs.renameSync(tmp, file);
-}
+// DRY (repair B amendment): ledgerDir()/atomicWriteJson() are bridge/
+// telemetry.js's own — no duplicate definitions here.
+const { ledgerDir, atomicWriteJson } = telemetry;
 
 // ---------------------------------------------------------------- close #1
 
@@ -232,18 +244,37 @@ function closeImplementation(ctx, ticket) {
   if (!parsed.commit) {
     return notClosed('no commit named');
   }
+  // Item 3: all four Band-C sections must be present and non-empty (a
+  // literal "none" bullet counts as present) — never a partial report
+  // reaching the Verifier as if it were complete.
+  for (const [name, raw] of [
+    ['CHANGES', parsed.changesRaw],
+    ['VERIFICATION', parsed.verificationRaw],
+    ['DEVIATIONS', parsed.deviationsRaw],
+    ['CONCERNS', parsed.concernsRaw],
+  ]) {
+    if (!raw || !String(raw).trim()) {
+      return notClosed('incomplete report: missing or empty ' + name + ' section');
+    }
+  }
 
-  const baseRef = resolveParentRef(ctx.repoDir, parsed.commit);
+  // Item 2: close #1 reads the dispatch envelope by ticket (task_id) —
+  // never the reported commit's parent, never a routing-log search.
+  const envelope = readEnvelope(ctx.projectDir, ticket.task_id);
+  if (!envelope) {
+    return notClosed('envelope unavailable for task ' + ticket.task_id);
+  }
+  const baseRef = envelope.base || null; // the repo HEAD at dispatch — the immutable audit base
   const report = buildVerifierReport(parsed, ticket);
 
-  const routingEvent = findRoutingEvent(ctx.projectDir, ticket.id);
-  const candidateOrder = routingEvent && routingEvent.request && typeof routingEvent.request === 'object' ? routingEvent.request : undefined;
-  // The routing record is the raw dispatch REQUEST, not a full order.schema.json
-  // artifact (see the module doc comment) — only thread it through to
-  // runVerification when it actually validates; a non-conformant object would
-  // turn an omitted (skipped) check into a hard, unearned FAIL.
-  const order = candidateOrder && validate(ORDER_SCHEMA, candidateOrder).length === 0 ? candidateOrder : undefined;
-  const mutations = candidateOrder && Array.isArray(candidateOrder.mutations) ? candidateOrder.mutations : undefined;
+  // Item 2: the canonical order is the envelope's, validated against
+  // order.schema.json — if it does not validate, refuse (never skipped).
+  const orderProblems = validate(ORDER_SCHEMA, envelope.order || {});
+  if (orderProblems.length) {
+    return notClosed('envelope invalid: ' + orderProblems.join('; '));
+  }
+  const order = envelope.order;
+  const mutations = Array.isArray(order.mutations) ? order.mutations : undefined;
 
   const vOpts = {
     repoDir: ctx.repoDir,
@@ -273,10 +304,10 @@ function closeImplementation(ctx, ticket) {
   }
 
   // No review request is issued before this point.
-  if (!routingEvent || !routingEvent.request || !routingEvent.request.risk) {
-    return notClosed('cannot recover the dispatch record for ticket ' + ticket.id + ' — routing.events.jsonl has no matching entry with a risk tier; refusing to guess one');
+  if (!envelope.risk) {
+    return notClosed('envelope invalid: missing risk for ticket ' + ticket.id);
   }
-  const risk = routingEvent.request.risk;
+  const risk = envelope.risk;
 
   let buckets;
   try {
@@ -313,13 +344,27 @@ function closeImplementation(ctx, ticket) {
     config_hash: ticket.config_hash,
   });
 
+  // Item 9: close #1's spawn.prompt_header carries TICKET=, MODEL=,
+  // EFFORT=, ROLE=, and PINNED_RANGE=<base>..<head> — the same four-plus-one
+  // shape dispatch()'s own implementation spawn header carries, so the
+  // reviewer launcher can extract MODEL=/EFFORT=/ROLE= for itself and pass
+  // ticket/role to its engine tool verbatim (roster/reviewer-openai.md).
+  const reviewerCasting = revResult.casting || {};
+  const reviewerSubagentType = 'reviewer-' + reviewerFamily;
+  const promptHeader =
+    'TICKET=' + reviewerTicket.id + '\n' +
+    'MODEL=' + (reviewerCasting.model || '') + '\n' +
+    'EFFORT=' + (reviewerCasting.effort || '') + '\n' +
+    'ROLE=' + reviewerSubagentType + '\n' +
+    'PINNED_RANGE=' + (baseRef || '') + '..' + parsed.commit + '\n';
+
   return {
     ok: true,
     stage: 'REVIEW_PENDING',
     reviewer_ticket: reviewerTicket,
     spawn: {
-      subagent_type: 'reviewer-' + reviewerFamily,
-      prompt_header: 'TICKET=' + reviewerTicket.id + '\n',
+      subagent_type: reviewerSubagentType,
+      prompt_header: promptHeader,
       pinned_range: baseRef ? { base_ref: baseRef, head_ref: parsed.commit } : { head_ref: parsed.commit },
     },
   };
@@ -369,7 +414,13 @@ function closeReview(ctx, ticket) {
   if (ticket.kind !== 'reviewer') {
     return notClosed('close #2 requires a reviewer ticket; ' + ticket.id + ' is kind ' + ticket.kind);
   }
-  const bound = ticket.resolved && ticket.resolved.last_assistant_message;
+  // Item 4: when the ticket carries a bound engine_result, the verdict/
+  // report is taken ONLY from engine_result.report — the engine server's own
+  // captured output, bound via requireTicket()/engineResult() — never from
+  // the outer launcher's SubagentStop relay (resolved.last_assistant_message
+  // is model-narrated and forgeable by the launcher).
+  const hasEngineResult = !!(ticket.engine_result && typeof ticket.engine_result.report === 'string');
+  const bound = hasEngineResult ? ticket.engine_result.report : (ticket.resolved && ticket.resolved.last_assistant_message);
 
   if (isReviewUnavailableText(bound)) {
     return notClosed('review unavailable');
@@ -389,14 +440,20 @@ function closeReview(ctx, ticket) {
     return notClosed('reviewer_of target ' + ticket.reviewer_of + ' does not exist');
   }
 
-  // cross_family: computed from the two tickets' dispatcher-owned
-  // author_family fields, NEVER from the verdict text.
-  const crossFamily = implTicket.author_family !== ticket.author_family;
+  // Item 5: cross_family is derived from familyOf(casting.model) on each
+  // ticket's own dispatcher-owned SERVED casting — never from author_family
+  // fields (which the ticket schema stamps but this must not trust for the
+  // family comparison itself) and never from the verdict text.
+  const manifestStateForFamily = readTrustedManifest({ projectDir: ctx.projectDir });
+  const rtForFamily = createRouter({ seats: manifestStateForFamily.seats });
+  const implFamily = rtForFamily.familyOf(implTicket.casting && implTicket.casting.model);
+  const reviewerFamily2 = rtForFamily.familyOf(ticket.casting && ticket.casting.model);
+  const crossFamily = !!implFamily && !!reviewerFamily2 && implFamily !== reviewerFamily2;
 
-  // Codex-lane run_nonce: the runner's own asserted line must match the
-  // verdict block's own run_nonce for a codex-driven (OpenAI-family) review.
-  const isCodexLane = ticket.author_family === 'openai';
-  if (isCodexLane) {
+  // Codex-lane run_nonce: the runner's own asserted line (inside the
+  // authoritative bound report) must match the verdict block's own
+  // run_nonce for an engine-driven review (item 4).
+  if (hasEngineResult) {
     const runnerNonceMatch = /REVIEW RUN NONCE:\s*(\S+)/.exec(String(bound || ''));
     const runnerNonce = runnerNonceMatch ? runnerNonceMatch[1] : null;
     if (runnerNonce && verdictObj.run_nonce !== runnerNonce) {
@@ -447,39 +504,60 @@ function closeReview(ctx, ticket) {
   const findings = Array.isArray(verdictObj.findings) ? verdictObj.findings : [];
   const refutationDutyPresent = !!(verdictObj.refutation_duty && verdictObj.refutation_duty.present === true);
 
-  // gate_class: whether this verdict authorizes Principal-tier, data, or
-  // security work. Neither ticket carries the order's declared touches/tier
-  // today (see module doc comment) — the routing event, when recoverable,
-  // is the honest source; absent that, gate_class is false (never fabricated
-  // true), which only ever makes the audit LESS permissive (falsification_run
-  // stays optional rather than required).
-  const routingEvent = findRoutingEvent(ctx.projectDir, implTicket.id);
+  // Item 6: a non-MATCHES citation is excused ONLY by a reproduced finding
+  // whose OWN path matches that citation's path — never by any unrelated
+  // reproduced finding elsewhere in the same verdict.
+  function citationPath(citation) {
+    const s = String(citation || '');
+    const m = /^([^:]+):\d+$/.exec(s);
+    return m ? m[1] : s;
+  }
+  const badCitations = citationReplayItems.filter((c) => c.result !== 'MATCHES');
+  const citationsOk = badCitations.every((c) => {
+    const cp = citationPath(c.citation);
+    return findings.some((f) => f.reproduced === true && f.path === cp);
+  });
+
+  // Item 7: gate_class — whether this verdict authorizes Principal-tier,
+  // data, or security work — computed from the dispatch envelope's declared
+  // class/touches, using the real trigger lists (securityTriggerList,
+  // mandatoryReview.classes), never a fictitious touch value. Missing
+  // envelope data leaves gate_class false (never fabricated true), which
+  // only ever makes the audit LESS permissive.
+  const envelope = readEnvelope(ctx.projectDir, implTicket.task_id);
+  const envOrder = envelope && envelope.order;
+  const envTouches = envOrder && Array.isArray(envOrder.touches) ? envOrder.touches : [];
   const gateClass = !!(
-    routingEvent &&
-    routingEvent.request &&
-    (routingEvent.request.tier === 'principal' || (Array.isArray(routingEvent.request.touches) && routingEvent.request.touches.some((t) => ['security', 'data'].includes(t))))
+    envOrder &&
+    (CASTINGS.mandatoryReview.classes.includes(envOrder.class) ||
+      envTouches.some((t) => CASTINGS.securityTriggerList.includes(t)))
   );
+
+  // Item 7 (amended by the finish oracle, roster/wo14b-finish-plan.md): this
+  // tranche builds no falsification_run — there is no falsification
+  // mechanism yet, so a gate-class closure is refused outright, typed
+  // UNSUPPORTED_GATE_CLASS, before any audit is constructed. Non-gate-class
+  // closure proceeds as ordered.
+  if (gateClass) {
+    return notClosed('UNSUPPORTED_GATE_CLASS: gate-class work (security touches or a mandatory-review class) has no falsification mechanism in this tranche');
+  }
 
   const audit = {
     task_id: implTicket.task_id,
-    verdict: verdictObj.verdict === 'APPROVE' ? 'APPROVE' : 'REVISE', // audit vocabulary has no REJECT — a REJECT never passes the audit either way
+    verdict: verdictObj.verdict === 'APPROVE' ? 'APPROVE' : (verdictObj.verdict === 'REJECT' ? 'REJECT' : 'REVISE'),
     citation_replay: citationReplayItems,
     refutation_duty_present: refutationDutyPresent,
     cross_family: crossFamily,
-    gate_class: gateClass,
+    gate_class: false,
     outcome: 'FAIL',
   };
   const noBlockingFindings = !findings.some((f) => f.severity === 'CRITICAL' || f.severity === 'MAJOR');
-  const badCitations = citationReplayItems.filter((c) => c.result !== 'MATCHES');
-  const hasReproducedFinding = findings.some((f) => f.reproduced === true);
-  const citationsOk = badCitations.length === 0 || hasReproducedFinding;
   const auditPasses =
     verdictObj.verdict === 'APPROVE' &&
     crossFamily === true &&
     refutationDutyPresent === true &&
     citationsOk &&
-    noBlockingFindings &&
-    (!gateClass || (audit.falsification_run && audit.falsification_run.outcome === 'SURVIVED'));
+    noBlockingFindings;
   audit.outcome = auditPasses ? 'PASS' : 'FAIL';
 
   const auditProblems = validate(
@@ -491,25 +569,29 @@ function closeReview(ctx, ticket) {
   }
 
   // ---- decide (order §3.3) ----
+  let closeReason = null;
   if (verdictObj.verdict === 'REVISE' || verdictObj.verdict === 'REJECT') {
-    return notClosed(verdictObj.verdict, { findings });
-  }
-  // verdictObj.verdict === 'APPROVE' from here on.
-  if (!crossFamily) {
-    return notClosed('same-family review does not close — dispatch defect: reviewer ' + ticket.id + ' (' + ticket.author_family + ') and implementation ' + implTicket.id + ' (' + implTicket.author_family + ') share a family');
-  }
-  if (!noBlockingFindings) {
-    return notClosed('CRITICAL/MAJOR finding under APPROVE', { findings });
-  }
-  if (!citationsOk) {
-    return notClosed('citation MISMATCH unexplained');
+    closeReason = verdictObj.verdict;
+  } else if (!crossFamily) {
+    // verdictObj.verdict === 'APPROVE' from here on.
+    closeReason = 'same-family review does not close — dispatch defect: reviewer ' + ticket.id + ' and implementation ' + implTicket.id + ' share a family';
+  } else if (!noBlockingFindings) {
+    closeReason = 'CRITICAL/MAJOR finding under APPROVE';
+  } else if (!citationsOk) {
+    closeReason = 'citation MISMATCH unexplained';
   }
 
-  // ---- telemetry (order §3.4) — only once we have a genuinely closing,
-  // fully-audited verdict: casting-record is written only after the actual
-  // result is captured, never speculatively.
+  // Item 8 / order §3.4: telemetry is written for EVERY genuinely-audited
+  // outcome — closing or not — never only on the happy path. The reviewer's
+  // served_model comes from the engine result (the verdict block's own
+  // self-reported served_model, itself part of the authoritative bound
+  // report) for an engine-driven review, or 'UNKNOWN' — never the outer
+  // launcher's ticket.launched.served_model, which on the codex lane names
+  // the Haiku launcher, not the engine that actually served the review.
   const implServed = (implTicket.launched && implTicket.launched.served_model) || 'UNKNOWN';
-  const reviewerServed = (ticket.launched && ticket.launched.served_model) || 'UNKNOWN';
+  const reviewerServed = hasEngineResult
+    ? ((verdictObj && typeof verdictObj.served_model === 'string' && verdictObj.served_model) || 'UNKNOWN')
+    : ((ticket.launched && ticket.launched.served_model) || 'UNKNOWN');
   let implStatus = 'DONE';
   try {
     const implArtifact = JSON.parse(fs.readFileSync(path.join(ledgerDir(ctx.projectDir, implTicket.id), 'verifier.json'), 'utf8'));
@@ -517,11 +599,12 @@ function closeReview(ctx, ticket) {
   } catch (_) {
     /* best effort — keep the DONE default (this branch is only reachable via a prior PASS close #1) */
   }
+  const riskForTelemetry = (envelope && envelope.risk) || 'T1';
 
   telemetry.writeCastingRecord(ctx.projectDir, implTicket.id, {
     task_id: implTicket.task_id,
     class: implTicket.class,
-    risk: (routingEvent && routingEvent.request && routingEvent.request.risk) || 'T1',
+    risk: riskForTelemetry,
     role: implTicket.role,
     requested_casting: implTicket.casting,
     served_model: implServed,
@@ -533,17 +616,31 @@ function closeReview(ctx, ticket) {
   telemetry.writeCastingRecord(ctx.projectDir, ticket.id, {
     task_id: ticket.task_id,
     class: ticket.class,
-    risk: (routingEvent && routingEvent.request && routingEvent.request.risk) || 'T1',
+    risk: riskForTelemetry,
     role: ticket.role,
     requested_casting: ticket.casting,
     served_model: reviewerServed,
     bucket: 'OU',
     context_shape: 'repo',
     status: 'DONE',
-    verdict: verdictObj.verdict === 'APPROVE' ? 'APPROVE' : 'REVISE',
+    verdict: verdictObj.verdict === 'APPROVE' ? 'APPROVE' : 'REVISE', // casting-record's own verdict enum has no REJECT (out of this leg's FILES)
     review_cross_family: crossFamily,
   });
   telemetry.writeVerdictAudit(ctx.projectDir, ticket.id, audit);
+
+  if (closeReason) {
+    // Item 8: durable NOT_CLOSED on BOTH tickets — status stays RESOLVED
+    // (retryable), but the disclosed non-close is now recorded rather than
+    // only ever returned to this one caller.
+    const implClose = tickets.close(ctx.store, implTicket.id, { code: 'NOT_CLOSED', reason: closeReason });
+    const revClose = tickets.close(ctx.store, ticket.id, { code: 'NOT_CLOSED', reason: closeReason });
+    return notClosed(closeReason, {
+      findings: (verdictObj.verdict === 'REVISE' || verdictObj.verdict === 'REJECT') ? findings : undefined,
+      implementation: implClose,
+      reviewer: revClose,
+      audit,
+    });
+  }
 
   // There is no other path in this module that writes a CLOSED outcome.
   const implClose = tickets.close(ctx.store, implTicket.id, { code: 'CLOSED', reason: 'reviewer ' + ticket.id + ' APPROVE, cross-family, audited PASS' });

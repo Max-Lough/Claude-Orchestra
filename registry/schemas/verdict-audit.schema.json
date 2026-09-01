@@ -15,7 +15,7 @@
   ],
   "properties": {
     "task_id": { "type": "string", "minLength": 1 },
-    "verdict": { "enum": ["APPROVE", "REVISE"] },
+    "verdict": { "enum": ["APPROVE", "REVISE", "REJECT"] },
     "citation_replay": {
       "type": "array",
       "items": {

@@ -199,12 +199,13 @@ section('2. roster:new happy path — dispatch -> Pre consume -> Post launch -> 
   check('spawn.subagent_type follows the SERVED casting (Green E1 -> Luna -> builder-openai)',
     result.ok && result.spawn.subagent_type === 'builder-openai' && result.casting.casting.vendor === 'openai' && result.casting.casting.model === 'GPT-5.6 Luna',
     result.ok && JSON.stringify({ subagent_type: result.spawn.subagent_type, casting: result.casting.casting }));
-  check('spawn.prompt_header carries TICKET=/MODEL=/EFFORT=/ROLE=',
-    result.ok && result.spawn.prompt_header ===
+  check('spawn.prompt_header carries TICKET=/MODEL=/EFFORT=/ROLE=/NONCE= (PL-19b)',
+    result.ok && result.spawn.prompt_header.startsWith(
       'TICKET=' + result.tickets.implementation.id + '\n' +
       'MODEL=' + result.casting.casting.model + '\n' +
       'EFFORT=' + result.casting.casting.effort + '\n' +
-      'ROLE=' + result.spawn.subagent_type + '\n',
+      'ROLE=' + result.spawn.subagent_type + '\n' +
+      'NONCE=') && /NONCE=[0-9a-f]{16}\n$/.test(result.spawn.prompt_header),
     result.ok && result.spawn.prompt_header);
 
   const ticketId = result.tickets.implementation.id;

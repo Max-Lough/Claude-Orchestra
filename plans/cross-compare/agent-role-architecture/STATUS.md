@@ -898,9 +898,15 @@ lost: the builder's branch checkout made the manifest untrusted exactly when the
 never pass the claimed-changes replay (PL-17), and a codex-lane 400 (PL-18 — RESOLVED
 2026-09-02: a fresh `codex login` fixed it, stale token; Sol/Terra/Luna all probe ok, so the
 cross-family review lane is live). PL-15/16 fixed in code, PL-17 in builder.md + conductor rule.
-**No order has reached CLOSED yet.** **Next: (1) owner merges `feat/mortar-vfx-scale` then
+#4 (nameplate range +25%, 2026-09-01) delivered 33a03539 on feat/nameplate-range-200 (41 tests
+green) but close #1 refused on FOUR more integration gaps, all fixed same-day as PL-19/a/b/c
+(tolerant Band-C parsing + claim normalization; NONCE= in the Claude-lane header with host-bound
+substitution at close; COVERAGE_GAP proceeds to review; lint-only verifier.manifest committed to
+the target and pinned, 54f0c3c9). **No order has reached CLOSED yet — every miss was a close-path
+integration gap, never the spine.** **Next: (1) owner merges `feat/mortar-vfx-scale` then
 `fix/bkw5a-explosion-scale-guard` into target main (+ commit the test's `.gd.uid`); (2) owner
-issues order #4 — small, code-bearing, tests named — under a fresh `claude --model fable`.**
+RESTARTS the helm (the live session caches the old bridge) and re-issues the nameplate order as
+an adopt-and-verify of 33a03539.**
 Expected: builder branches from the dispatch-time HEAD, commits → close #1 → Verifier →
 ticketed reviewer → close #2 → CLOSED, and the FIRST `casting-record` + `verdict-audit` under
 `<target>/.claude/orchestra/ledger/<task_id>/`. Read them; anything off → punch list.

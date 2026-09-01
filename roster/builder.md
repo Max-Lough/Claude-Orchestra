@@ -75,6 +75,8 @@ CONCERNS
 
 COMMIT
 - commit: <full 40-char hash> on <branch>
+
+REPORT INTEGRITY: <the NONCE= value from your prompt header, verbatim>
 ```
 
 Three mechanics of that report the closer depends on (order #3 lessons, 2026-09-01):

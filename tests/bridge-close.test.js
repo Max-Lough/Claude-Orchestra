@@ -376,6 +376,33 @@ section('1b. parseBandCReport — PL-15 near-miss aliases (order #3, 2026-09-01)
     close.parseBandCReport(drifted.replace('DEVIATIONS\n- none', 'DEVIATIONS\n- none\n\nCONCERNS\n- real concern')).concernsRaw === '- real concern');
   check('a report with neither CONCERNS nor OPEN ISSUES still has no concerns section',
     close.parseBandCReport('STATUS: DONE\n\nCHANGES\n- a:1 — x\n\nVERIFICATION\n- ok\n\nDEVIATIONS\n- none\n').concernsRaw === null);
+
+  // PL-19 (order #4, 2026-09-01): the exact live shape — colon-suffixed
+  // headers, inline DEVIATIONS/CONCERNS, BRANCH/COMMIT lines, backticked
+  // absolute Windows claim paths with a comma line list.
+  const live =
+    'STATUS: DONE\n\nCHANGES:\n' +
+    '- `E:\\Godot Projects\\Game\\src\\ship\\name_label.gd:22-27` — bumped\n' +
+    '- `E:\\Godot Projects\\Game\\tests\\ship\\it_test.gd:65,79` — comments\n\n' +
+    'BRANCH: feat/nameplate-range-200\nCOMMIT: 33a03539f5355ea7aa1c4a5ee729f47f98617e6c\n\n' +
+    'VERIFICATION:\n- gdlint → clean\n\nDEVIATIONS: none.\n\nCONCERNS: none — shared symbol covered.\n';
+  const lp = close.parseBandCReport(live);
+  check('colon-suffixed headers parse: all four sections present and non-empty',
+    !!(lp.changesRaw && lp.verificationRaw && lp.deviationsRaw && lp.concernsRaw),
+    JSON.stringify({ c: lp.changesRaw, v: lp.verificationRaw, d: lp.deviationsRaw, k: lp.concernsRaw }));
+  check('inline section bodies are captured ("DEVIATIONS: none.")', lp.deviationsRaw === 'none.' && /^none — shared/.test(lp.concernsRaw), JSON.stringify([lp.deviationsRaw, lp.concernsRaw]));
+  check('COMMIT: line yields the commit', lp.commit === '33a03539f5355ea7aa1c4a5ee729f47f98617e6c', JSON.stringify(lp.commit));
+  check('BRANCH/COMMIT lines produce no bogus claims; backticks stripped',
+    JSON.stringify(lp.changes) === JSON.stringify(['E:\\Godot Projects\\Game\\src\\ship\\name_label.gd:22-27', 'E:\\Godot Projects\\Game\\tests\\ship\\it_test.gd:65,79']),
+    JSON.stringify(lp.changes));
+  check('normalizeClaims: absolute -> repo-relative forward slashes, comma list expanded',
+    JSON.stringify(close.normalizeClaims(lp.changes, 'E:\\Godot Projects\\Game')) ===
+      JSON.stringify(['src/ship/name_label.gd:22-27', 'tests/ship/it_test.gd:65', 'tests/ship/it_test.gd:79']),
+    JSON.stringify(close.normalizeClaims(lp.changes, 'E:\\Godot Projects\\Game')));
+  check('normalizeClaims leaves already-relative claims untouched',
+    JSON.stringify(close.normalizeClaims(['src/a.gd:5'], 'E:\\x')) === JSON.stringify(['src/a.gd:5']));
+  check('the canonical bare-header report still parses byte-identically',
+    (() => { const q = close.parseBandCReport('STATUS: DONE\n\nCHANGES\n- a.gd:1 — x\n\nVERIFICATION\n- ok\n\nDEVIATIONS\n- none\n\nCONCERNS\n- none\n'); return q.changesRaw === '- a.gd:1 — x' && q.deviationsRaw === '- none' && JSON.stringify(q.changes) === JSON.stringify(['a.gd:1']); })());
 }
 
 // ------------------------------------------------------------------ section 2
@@ -392,6 +419,28 @@ section('2. close #1 — verifier FAIL vs PASS, and item 1 envelope.base');
   check('Verifier FAIL -> NOT_CLOSED', r.outcome === 'NOT_CLOSED' && /verifier FAIL/.test(r.reason), JSON.stringify(r));
   const reviewers = T.list(store).filter((t) => t.reviewer_of === implId);
   check('Verifier FAIL issues no reviewer ticket', reviewers.length === 0);
+}
+
+// PL-19b/PL-19c (order #4, 2026-09-01): a partial-coverage manifest and a
+// host-bound report with no REPORT INTEGRITY echo both proceed to review.
+{
+  const GAP_MANIFEST = { commands: [{ command: 'node -e "process.exit(0)"' }], coverage: 'lint-only', versions: [] };
+  const { dir } = makeRepo(GAP_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const head = commitFeature(dir);
+  const implId = dres.tickets.implementation.id;
+  // No reportIntegrityLine: the report is host-bound (SubagentStop) and never
+  // saw the nonce — close #1 substitutes the order nonce (PL-19b).
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('PL-19c: COVERAGE_GAP manifest + PL-19b: no nonce echo -> still REVIEW_PENDING (green partial oracle proceeds to the model review)',
+    r.ok === true && r.stage === 'REVIEW_PENDING' && !!r.reviewer_ticket, JSON.stringify(r));
+  const vjson = JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'orchestra', 'ledger', implId, 'verifier.json'), 'utf8'));
+  check('the coverage gap stays visible in the ledger verifier.json', vjson.verification.outcome === 'COVERAGE_GAP', JSON.stringify(vjson.verification.outcome));
+  check('deterministic_only_closure is false under a partial oracle', vjson.verification.deterministic_only_closure === false);
+  check('nonce-echo recorded PASS via the substituted order nonce (host-bound provenance)',
+    (vjson.verification.checks || []).some((c) => c.check === 'nonce-echo' && c.outcome === 'PASS'), JSON.stringify((vjson.verification.checks || []).map((c) => c.check + ':' + c.outcome)));
 }
 
 let PASS_FIXTURE = null; // shared into section 4/5 for close #2 tests

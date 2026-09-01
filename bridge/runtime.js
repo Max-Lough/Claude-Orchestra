@@ -577,11 +577,17 @@ function createRuntime({ projectDir, repoDir } = {}) {
     // MODEL is the SERVED casting's model (e.g. "GPT-5.6 Terra"), never the
     // requested one; ROLE is the resolved installed subagent_type (the same
     // value bound into the ticket's own role field above).
+    // PL-19b: NONCE= rides the header so a launched agent CAN echo it as
+    // `REPORT INTEGRITY: <nonce>` (roster/builder.md). Host-bound reports
+    // that omit the echo still close (close #1 substitutes the order nonce —
+    // SubagentStop binding is the provenance there), but an explicit echo is
+    // compared strictly, and engine lanes require it.
     const promptHeader =
       'TICKET=' + implTicket.id + '\n' +
       'MODEL=' + (result.casting.casting.model || '') + '\n' +
       'EFFORT=' + (result.casting.casting.effort || '') + '\n' +
-      'ROLE=' + implSubagentType + '\n';
+      'ROLE=' + implSubagentType + '\n' +
+      'NONCE=' + order.integrity_nonce + '\n';
 
     return {
       ok: true,

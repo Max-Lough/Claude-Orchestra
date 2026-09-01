@@ -85,17 +85,25 @@ function notClosed(reason, extra) {
 // are assembled into a report.schema.json-conformant object using
 // dispatcher-owned data for the fields prose alone cannot carry honestly
 // (requested_casting, author_family, served_model, integrity.nonce_echo).
+// PL-19 (order #4, 2026-09-01): headers are matched tolerantly — an optional
+// trailing colon, and inline content on the header line ("DEVIATIONS: none.")
+// counts as that section's body. Live builders produce both shapes naturally;
+// close #1 refusing them cost two orders' telemetry before this.
+function headerRe(names) {
+  return new RegExp('^(?:' + names.join('|') + ')(?::[^\\n]*)?[ \\t]*$', 'm');
+}
 function section(text, name, otherHeaders) {
-  const startRe = new RegExp('^' + name + '\\s*$', 'm');
+  const startRe = new RegExp('^' + name + ':?[ \\t]*([^\\n]*)$', 'm');
   const m = startRe.exec(text);
   if (!m) return null;
+  const inline = (m[1] || '').trim();
   const rest = text.slice(m.index + m[0].length);
-  const stopRe = new RegExp('^(?:' + otherHeaders.join('|') + ')\\s*$', 'm');
-  const stopM = stopRe.exec(rest);
-  return (stopM ? rest.slice(0, stopM.index) : rest).trim();
+  const stopM = headerRe(otherHeaders).exec(rest);
+  const block = (stopM ? rest.slice(0, stopM.index) : rest).trim();
+  return (inline ? inline + (block ? '\n' + block : '') : block).trim();
 }
 
-const BAND_C_HEADERS = ['CHANGES', 'VERIFICATION', 'DEVIATIONS', 'CONCERNS', 'COMMIT', 'OPEN ISSUES'];
+const BAND_C_HEADERS = ['CHANGES', 'VERIFICATION', 'DEVIATIONS', 'CONCERNS', 'COMMIT', 'OPEN ISSUES', 'BRANCH'];
 
 function parseBandCReport(text) {
   const s = String(text || '');
@@ -115,12 +123,18 @@ function parseBandCReport(text) {
   // format); verifier.claimedChanges()/parseChangeClaim() need the bare
   // "path:line" token, not the trailing prose, so split on the first
   // em-dash/hyphen separator and keep only the citation itself.
+  // PL-19: only bullet lines are change claims (a stray "BRANCH: ..." or prose
+  // line inside the section must not become a bogus claim the replay then
+  // diverges on), and the citation token is unwrapped from `backticks`/quotes.
   const changes = changesRaw
     ? changesRaw
         .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => /^-+\s/.test(l))
         .map((l) => l.replace(/^-+\s*/, '').trim())
         .filter((l) => l && l.toLowerCase() !== 'none')
         .map((l) => l.split(/\s+[—–-]\s+/)[0].trim())
+        .map((l) => l.replace(/^[`"']+|[`"']+$/g, ''))
         .filter((l) => l)
     : [];
   const commitMatch =
@@ -141,6 +155,27 @@ function parseBandCReport(text) {
     commit: commitMatch ? commitMatch[1] : null,
     reportIntegrityToken: nonceMatch ? nonceMatch[1] : null,
   };
+}
+
+// PL-19: live builders cite absolute Windows paths ("E:\proj\src\a.gd:22-27")
+// and comma line lists ("a.gd:65,79"); the verifier replays claims against
+// repo-relative forward-slash diff paths, so those forms always diverged.
+// Normalization is mechanical only — path spelling and line-list expansion —
+// never inventing a claim that was not written.
+function normalizeClaims(claims, repoDir) {
+  const root = repoDir ? String(path.resolve(repoDir)).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() + '/' : null;
+  const out = [];
+  for (const raw of Array.isArray(claims) ? claims : []) {
+    let c = String(raw).replace(/\\/g, '/');
+    if (root && c.toLowerCase().startsWith(root)) c = c.slice(root.length);
+    const commaList = /^(.*?):(\d+(?:-\d+)?(?:\s*,\s*\d+(?:-\d+)?)+)$/.exec(c);
+    if (commaList) {
+      for (const part of commaList[2].split(',')) out.push(commaList[1] + ':' + part.trim());
+    } else {
+      out.push(c);
+    }
+  }
+  return out;
 }
 
 function buildVerifierReport(parsed, ticket) {
@@ -275,6 +310,7 @@ function closeImplementation(ctx, ticket) {
   }
   const baseRef = envelope.base || null; // the repo HEAD at dispatch — the immutable audit base
   const report = buildVerifierReport(parsed, ticket);
+  report.changes = normalizeClaims(report.changes, ctx.repoDir); // PL-19
 
   // Item 2: the canonical order is the envelope's, validated against
   // order.schema.json — if it does not validate, refuse (never skipped).
@@ -284,6 +320,20 @@ function closeImplementation(ctx, ticket) {
   }
   const order = envelope.order;
   const mutations = Array.isArray(order.mutations) ? order.mutations : undefined;
+
+  // PL-19b (order #4, 2026-09-01): the nonce-echo check exists to prove an
+  // ENGINE's report came from this run (a stale/replayed engine log cannot
+  // echo a fresh nonce). A host-bound report needs no echo for provenance —
+  // the host itself bound ticket.resolved.last_assistant_message at
+  // SubagentStop, which is a stronger guarantee than any echo. So for a
+  // ticket with NO engine_result and NO explicit REPORT INTEGRITY token, the
+  // order's own nonce is supplied so nonceEcho() records PASS-by-provenance;
+  // an engine ticket, or a report that DID echo a token, is still compared
+  // strictly (a wrong echo still fails closed).
+  const hostBound = !(ticket.engine_result && typeof ticket.engine_result.report === 'string');
+  if (hostBound && !parsed.reportIntegrityToken && order.integrity_nonce) {
+    report.integrity = { nonce_echo: order.integrity_nonce };
+  }
 
   const vOpts = {
     repoDir: ctx.repoDir,
@@ -307,7 +357,16 @@ function closeImplementation(ctx, ticket) {
     at: new Date().toISOString(),
   });
 
-  if (vResult.outcome !== 'PASS') {
+  // PL-19c (order #4, 2026-09-01): COVERAGE_GAP proceeds — it is the
+  // verifier's own documented outcome for "everything ran green but the
+  // declared oracle is not complete: force model review", and close #1's
+  // very next stage IS that model review (the computed cross-family reviewer
+  // ticket). Demanding strict PASS here made closure unreachable for any
+  // project whose committed manifest declares partial coverage. FAIL and
+  // UNAVAILABLE still refuse: red (or un-runnable) declared verification is
+  // never certified, reviewer or not. The gap stays visible in the ledger's
+  // verifier.json and deterministic_only_closure stays false.
+  if (vResult.outcome !== 'PASS' && vResult.outcome !== 'COVERAGE_GAP') {
     const failing = (vResult.checks || []).filter((c) => c.outcome !== 'PASS').map((c) => c.check + ':' + c.outcome);
     return notClosed('verifier ' + vResult.outcome + (failing.length ? ' (' + failing.join(', ') + ')' : ''));
   }
@@ -681,6 +740,7 @@ function close({ ticket, projectDir, repoDir, store } = {}) {
 
 module.exports = {
   close,
+  normalizeClaims,
   closeImplementation,
   closeReview,
   parseBandCReport,

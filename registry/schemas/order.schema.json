@@ -59,7 +59,7 @@
     "tool_capabilities": { "type": "array", "items": { "type": "string" }, "description": "Dispatcher-pinned; a read-only pin here is how the Conductor holds the merged Investigator to its read-only-first law" },
     "destructive_actions": { "type": "array", "items": { "type": "string" } },
     "verification_manifest": { "type": "array", "items": { "type": "string" } },
-    "verification_commands": { "type": "array", "items": { "type": "string" } },
+    "verification_commands": { "type": "array", "items": { "type": "string" }, "description": "EXACT runnable shell commands (close #1 replays them verbatim in the audited checkout and refuses to certify a DONE report if they cannot run) - never prose descriptions of what to run" },
     "verification_tier": { "enum": ["full", "inert"] },
     "tool_budget": { "type": "integer", "minimum": 1 },
     "review_policy": { "enum": ["mandatory", "preferred", "none"] },

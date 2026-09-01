@@ -861,7 +861,7 @@ section('25. Rider 2 round-3 — strict pin schema: each malformed field makes t
 {
   const base = (dir, manifestPath) => {
     const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
-    return { projectDir: dir, manifestSha256, roster: 'new', rosterGeneration: 1, writtenAt: new Date().toISOString(), by: 'install.js' };
+    return { projectDir: fs.realpathSync(dir), manifestSha256, roster: 'new', rosterGeneration: 1, writtenAt: new Date().toISOString(), by: 'install.js' }; // realpath: macOS tmpdir is a symlink
   };
   const cases = [
     ['manifestSha256 uppercase hex (case-sensitive comparison rejects it)', (p) => { p.manifestSha256 = p.manifestSha256.toUpperCase(); }],

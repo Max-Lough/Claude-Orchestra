@@ -1000,7 +1000,13 @@ function case18_grantsLocal() {
 function case19_uninstallContainment() {
   section('19. Uninstall containment (item 1): a hostile installedFiles never deletes outside .claude/');
 
-  const target = tmpdir('orchestra-install-');
+  // The project sits two levels below its own temp dir so that BOTH victims
+  // "outside the project" still land inside this suite's temp tree — on
+  // Linux/macOS os.tmpdir() is /tmp, and two levels up from a direct child
+  // of it is the filesystem root (EACCES on CI).
+  const outer = tmpdir('orchestra-install-');
+  const target = path.join(outer, 'nest', 'project');
+  fs.mkdirSync(target, { recursive: true });
   install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
 
   // Victims OUTSIDE the project entirely, and one inside the project but

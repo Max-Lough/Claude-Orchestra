@@ -2139,6 +2139,10 @@ if (!uninstall) {
   // (item 4) so --uninstall removes exactly these, and nothing it merely
   // recognizes the NAME of.
   const rosterInstalledFiles = [];
+  // Whether THIS run found (or just created) the ticket store — read by the
+  // 1b manifest block below to set installedStore. Stays false for a plain
+  // legacy install (rosterFiles.length === 0, bridge/ never touched).
+  let storeManaged = false;
   if (rosterFiles.length) {
     const installedRoleFiles = [];
     for (const f of rosterFiles) {
@@ -2184,6 +2188,32 @@ if (!uninstall) {
         rosterInstalledFiles.push(ORCHESTRA_RUNTIME_DIRNAME + '/' + ROSTER_BRIDGE_DIRNAME + '/' + rel);
       }
       did('roster (new): bridge/ -> .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/' + ROSTER_BRIDGE_DIRNAME + '/');
+
+      // Ticket store init (WO-14b leg 4 fix round CONTINUATION): the runtime
+      // never auto-creates a missing store (STORE_UNAVAILABLE, item 9) —
+      // bridge/cli.js's `init-store` is the ONLY lawful creation path, and a
+      // fresh --roster new install must call that same code path, on the
+      // just-installed copy under .claude/orchestra/, exactly once, so the
+      // first dispatch() after install has a store to write to. Idempotent:
+      // a store that already exists (a re-run of --roster new, a --repin, or
+      // a legacy-flip-then-back-to-new) is left untouched — never
+      // reinitialised, never wiped.
+      const ticketStoreFile = path.join(orchestraRuntimeDir, 'tickets', 'tickets.json');
+      const storeAlreadyExisted = fs.existsSync(ticketStoreFile);
+      if (!storeAlreadyExisted) {
+        const runtimeFile = path.join(bridgeDest, 'runtime.js');
+        try {
+          delete require.cache[require.resolve(runtimeFile)];
+          const { createRuntime } = require(runtimeFile);
+          createRuntime({ projectDir: target }).initStore();
+          did('roster (new): ticket store initialised at .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/tickets/ (bridge/cli.js init-store, first install)');
+        } catch (e) {
+          fail('failed to initialise the ticket store via the installed bridge/runtime.js: ' + (e && e.message ? e.message : String(e)));
+        }
+      }
+      // True once this run confirms a store is present, whether it was
+      // already there (re-run/--repin) or was just created above.
+      storeManaged = true;
     }
   }
 
@@ -2227,6 +2257,13 @@ if (!uninstall) {
       // flip always know precisely what to remove without re-deriving it
       // from the CURRENT master's event list.
       manifest.installedHooks = GATE_HOOK_EVENTS.slice();
+      // installedStore (this fix round's "install.js -> init-store"): true
+      // whenever this run found or created a ticket store under
+      // .claude/orchestra/tickets/ (storeManaged, set above) — read by
+      // --uninstall to know it owns that directory. A legacy flip (the
+      // other branch below) leaves this key exactly as it was: the store
+      // stays on disk across a flip, same as the roster files themselves.
+      manifest.installedStore = storeManaged;
       writeManifestAndPin(target, orchestraJsonFile, manifest);
       did(
         '.claude/orchestra.json: roster="new", rosterGeneration=' + manifest.rosterGeneration +
@@ -2234,6 +2271,7 @@ if (!uninstall) {
           (hadSeats ? 'preserved' : 'defaulted to Architect:true, Sweeper:false') +
           ', installedFiles tracks ' + manifest.installedFiles.length + ' path(s)' +
           ', installedHooks tracks ' + manifest.installedHooks.join(', ') +
+          ', installedStore=' + manifest.installedStore +
           ' (every other key preserved byte-for-byte)'
       );
     } else if (manifestExisted && prevRoster === 'new') {
@@ -3088,6 +3126,23 @@ if (!uninstall) {
       );
     }
   }
+
+  // Ticket store (this fix round's "install.js -> init-store"): removed
+  // whenever THIS install created/managed it (priorManifest.installedStore),
+  // or — same rationale as the untracked bridge/ removal just above — the
+  // manifest's own ledger is not trusted at all (useUntrackedFallback), in
+  // which case a store under the canonical .claude/orchestra/tickets/ path
+  // is removed by name rather than by asking the (possibly attacker-edited
+  // or unread) manifest whether it owns it.
+  {
+    const ticketStoreDir = path.join(orchestraRuntimeDir, 'tickets');
+    if ((useUntrackedFallback || priorManifest.installedStore === true) && fs.existsSync(ticketStoreDir)) {
+      fs.rmSync(ticketStoreDir, { recursive: true, force: true });
+      touchedDirs.add(orchestraRuntimeDir);
+      did('removed .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/tickets/ (ticket store' + (useUntrackedFallback ? ', untracked fallback' : ', installedStore') + ')');
+    }
+  }
+
   const dirsToCheck = new Set();
   for (const d of touchedDirs) {
     let cur = d;

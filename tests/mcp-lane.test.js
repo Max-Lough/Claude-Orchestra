@@ -971,6 +971,168 @@ async function case10() {
   }
 }
 
+// 11. WO-14b leg 4 fix round CONTINUATION: fingerprint fail-closed when
+//     bridge/manifest.js is unloadable (item 3), and cd-scoped enforcement
+//     (item 4) — a legacy-rooted server must gate the ACTUAL execution
+//     target, not always ROOT.
+async function case11() {
+  section('11. WO-14b leg 4 fix round CONTINUATION: fingerprint fail-closed (item 3) + cd-scoped enforcement (item 4)');
+
+  function makeAttemptFile() {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-attempts11-'));
+    cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+    return path.join(d, 'attempts');
+  }
+  function invocationCount(f) {
+    try { return parseInt(fs.readFileSync(f, 'utf8').trim(), 10) || 0; } catch (_) { return 0; }
+  }
+
+  // --- 11a (item 3): bridge/manifest.js renamed out of the way (unloadable)
+  //     but the rest of a roster:new install fingerprint stands
+  //     (.claude/orchestra/ present, orchestra.json carries roster:new) ->
+  //     TICKET_REQUIRED naming the fingerprint, codex never invoked.
+  {
+    const fx = makeRepo();
+    const orchestraDir = path.join(fx.repo, '.claude', 'orchestra');
+    for (const sub of ['bridge', 'router', 'registry', 'verifier', 'quartermaster']) {
+      fs.cpSync(path.join(MASTER, sub), path.join(orchestraDir, sub), { recursive: true });
+    }
+    fs.renameSync(path.join(orchestraDir, 'bridge', 'manifest.js'), path.join(orchestraDir, 'bridge', 'manifest.js.bak'));
+    fs.writeFileSync(path.join(fx.repo, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+
+    const af = makeAttemptFile();
+    const s = mcpSession({ fx, env: { STUB_CODEX_ATTEMPT_FILE: af } });
+    await s.start();
+    const res = await s.rpc('tools/call', { name: 'orchestra_exec', arguments: { work_order: 'do the thing' } });
+    const text = resultText(res);
+    check('item 3: bridge/manifest.js unloadable + fingerprint present -> TICKET_REQUIRED (fail closed, not silently legacy)',
+      res.result && res.result.isError && /^TICKET_REQUIRED:/.test(text) && /fingerprint/.test(text), text.slice(0, 400));
+    s.close();
+    check('item 3: codex was never invoked', invocationCount(af) === 0, 'invocations=' + invocationCount(af));
+  }
+
+  // --- 11b (item 4): the server is rooted in a LEGACY project (no
+  //     fingerprint at all); orchestra_exec {cd: <a separately-installed,
+  //     trusted roster:new project>} with no ticket -> TICKET_REQUIRED
+  //     against the cd TARGET. A control call with no `cd` on the SAME
+  //     server proves the gate really is about the cd target, not the whole
+  //     server: ROOT itself has no fingerprint, so it is not gated and the
+  //     stub runs.
+  {
+    const legacyFx = makeRepo(); // ROOT: plain legacy project, no fingerprint.
+
+    const newFx = makeRepo(); // cd target: a genuine trusted roster:new install.
+    const orchestraDir = path.join(newFx.repo, '.claude', 'orchestra');
+    for (const sub of ['bridge', 'router', 'registry', 'verifier', 'quartermaster']) {
+      fs.cpSync(path.join(MASTER, sub), path.join(orchestraDir, sub), { recursive: true });
+    }
+    const manifestPath = path.join(newFx.repo, '.claude', 'orchestra.json');
+    fs.writeFileSync(manifestPath, JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+    const pinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-pins-cd-'));
+    cleanups.push(() => fs.rmSync(pinDir, { recursive: true, force: true }));
+    const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
+    const pinHash = crypto.createHash('sha256').update(fs.realpathSync(newFx.repo)).digest('hex');
+    fs.writeFileSync(path.join(pinDir, pinHash + '.json'), JSON.stringify({
+      projectDir: newFx.repo, manifestSha256, roster: 'new', rosterGeneration: 1, seats: {},
+      writtenAt: new Date().toISOString(), by: 'mcp-lane.test.js case11 fixture',
+    }));
+
+    const af = makeAttemptFile();
+    const s = mcpSession({ fx: legacyFx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
+    await s.start();
+    const res = await s.rpc('tools/call', {
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing', cd: newFx.repo },
+    });
+    const text = resultText(res);
+    check('item 4: legacy-rooted server, orchestra_exec{cd:<roster:new project>} without a ticket -> TICKET_REQUIRED (cd-scoped)',
+      res.result && res.result.isError && /^TICKET_REQUIRED:/.test(text), text.slice(0, 400));
+    s.close();
+    check('item 4: codex was never invoked (cd case)', invocationCount(af) === 0, 'invocations=' + invocationCount(af));
+
+    const af2 = makeAttemptFile();
+    const s2 = mcpSession({ fx: legacyFx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af2 } });
+    await s2.start();
+    const res2 = await s2.rpc('tools/call', { name: 'orchestra_exec', arguments: { work_order: 'do the thing' } }, 180000);
+    const text2 = resultText(res2);
+    check('item 4 control: same server, no cd (ROOT has no fingerprint) -> not gated, the stub runs',
+      !(res2.result && res2.result.isError), text2.slice(0, 300));
+    s2.close();
+    check('item 4 control: codex WAS invoked once (proves the gate is about cd, not the whole server)',
+      invocationCount(af2) === 1, 'invocations=' + invocationCount(af2));
+  }
+}
+
+// 12. WO-14b leg 4 fix round CONTINUATION (item 7): orchestra_dispatch's
+//     input schema IS the dispatch-request schema at the top level — a
+//     schema-valid request passed directly succeeds; the old undocumented
+//     {request:{...}} wrapper shape is now INVALID_REQUEST.
+async function case12() {
+  section("12. WO-14b leg 4 fix round CONTINUATION (item 7): orchestra_dispatch top-level schema vs the {request:{...}} wrapper");
+  const fx = makeRepo();
+
+  const orchestraDir = path.join(fx.repo, '.claude', 'orchestra');
+  for (const sub of ['bridge', 'router', 'registry', 'verifier', 'quartermaster']) {
+    fs.cpSync(path.join(MASTER, sub), path.join(orchestraDir, sub), { recursive: true });
+  }
+  const manifestPath = path.join(fx.repo, '.claude', 'orchestra.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+  const pinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-pins-dispatch-'));
+  cleanups.push(() => fs.rmSync(pinDir, { recursive: true, force: true }));
+  const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
+  const pinHash = crypto.createHash('sha256').update(fs.realpathSync(fx.repo)).digest('hex');
+  fs.writeFileSync(path.join(pinDir, pinHash + '.json'), JSON.stringify({
+    projectDir: fx.repo, manifestSha256, roster: 'new', rosterGeneration: 1, seats: {},
+    writtenAt: new Date().toISOString(), by: 'mcp-lane.test.js case12 fixture',
+  }));
+  const T = require(path.join(MASTER, 'router', 'tickets.js'));
+  T.createTicketStore({ dir: path.join(orchestraDir, 'tickets'), init: true });
+
+  // A Green pool reading for every bucket — the quartermaster fails closed
+  // (typed P0_UNAVAILABLE) with none recorded, which would mask the actual
+  // thing under test here (the top-level-vs-wrapper schema shape).
+  {
+    const file = path.join(fx.repo, '.claude', 'orchestra-pool-readings.jsonl');
+    const lines = ['AU-all', 'AU-opus', 'AU-fable', 'OU'].map((bucket) =>
+      JSON.stringify({ ts: new Date().toISOString(), kind: 'reading', bucket, remainingFraction: 0.95, source: 'mcp-lane.test.js case12 fixture' })
+    );
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+  }
+
+  // A plain, schema-valid dispatch-request shape (mirrors bridge.test.js's
+  // baseRequest(): class E1/T1 is deterministically never Q0-required).
+  const REQUEST = { class: 'E1', risk: 'T1', goal: 'fix the thing', acceptance_criteria: ['tests pass'] };
+
+  // (a) top-level, no wrapper -> ok.
+  {
+    const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir } });
+    await s.start();
+    const res = await s.rpc('tools/call', { name: 'orchestra_dispatch', arguments: REQUEST });
+    const text = resultText(res);
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (_) { /* leave null */ }
+    check('a schema-valid request passed at the TOP LEVEL -> ok:true, no {request:...} wrapper needed',
+      !(res.result && res.result.isError) && parsed && parsed.ok === true, text.slice(0, 400));
+    s.close();
+  }
+
+  // (b) the old {request:{...}} wrapper shape -> INVALID_REQUEST — the
+  //     handler passes `a` (the whole arguments object, including the
+  //     literal key "request") straight to runtime.dispatch(), which is not
+  //     a valid dispatch-request (no class/risk/goal at its own top level).
+  {
+    const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir } });
+    await s.start();
+    const res = await s.rpc('tools/call', { name: 'orchestra_dispatch', arguments: { request: REQUEST } });
+    const text = resultText(res);
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (_) { /* leave null */ }
+    check('the {request:{...}} wrapper -> INVALID_REQUEST (undocumented shape, no longer accepted)',
+      res.result && res.result.isError && parsed && parsed.ok === false && parsed.outcome === 'INVALID_REQUEST',
+      text.slice(0, 400));
+    s.close();
+  }
+}
+
 // ------------------------------------------------------------------- driver
 
 function finish() {
@@ -992,6 +1154,8 @@ async function main() {
   await case8();
   await case9();
   await case10();
+  await case11();
+  await case12();
 }
 
 main().then(finish, (e) => {

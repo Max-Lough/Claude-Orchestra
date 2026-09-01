@@ -1058,6 +1058,13 @@ function case16_agentSeam() {
     const savedPinDir = process.env.ORCHESTRA_PIN_DIR;
     process.env.ORCHESTRA_PIN_DIR = pinned.pinDirPath;
     const runtime = createRuntime({ projectDir: pinned.proj });
+    // WO-14b leg 4 fix round item 9: the runtime never auto-creates a
+    // missing ticket store (STORE_UNAVAILABLE). This fixture is a fresh
+    // install-shaped project (installBridge() only copies the bridge/router/
+    // registry/verifier/quartermaster code, not a store), so it must call
+    // the same one-time init path bridge/cli.js's `init-store` uses before
+    // dispatching — exactly what a real install.js --roster new does.
+    runtime.initStore();
     // class E1/T1 is deterministically never Q0-required (see
     // tests/bridge.test.js's baseRequest() comment) — a plain single ticket.
     const dispatchResult = runtime.dispatch({ class: 'E1', risk: 'T1', goal: 'fix the thing', acceptance_criteria: ['tests pass'] });
@@ -1481,6 +1488,53 @@ function case24_notebookEditPauseAndSidechainTruthy() {
   );
 }
 
+function case25_uppercaseManifestSha256Pin() {
+  section('25. Uppercase manifestSha256 pin (fix round item 13): UNTRUSTED — the guard\'s own case-sensitive regex check, matching bridge/manifest.js\'s readTrustedManifest() exactly (no toLowerCase() on either side)');
+
+  const proj = tmpdir('orchestra-guard-uppercasesha-');
+  const pinDirPath = tmpdir('orchestra-guard-pindir-');
+  setManifest(proj, { roster: 'new' });
+  const manifestBytes = fs.readFileSync(path.join(proj, '.claude', 'orchestra.json'));
+  const correctHash = crypto.createHash('sha256').update(manifestBytes).digest('hex');
+  // The hash is otherwise byte-correct — only its case is wrong.
+  writePin(pinDirPath, proj, {
+    projectDir: fs.realpathSync(proj),
+    manifestSha256: correctHash.toUpperCase(),
+    roster: 'new',
+    rosterGeneration: 1,
+    seats: {},
+    writtenAt: new Date().toISOString(),
+    by: 'install.js',
+  });
+
+  // (a) the guard itself: an uppercase (but otherwise byte-correct) hash is
+  // schema-invalid -> UNTRUSTED-NEW -> undetermined model denied.
+  const r = runGuard(proj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinDirPath });
+  const d = decisionOf(r);
+  check('an uppercase manifestSha256 pin (correct hash, wrong case) -> UNTRUSTED-NEW -> DENIES (undetermined model)', d.decision === 'deny', JSON.stringify(d));
+  check('the denial names "invalid pin (manifestSha256)" (the guard\'s own regex, not "hash mismatch")', /invalid pin \(manifestSha256\)/.test(d.reason), d.reason);
+
+  // (b) bridge/manifest.js's own readTrustedManifest(), driven directly
+  // (never through the guard) against the SAME pin dir + project — proves
+  // the runtime's independent implementation makes the identical call, not
+  // just the guard's. Fix round item 13's own defect was the runtime
+  // lowercasing before comparing (so it WOULD have trusted this); a
+  // regression back to that would only show up here, not in (a).
+  const savedPinDir = process.env.ORCHESTRA_PIN_DIR;
+  process.env.ORCHESTRA_PIN_DIR = pinDirPath;
+  let readResult;
+  try {
+    const { readTrustedManifest } = require(path.join(MASTER, 'bridge', 'manifest.js'));
+    readResult = readTrustedManifest({ projectDir: proj });
+  } finally {
+    process.env.ORCHESTRA_PIN_DIR = savedPinDir;
+  }
+  check('bridge/manifest.js readTrustedManifest() also refuses to trust the uppercase-hash pin (trusted:false)',
+    readResult && readResult.trusted === false, JSON.stringify(readResult));
+  check('...but roster is still forced "new" (fail closed, never silently legacy)',
+    readResult && readResult.roster === 'new', JSON.stringify(readResult));
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1521,6 +1575,7 @@ try {
   case22_patternArrayCap();
   case23_copiedProjectLoosenBlocked();
   case24_notebookEditPauseAndSidechainTruthy();
+  case25_uppercaseManifestSha256Pin();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

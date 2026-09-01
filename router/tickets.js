@@ -12,11 +12,13 @@
  * later leg's job.
  *
  * Every operation is synchronous (Node's single-threaded execution already
- * serialises calls within one process); a cross-process advisory lock file
- * (tickets.lock, O_EXCL create, {pid, token, at, host} content, stale after
- * 30s — configurable per store via lockStaleMs) guards the read-modify-write
- * against the real caller shape: separate PreToolUse/PostToolUse/SubagentStop/
- * Stop hook processes touching the same store.
+ * serialises calls within one process); a cross-process advisory lock
+ * DIRECTORY (tickets.lock/, fs.mkdirSync — atomic + exclusive on every
+ * platform Node supports, including Windows — carrying an owner.json
+ * {pid, token, at, host} sidecar, stale after 30s — configurable per store
+ * via lockStaleMs) guards the read-modify-write against the real caller
+ * shape: separate PreToolUse/PostToolUse/SubagentStop/Stop hook processes
+ * touching the same store.
  *
  * WO-14b leg 2 fix round 2 (finding 1, MAJOR, fixed): stale-lock takeover is
  * now LIVENESS-GATED, never merely time-gated. A taker may only displace a
@@ -39,12 +41,51 @@
  * WO-14b leg 2 fix round 2 (finding 2, MAJOR, fixed): every state mutation
  * writes tickets.events.jsonl BEFORE it commits tickets.json (write-ahead),
  * fsync'd, so a write that can't reach the log changes nothing and throws;
- * a crash between the two leaves a log tail ahead of the committed state,
- * which the next load reconciles (documented with a 'reconcile' line, never
- * silently replayed or silently dropped). See withStore() and
- * reconcileEventsLog(). The store also now carries an optimistic `seq`
- * (finding 1): every committed write increments it by exactly one, and
- * every event line the write produces carries that same seq.
+ * a crash between the two leaves a log tail ahead of the committed state.
+ * The store also now carries an optimistic `seq` (finding 1): every
+ * committed write increments it by exactly one, and every event line the
+ * write produces carries that same seq.
+ *
+ * WO-14b leg 2 fix round 3 (review #3, MAJOR x2, fixed):
+ *
+ * (a) [tickets.js:192] The lock is now a DIRECTORY (fs.mkdirSync — atomic
+ * AND exclusive on every platform, unlike an O_EXCL file whose EEXIST retry
+ * previously had a parse-retry path that could spin forever on a half-written
+ * owner.json without ever sleeping or checking lockBudgetMs). Exclusivity
+ * never depends on owner.json being present or parseable: acquisition is the
+ * mkdirSync succeeding, full stop. On EEXIST — malformed, missing, or absent
+ * owner.json all fold into a single "unknown holder" case, aged off the lock
+ * DIRECTORY's own mtime/birthtime rather than a pid. EVERY contention path
+ * — known-holder or unknown-holder alike — now goes through one waitOrThrow()
+ * choke point that always sleeps (~25ms) and always checks lockBudgetMs
+ * before looping again; nothing retries unconditionally. See acquireLock().
+ *
+ * (b) [tickets.js:273] Reconciliation moved from an unlocked read
+ * (readStore(), called by every get/list/openTickets — wrong: a reader
+ * mid-race with an in-flight writer could see the writer's own not-yet-
+ * committed event and misfile it as a dropped orphan, even though the
+ * writer went on to commit normally) to a WRITER-ONLY, UNDER-LOCK step
+ * inside withStore(). readStore() now only reads and validates — it never
+ * writes and never reconciles; it may attach non-enumerable
+ * `pendingEventSeqs` (events in the log with seq > state.seq) as a
+ * diagnostic, and get()/list()/openTickets() mirror that onto the caller's
+ * `store` object as `store.pendingEventSeqs` for inspection. Only
+ * withStore(), immediately after acquiring the lock (so no other writer can
+ * possibly be mid-flight — a genuine orphan is a crash between append and
+ * rename, not a race), re-reads state and the events log and treats any
+ * seq > state.seq it finds there as a real orphan. It then commits at
+ * newSeq = max(state.seq, maxOrphanSeq) + 1, appending one `reconcile`
+ * line (seq = maxOrphanSeq, naming the dropped seq(s)) BEFORE this write's
+ * own event line(s) (seq = newSeq) in the same fsync'd append — so the log
+ * always reads [orphan(s)…, reconcile, this-event]. If the lock cannot be
+ * acquired, no reconciliation happens (a reader observing a gap is
+ * observing an in-flight write, not an orphan).
+ *
+ * INVARIANT: committed seq is monotonic; every seq in the log appears at
+ * most once as a non-orphan (i.e. as the seq some write actually committed
+ * as its state.seq); orphans are always followed by a reconcile marker
+ * written under the lock, and the write that follows an orphan always
+ * carries a seq strictly greater than every orphan it named.
  *
  * Pure Node >= 20, no dependencies.
  */
@@ -136,7 +177,24 @@ function sleepSync(ms) {
 
 function ticketsFile(dir) { return path.join(dir, 'tickets.json'); }
 function eventsFile(dir) { return path.join(dir, 'tickets.events.jsonl'); }
+// Fix round 3: this is now a DIRECTORY path, not a file path — kept the
+// name (and the _internal export name) for continuity with fix-round-2
+// callers/docs that already say "tickets.lock".
 function lockFile(dir) { return path.join(dir, 'tickets.lock'); }
+function ownerFile(lockDir) { return path.join(lockDir, 'owner.json'); }
+// Every wait in acquireLock's contention loop goes through this one choke
+// point: sleep ~25ms, but ONLY after confirming the budget hasn't already
+// been exceeded (in which case throw instead of sleeping again). Fix round
+// 3: the review-#3 MAJOR was a contention path that retried unconditionally
+// with neither a sleep nor a budget check — every path now funnels through
+// here, so none can spin.
+const LOCK_POLL_MS = 25;
+function waitOrThrow(start, budgetMs, descriptor) {
+  if (Date.now() - start > budgetMs) {
+    throw new TicketStoreError('tickets.lock held ' + descriptor + ' for > budget');
+  }
+  sleepSync(LOCK_POLL_MS);
+}
 
 function atomicWriteJson(file, obj) {
   const dir = path.dirname(file);
@@ -163,68 +221,126 @@ function isPidAlive(pid) {
   }
 }
 
-// Fix round 2, finding 1: takeover of a stale lock is a compare-and-swap AND
-// liveness-gated — never a bare time-based unlink. The lock file carries
-// {pid, token, at, host}; a taker may treat a lock as takeable ONLY when the
-// recorded pid is provably dead (isPidAlive() false) AND the lock is older
-// than staleMs. A live holder is never displaced regardless of how long it
-// has held the lock — the waiter just keeps polling (up to budgetMs) rather
-// than ever racing a still-running holder. When takeover IS lawful, it
-// still goes through the CAS rename (fs.renameSync — atomic on every
-// platform Node supports, including Windows — so exactly one racing taker
-// wins the rename; every loser gets ENOENT/EPERM and simply retries the
-// acquire loop) before attempting a fresh O_EXCL create.
+// Fix round 3 (review #3, MAJOR #1, tickets.js:192): the lock is a
+// DIRECTORY. fs.mkdirSync is atomic AND exclusive on every platform Node
+// supports (including Windows) — unlike the fix-round-2 O_EXCL FILE, whose
+// EEXIST retry path had a parse-retry branch that could `continue` forever
+// without ever sleeping or checking budgetMs if the holder crashed mid-way
+// through writing its JSON. Exclusivity here never depends on owner.json
+// being present or parseable: acquisition IS the mkdirSync succeeding.
+//
+// On EEXIST, the holder is classified:
+//  (i)  owner.json parses to an object → holder pid liveness as before
+//       (alive → wait; dead && age > staleMs → takeover). Age is the
+//       owner.json file's own mtime.
+//  (ii) owner.json missing, unreadable, or not a parseable object →
+//       "unknown holder": age off the LOCK DIRECTORY's own mtime/birthtime
+//       instead of a pid; stale by age alone takes it over, otherwise wait.
+// Every wait — every one, including case (ii)'s parse failure, which used
+// to be the unbounded-spin bug — goes through waitOrThrow(): sleep ~25ms,
+// but only after confirming lockBudgetMs hasn't already been exceeded (else
+// throw a typed TicketStoreError naming which case). No path in this loop
+// retries without either taking over or calling waitOrThrow first.
+//
+// Takeover is still CAS: fs.renameSync the lock dir to a unique tombstone
+// (atomic — exactly one racing taker wins; every loser retries via
+// waitOrThrow rather than spinning) before creating fresh. The taker
+// removes the tombstone (best-effort, not load-bearing).
 function acquireLock(dir, staleMs, budgetMs) {
-  const file = lockFile(dir);
+  const lockDir = lockFile(dir);
   const start = Date.now();
   const token = crypto.randomBytes(9).toString('hex');
   for (;;) {
     try {
-      const fd = fs.openSync(file, 'wx');
-      fs.writeSync(fd, JSON.stringify({ pid: process.pid, token, at: Date.now(), host: os.hostname() }));
-      fs.closeSync(fd);
-      return { file, token };
+      fs.mkdirSync(lockDir);
+      try {
+        fs.writeFileSync(ownerFile(lockDir), JSON.stringify({ pid: process.pid, token, at: Date.now(), host: os.hostname() }));
+      } catch (eOwner) {
+        // Exclusivity never depends on this write succeeding — we already
+        // hold the directory. A crash right here is exactly the "unknown
+        // holder" case a future contender must handle (and does, above).
+      }
+      return { dir: lockDir, token };
     } catch (e) {
       if (e.code !== 'EEXIST') {
         throw new TicketStoreError('tickets.lock could not be acquired: ' + e.message);
       }
-      let holder = null;
-      try { holder = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e2) { continue; /* lock vanished/unreadable between the failed create and this read — retry */ }
-      let mtimeMs;
-      try { mtimeMs = fs.statSync(file).mtimeMs; } catch (e3) { continue; /* lock vanished between the read and this stat — retry */ }
-      const ageMs = Date.now() - mtimeMs;
-      const holderPid = holder && holder.pid;
-      const dead = !isPidAlive(holderPid);
-      if (dead && ageMs > staleMs) {
-        const tombstone = file + '.stale-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-        try {
-          fs.renameSync(file, tombstone); // the CAS: exactly one taker wins
-        } catch (e4) {
-          continue; // lost the takeover race (or the true holder released first) — retry the acquire loop
-        }
-        try { fs.unlinkSync(tombstone); } catch (e5) { /* best-effort cleanup; not load-bearing */ }
-        continue; // fall through to a fresh O_EXCL create
-      }
-      if (Date.now() - start > budgetMs) {
-        if (dead) {
-          // Dead, but not yet past staleMs — a real (if narrow) window;
-          // fail closed rather than taking over early.
-          throw new TicketStoreError('tickets.lock held by dead pid ' + holderPid + ' but not yet stale (' + ageMs + 'ms < ' + staleMs + 'ms) for > budget');
-        }
-        throw new TicketStoreError('lock held by live pid ' + holderPid + ' for > budget');
-      }
-      sleepSync(15);
     }
+
+    // Contention: classify the holder.
+    let holder = null;
+    let parseOk = false;
+    try {
+      holder = JSON.parse(fs.readFileSync(ownerFile(lockDir), 'utf8'));
+      parseOk = !!holder && typeof holder === 'object';
+    } catch (eRead) {
+      parseOk = false; // missing / unreadable / partial write — "unknown holder"
+    }
+
+    let ageMs, holderPid, dead, descriptor;
+    if (parseOk) {
+      let mtimeMs;
+      try {
+        mtimeMs = fs.statSync(ownerFile(lockDir)).mtimeMs;
+      } catch (eStat) {
+        waitOrThrow(start, budgetMs, '(owner.json vanished mid-check)');
+        continue;
+      }
+      ageMs = Date.now() - mtimeMs;
+      holderPid = holder.pid;
+      dead = !isPidAlive(holderPid);
+      descriptor = dead
+        ? ('by dead pid ' + holderPid + ' but not yet stale (' + ageMs + 'ms < ' + staleMs + 'ms)')
+        : ('by live pid ' + holderPid);
+    } else {
+      let st;
+      try {
+        st = fs.statSync(lockDir);
+      } catch (eStatDir) {
+        waitOrThrow(start, budgetMs, '(lock dir vanished mid-check)');
+        continue;
+      }
+      const birth = typeof st.birthtimeMs === 'number' && st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs;
+      ageMs = Date.now() - birth;
+      holderPid = null;
+      dead = true; // no pid to probe for an unknown holder — age is the only signal
+      descriptor = 'by an unknown holder (missing/unparseable owner.json, ' + ageMs + 'ms < ' + staleMs + 'ms)';
+    }
+
+    if (dead && ageMs > staleMs) {
+      const tombstone = lockDir + '.tomb-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+      try {
+        fs.renameSync(lockDir, tombstone); // the CAS: exactly one taker wins
+      } catch (eRename) {
+        waitOrThrow(start, budgetMs, descriptor); // lost the race (or the true holder released first) — wait, don't spin
+        continue;
+      }
+      try { fs.rmSync(tombstone, { recursive: true, force: true }); } catch (eClean) { /* best-effort cleanup; not load-bearing */ }
+      continue; // fall through to a fresh mkdirSync
+    }
+    waitOrThrow(start, budgetMs, parseOk ? descriptor : ('by an unknown holder for > budget'));
   }
 }
-// Release only if the lock file still names OUR token — a stale-lock
-// takeover may have already replaced it with a different holder's fresh
-// lock, and unlinking that would release a lock we no longer own.
-function releaseLockIfOwned(file, token) {
+// Release only if the lock dir's owner.json still names OUR token — a
+// stale-lock takeover may have already replaced it with a different
+// holder's fresh lock, and removing that would release a lock we no longer
+// own. Fix round 3: a confirmed MISMATCH (parseable owner.json naming a
+// different token) is now a loud typed throw ('lock ownership lost') rather
+// than a silent no-op — a vanished/foreign/unreadable owner.json (we can't
+// even confirm whose lock it is) still stays a silent no-op, since there is
+// nothing of ours to safely remove either way.
+function releaseLockIfOwned(lockDir, token) {
+  let current;
   try {
-    const current = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (current.token === token) fs.unlinkSync(file);
-  } catch (e) { /* vanished, foreign, or unreadable — nothing of ours to release */ }
+    current = JSON.parse(fs.readFileSync(ownerFile(lockDir), 'utf8'));
+  } catch (e) {
+    return; // vanished, foreign, or unreadable — nothing of ours to safely release
+  }
+  if (current && current.token === token) {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+    return;
+  }
+  throw new TicketStoreError('lock ownership lost');
 }
 
 function validateTicketShape(ticket) {
@@ -261,43 +377,47 @@ function validateStoreShape(data) {
   }
 }
 
-// Fix round 2, finding 2: write-ahead events are appended BEFORE the state
-// that produced them commits. A crash between the two leaves the log
-// carrying event line(s) whose seq is ahead of the committed state.seq.
-// Every load calls this: if it finds such a tail, those events never
-// actually happened as far as the state is concerned — append ONE
-// explanatory `reconcile` line naming the dropped seqs and move on. This
-// never throws (the state is the truth and is left untouched); the only
-// thing that still fails a load closed is a corrupted state file itself,
-// handled by readStore()/validateStoreShape() before this ever runs.
-function reconcileEventsLog(dir, data, fsHooks) {
+// Fix round 3 (review #3, MAJOR #2, tickets.js:273): tolerant raw read of
+// the events log — used both by the unlocked diagnostic (readStore(), via
+// findOrphanSeqs()) and by the locked reconciliation step in withStore().
+// Never throws: a missing file is "no events yet"; a corrupt trailing line
+// is skipped (not this pass's job to repair).
+function readEventsRaw(dir) {
   const file = eventsFile(dir);
   let raw;
   try {
     raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
-    return; // no events file yet (a store never written through withStore) — nothing to reconcile
+    return [];
   }
-  const lines = raw.split('\n').filter(Boolean);
-  const dropped = new Set();
-  for (const line of lines) {
-    let ev;
-    try { ev = JSON.parse(line); } catch (e) { continue; /* tolerate a corrupt trailing line — not this pass's job to repair */ }
-    if (typeof ev.seq === 'number' && ev.seq > data.seq) dropped.add(ev.seq);
+  const out = [];
+  for (const line of raw.split('\n')) {
+    if (!line) continue;
+    try { out.push(JSON.parse(line)); } catch (e) { /* tolerate a corrupt trailing line */ }
   }
-  if (dropped.size === 0) return;
-  const droppedList = Array.from(dropped).sort((a, b) => a - b);
-  const rec = { at: nowIso(), id: null, from: null, to: null, event: 'reconcile', data: { dropped: droppedList }, seq: data.seq };
-  try {
-    appendEventsOrThrow(dir, fsHooks, [JSON.stringify(rec)]);
-  } catch (e) {
-    // Best-effort self-heal: if even the explanatory line can't be written,
-    // leave the gap for the next successful load to retry. Loading itself
-    // must never throw for this.
-  }
+  return out;
 }
 
-function readStore(dir, fsHooks) {
+// Which logged seqs exceed the given committed seq? Read-only, no side
+// effect — safe to call from an unlocked reader. A seq found here is NOT
+// necessarily an orphan: an in-flight writer (holding the lock right now)
+// may have appended its event and not yet committed state, which is
+// indistinguishable from a genuine crash-orphan to an unlocked observer.
+// That ambiguity is exactly why only withStore() (after acquiring the
+// lock, when no writer can possibly be in flight) may treat these as real
+// orphans and reconcile.
+function findOrphanSeqs(dir, committedSeq) {
+  const seqs = new Set();
+  for (const ev of readEventsRaw(dir)) {
+    if (typeof ev.seq === 'number' && ev.seq > committedSeq) seqs.add(ev.seq);
+  }
+  return Array.from(seqs).sort((a, b) => a - b);
+}
+
+// Reads + validates tickets.json only. NEVER touches the events log, NEVER
+// writes, NEVER reconciles. Used both by the unlocked queries (via
+// readStore(), below) and by withStore()'s own locked read.
+function readStoreRaw(dir) {
   const file = ticketsFile(dir);
   let raw;
   try {
@@ -312,7 +432,22 @@ function readStore(dir, fsHooks) {
     throw new TicketStoreError('tickets store corrupted (invalid JSON) at ' + file + ': ' + e.message);
   }
   validateStoreShape(data);
-  reconcileEventsLog(dir, data, fsHooks);
+  return data;
+}
+
+// Fix round 3 (review #3, MAJOR #2): the UNLOCKED read path — used by
+// get()/list()/openTickets() and by createTicketStore()'s open-time fail-
+// closed check. Never writes, never reconciles (reconciliation is a
+// writer-only, under-lock operation now — see withStore()). It DOES attach
+// a non-enumerable `pendingEventSeqs` diagnostic (events in the log whose
+// seq exceeds the committed state.seq) so a caller/test can observe an
+// in-flight-or-orphaned tail without this read ever mutating anything.
+function readStore(dir) {
+  const data = readStoreRaw(dir);
+  const pending = findOrphanSeqs(dir, data.seq);
+  if (pending.length) {
+    Object.defineProperty(data, 'pendingEventSeqs', { value: pending, enumerable: false, configurable: true });
+  }
   return data;
 }
 
@@ -363,29 +498,40 @@ function appendEventsOrThrow(dir, fsHooks, lines) {
 // { data, result, events } on success; events is an array of
 // {at, id, from, to, event, data} rows.
 //
-// Fix round 2 (findings 1+2): this is the ONE place that writes either
-// tickets.events.jsonl or tickets.json, and it does so in a fixed order —
-// (1) fn() builds the new state in memory (seq = readSeq + 1); (2) the
-// lock-token re-check runs as a belt-and-braces assertion (should be
-// unreachable under a liveness-gated lock — see acquireLock()); (3) the
-// event line(s) are appended to the JSONL log FIRST, fsync'd, each carrying
-// the new seq — if this fails, nothing else happens and the caller sees a
-// typed error with the state UNCHANGED; (4) immediately before the commit
-// rename, the on-disk seq is re-read and compared to what was read at the
-// top — a mismatch is impossible under correct locking and throws loudly
-// rather than silently overwriting; (5) the state commits
-// (temp-file-then-rename). Success or typed refusal alike goes through
-// every step — a refusal still legitimately mutates state (attempts /
-// unknown_attempts) and must still be durably logged.
+// Fix round 2 (findings 1+2) / fix round 3 (review #3, MAJOR #2): this is
+// the ONE place that writes either tickets.events.jsonl or tickets.json,
+// and it does so in a fixed order — (1) NOW that the lock is held, re-read
+// state AND the events log directly (readStoreRaw + findOrphanSeqs) — no
+// other writer can possibly be in flight, so any logged seq > state.seq
+// here is a genuine orphan (a crash between a prior append and its rename),
+// never a live writer's not-yet-committed event; (2) fn() builds the new
+// state in memory; (3) the lock-token re-check runs as a belt-and-braces
+// assertion (should be unreachable under a liveness-gated lock — see
+// acquireLock()); (4) if an orphan was found, ONE reconcile line (naming
+// the dropped seq(s)) is appended BEFORE this write's own event line(s), in
+// the same fsync'd append, so the log always reads
+// [orphan(s)…, reconcile, this-event] and orphan seqs are never reused —
+// this write commits at newSeq = max(state.seq, maxOrphanSeq) + 1; (5)
+// immediately before the commit rename, the on-disk seq is re-read and
+// compared to what was read at the top — a mismatch is impossible under
+// correct locking and throws loudly rather than silently overwriting; (6)
+// the state commits (temp-file-then-rename). Success or typed refusal
+// alike goes through every step — a refusal still legitimately mutates
+// state (attempts / unknown_attempts) and must still be durably logged. If
+// the lock cannot be acquired at all, none of this runs — no reconciliation
+// happens (a reader observing a gap without the lock is observing an
+// in-flight write, not an orphan).
 function withStore(store, fn) {
   const staleMs = store.lockStaleMs || DEFAULT_LOCK_STALE_MS;
   const budgetMs = store.lockBudgetMs || (staleMs + LOCK_BUDGET_PAD_MS);
   const fsHooks = store._fs || null;
-  const { file: lock, token } = acquireLock(store.dir, staleMs, budgetMs);
+  const { dir: lockDir, token } = acquireLock(store.dir, staleMs, budgetMs);
   let ownLock = true;
   try {
-    const data = readStore(store.dir, fsHooks);
+    const data = readStoreRaw(store.dir);
     const readSeq = data.seq;
+    const orphanSeqs = findOrphanSeqs(store.dir, readSeq); // safe now: lock held, no writer can be mid-flight
+
     let next, result, events, pendingErr = null;
     try {
       ({ data: next, result, events } = fn(data));
@@ -402,20 +548,34 @@ function withStore(store, fn) {
     // preempted, so this can only trip on a genuine bug.
     let current;
     try {
-      current = JSON.parse(fs.readFileSync(lock, 'utf8'));
+      current = JSON.parse(fs.readFileSync(ownerFile(lockDir), 'utf8'));
     } catch (e) {
       ownLock = false;
-      throw new TicketStoreError('tickets.lock vanished before write — belt-and-braces assertion tripped (should be unreachable under a liveness-gated lock): ' + e.message);
+      throw new TicketStoreError('tickets.lock owner.json vanished before write — belt-and-braces assertion tripped (should be unreachable under a liveness-gated lock): ' + e.message);
     }
     if (current.token !== token) {
       ownLock = false;
       throw new TicketStoreError('tickets.lock token changed before write (belt-and-braces assertion tripped — should be unreachable under a liveness-gated lock)');
     }
 
-    next.seq = readSeq + 1;
+    // Orphan reconciliation (fix round 3), under lock only. The marker's
+    // own seq documents the highest dropped seq it explains (== baseSeq);
+    // this write's event(s) then commit strictly above it at baseSeq + 1,
+    // so an orphan seq is never reused by a real commit.
+    let baseSeq = readSeq;
+    const preLines = [];
+    if (orphanSeqs.length) {
+      const maxOrphan = orphanSeqs[orphanSeqs.length - 1];
+      baseSeq = Math.max(readSeq, maxOrphan);
+      const rec = { at: nowIso(), id: null, from: null, to: null, event: 'reconcile', data: { dropped: orphanSeqs }, seq: baseSeq };
+      preLines.push(JSON.stringify(rec));
+    }
+
+    next.seq = baseSeq + 1;
     const evList = (events || []).map((ev) => Object.assign({}, ev, { seq: next.seq }));
-    if (evList.length) {
-      appendEventsOrThrow(store.dir, fsHooks, evList.map((ev) => JSON.stringify(ev)));
+    const allLines = preLines.concat(evList.map((ev) => JSON.stringify(ev)));
+    if (allLines.length) {
+      appendEventsOrThrow(store.dir, fsHooks, allLines);
     }
 
     // Immediately before the commit rename: re-read the on-disk seq.
@@ -436,7 +596,15 @@ function withStore(store, fn) {
     if (pendingErr) throw pendingErr;
     return result;
   } finally {
-    if (ownLock) releaseLockIfOwned(lock, token);
+    if (ownLock) {
+      try {
+        releaseLockIfOwned(lockDir, token);
+      } catch (e) {
+        // releaseLockIfOwned() throws on a confirmed token mismatch (fix
+        // round 3) — a real bug signal, but it must never mask the write
+        // that already committed (or the error already in flight) here.
+      }
+    }
   }
 }
 
@@ -465,18 +633,18 @@ function createTicketStore({ dir, init, lockStaleMs, lockBudgetMs, _fs } = {}) {
       throw new TicketStoreError('tickets store does not exist at ' + file + ' (pass { init: true } to create generation 1)');
     }
     fs.mkdirSync(dir, { recursive: true });
-    const { file: lock, token } = acquireLock(dir, staleMs, budgetMs);
+    const { dir: lockDir, token } = acquireLock(dir, staleMs, budgetMs);
     try {
       if (!fs.existsSync(file)) {
         writeStore(dir, { generation: 1, seq: 0, tickets: {}, unknown_attempts: [] });
       }
     } finally {
-      releaseLockIfOwned(lock, token);
+      try { releaseLockIfOwned(lockDir, token); } catch (e) { /* see withStore()'s finally for why this is swallowed here too */ }
     }
   } else {
     // Fail closed immediately on a corrupted/unreadable store rather than
     // waiting for the first operation to discover it.
-    readStore(dir, _fs);
+    readStoreRaw(dir);
   }
   return { dir, lockStaleMs, lockBudgetMs, _fs };
 }
@@ -735,13 +903,21 @@ function denied(store, id, event, reason) {
 
 // ------------------------------------------------------------------- queries
 
+// Fix round 3: readStore() here is a genuinely unlocked, non-reconciling
+// read (see its header comment). Any pendingEventSeqs diagnostic it finds
+// is mirrored onto the caller's own `store` object — not returned inline —
+// so the query's return shape (ticket | null, or an array of tickets) stays
+// exactly as it was; a caller that wants the diagnostic reads
+// store.pendingEventSeqs after the call.
 function get(store, id) {
-  const data = readStore(store.dir, store._fs);
+  const data = readStore(store.dir);
+  store.pendingEventSeqs = data.pendingEventSeqs || [];
   return data.tickets[id] || null;
 }
 
 function list(store, { status } = {}) {
-  const data = readStore(store.dir, store._fs);
+  const data = readStore(store.dir);
+  store.pendingEventSeqs = data.pendingEventSeqs || [];
   const all = Object.values(data.tickets);
   if (status === undefined) return all;
   const wanted = Array.isArray(status) ? new Set(status) : new Set([status]);

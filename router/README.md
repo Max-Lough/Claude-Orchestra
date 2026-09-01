@@ -145,39 +145,71 @@ implementation ticket carrying a `q0_ticket` — that Q0 has at least
 (`createTicketStore({ dir })`) is a single `tickets.json` (materialised state,
 carrying an integer `seq` incremented once per committed write) plus an
 append-only `tickets.events.jsonl`, and a cross-process advisory lock
-(`tickets.lock`, `{pid, token, at, host}`, stale after 30s — configurable
-per store via `lockStaleMs`) serialises the real callers — separate
+DIRECTORY (`tickets.lock/`, `fs.mkdirSync` — atomic AND exclusive on every
+platform Node supports, including Windows — carrying an `owner.json`
+`{pid, token, at, host}` sidecar, stale after 30s — configurable per store
+via `lockStaleMs`) serialises the real callers — separate
 `PreToolUse`/`PostToolUse`/`SubagentStop`/`Stop` hook processes. Pure state
 machine and store only: no hook or MCP wiring here (a later leg's job).
 
-**Lock takeover is liveness-gated (WO-14b leg 2 fix round 2, finding 1).** A
-stale lock is takeable ONLY when its recorded pid is provably dead
-(`process.kill(pid, 0)` throws `ESRCH`, or the pid isn't even a number) AND
-the lock is older than `lockStaleMs`; the CAS mechanics (atomic rename to a
-tombstone before a fresh `O_EXCL` create) are unchanged from fix round 1, but
-a live holder — however slow — is now NEVER displaced. A waiter just polls
-until its own `lockBudgetMs` and then fails closed with a typed
-`TicketStoreError` naming the live pid, rather than ever racing a
-still-running holder. Because a live holder can never be preempted, the old
-check-to-write race (a taker writing between a live holder's read and its
-own write) cannot recur — only a dead holder could ever be displaced, and a
-dead holder cannot write. The pre-write lock-token re-check and the
-pre-commit `seq` re-check exist only as belt-and-braces assertions now, not
-the primary defense.
+**Lock takeover is liveness-gated (WO-14b leg 2 fix round 2, finding 1) and
+the lock itself is now a directory (fix round 3, review #3, MAJOR:
+tickets.js:192).** A stale lock is takeable ONLY when its recorded pid is
+provably dead (`process.kill(pid, 0)` throws `ESRCH`, or the pid isn't even a
+number) AND the lock is older than `lockStaleMs`; the CAS mechanics (atomic
+rename to a tombstone before a fresh acquire) are unchanged in spirit, but a
+live holder — however slow — is NEVER displaced. Fix round 3 replaced the
+O_EXCL lock FILE with a lock DIRECTORY: exclusivity is now the `mkdirSync`
+itself succeeding, and never depends on `owner.json` being present or
+parseable. On contention, a missing/unreadable/half-written `owner.json`
+folds into a single "unknown holder" case, aged off the lock directory's own
+mtime/birthtime instead of a pid — stale by age alone takes it over,
+otherwise wait. Review #3's reproducer was exactly this: a holder crashing
+mid-way through writing its lock metadata used to make every waiter spin at
+the parse-retry forever, never sleeping or checking the budget; every
+contention path now funnels through one choke point that always sleeps
+(~25ms) and always checks `lockBudgetMs` before looping again, so nothing
+can spin. A waiter that exhausts its budget fails closed with a typed
+`TicketStoreError` naming which case it hit (live pid *N* / unknown holder).
+Because a live holder can never be preempted, the check-to-write race (a
+taker writing between a live holder's read and its own write) cannot recur —
+only a dead (or provably absent) holder could ever be displaced, and neither
+can write. The pre-write lock-token re-check and the pre-commit `seq`
+re-check exist only as belt-and-braces assertions now, not the primary
+defense.
 
-**Writes are write-ahead with reconciliation (finding 2).** Every mutation
-appends its event line(s) to `tickets.events.jsonl` FIRST (fsync'd, each
-line carrying the write's new `seq`), then commits `tickets.json`
-(temp-file-then-rename). If the append itself fails, nothing changes and the
-caller sees a typed `TicketStoreError`. If the process dies between the
-append and the commit, the log is left with a seq ahead of the committed
-state; the next load reconciles it — appends one `reconcile` line naming the
-dropped seq(s) and moves on, never throwing for this case (only a corrupted
-state file still fails a load closed). Typed refusals are logged the same
-way as successful transitions, including a `denied` event alongside the
-`expire` transition for a launch/resolve that arrives after `expires_at`
-(finding 3) — `events [issue, consume, expire, denied]` with
-`attempts [launch]`, not just the bare `expire`.
+**Writes are write-ahead; reconciliation is a writer-only, under-lock
+operation (finding 2 / fix round 3, review #3, MAJOR: tickets.js:273).**
+Every mutation appends its event line(s) to `tickets.events.jsonl` FIRST
+(fsync'd, each line carrying the write's new `seq`), then commits
+`tickets.json` (temp-file-then-rename). If the append itself fails, nothing
+changes and the caller sees a typed `TicketStoreError`. If the process dies
+between the append and the commit, the log is left with a seq ahead of the
+committed state — but reconciling that gap is now exclusively `withStore()`'s
+job, done immediately after it acquires the lock (at which point no other
+writer can possibly be in flight, so a logged seq ahead of state.seq is a
+genuine crash-orphan, never a race). Fix round 3 moved this out of the
+unlocked read path (`readStore()`, used by `get`/`list`/`openTickets`): the
+old code reconciled on every load, so a reader racing a genuinely in-flight
+writer could misfile that writer's own not-yet-committed event as "dropped"
+even though the writer went on to commit it normally — review #3's exact
+repro. `readStore()` now only reads and validates; it never writes, and at
+most attaches a non-enumerable `pendingEventSeqs` diagnostic (mirrored onto
+the caller's `store` object by `get`/`list`/`openTickets`) so an in-flight
+tail is observable without ever being misdiagnosed as dropped. When
+`withStore()` does find a genuine orphan, it appends ONE `reconcile` line
+(naming the dropped seq(s)) BEFORE this write's own event line(s), in the
+same fsync'd append, and commits at
+`newSeq = max(state.seq, maxOrphanSeq) + 1` — so the log always reads
+`[orphan(s)…, reconcile, this-event]` and an orphan seq is never reused by a
+real commit. If the lock can't be acquired at all, no reconciliation
+happens. Invariant: committed seq is monotonic; every seq in the log appears
+at most once as a non-orphan; orphans are always followed by a reconcile
+marker written under the lock. Typed refusals are logged the same way as
+successful transitions, including a `denied` event alongside the `expire`
+transition for a launch/resolve that arrives after `expires_at` (finding 3)
+— `events [issue, consume, expire, denied]` with `attempts [launch]`, not
+just the bare `expire`.
 
 ## WO-6 defaults where the plan is silent
 

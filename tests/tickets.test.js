@@ -780,6 +780,64 @@ check('isPidAlive: a non-numeric or missing pid is treated as dead outright (nev
   check('14b: the lock file is released (not left held) after the takeover completes', !fs.existsSync(lockPath));
 }
 
+// 14c. Fix round 3 (review #3, MAJOR #1, tickets.js:192): the lock is now a
+// DIRECTORY, and owner.json inside it can be missing or half-written (a
+// holder that crashed after mkdirSync but before/mid owner.json write).
+// The review's exact reproducer: a probe with a short budget spun 10s
+// instead of taking over or throwing. Every such "unknown holder" case must
+// (a) take over cleanly once past staleMs (aged off the lock DIRECTORY's
+// own timestamp, since there's no pid to check), and (b) when still fresh,
+// fail closed with a typed TicketStoreError WITHIN budget + 200ms — never
+// spin.
+{
+  const dir = tmpDir('tkt-unknownholder-');
+  T.createTicketStore({ dir, init: true });
+  const lockDir = T._internal.lockFile(dir);
+
+  function probeFreshUnknownHolder(label, makeLockDir) {
+    makeLockDir();
+    const BUDGET = 150;
+    const store = { dir, lockStaleMs: 10000, lockBudgetMs: BUDGET };
+    const t0 = Date.now();
+    let threw = null;
+    try { T.bumpGeneration(store, 'probe-' + label); } catch (e) { threw = e; }
+    const elapsed = Date.now() - t0;
+    check('14c: ' + label + ' (fresh) — waiter fails closed with a typed TicketStoreError within budget(' + BUDGET + 'ms) + 200ms, never spins',
+      threw instanceof T.TicketStoreError && elapsed <= BUDGET + 200,
+      'elapsed=' + elapsed + 'ms threw=' + (threw && threw.name + ': ' + threw.message));
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
+
+  function probeStaleUnknownHolder(label, makeLockDir) {
+    makeLockDir();
+    const STALE = 300;
+    realSleepMs(STALE + 250); // age the lock dir past staleness via the wall clock (birthtime isn't fakeable cross-platform)
+    const before = JSON.parse(fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8'));
+    const store = { dir, lockStaleMs: STALE, lockBudgetMs: 5000 };
+    let outcome;
+    try { outcome = { ok: true, r: T.bumpGeneration(store, 'takeover-' + label) }; }
+    catch (e) { outcome = { ok: false, name: e.name, message: e.message }; }
+    check('14c: ' + label + ' (stale) — taken over cleanly once past staleMs, write lands',
+      !!(outcome.ok && outcome.r.generation === before.generation + 1), JSON.stringify(outcome));
+    check('14c: ' + label + ' (stale) — no leftover tombstone after takeover', fs.readdirSync(dir).every((e) => !e.includes('.tomb-')));
+  }
+
+  probeFreshUnknownHolder('half-written owner.json', () => {
+    fs.mkdirSync(lockDir);
+    fs.writeFileSync(path.join(lockDir, 'owner.json'), '{"pid": '); // truncated mid-write — unparseable
+  });
+  probeStaleUnknownHolder('half-written owner.json', () => {
+    fs.mkdirSync(lockDir);
+    fs.writeFileSync(path.join(lockDir, 'owner.json'), '{"pid": '); // truncated mid-write — unparseable
+  });
+  probeFreshUnknownHolder('lock dir with no owner.json at all', () => {
+    fs.mkdirSync(lockDir); // owner.json never created — the crash-right-after-mkdirSync case
+  });
+  probeStaleUnknownHolder('lock dir with no owner.json at all', () => {
+    fs.mkdirSync(lockDir);
+  });
+}
+
 // ==================================================== 15. seq
 
 section('15. Fix round 2, finding 1 — seq: every committed write increments it by exactly one; event lines carry the matching seq');
@@ -839,34 +897,146 @@ check('_fs hook: an injected failing appendFileSync leaves state unchanged and t
 
 // ==================================================== 17. crash between append and rename
 
-section('17. Fix round 2, finding 2 — a crash between the event append and the state rename reconciles on next load');
+section('17. Fix round 3 (review #3, MAJOR #2, tickets.js:273) — reconciliation is a writer-only, under-lock operation');
 
-check('an event line appended with seq = state.seq + 1 but the state never committed: next load leaves state unchanged, appends one reconcile line naming the dropped seq, never throws, and subsequent writes resume at the correct seq',
-  (() => {
-    const store = freshStore('tkt-crash-');
-    const t = T.issue(store, baseFields()); // seq 0 -> 1, committed normally
-    const before = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+// Review #3's exact defect: the OLD reconcileEventsLog() ran on every
+// UNLOCKED load (get/list/openTickets), so a reader racing a genuinely
+// in-flight writer (event appended, state not yet committed) recorded that
+// event as "dropped" even though the writer went on to commit it normally
+// — an independent probe reproduced committed generation 2/seq 1 while the
+// log simultaneously carried both the real event AND a reconcile marking
+// it dropped. Reconciliation now happens ONLY inside withStore(), only
+// after the lock is held (so no writer can possibly be in flight — a
+// logged seq > state.seq at that point is a genuine crash-orphan, not a
+// race).
+{
+  const store = freshStore('tkt-orphan-read-');
+  const t = T.issue(store, baseFields()); // seq 0 -> 1, committed normally
+  const before = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
 
-    // Simulate exactly the crash window: append an event carrying seq+1
-    // directly (bypassing withStore) and do NOT write state — this is what
-    // a process death between the event append and the state rename leaves
-    // behind.
-    const crashedSeq = before.seq + 1;
-    fs.appendFileSync(path.join(store.dir, 'tickets.events.jsonl'), JSON.stringify({ at: new Date().toISOString(), id: t.id, from: 'OPEN', to: 'CONSUMED', event: 'consume', data: { simulated: 'crash' }, seq: crashedSeq }) + '\n');
+  // Simulate exactly the crash window: append an event carrying seq+1
+  // directly (bypassing withStore) and do NOT write state — this is what a
+  // process death between the event append and the state rename leaves
+  // behind. From an unlocked reader's point of view this is indistinguishable
+  // from a live writer mid-flight — which is exactly why a reader must never
+  // reconcile it.
+  const orphanSeq = before.seq + 1;
+  fs.appendFileSync(path.join(store.dir, 'tickets.events.jsonl'), JSON.stringify({ at: new Date().toISOString(), id: t.id, from: 'OPEN', to: 'CONSUMED', event: 'consume', data: { simulated: 'crash' }, seq: orphanSeq }) + '\n');
+  const linesBeforeReads = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
 
-    const fetched = T.get(store, t.id); // any load reconciles
-    const stateAfterReconcile = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
-    const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-    const reconcileLines = lines.filter((l) => l.event === 'reconcile');
+  const fetched = T.get(store, t.id);
+  const listed = T.list(store, {});
+  const opened = T.openTickets(store);
+  const pendingAfterGet = store.pendingEventSeqs;
 
-    const stateUnchanged = stateAfterReconcile.seq === before.seq && fetched.status === 'OPEN';
-    const reconciled = reconcileLines.length >= 1 && reconcileLines[0].data.dropped.includes(crashedSeq) && reconcileLines[0].seq === before.seq;
+  const stateAfterReads = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+  const linesAfterReads = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
 
-    const consumed = T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' }); // a real write must land at the correct next seq (crashedSeq reused — it never actually committed)
-    const finalState = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+  check('17: get()/list()/openTickets() between append and rename never append a reconcile line',
+    linesAfterReads.length === linesBeforeReads.length, 'before=' + linesBeforeReads.length + ' after=' + linesAfterReads.length);
+  check('17: an unlocked read never changes committed state', stateAfterReads.seq === before.seq && fetched.status === 'OPEN');
+  check('17: get() mirrors the orphan onto store.pendingEventSeqs for diagnostics', Array.isArray(pendingAfterGet) && pendingAfterGet.includes(orphanSeq), JSON.stringify(pendingAfterGet));
+  check('17: list()/openTickets() ran cleanly alongside the pending orphan (sanity)', Array.isArray(listed) && Array.isArray(opened));
 
-    return stateUnchanged && reconciled && consumed.status === 'CONSUMED' && finalState.seq === before.seq + 1;
-  })());
+  // Now a real write happens under the lock: it must reconcile — exactly
+  // one reconcile line naming the orphan, this write's own event strictly
+  // above it, committed state.seq matching.
+  const consumed = T.consume(store, t.id, { tool_use_id: 'tu-reconcile', role: 'Builder' });
+  const linesAfterWrite = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const reconcileLines = linesAfterWrite.filter((l) => l.event === 'reconcile');
+  const thisWriteLine = linesAfterWrite[linesAfterWrite.length - 1];
+  const stateAfterWrite = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+
+  check('17: a write under the lock appends exactly one reconcile line naming the orphan seq',
+    reconcileLines.length === 1 && reconcileLines[0].data.dropped.includes(orphanSeq), JSON.stringify(reconcileLines));
+  check('17: this write\'s own event carries a seq strictly greater than the orphan\'s',
+    thisWriteLine.event === 'consume' && thisWriteLine.seq > orphanSeq, 'thisWriteLine=' + JSON.stringify(thisWriteLine) + ' orphanSeq=' + orphanSeq);
+  check('17: committed state.seq matches this write\'s event seq; the write itself succeeded',
+    stateAfterWrite.seq === thisWriteLine.seq && consumed.status === 'CONSUMED');
+
+  // A later crash-free write continues monotonically past the reconciliation.
+  const launched = T.launch(store, t.id, { agent_id: 'a', served_model: 'm' });
+  const stateAfterLaunch = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+  check('17: a later crash-free write continues monotonically (seq +1, no further reconcile)',
+    stateAfterLaunch.seq === stateAfterWrite.seq + 1 && launched.status === 'LAUNCHED');
+  const finalReconcileCount = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.event === 'reconcile').length;
+  check('17: still exactly one reconcile line total after the follow-on write', finalReconcileCount === 1);
+}
+
+// Two writers + one orphan present: only the FIRST writer under the lock
+// reconciles; the second, arriving after, sees no orphan at all (the first
+// writer's commit already advanced state.seq past it).
+{
+  const store = freshStore('tkt-orphan-twowriters-');
+  const t = T.issue(store, baseFields());
+  const before = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+  const orphanSeq = before.seq + 1;
+  fs.appendFileSync(path.join(store.dir, 'tickets.events.jsonl'), JSON.stringify({ at: new Date().toISOString(), id: t.id, from: 'OPEN', to: 'CONSUMED', event: 'consume', data: { simulated: 'crash2' }, seq: orphanSeq }) + '\n');
+
+  T.consume(store, t.id, { tool_use_id: 'tu-w1', role: 'Builder' });        // writer 1: reconciles the orphan
+  T.launch(store, t.id, { agent_id: 'a', served_model: 'm' });               // writer 2: no orphan left to see
+
+  const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const reconcileLines = lines.filter((l) => l.event === 'reconcile');
+  check('17: two subsequent writers with one orphan present produce exactly one reconcile line total', reconcileLines.length === 1, JSON.stringify(reconcileLines));
+}
+
+// The review's own reproduction, re-run for real: a writer genuinely
+// mid-flight (its event physically appended to the log, its state commit
+// still pending, held up under a real OS-level sleep) alongside a
+// concurrent unlocked reader in a SEPARATE process. No reconcile line may
+// ever appear for a seq that goes on to commit.
+{
+  const dir = tmpDir('tkt-midflight-');
+  T.createTicketStore({ dir, init: true });
+  const SLEEP_MS = 1500;
+
+  const writerScript = path.join(dir, 'midflight-writer.js');
+  fs.writeFileSync(writerScript, `
+    'use strict';
+    const T = require(${JSON.stringify(path.join(MASTER, 'router', 'tickets.js'))});
+    const fs = require('fs');
+    function sleepSync(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
+    const store = {
+      dir: ${JSON.stringify(dir)},
+      lockStaleMs: 5000,
+      lockBudgetMs: 20000,
+      _fs: {
+        appendFileSync: (file, text) => {
+          fs.appendFileSync(file, text); // the event line lands on disk now — a concurrent unlocked reader CAN see it
+          sleepSync(${SLEEP_MS});        // hold the append-to-commit gap open, exactly what review #3 exploited
+        },
+      },
+    };
+    T.bumpGeneration(store, 'midflight-writer');
+    fs.writeFileSync(require('path').join(${JSON.stringify(dir)}, 'midflight-writer.done'), 'ok');
+  `);
+  const writer = spawn(process.execPath, [writerScript], { stdio: 'ignore' });
+
+  realSleepMs(400); // let the writer acquire the lock and get into its (now-stalled) append
+
+  const readerStore = { dir };
+  T.get(readerStore, 'tkt-0000000000000000'); // unlocked reads WHILE the writer is genuinely mid-flight
+  T.list(readerStore, {});
+  const midFlightHasReconcile = fs.readFileSync(path.join(dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean)
+    .some((l) => { try { return JSON.parse(l).event === 'reconcile'; } catch (e) { return false; } });
+  check('17: no reconcile line appears while a reader races a genuinely mid-flight writer', !midFlightHasReconcile);
+
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline && !fs.existsSync(path.join(dir, 'midflight-writer.done'))) realSleepMs(50);
+  check('17: the mid-flight writer finished within the deadline', fs.existsSync(path.join(dir, 'midflight-writer.done')));
+
+  const finalState = JSON.parse(fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8'));
+  const finalLines = fs.readFileSync(path.join(dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const finalReconcileLines = finalLines.filter((l) => l.event === 'reconcile');
+  check('17: the committed generation matches the log — the writer\'s event landed and NO reconcile line was ever produced for its own seq',
+    finalState.generation === 2 && finalReconcileLines.length === 0, 'generation=' + finalState.generation + ' reconcileLines=' + JSON.stringify(finalReconcileLines));
+
+  realSleepMs(200);
+  let alive = true;
+  try { process.kill(writer.pid, 0); } catch (e) { alive = false; }
+  if (alive) { try { writer.kill(); } catch (e) { /* best effort */ } realSleepMs(200); }
+}
 
 // ==================================================== 18. expiry denial events
 

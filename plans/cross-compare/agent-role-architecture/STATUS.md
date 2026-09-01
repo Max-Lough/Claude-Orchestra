@@ -861,6 +861,15 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-09-01 evening — WO-14b activation bridge, finishing)
 
+**OWNER RULING 2026-09-01 ~21:00Z — SHIP TO SHAKEDOWN.** "Keep your goals VERY bounded… KISS,
+YAGNI, DRY and get this project closed out. The only important aspects are telemetry for
+monitoring performance… usable in our actual projects ASAP… fine tune during our shakedown
+cruise/first live tests." Consequence: the plan's steps 4–5 (Sol integrated review + correction +
+recheck; Opus pre-live audit) are CUT. Leg 6 merged → install into one real project with the
+owner present → the first live orders are the review. Non-spine findings go to
+`roster/wo14b-shakedown-punch-list.md`, never to a repair round. Do not add verification steps
+the owner did not order.
+
 Branch **`claude/wo14b-bridge`** (off `claude/wo12-trials`). Read, in this order, and nothing else
 first:
 

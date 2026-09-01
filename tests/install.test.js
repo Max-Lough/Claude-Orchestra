@@ -52,11 +52,19 @@ function tmpdir(prefix) {
   return d;
 }
 
+// Every spawned installer run in this suite must write its manifest pin
+// (item 9) somewhere disposable — never a developer's or CI runner's real
+// ~/.claude/orchestra/pins/. One shared temp dir for the whole suite run,
+// cleaned up with everything else.
+const DEFAULT_PIN_DIR = tmpdir('orchestra-pins-default-');
+const DEFAULT_ENV = Object.assign({}, process.env, { ORCHESTRA_PIN_DIR: DEFAULT_PIN_DIR });
+
 function install(target, extraArgs) {
   return spawnSync(process.execPath, [INSTALLER, target].concat(extraArgs || []), {
     encoding: 'utf8',
     timeout: 120000,
     cwd: MASTER,
+    env: DEFAULT_ENV,
   });
 }
 
@@ -90,6 +98,30 @@ function out(r) {
 
 // ---------------------------------------------------------------- cases
 
+// Checked-in expected legacy census (item 1) — exactly what the dfcfc9b
+// installer created for a plain `node install.js <target>` with no
+// --roster/--grant-push, no packs, no specialists. CRUCIALLY: no
+// .claude/orchestra.json — WO-14b leg-3 fix round B's whole point is that a
+// byte-for-byte legacy install creates none.
+const EXPECTED_LEGACY_CENSUS = [
+  '.claude/.gitattributes',
+  '.claude/ORCHESTRA.md',
+  '.claude/agents/detective.md',
+  '.claude/agents/executor-heavy-xhigh.md',
+  '.claude/agents/executor-heavy.md',
+  '.claude/agents/executor.md',
+  '.claude/agents/reviewer.md',
+  '.claude/agents/scout.md',
+  '.claude/hooks/orchestra-guard.js',
+  '.claude/hooks/package.json',
+  '.claude/orchestra-install.json',
+  '.claude/settings.json',
+  '.claude/skills/orchestra-plan/SKILL.md',
+  '.claude/skills/orchestra-review/SKILL.md',
+  '.claude/skills/orchestra-status/SKILL.md',
+  'CLAUDE.md',
+].sort();
+
 function case1_legacyCensusUnchanged() {
   section('1. --roster legacy (default) is byte-for-byte today\'s behaviour — file census');
 
@@ -105,12 +137,33 @@ function case1_legacyCensusUnchanged() {
   const cExplicit = census(explicit);
   check('plain install and explicit --roster legacy install produce an IDENTICAL file census', JSON.stringify(cPlain) === JSON.stringify(cExplicit), cPlain.join('\n') + '\n---\n' + cExplicit.join('\n'));
 
+  // Pin against the checked-in expected list — not just "matches itself".
+  // Skills carry more than SKILL.md in the master (README.md etc are
+  // reference docs beside the skill and are NOT installed), so filter the
+  // actual census down to what the checked-in list claims before comparing,
+  // and separately assert nothing UNEXPECTED crept in.
+  check(
+    'legacy census matches the checked-in expected list exactly',
+    JSON.stringify(cPlain) === JSON.stringify(EXPECTED_LEGACY_CENSUS),
+    'actual:\n' + cPlain.join('\n') + '\nexpected:\n' + EXPECTED_LEGACY_CENSUS.join('\n')
+  );
+
+  // The MAJOR bug this item fixes: a fresh legacy install must create NO
+  // .claude/orchestra.json at all.
+  check('NO .claude/orchestra.json under a legacy install (item 1 MAJOR)', !cPlain.includes('.claude/orchestra.json'), cPlain.join('\n'));
+
   // None of the eleven roster role files, the conductor file, or the
   // .claude/orchestra/ runtime directory appear in a legacy install.
   const hasRosterFile = cPlain.some((f) => /\/(architect|builder|red-team|reviewer-anthropic|reviewer-openai|sweeper)\.md$/.test(f));
   check('no new-roster agent files under a legacy install', !hasRosterFile, cPlain.join('\n'));
   check('no .claude/ORCHESTRA-CONDUCTOR.md under a legacy install', !cPlain.includes('.claude/ORCHESTRA-CONDUCTOR.md'), cPlain.join('\n'));
   check('no .claude/orchestra/ runtime directory under a legacy install', !cPlain.some((f) => f.startsWith('.claude/orchestra/')), cPlain.join('\n'));
+
+  // A second re-run (idempotent update) must ALSO create no orchestra.json —
+  // the census guarantee isn't just a first-run fluke.
+  const rAgain = install(plain, ['--no-packs', '--no-specialists']);
+  check('re-running the plain installer succeeds', ok(rAgain), out(rAgain));
+  check('re-running the plain installer STILL creates no orchestra.json', !fs.existsSync(path.join(plain, '.claude', 'orchestra.json')), '');
 }
 
 function case2_newRosterCensus() {
@@ -276,35 +329,73 @@ function case7_uninstallOrderSettingsFirst() {
   check('--uninstall over malformed settings.json deletes NOTHING (file count unchanged)', onlySettingsChanged, 'before=' + before.length + ' after=' + afterAttempt.length);
 }
 
+// The exact push allowlist item 3 grants — no `:*` prefix, so anything
+// outside this literal list must prompt instead of matching an allow.
+const PUSH_SAFE_ALLOW = [
+  'Bash(git push)',
+  'Bash(git push origin HEAD)',
+  'Bash(git push -u origin HEAD)',
+  'Bash(git push --set-upstream origin HEAD)',
+];
+const PUSH_DENY_EXPECTED = [
+  'Bash(git push --force*)',
+  'Bash(git push -f*)',
+  'Bash(git push --delete*)',
+  'Bash(git push --mirror*)',
+  'Bash(git push * --force*)',
+  'Bash(git push -d*)',
+  'Bash(git push --del*)',
+  'Bash(git push --mir*)',
+  'Bash(git push --prune*)',
+  'Bash(git push * +*)',
+  'Bash(git push * :*)',
+  'Bash(git push origin --delete*)',
+];
+
 function case8_grantsDefaultVsGrantPush() {
-  section('8. Grants: add+commit by default; push (with deny counterweight) only behind --grant-push');
+  section('8. Grants: add+commit by default; push (exact-match allowlist + extended deny) only behind --grant-push');
 
   const defTarget = tmpdir('orchestra-install-');
   install(defTarget, ['--no-packs', '--no-specialists']);
   const defSettings = readJson(path.join(defTarget, '.claude', 'settings.json'));
   check('default install grants Bash(git add:*)', defSettings.permissions.allow.includes('Bash(git add:*)'), JSON.stringify(defSettings.permissions));
   check('default install grants Bash(git commit:*)', defSettings.permissions.allow.includes('Bash(git commit:*)'), JSON.stringify(defSettings.permissions));
-  check('default install does NOT grant Bash(git push:*)', !defSettings.permissions.allow.includes('Bash(git push:*)'), JSON.stringify(defSettings.permissions));
+  check('default install does NOT grant any git-push string', !defSettings.permissions.allow.some((p) => p.indexOf('git push') !== -1), JSON.stringify(defSettings.permissions));
   check('default install writes no permissions.deny', !defSettings.permissions.deny, JSON.stringify(defSettings.permissions));
+  check('no .claude/orchestra.json for a plain default install (item 1)', !fs.existsSync(path.join(defTarget, '.claude', 'orchestra.json')), '');
 
   const pushTarget = tmpdir('orchestra-install-');
   install(pushTarget, ['--grant-push', '--no-packs', '--no-specialists']);
   const pushSettings = readJson(path.join(pushTarget, '.claude', 'settings.json'));
-  check('--grant-push grants Bash(git push:*)', pushSettings.permissions.allow.includes('Bash(git push:*)'), JSON.stringify(pushSettings.permissions));
-  const expectedDeny = [
-    'Bash(git push --force*)',
-    'Bash(git push -f*)',
-    'Bash(git push --delete*)',
-    'Bash(git push --mirror*)',
-    'Bash(git push * --force*)',
-  ];
-  for (const d of expectedDeny) {
+  check('--grant-push does NOT grant the broad Bash(git push:*) prefix (item 3)', !pushSettings.permissions.allow.includes('Bash(git push:*)'), JSON.stringify(pushSettings.permissions.allow));
+  for (const p of PUSH_SAFE_ALLOW) {
+    check('--grant-push allowlist includes exact ' + p, pushSettings.permissions.allow.includes(p), JSON.stringify(pushSettings.permissions.allow));
+  }
+  for (const d of PUSH_DENY_EXPECTED) {
     check('--grant-push deny counterweight includes ' + d, (pushSettings.permissions.deny || []).includes(d), JSON.stringify(pushSettings.permissions.deny));
+  }
+
+  // Every destructive form the Red Team reproduced escaping the original
+  // five deny patterns must now be caught by the extended set (item 3).
+  const dangerousForms = [
+    'Bash(git push origin +main)',
+    'Bash(git push origin :doomed)',
+    'Bash(git push -d origin doomed)',
+    'Bash(git push --del origin doomed)',
+    'Bash(git push --mir origin)',
+    'Bash(git push origin --delete doomed)',
+  ];
+  function globToRegExp(pattern) {
+    return new RegExp('^' + pattern.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+  }
+  for (const form of dangerousForms) {
+    const deniedBySomePattern = (pushSettings.permissions.deny || []).some((pat) => globToRegExp(pat).test(form));
+    check('deny set catches dangerous form ' + form, deniedBySomePattern, JSON.stringify(pushSettings.permissions.deny));
   }
 }
 
 function case9_installedPermissionsTracking() {
-  section('9. installedPermissions tracks only what THIS installer added — uninstall removes exactly that');
+  section('9. installedPermissions/installedDeny track only what THIS installer added — uninstall removes exactly that');
 
   const target = tmpdir('orchestra-install-');
   // A user-added grant that happens to be identical to one Orchestra also
@@ -314,17 +405,25 @@ function case9_installedPermissionsTracking() {
 
   install(target, ['--grant-push', '--no-packs', '--no-specialists']);
   const manifest = readJson(path.join(target, '.claude', 'orchestra.json'));
+  const expectedTracked = ['Bash(git add:*)'].concat(PUSH_SAFE_ALLOW).sort();
   check(
     'installedPermissions tracks only the entries THIS run actually added (not the pre-existing git commit grant)',
-    JSON.stringify(manifest.installedPermissions.slice().sort()) === JSON.stringify(['Bash(git add:*)', 'Bash(git push:*)'].sort()),
+    JSON.stringify(manifest.installedPermissions.slice().sort()) === JSON.stringify(expectedTracked),
     JSON.stringify(manifest.installedPermissions)
+  );
+  check(
+    'installedDeny tracks the full extended deny set',
+    JSON.stringify(manifest.installedDeny.slice().sort()) === JSON.stringify(PUSH_DENY_EXPECTED.slice().sort()),
+    JSON.stringify(manifest.installedDeny)
   );
 
   const r = install(target, ['--uninstall']);
   check('uninstall succeeds', ok(r), out(r));
   const settingsAfter = readJson(path.join(target, '.claude', 'settings.json'));
   const allowAfter = (settingsAfter.permissions && settingsAfter.permissions.allow) || [];
-  check('uninstall removes the installer-added push grant', !allowAfter.includes('Bash(git push:*)'), JSON.stringify(allowAfter));
+  for (const p of PUSH_SAFE_ALLOW) {
+    check('uninstall removes installer-added push allow entry ' + p, !allowAfter.includes(p), JSON.stringify(allowAfter));
+  }
   check('uninstall removes the installer-added add grant', !allowAfter.includes('Bash(git add:*)'), JSON.stringify(allowAfter));
   check('uninstall PRESERVES the identical user-added commit grant (it was never tracked as ours)', allowAfter.includes('Bash(git commit:*)'), JSON.stringify(allowAfter));
   const denyAfter = (settingsAfter.permissions && settingsAfter.permissions.deny) || [];
@@ -339,6 +438,237 @@ function case10_lintGreenOnElevenFileRoster() {
 
   const rMaster = spawnSync(process.execPath, [INSTALLER, '--lint'], { encoding: 'utf8', timeout: 60000, cwd: MASTER });
   check('node install.js --lint (whole master) exits 0', rMaster.status === 0, out(rMaster));
+}
+
+function case11_upgradeStripsStaleBroadPush() {
+  section('11. Upgrade: a pre-existing broad Bash(git push:*) (an older installer\'s artifact) is stripped without --grant-push');
+
+  const target = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(target, '.claude', 'settings.json'),
+    JSON.stringify({ permissions: { allow: ['Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git push:*)'] } }),
+    'utf8'
+  );
+
+  const r = install(target, ['--no-packs', '--no-specialists']);
+  check('plain upgrade install succeeds', ok(r), out(r));
+  const settings = readJson(path.join(target, '.claude', 'settings.json'));
+  check('the broad Bash(git push:*) grant is stripped', !settings.permissions.allow.includes('Bash(git push:*)'), JSON.stringify(settings.permissions.allow));
+  check('add/commit grants survive the strip', settings.permissions.allow.includes('Bash(git add:*)') && settings.permissions.allow.includes('Bash(git commit:*)'), JSON.stringify(settings.permissions.allow));
+  check('stripping a plain-legacy upgrade STILL creates no orchestra.json (item 1)', !fs.existsSync(path.join(target, '.claude', 'orchestra.json')), '');
+
+  // Escape hatch: a manifest that marks the push grant user-owned protects it.
+  const target2 = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target2, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target2, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(git push:*)'] } }), 'utf8');
+  fs.writeFileSync(path.join(target2, '.claude', 'orchestra.json'), JSON.stringify({ userOwnedPermissions: ['Bash(git push:*)'] }), 'utf8');
+  install(target2, ['--no-packs', '--no-specialists']);
+  const settings2 = readJson(path.join(target2, '.claude', 'settings.json'));
+  check('userOwnedPermissions protects the broad push grant from being stripped', settings2.permissions.allow.includes('Bash(git push:*)'), JSON.stringify(settings2.permissions.allow));
+}
+
+function case12_uninstallScopingPreservesUserFiles() {
+  section('12. Uninstall scoping (item 4): only installedFiles are removed — user-owned roster-named files and non-empty dirs survive');
+
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+
+  // User-owned files that happen to collide in NAME/location with things a
+  // roster:new install writes, added AFTER install (never tracked).
+  fs.writeFileSync(path.join(target, '.claude', 'orchestra', 'user-data.txt'), 'mine', 'utf8');
+  fs.writeFileSync(path.join(target, '.claude', 'agents', 'hand-written.md'), '---\nname: x\n---\nmine', 'utf8');
+
+  const r = install(target, ['--uninstall']);
+  check('uninstall of a --roster new install succeeds', ok(r), out(r));
+
+  check('user file under .claude/orchestra/ survives uninstall', fs.existsSync(path.join(target, '.claude', 'orchestra', 'user-data.txt')), '');
+  check('.claude/orchestra/ itself survives (non-empty — never wholesale-deleted)', fs.existsSync(path.join(target, '.claude', 'orchestra')), '');
+  check('unrelated hand-written .claude/agents/ file survives', fs.existsSync(path.join(target, '.claude', 'agents', 'hand-written.md')), '');
+  check('a tracked roster role file (architect.md) IS removed', !fs.existsSync(path.join(target, '.claude', 'agents', 'architect.md')), '');
+  check('the conductor file IS removed', !fs.existsSync(path.join(target, '.claude', 'ORCHESTRA-CONDUCTOR.md')), '');
+
+  // A plain LEGACY install (never ran --roster new) must not touch roster
+  // paths on uninstall even if a user happens to have files with the same
+  // names (Red Team MAJOR reproduction).
+  const legacyTarget = tmpdir('orchestra-install-');
+  install(legacyTarget, ['--no-packs', '--no-specialists']);
+  fs.mkdirSync(path.join(legacyTarget, '.claude', 'orchestra'), { recursive: true });
+  fs.writeFileSync(path.join(legacyTarget, '.claude', 'orchestra', 'user-data.txt'), 'mine', 'utf8');
+  fs.writeFileSync(path.join(legacyTarget, '.claude', 'agents', 'architect.md'), '---\nname: mine-not-orchestras\n---\nmine', 'utf8');
+  install(legacyTarget, ['--uninstall']);
+  check('legacy uninstall never touches .claude/orchestra/ (never installed it)', fs.existsSync(path.join(legacyTarget, '.claude', 'orchestra', 'user-data.txt')), '');
+  check('legacy uninstall never removes a user file merely named like a roster role', fs.existsSync(path.join(legacyTarget, '.claude', 'agents', 'architect.md')), '');
+}
+
+function case13_numericRoundTripRefused() {
+  section('13. JSON numeric round-trip guard (item 5): a literal that would lose precision is refused before anything is touched');
+
+  for (const file of ['settings.json', '.mcp.json']) {
+    const target = tmpdir('orchestra-install-');
+    const parts = file === '.mcp.json' ? [file] : ['.claude', file];
+    const filePath = path.join(target, ...parts);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, '{\n  "someToolsOwnBigId": 9007199254740993\n}\n', 'utf8');
+    const before = census(target);
+    const r = install(target, ['--no-packs', '--no-specialists']);
+    check(file + ' with an unsafe 9007199254740993 literal -> install exits non-zero', r.status !== 0, out(r));
+    check(file + ' -> error names the unsafe value', out(r).indexOf('9007199254740993') !== -1, out(r));
+    const after = census(target);
+    check(file + ' -> nothing touched (census unchanged)', JSON.stringify(before) === JSON.stringify(after), '');
+  }
+
+  // orchestra.json itself, same guard.
+  const target2 = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target2, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target2, '.claude', 'orchestra.json'), '{\n  "someKey": 9007199254740993\n}\n', 'utf8');
+  const r2 = install(target2, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('orchestra.json with an unsafe literal -> install exits non-zero', r2.status !== 0, out(r2));
+  check('orchestra.json -> nothing copied', !fs.existsSync(path.join(target2, '.claude', 'agents')), '');
+
+  // A safe large integer (within Number.isSafeInteger) must NOT be refused.
+  const target3 = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target3, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target3, '.claude', 'settings.json'), '{\n  "safeBigId": 12345678901234\n}\n', 'utf8');
+  const r3 = install(target3, ['--no-packs', '--no-specialists']);
+  check('a safe integer literal does NOT trigger a refusal', ok(r3), out(r3));
+  const settings3 = readJson(path.join(target3, '.claude', 'settings.json'));
+  check('the safe integer value survives byte-for-byte', settings3.safeBigId === 12345678901234, JSON.stringify(settings3.safeBigId));
+
+  // Indentation preservation: a 4-space settings.json stays 4-space.
+  const target4 = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target4, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target4, '.claude', 'settings.json'), '{\n    "myKey": "v"\n}\n', 'utf8');
+  install(target4, ['--no-packs', '--no-specialists']);
+  const raw4 = fs.readFileSync(path.join(target4, '.claude', 'settings.json'), 'utf8');
+  check('4-space indentation is preserved on rewrite (item 5)', /\n {4}"/.test(raw4) && !/\n {2}"(?! )/.test(raw4.split('\n')[1] || ''), raw4);
+}
+
+function case14_nonObjectTargetsRefused() {
+  section('14. refuseIfTargetMalformed rejects non-object top level (item 6): null, "str", 42, []');
+
+  const shapes = [['null', 'null'], ['a string', '"str"'], ['a number', '42'], ['an array', '[]']];
+  for (const [label, literal] of shapes) {
+    const target = tmpdir('orchestra-install-');
+    fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(target, '.claude', 'orchestra.json'), literal, 'utf8');
+    const before = census(target);
+    const r = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+    check('orchestra.json = ' + label + ' -> install exits non-zero', r.status !== 0, out(r));
+    const after = census(target);
+    check('orchestra.json = ' + label + ' -> nothing copied (refused before touching anything)', JSON.stringify(before) === JSON.stringify(after), 'before=' + before.join(',') + ' after=' + after.join(','));
+
+    const r2 = install(target, ['--uninstall']);
+    check('orchestra.json = ' + label + ' -> uninstall also refused, nothing deleted', r2.status !== 0 && JSON.stringify(census(target)) === JSON.stringify(before), out(r2));
+  }
+}
+
+function case15_rosterGenerationMustBeInteger() {
+  section('15. rosterGeneration must be a non-negative integer (item 7) — refused with the value named');
+
+  const target = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 0.5 }), 'utf8');
+  const r = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('rosterGeneration=0.5 -> install exits non-zero', r.status !== 0, out(r));
+  check('rosterGeneration=0.5 -> error names the value', out(r).indexOf('0.5') !== -1, out(r));
+  check('rosterGeneration=0.5 -> nothing copied', !fs.existsSync(path.join(target, '.claude', 'agents')), '');
+
+  const target2 = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target2, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target2, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: -1 }), 'utf8');
+  const r2 = install(target2, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('rosterGeneration=-1 -> install exits non-zero', r2.status !== 0, out(r2));
+}
+
+function case16_rosterLintGateAndCollision() {
+  section('16. Roster role files go through the frontmatter gate and the collision assertion (item 8)');
+
+  const masterCopy = tmpdir('orchestra-master-');
+  const files = spawnSync('git', ['-C', MASTER, 'ls-files'], { encoding: 'utf8' }).stdout.split(/\r?\n/).filter(Boolean);
+  for (const rel of files) {
+    const src = path.join(MASTER, rel);
+    const dest = path.join(masterCopy, rel);
+    if (!fs.statSync(src).isFile()) continue;
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  }
+  const installerCopy = path.join(masterCopy, 'install.js');
+
+  // (a) bad frontmatter in a roster role file is caught at install time.
+  const badFmTarget = tmpdir('orchestra-install-');
+  const rosterArchitect = path.join(masterCopy, 'roster', 'architect.md');
+  const original = fs.readFileSync(rosterArchitect, 'utf8');
+  fs.writeFileSync(rosterArchitect, original.replace(/^description:.*$/m, 'description: launcher: it runs'), 'utf8');
+  const rBad = spawnSync(process.execPath, [installerCopy, badFmTarget, '--roster', 'new', '--no-packs', '--no-specialists'], { encoding: 'utf8', timeout: 60000, env: DEFAULT_ENV });
+  check('a roster role file with unparseable frontmatter fails the install-time lint gate', rBad.status !== 0, (rBad.stdout || '') + (rBad.stderr || ''));
+  check('nothing was copied when the roster lint gate fails', !fs.existsSync(path.join(badFmTarget, '.claude', 'agents')), '');
+  fs.writeFileSync(rosterArchitect, original, 'utf8'); // restore
+
+  // (b) a roster file colliding with a core agent name is refused.
+  fs.writeFileSync(path.join(masterCopy, 'roster', 'scout.md'), '---\nname: red-team\ndescription: collision test\n---\nbody\n', 'utf8');
+  const collideTarget = tmpdir('orchestra-install-');
+  const rCollide = spawnSync(process.execPath, [installerCopy, collideTarget, '--roster', 'new', '--no-packs', '--no-specialists'], { encoding: 'utf8', timeout: 60000, env: DEFAULT_ENV });
+  check('a roster role file colliding with a core agent name is refused', rCollide.status !== 0, (rCollide.stdout || '') + (rCollide.stderr || ''));
+  check('nothing was copied when the roster collision check fails', !fs.existsSync(path.join(collideTarget, '.claude', 'agents')), '');
+}
+
+function case17_manifestPin() {
+  section('17. Manifest pin (item 9): written on roster:new, verified by --verify-pin, removed on uninstall');
+
+  const pinDir = tmpdir('orchestra-pins-');
+  const env = Object.assign({}, process.env, { ORCHESTRA_PIN_DIR: pinDir });
+  const target = tmpdir('orchestra-install-');
+
+  const rNoPin = spawnSync(process.execPath, [INSTALLER, target, '--verify-pin'], { encoding: 'utf8', timeout: 60000, env });
+  check('--verify-pin before any install reports NO-PIN', /NO-PIN/.test(out(rNoPin)) && rNoPin.status !== 0, out(rNoPin));
+
+  const rLegacy = spawnSync(process.execPath, [INSTALLER, target, '--no-packs', '--no-specialists'], { encoding: 'utf8', timeout: 60000, env });
+  check('plain legacy install succeeds', ok(rLegacy), out(rLegacy));
+  check('a plain legacy install writes NO pin file (no manifest to pin)', fs.readdirSync(pinDir).length === 0, fs.readdirSync(pinDir).join(','));
+
+  const rNew = spawnSync(process.execPath, [INSTALLER, target, '--roster', 'new', '--no-packs', '--no-specialists'], { encoding: 'utf8', timeout: 60000, env });
+  check('--roster new install succeeds', ok(rNew), out(rNew));
+  check('--roster new install writes exactly one pin file', fs.readdirSync(pinDir).length === 1, fs.readdirSync(pinDir).join(','));
+
+  const rMatch = spawnSync(process.execPath, [INSTALLER, target, '--verify-pin'], { encoding: 'utf8', timeout: 60000, env });
+  check('--verify-pin reports MATCH right after install', /MATCH/.test(out(rMatch)) && ok(rMatch), out(rMatch));
+
+  const manifestPath = path.join(target, '.claude', 'orchestra.json');
+  const manifest = readJson(manifestPath);
+  manifest.seats.Architect = false;
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  const rMismatch = spawnSync(process.execPath, [INSTALLER, target, '--verify-pin'], { encoding: 'utf8', timeout: 60000, env });
+  check('--verify-pin reports MISMATCH after the manifest is hand-edited', /MISMATCH/.test(out(rMismatch)) && rMismatch.status !== 0, out(rMismatch));
+
+  const rUninstall = spawnSync(process.execPath, [INSTALLER, target, '--uninstall'], { encoding: 'utf8', timeout: 60000, env });
+  check('uninstall succeeds', ok(rUninstall), out(rUninstall));
+  check('--uninstall removes the pin file', fs.readdirSync(pinDir).length === 0, fs.readdirSync(pinDir).join(','));
+}
+
+function case18_grantsLocal() {
+  section('18. --grants-local writes grants to settings.local.json instead of settings.json (item 10)');
+
+  const target = tmpdir('orchestra-install-');
+  const r = install(target, ['--grant-push', '--grants-local', '--no-packs', '--no-specialists']);
+  check('--grants-local install succeeds', ok(r), out(r));
+
+  const settings = readJson(path.join(target, '.claude', 'settings.json'));
+  const allowInShared = (settings.permissions && settings.permissions.allow) || [];
+  check('settings.json (shared) carries NO git grants under --grants-local', !allowInShared.some((p) => p.indexOf('git') !== -1), JSON.stringify(allowInShared));
+  check('settings.json still carries the PreToolUse hook entry', settings.hooks && Array.isArray(settings.hooks.PreToolUse) && settings.hooks.PreToolUse.length === 1, JSON.stringify(settings.hooks));
+
+  const local = readJson(path.join(target, '.claude', 'settings.local.json'));
+  check('settings.local.json carries the git grants', local.permissions && local.permissions.allow.includes('Bash(git add:*)') && local.permissions.allow.includes('Bash(git push)'), JSON.stringify(local.permissions));
+  check('settings.local.json carries the push deny counterweight', local.permissions.deny && local.permissions.deny.includes('Bash(git push --force*)'), JSON.stringify(local.permissions.deny));
+
+  const rUninstall = install(target, ['--uninstall']);
+  check('uninstall succeeds', ok(rUninstall), out(rUninstall));
+  const localAfter = fs.existsSync(path.join(target, '.claude', 'settings.local.json'))
+    ? readJson(path.join(target, '.claude', 'settings.local.json'))
+    : { permissions: {} };
+  const allowAfter = (localAfter.permissions && localAfter.permissions.allow) || [];
+  check('uninstall removes the grants from settings.local.json', !allowAfter.includes('Bash(git add:*)'), JSON.stringify(allowAfter));
 }
 
 // ------------------------------------------------------------------ driver
@@ -366,6 +696,14 @@ try {
   case8_grantsDefaultVsGrantPush();
   case9_installedPermissionsTracking();
   case10_lintGreenOnElevenFileRoster();
+  case11_upgradeStripsStaleBroadPush();
+  case12_uninstallScopingPreservesUserFiles();
+  case13_numericRoundTripRefused();
+  case14_nonObjectTargetsRefused();
+  case15_rosterGenerationMustBeInteger();
+  case16_rosterLintGateAndCollision();
+  case17_manifestPin();
+  case18_grantsLocal();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

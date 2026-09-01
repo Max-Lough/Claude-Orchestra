@@ -745,28 +745,47 @@ check('isPidAlive: a non-numeric or missing pid is treated as dead outright (nev
   const STALE_MS = 300;
 
   const doomedScript = path.join(dir, 'doomed.js');
+  const doomedPidFile = path.join(dir, 'doomed.pid');
   fs.writeFileSync(doomedScript, `
     'use strict';
+    const fs = require('fs');
     const T = require(${JSON.stringify(path.join(MASTER, 'router', 'tickets.js'))});
     function sleepSync(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
+    fs.writeFileSync(${JSON.stringify(doomedPidFile)}, String(process.pid));
     const store = { dir: ${JSON.stringify(dir)}, lockStaleMs: ${STALE_MS}, lockBudgetMs: 30000 };
     T._internal.withStore(store, (data) => {
       sleepSync(60000); // never reached in practice — this process is killed from outside first
       return { data, result: null, events: [] };
     });
   `);
-  const doomed = spawn(process.execPath, [doomedScript], { stdio: 'ignore' });
+  // The doomed holder is launched through a short-lived launcher, NOT as this
+  // process's own child: on Linux/macOS a SIGKILLed child stays a ZOMBIE
+  // (kill(pid, 0) still succeeds) until its parent reaps it, and this suite
+  // sleeps synchronously (Atomics.wait), so the event loop never gets to
+  // reap — "confirmed dead" then reads alive and the takeover is refused
+  // (the exact CI failure on ubuntu/macos, 2026-09-01). Orphaned, the holder
+  // is re-parented to init/launchd, which reaps it the moment it dies, so the
+  // death below is a real OS fact on every platform.
+  spawnSync(process.execPath, ['-e',
+    "require('child_process').spawn(process.execPath, [process.argv[1]], { detached: true, stdio: 'ignore' }).unref()",
+    doomedScript,
+  ], { stdio: 'ignore' });
+  const pidDeadline = Date.now() + 10000;
+  while (Date.now() < pidDeadline && !fs.existsSync(doomedPidFile)) realSleepMs(25);
+  const doomedPid = fs.existsSync(doomedPidFile) ? Number(fs.readFileSync(doomedPidFile, 'utf8')) : NaN;
 
   const lockPath = path.join(dir, 'tickets.lock');
   const acquireDeadline = Date.now() + 10000;
   while (Date.now() < acquireDeadline && !fs.existsSync(lockPath)) realSleepMs(25);
-  check('14b: the doomed holder actually acquired the lock before being killed', fs.existsSync(lockPath));
+  check('14b: the doomed holder actually acquired the lock before being killed', fs.existsSync(lockPath) && Number.isFinite(doomedPid), 'pid ' + doomedPid);
 
-  try { process.kill(doomed.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
-  realSleepMs(400); // let the OS actually reap it
+  try { process.kill(doomedPid, 'SIGKILL'); } catch (e) { /* already gone */ }
   let doomedAlive = true;
-  try { process.kill(doomed.pid, 0); } catch (e) { doomedAlive = false; }
-  check('14b: the doomed holder\'s OS process is confirmed dead', !doomedAlive);
+  const deathDeadline = Date.now() + 5000;
+  while (Date.now() < deathDeadline && doomedAlive) {
+    try { process.kill(doomedPid, 0); realSleepMs(50); } catch (e) { doomedAlive = false; }
+  }
+  check('14b: the doomed holder\'s OS process is confirmed dead', !doomedAlive, 'pid ' + doomedPid + ' still signalable after 5s');
 
   realSleepMs(STALE_MS + 200); // cross the staleness threshold with the holder already dead
 

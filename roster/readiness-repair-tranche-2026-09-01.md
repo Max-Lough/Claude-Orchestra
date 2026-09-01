@@ -73,3 +73,19 @@ environment-sensitive flicker, not a regression.)
 
 Nothing here claims readiness. The oracle's rule — no shadow while any confirmed
 MAJOR/CRITICAL fail-open remains — still holds until item 1 is ruled.
+
+## Owner rulings (2026-09-01)
+
+1. **Item 1 — ACCEPT.** No cycle 3. Both cycle-2 residuals are registered follow-ons:
+   the MAJOR (human-authored Q0 re-dispatched under pool transition reports the stale
+   creation-time `author_family` — fix: record the SERVED family on the Q0 at dispatch,
+   or re-derive `author_family` from the casting at return; `router.js:895`) and the
+   MINOR (`||` override precedence lets an empty-string override fall through instead of
+   the typed refusal; `??` plus a non-string check). The tranche is CLOSED as-is. Per the
+   oracle's rule the MAJOR is fixed **inside the activation bridge**, before any shadow —
+   it is a bridge acceptance item, not a tranche reopen.
+2. **Item 2 — LEAVE IT.** `reserve.floorFractionOfBucket` stays at `0.08 === redBelow`.
+   The parity is documented and pinned; P15's reserve stop coincides with the Red
+   transition under the default forecast, and that is accepted. Revisit only with a
+   forecast that moves `requiredReserve` off the floor.
+3. Item 3 unchanged — activation-bridge disposition.

@@ -802,10 +802,27 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   full refutation pass (`roster/roster-adversarial-review-2026-09-01.md`,
   `roster/roster-review-refutations-2026-09-01.md`): keep 5 seats + 2 substrates,
   16 files demote/merge/ditch; Red Team and Sweeper premises refuted (WO-8 exercises
-  the reviewer never saw), Data Engineer contested. **Owner decisions pending:**
-  cycle-3 on the tranche residuals or accept-as-registered; reserve calibration
-  (requiredReserve == redBelow); roster seat rulings — all three gate the
-  activation-bridge order.
+  the reviewer never saw), Data Engineer contested. **Owner rulings 2026-09-01 (all
+  three recorded):** (1) tranche residuals ACCEPTED as registered follow-ons — the
+  human-authored-Q0 stale-family MAJOR is fixed inside the activation bridge before any
+  shadow (oracle's rule), tranche CLOSED; (2) reserve calibration LEFT at parity
+  (`floorFractionOfBucket` 0.08 == redBelow); (3) roster: KEEP Red Team, Data Engineer,
+  Architect (**toggleable** — owner-settable enable flag, typed `DISABLED` when off,
+  Conductor self-plans with disclosure; mechanism built in the bridge); DITCH Sweeper
+  and every other non-KEEP file. Launch roster = 9 seats + 2 substrates
+  (`roster/roster-review-refutations-2026-09-01.md` § Owner rulings). **Opened by the
+  ruling — the Builder ladder:** the owner wants the Conductor to select Luna / Terra /
+  Sonnet / Sol / Opus for Builder work by task shape and per-vendor availability. Today
+  Builder has four rungs and pool state can only step to `mirror`; no Opus or Sol
+  implementation rung exists on E2 (Opus was Principal's). Design item for the bridge:
+  a `tier` dimension on the order (bounded / standard / dense / deep) mapping to a
+  preferred casting plus an ordered lawful-substitute set across both vendors, filtered
+  by bucket state, with the existing guardrails preserved (Luna never under-specified;
+  Opus behind P15 + Amber arming; Sol-authored mutation is mandatory-review by flag and
+  draws down the review reserve, so Sol is a deliberate choice, never a degradation
+  target; review computed from the served author family). Owner rules on the shape
+  before it is built; the file retirements are applied in the same bridge tranche so
+  `roster/lint.js` and `install.js --lint` move once.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

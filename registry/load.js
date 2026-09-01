@@ -43,6 +43,12 @@ const EXPECTED_SCHEMAS = [
   'authorization-packet.schema.json',
   'casting-record.schema.json',
   'verdict-audit.schema.json',
+  // WO-14b leg 2 fix round (finding 4): the leg-2a schemas were never
+  // registered here, so their class enums could drift from the registry
+  // (or from each other) with `node registry/load.js` still reporting zero
+  // problems.
+  'dispatch-request.schema.json',
+  'ticket.schema.json',
 ];
 const CLASS_ID_RE = /^[A-Z][0-9]$/;
 
@@ -241,6 +247,8 @@ function load(baseDir) {
   };
   checkEnum('order.schema.json', (s) => (s.properties.class || {}).enum, activeInOrder, 'class');
   checkEnum('casting-record.schema.json', (s) => (s.properties.class || {}).enum, activeInOrder, 'class');
+  checkEnum('dispatch-request.schema.json', (s) => (s.properties.class || {}).enum, activeInOrder, 'class');
+  checkEnum('ticket.schema.json', (s) => (s.properties.class || {}).enum, activeInOrder, 'class');
   checkEnum('report.schema.json', (s) => ((s.properties.recommended_next_class || {}).enum), activeInOrder, 'recommended_next_class');
   checkEnum('report.schema.json', (s) => (((s.properties.reclassify || {}).properties || {}).recommended_class || {}).enum, activeInOrder, 'reclassify.recommended_class');
   const tiersInOrder = 'T0,T1,T2,T3';

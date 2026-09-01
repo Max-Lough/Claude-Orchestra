@@ -314,6 +314,56 @@ check('expire() leaves a not-yet-expired ticket untouched', (() => {
   return T.get(store, t.id).status === 'OPEN';
 })());
 
+function realSleepMs(ms) {
+  const sab = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(sab), 0, 0, ms);
+}
+
+// WO-14b leg 2 fix round, finding 2 (MAJOR, fixed): launch() never checked
+// expires_at — a ticket consumed before expiry but launched after
+// transitioned to LAUNCHED regardless. Same gap in resolve(). Both must
+// transition to EXPIRED (a lawful CONSUMED->EXPIRED / LAUNCHED->EXPIRED
+// edge) instead, typed-refusing the call that arrived too late.
+check('finding 2: launch() on a ticket consumed before expiry but launched afterward transitions the ticket to EXPIRED, typed refusal, never LAUNCHED', (() => {
+  const store = freshStore('tkt-exp5-');
+  const t = T.issue(store, baseFields({ ttlMs: 300 })); // generous margin over the consume() fs round-trip
+  T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' }); // before expiry
+  realSleepMs(400); // now past expires_at
+  try {
+    T.launch(store, t.id, { agent_id: 'a', served_model: 'm' });
+    return false;
+  } catch (e) {
+    const after = T.get(store, t.id);
+    return e instanceof T.TicketTransitionError && /expired/.test(e.message) &&
+      after.status === 'EXPIRED' && after.outcome.code === 'EXPIRED' && after.launched === null;
+  }
+})());
+check('finding 2: resolve() on a ticket launched before expiry but resolved afterward transitions the ticket to EXPIRED, typed refusal, never RESOLVED', (() => {
+  const store = freshStore('tkt-exp6-');
+  const t = T.issue(store, baseFields({ ttlMs: 300 })); // generous margin over the consume()+launch() fs round-trips
+  T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' });
+  T.launch(store, t.id, { agent_id: 'a', served_model: 'm' }); // before expiry
+  realSleepMs(400); // now past expires_at
+  try {
+    T.resolve(store, t.id, { agent_id: 'a', last_assistant_message: 'x', agent_transcript_path: 'p' });
+    return false;
+  } catch (e) {
+    const after = T.get(store, t.id);
+    return e instanceof T.TicketTransitionError && /expired/.test(e.message) &&
+      after.status === 'EXPIRED' && after.outcome.code === 'EXPIRED' && after.resolved === null;
+  }
+})());
+check('finding 2 report note: close() does NOT expire a RESOLVED ticket — RESOLVED is post-work; close(CLOSED) still succeeds even when called long after expires_at', (() => {
+  const store = freshStore('tkt-exp7-');
+  const t = T.issue(store, baseFields({ ttlMs: 300 })); // generous margin over the consume()+launch()+resolve() fs round-trips
+  T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' });
+  T.launch(store, t.id, { agent_id: 'a', served_model: 'm' });
+  T.resolve(store, t.id, { agent_id: 'a', last_assistant_message: 'x', agent_transcript_path: 'p' }); // all before expiry
+  realSleepMs(400); // well past expires_at — but the ticket is already RESOLVED
+  const closed = T.close(store, t.id, { code: 'CLOSED' });
+  return closed.ok === true && closed.ticket.status === 'CLOSED';
+})());
+
 // ============================================ 8. generation bump / rollback
 
 section('8. bumpGeneration invalidates every non-terminal ticket, leaves terminal ones untouched');
@@ -392,6 +442,30 @@ check('an implementation ticket with no q0_ticket has no such gate', (() => {
   const impl = T.issue(store, baseFields());
   const c = T.consume(store, impl.id, { tool_use_id: 'tu', role: 'Builder' });
   return c.status === 'CONSUMED';
+})());
+
+// WO-14b leg 2 fix round, finding 5 (MAJOR, fixed): the Q0 gate used to
+// accept ANY referenced ticket kind — a launched REVIEWER ticket sitting in
+// the q0_ticket slot satisfied the gate. consume() must require the
+// referenced ticket to exist, be kind:'q0', AND be LAUNCHED or later.
+check('finding 5: a q0_ticket that references a LAUNCHED REVIEWER ticket (wrong kind) refuses consume, typed', (() => {
+  const store = freshStore('tkt-q0-kind-');
+  const reviewer = T.issue(store, baseFields({ kind: 'reviewer', role: 'Reviewer', rung: 'computed', reviewer_of: 'tkt-0000000000000000' }));
+  T.consume(store, reviewer.id, { tool_use_id: 'tu-rev', role: 'Reviewer' });
+  T.launch(store, reviewer.id, { agent_id: 'rev-agent', served_model: 'm' }); // reviewer ticket is LAUNCHED — the OLD gate only checked status, not kind
+  const impl = T.issue(store, baseFields({ q0_ticket: reviewer.id }));
+  try {
+    T.consume(store, impl.id, { tool_use_id: 'tu-impl', role: 'Builder' });
+    return false;
+  } catch (e) {
+    return e instanceof T.TicketTransitionError && /requires Q0 ticket .* to have kind 'q0'/.test(e.message) && T.get(store, impl.id).status === 'OPEN';
+  }
+})());
+check('finding 5: a q0_ticket referencing a MISSING ticket id still refuses consume, typed (unchanged by the kind fix)', (() => {
+  const store = freshStore('tkt-q0-missing-');
+  const impl = T.issue(store, baseFields({ q0_ticket: 'tkt-ffffffffffffffff' }));
+  try { T.consume(store, impl.id, { tool_use_id: 'tu', role: 'Builder' }); return false; }
+  catch (e) { return e instanceof T.TicketTransitionError && /requires Q0 ticket .* to exist \(missing\)/.test(e.message); }
 })());
 
 // ==================================================== 10. events log
@@ -522,5 +596,108 @@ section('13. Two concurrent writer processes — no lost update');
     let alive = true;
     try { process.kill(c.pid, 0); } catch (e) { alive = false; }
     if (alive) { try { c.kill(); } catch (e) { /* best effort */ } sleepSync(300); }
+  }
+}
+
+// ============================================ 14. stale-lock CAS takeover
+
+section('14. Finding 1 — stale-lock takeover is a compare-and-swap; no lost update, no silent overwrite');
+
+check('the stale-lock threshold defaults to 30s (raised from 10s) and is configurable per store',
+  T._internal.DEFAULT_LOCK_STALE_MS === 30000 && typeof T._internal.LOCK_BUDGET_PAD_MS === 'number');
+
+{
+  // The reviewer's exact reproducer, fixed: one process's critical section
+  // (fn() itself, deliberately slow) runs LONGER than the configured stale
+  // threshold while a second process is trying to write. Before the fix, a
+  // bare unlink-and-recreate let both processes believe they held the only
+  // lock, and the loser's write silently vanished (the reviewer's probe:
+  // generation 2 instead of 3). After the fix: the CAS takeover means at
+  // most one of the two ever writes past the other's work — the "loser"
+  // either never gets to write (genuinely serializes, no takeover needed)
+  // or, if it holds long enough to look stale, is rejected with a typed
+  // TicketStoreError when it tries to write past a takeover — never a
+  // silent, undetected overwrite. Either way: generation === 1 + (number of
+  // writers whose increment actually landed), and nothing is double-counted
+  // or lost.
+  const dir = tmpDir('tkt-cas-');
+  T.createTicketStore({ dir, init: true });
+  const STALE_MS = 300;
+  const BUDGET_MS = 5000;
+  const SLOW_DELAY_MS = 1500; // the "slow holder"'s critical section
+  const FAST_STARTUP_DELAY_MS = 700; // > STALE_MS: by the time B looks, A's lock already reads stale
+
+  const slowScript = path.join(dir, 'slow.js');
+  fs.writeFileSync(slowScript, `
+    'use strict';
+    const T = require(${JSON.stringify(path.join(MASTER, 'router', 'tickets.js'))});
+    const fs = require('fs');
+    const path = require('path');
+    const dir = ${JSON.stringify(dir)};
+    function sleepSync(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
+    const store = { dir, lockStaleMs: ${STALE_MS}, lockBudgetMs: ${BUDGET_MS} };
+    let outcome;
+    try {
+      T._internal.withStore(store, (data) => {
+        sleepSync(${SLOW_DELAY_MS}); // simulate a writer whose critical section runs past the stale threshold
+        data.generation += 1;
+        const at = new Date().toISOString();
+        return { data, result: null, events: [{ at, id: null, from: null, to: null, event: 'bumpGeneration', data: { generation: data.generation, reason: 'cas-slow-holder' } }] };
+      });
+      outcome = { ok: true };
+    } catch (e) {
+      outcome = { ok: false, name: e && e.name, message: e && e.message };
+    }
+    fs.writeFileSync(path.join(dir, 'slow.done'), JSON.stringify(outcome));
+  `);
+  const fastScript = path.join(dir, 'fast.js');
+  fs.writeFileSync(fastScript, `
+    'use strict';
+    const T = require(${JSON.stringify(path.join(MASTER, 'router', 'tickets.js'))});
+    const fs = require('fs');
+    const path = require('path');
+    const dir = ${JSON.stringify(dir)};
+    function sleepSync(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
+    sleepSync(${FAST_STARTUP_DELAY_MS});
+    const store = { dir, lockStaleMs: ${STALE_MS}, lockBudgetMs: ${BUDGET_MS} };
+    let outcome;
+    try {
+      T.bumpGeneration(store, 'cas-fast-writer');
+      outcome = { ok: true };
+    } catch (e) {
+      outcome = { ok: false, name: e && e.name, message: e && e.message };
+    }
+    fs.writeFileSync(path.join(dir, 'fast.done'), JSON.stringify(outcome));
+  `);
+
+  const children = [spawn(process.execPath, [slowScript], { stdio: 'ignore' }), spawn(process.execPath, [fastScript], { stdio: 'ignore' })];
+
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline && !(fs.existsSync(path.join(dir, 'slow.done')) && fs.existsSync(path.join(dir, 'fast.done')))) {
+    realSleepMs(50);
+  }
+  const bothDone = fs.existsSync(path.join(dir, 'slow.done')) && fs.existsSync(path.join(dir, 'fast.done'));
+  check('both the slow holder and the fast (takeover) writer finish within the deadline', bothDone);
+
+  const slowOutcome = bothDone ? JSON.parse(fs.readFileSync(path.join(dir, 'slow.done'), 'utf8')) : null;
+  const fastOutcome = bothDone ? JSON.parse(fs.readFileSync(path.join(dir, 'fast.done'), 'utf8')) : null;
+  const final = JSON.parse(fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8'));
+  const successCount = [slowOutcome, fastOutcome].filter((o) => o && o.ok === true).length;
+
+  check('the fast (takeover) writer completed successfully', !!(fastOutcome && fastOutcome.ok === true), JSON.stringify(fastOutcome));
+  check('the slow holder either completed or failed with a TYPED TicketStoreError — never a silent bad outcome',
+    !!(slowOutcome && (slowOutcome.ok === true || (slowOutcome.ok === false && slowOutcome.name === 'TicketStoreError'))),
+    JSON.stringify(slowOutcome));
+  check('no lost update: generation = 1 + (number of writers whose increment actually landed), never fewer',
+    final.generation === 1 + successCount,
+    'got generation ' + final.generation + ', successCount ' + successCount);
+  check('no leftover tombstone files from the takeover rename', fs.readdirSync(dir).every((e) => !e.includes('.stale-')));
+  check('the lock file itself is released (not left held forever) once both processes finish', !fs.existsSync(path.join(dir, 'tickets.lock')));
+
+  realSleepMs(300);
+  for (const c of children) {
+    let alive = true;
+    try { process.kill(c.pid, 0); } catch (e) { alive = false; }
+    if (alive) { try { c.kill(); } catch (e) { /* best effort */ } realSleepMs(300); }
   }
 }

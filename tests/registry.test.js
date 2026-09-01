@@ -85,7 +85,7 @@ section('1. The shipped registry loads clean');
   check('23 distinct primaries', registry && new Set(registry.classes.map((c) => c.primaryRole)).size === 23);
   check('I1 aliased to I0', registry && registry.aliases.some((a) => a.id === 'I1' && a.resolvesTo === 'I0'));
   check('discriminator B retired', registry && registry.discriminators.some((d) => d.id === 'B' && d.retired === true));
-  check('six schemas loaded', Object.keys(schemas).length === 6);
+  check('eight schemas loaded (finding 4: dispatch-request + ticket registered)', Object.keys(schemas).length === 8);
   check(
     'RECLASSIFY is a first-class report status',
     schemas['report.schema.json'] &&
@@ -183,6 +183,14 @@ section('3. Tampering is caught — the invariant can actually fail');
   check(
     'a REORDERED class enum is caught — byte-identical means in registry order, not merely the same set',
     tamper((r, s) => { s['order.schema.json'].properties.class.enum.reverse(); }).some((p) => /diverges from the registry/.test(p))
+  );
+  check(
+    'finding 4: dispatch-request.schema.json class enum drifting from the registry fails closed (was previously unregistered — zero problems, 6 schemas in sync)',
+    tamper((r, s) => { s['dispatch-request.schema.json'].properties.class.enum.push('Z9'); }).some((p) => /dispatch-request\.schema\.json.*class.*diverges from the registry/.test(p))
+  );
+  check(
+    'finding 4: ticket.schema.json class enum drifting from the registry fails closed',
+    tamper((r, s) => { s['ticket.schema.json'].properties.class.enum.push('Z9'); }).some((p) => /ticket\.schema\.json.*class.*diverges from the registry/.test(p))
   );
 }
 

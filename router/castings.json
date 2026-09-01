@@ -249,14 +249,14 @@
     }
   },
   "mergedClasses": {
-    "$comment": "WO-14b leg 2b (owner rulings 2026-09-01): every class stays a routing label in registry/classes.json even though its dedicated role/file is retired. A1 has no role at all — dispatch returns typed RETIRED_WORKFLOW naming the documented workflow. N0/N1/N2/M0 merge into Investigator (mode = the former class id; N0 keeps the read-only pin behavior). E0/E1/E3/E5/E6/E8/D0 merge into Builder at a default tier (mode = the former class id, overridable by an explicit order.tier); E8 additionally widens Builder's context shapes to include repo/haystack (the census-first work the old Refactorer needed).",
+    "$comment": "WO-14b leg 2b (owner rulings 2026-09-01): every class stays a routing label in registry/classes.json even though its dedicated role/file is retired. A1 has no role at all — dispatch returns typed RETIRED_WORKFLOW naming the documented workflow. N0/N1/N2/M0 merge into Investigator (mode = the former class id; N0 keeps the read-only pin behavior). E0/E1/E3/E5/E6/E8/D0 merge into Builder at a default tier (mode = the former class id, overridable by an explicit order.tier); E8 additionally widens Builder's context shapes to include repo/haystack (the census-first work the old Refactorer needed). WO-14b leg 2 fix round (2026-09-01, findings 6/7): an entry may also carry `unavailable` (medium -> reason; M0 restores the retired Archivist's raw video/audio UNAVAILABLE boundary, checked against castOpts.medium) and `contextShapesOnly` (an exact replacement set, not additive — E1 restores the retired Runner's packet-only ceiling).",
     "A1": { "workflow": "A1 comparative-plan synthesis under Conductor + both Reviewer lanes + owner" },
     "N0": { "role": "Investigator", "mode": "N0", "pin": "read-only" },
     "N1": { "role": "Investigator", "mode": "N1" },
     "N2": { "role": "Investigator", "mode": "N2" },
-    "M0": { "role": "Investigator", "mode": "M0" },
+    "M0": { "role": "Investigator", "mode": "M0", "unavailable": { "videoAudio": "declared no-mirror exception: raw video and audio go below the model layer — deterministic frame extraction + local speech-to-text, else typed UNAVAILABLE; never a silent narrowing to stills" } },
     "E0": { "role": "Builder", "tier": "standard", "mode": "E0" },
-    "E1": { "role": "Builder", "tier": "bounded", "mode": "E1" },
+    "E1": { "role": "Builder", "tier": "bounded", "mode": "E1", "contextShapesOnly": ["packet"], "note": "WO-14b leg 2 fix round (finding 7): the retired Runner's packet-only ceiling — the hardest constraint in the roster — survives the merge as an exact override, not an additive widening." },
     "E3": { "role": "Builder", "tier": "deep", "mode": "E3", "contextShapesAllowed": ["repo"], "note": "Conductor rider 2026-09-01: deep work inherits Principal's repo shape — the merge absorbs the rung, not the shape restriction" },
     "E5": { "role": "Builder", "tier": "standard", "mode": "E5" },
     "E6": { "role": "Builder", "tier": "standard", "mode": "E6" },

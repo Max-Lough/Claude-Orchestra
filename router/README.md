@@ -71,8 +71,13 @@ carries `fallback: 'conductor-self-plan'`, both disclosed.
   (wait / named human / park `HOLD`). The preferred band alone may take the
   disclosed degraded path (`review_cross_family = false`, dispatcher-set).
 - **Context shapes are dispatcher-enforced:** an order whose `context_shape`
-  exceeds the seat's charter (Runner beyond `packet`, Scout handed
-  `haystack`, …) is rejected at dispatch, not truncated.
+  exceeds the seat's charter (E1 beyond `packet` — `mergedClasses.E1.
+  contextShapesOnly`, an exact override that survived the Runner merge —
+  N0 handed `haystack`, …) is rejected at dispatch, not truncated. A merged
+  class may also carry a declared capability boundary the merge would
+  otherwise silently drop: M0's raw video/audio `unavailable` reason
+  (`castOpts.medium === 'videoAudio'`), inherited from the retired
+  Archivist's `noMirrorFor.videoAudio`.
 - **Every rung yields its documented casting set:** the test suite carries an
   independent transcription of Part 2 and diffs `cast()` against it, both
   directions (no missing rung, no undocumented rung).

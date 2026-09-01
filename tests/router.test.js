@@ -399,12 +399,22 @@ check('dispatch(): a Sol-authored mutation gets the mandatory Opus review lane (
 // ------------------------------------------------- 8. context-shape rejection
 section('8. Context-shape violations rejected at dispatch');
 
-check('E1 (Runner retired, merged into Builder) carries Builder’s own shapes — packet/scoped/subsystem, never haystack; the old packet-only maximum does not survive the merge',
+// WO-14b leg 2 fix round, finding 7 (MINOR, fixed): merging E1 (Runner
+// retired) into Builder used to let it inherit Builder's own wider shapes
+// (packet/scoped/subsystem) — the "hardest constraint in the roster"
+// (packet-only) did not survive the merge. mergedClasses.E1.
+// contextShapesOnly restores it as an EXACT override (never additive, unlike
+// E8's contextShapesAllowed below): everything past packet is rejected.
+check('E1 (Runner retired, merged into Builder) keeps its packet-only ceiling as an exact override (mergedClasses.E1.contextShapesOnly) — Builder’s own wider shapes (scoped/subsystem) do not leak through',
   (() => {
     const h = router.dispatch(order('E1', 'T1', { context_shape: 'haystack' }), G);
     const s = router.dispatch(order('E1', 'T1', { context_shape: 'scoped' }), G);
+    const sub = router.dispatch(order('E1', 'T1', { context_shape: 'subsystem' }), G);
     const p = router.dispatch(order('E1', 'T1', { context_shape: 'packet' }), G);
-    return h.ok === false && h.rejected === 'context-shape' && s.ok === true && p.ok === true;
+    return h.ok === false && h.rejected === 'context-shape' &&
+      s.ok === false && s.rejected === 'context-shape' &&
+      sub.ok === false && sub.rejected === 'context-shape' &&
+      p.ok === true;
   })());
 check('Scout is scoped-maximum: never haystack',
   router.dispatch(order('N0', 'T0', { context_shape: 'haystack' }), G).rejected === 'context-shape' &&
@@ -538,6 +548,33 @@ check('a missing charter fails the load closed',
     let threw = null;
     try { createRouter({ chartersFile: file }); } catch (err) { threw = err; }
     return !!threw && /no charter entry/.test(threw.message);
+  })());
+// WO-14b leg 2 fix round, finding 8 (MINOR, fixed): router.charters used to
+// expose 23 entries (11 live + 12 retired, tolerated via RETIRED_ROLE_NAMES)
+// even though only 11 roles are routable. The retired entries are deleted
+// from charters.json and the tolerance list is gone — the cross-check is
+// strict again: exactly the 11 live roles, and an extra/unknown charter
+// entry (a retired-role leftover, or any other drift) fails load closed,
+// same as a missing one does.
+check('finding 8: router.charters exposes exactly the 11 live roles — no retired-role entries (Synthesizer, Scout, Principal, …) leak through',
+  (() => {
+    const names = Object.keys(router.charters.charters);
+    const retired = ['Synthesizer', 'Scout', 'Researcher', 'LC Analyst', 'Archivist', 'Operator', 'Runner', 'Principal', 'Interface Artisan', 'Spatial Specialist', 'Refactorer', 'Doc Writer'];
+    return names.length === 11 &&
+      names.every((n) => Object.prototype.hasOwnProperty.call(router.castings.roles, n)) &&
+      retired.every((n) => !names.includes(n));
+  })());
+check('finding 8: an extra charter entry (a retired role reappearing, or any unknown name) fails load closed — the tolerance list is gone',
+  (() => {
+    const ch = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charters.json'), 'utf8'));
+    ch.charters['Scout'] = { class: 'N0', purpose: 'x', owns: 'x', mustNotReceive: ['y'] };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-router-chart2-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'charters.json');
+    fs.writeFileSync(file, JSON.stringify(ch), 'utf8');
+    let threw = null;
+    try { createRouter({ chartersFile: file }); } catch (err) { threw = err; }
+    return !!threw && /charter names unknown role Scout/.test(threw.message);
   })());
 {
   const misrouted = order('N2', 'T1', { task_id: 'rc-1' });
@@ -1016,7 +1053,7 @@ section('15. WO-14b leg 2b: stale-family fix, Builder ladder, merged classes, to
   const impl = order('E2', 'T2', { author_family: 'anthropic' });
   const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
   const dRe = router.dispatch(q0.order, G, { q0OrderPresent: true });
-  check('stale-family mirror case: an anthropic-served Q0 re-dispatched under unchanged (Green) pools still reports author_family "openai" (opposite anthropic, served)',
+  check('stale-family mirror case (openai served): an anthropic implementation’s Q0 re-dispatched under unchanged (Green) pools serves openai/Terra and reports author_family "openai" (opposite anthropic, served)',
     dRe.ok && dRe.casting.casting.model === 'GPT-5.6 Terra' && dRe.order.author_family === 'openai');
   const implO = order('E2', 'T2', { author_family: 'openai' });
   const q0O = router.createQ0Order(implO, G, { implementationAuthorFamily: 'openai' });
@@ -1121,6 +1158,24 @@ check('merged-class dispatch: N1/N2/M0 all route to Investigator with their own 
     const d = router.dispatch(order(cls, 'T1'), G);
     return d.ok && d.role === 'Investigator' && d.mode === cls && d.tier === undefined;
   }));
+// WO-14b leg 2 fix round, finding 6 (MAJOR, fixed): merging M0 into
+// Investigator dropped the retired Archivist's raw video/audio UNAVAILABLE
+// capability boundary (noMirrorFor.videoAudio) — an M0 order carrying
+// castOpts.medium:'videoAudio' used to dispatch ok:true through Investigator
+// instead of the typed refusal. mergedClasses.M0.unavailable restores the
+// original reason text verbatim.
+check('finding 6: M0 + castOpts.medium:"videoAudio" → typed UNAVAILABLE with the original noMirrorFor.videoAudio reason text preserved',
+  (() => {
+    const d = router.dispatch(order('M0', 'T1'), G, { castOpts: { medium: 'videoAudio' } });
+    return d.ok === false && d.outcome === 'UNAVAILABLE' && d.class === 'M0' && d.role === 'Investigator' &&
+      /raw video and audio go below the model layer/.test(d.reason);
+  })());
+check('finding 6: M0 + castOpts.medium:"documents" (or no medium at all) dispatches ok through Investigator, unaffected',
+  (() => {
+    const withDocs = router.dispatch(order('M0', 'T1'), G, { castOpts: { medium: 'documents' } });
+    const withNone = router.dispatch(order('M0', 'T1'), G);
+    return withDocs.ok === true && withDocs.role === 'Investigator' && withNone.ok === true && withNone.role === 'Investigator';
+  })());
 check('A1 dispatch returns typed RETIRED_WORKFLOW, never a casting',
   (() => {
     const d = router.dispatch(order('A1', 'T1'), G);
@@ -1154,6 +1209,32 @@ check('resolveSeat() on a disabled seat also returns the typed DISABLED shape (p
     const routerNoBuilder = createRouter({ seats: { Builder: false } });
     const d = routerNoBuilder.resolveSeat('executor', { roster: 'new', buckets: G });
     return d.target.cast.ok === false && d.target.cast.outcome === 'DISABLED' && d.target.cast.role === 'Builder';
+  })());
+// WO-14b leg 2 fix round, finding 3 (MAJOR, fixed): resolveSeat() called
+// with a DIRECT role name (no alias indirection — the branch above only
+// exercised the alias path, which already routed through cast()) used to
+// skip the seat-toggle check entirely and hand back a usable
+// { kind: 'role', role: name } target even for a disabled seat. It must now
+// return the SAME typed DISABLED shape cast()/dispatch() return, including
+// the S0/A0 fallback disclosure text, never a usable role target.
+check('finding 3: resolveSeat("Sweeper") — a direct role name, no alias — returns typed DISABLED with the S0 fallback text on the default (Sweeper-disabled) router',
+  (() => {
+    const r = router.resolveSeat('Sweeper', { roster: 'new', buckets: G });
+    return r.ok === false && r.outcome === 'DISABLED' && r.role === 'Sweeper' &&
+      r.fallback === 'verifier-census' && /Verifier.*census/.test(r.reason) &&
+      r.target === undefined; // never a usable role target
+  })());
+check('finding 3: the seats override map re-enables direct-role resolveSeat("Sweeper") too — a live { kind: "role" } target, not DISABLED',
+  (() => {
+    const r = routerSweeperOn.resolveSeat('Sweeper', { roster: 'new', buckets: G });
+    return r.ok !== false && r.alias === false && r.target && r.target.kind === 'role' && r.target.role === 'Sweeper';
+  })());
+check('finding 3: resolveSeat("Architect") on an owner-disabled Architect router returns typed DISABLED with the A0 fallback text',
+  (() => {
+    const routerNoArchitect2 = createRouter({ seats: { Architect: false } });
+    const r = routerNoArchitect2.resolveSeat('Architect', { roster: 'new', buckets: G });
+    return r.ok === false && r.outcome === 'DISABLED' && r.role === 'Architect' &&
+      r.fallback === 'conductor-self-plan' && /Conductor plans in its own voice/.test(r.reason);
   })());
 
 // ---- registry cross-check refusing an unmapped class: a class present in

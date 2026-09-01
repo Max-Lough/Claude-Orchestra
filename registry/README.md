@@ -53,11 +53,15 @@ classes); `I1` registered as an alias of I0 and colliding with nothing; the
 §4.0 procedure **closed over the table** (every route target active, every
 active class reachable, no clause citing a retired discriminator, no route to
 a retired identifier); exactly two substrates (V0, P0); T3 human-authorized;
-and the six schemas present with the mandated required fields and their
-class/risk enums **byte-identical** to the registry's identifiers.
+and the eight schemas present with the mandated required fields and their
+class/risk enums **byte-identical** to the registry's identifiers — WO-14b leg
+2 fix round (finding 4): `dispatch-request.schema.json` and `ticket.schema.json`
+are enumerated and class-enum-checked here too, alongside the original six;
+before the fix a drifted class enum on either schema was invisible to the
+loader (still "6 schemas in sync", zero problems).
 
-`node tests/registry.test.js` runs the same load plus fourteen tamper tests
-proving each corruption is actually caught.
+`node tests/registry.test.js` runs the same load plus tamper tests (including
+the two new drift-tamper cases) proving each corruption is actually caught.
 
 ## Editing rules
 

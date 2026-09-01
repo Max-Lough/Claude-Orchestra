@@ -48,14 +48,9 @@ const AUTHOR_FAMILIES = ['anthropic', 'openai', 'human'];
 
 // WO-14b readiness-repair tranche: twelve roles retired from castings.json,
 // merged into Builder/Investigator or (A1) a documented workflow. Their
-// roster/*.md files are deleted and router/charters.json (out of this
-// order's edit set) still carries their charter entries — tolerated at load
-// (see the charter cross-check) rather than treated as drift.
-const RETIRED_ROLE_NAMES = new Set([
-  'Synthesizer', 'Scout', 'Researcher', 'LC Analyst', 'Archivist', 'Operator',
-  'Runner', 'Principal', 'Interface Artisan', 'Spatial Specialist', 'Refactorer', 'Doc Writer',
-]);
-
+// roster/*.md files are deleted, and (WO-14b leg 2 fix round, finding 8)
+// their router/charters.json entries are deleted too — the charter
+// cross-check below is strict: exactly the 11 live roles, no tolerance list.
 // ---------------------------------------------------------------------------
 // Pool-state machine (§5.5). Pure: one Quartermaster reading in, one state
 // out. Reserve breach and observed throttle force Red regardless of the
@@ -227,6 +222,19 @@ function createRouter(opts) {
     if (m.tier !== undefined && !((roles[m.role].tiers || {})[m.tier])) {
       fail('mergedClasses.' + id + ' names tier ' + JSON.stringify(m.tier) + ' that ' + m.role + ' does not have');
     }
+    // Findings 6/7 (WO-14b leg 2 fix round): contextShapesOnly is an exact
+    // replacement set (never additive with contextShapesAllowed on the same
+    // entry — that would make the "only" a lie), and every shape named by
+    // either must be a real contextShapes value.
+    if (m.contextShapesOnly !== undefined && m.contextShapesAllowed !== undefined) {
+      fail('mergedClasses.' + id + ' declares both contextShapesOnly and contextShapesAllowed — pick one (only replaces, allowed widens)');
+    }
+    for (const shape of [].concat(m.contextShapesOnly || [], m.contextShapesAllowed || [])) {
+      if (!castings.contextShapes.includes(shape)) fail('mergedClasses.' + id + ' names unknown context shape ' + JSON.stringify(shape));
+    }
+    if (m.unavailable !== undefined && (typeof m.unavailable !== 'object' || Array.isArray(m.unavailable))) {
+      fail('mergedClasses.' + id + '.unavailable must be an object map of medium -> reason');
+    }
   }
   for (const c of registry.classes) {
     if (classToRole.has(c.id)) continue;
@@ -332,12 +340,12 @@ function createRouter(opts) {
       }
     }
     for (const name of Object.keys(charters.charters || {})) {
-      // charters.json is not in the WO-14b leg 2b edit set — its entries for
-      // the twelve retired roles (merged into Builder/Investigator, or A1's
-      // retired workflow) are stale by construction, not drift. Tolerate
-      // exactly those names; anything else naming an unknown role still
-      // fails closed.
-      if (!roles[name] && !RETIRED_ROLE_NAMES.has(name)) fail('charter names unknown role ' + name);
+      // WO-14b leg 2 fix round (finding 8): the retired roles' charter
+      // entries are deleted from charters.json itself now — no tolerance
+      // list. Any name that is not a live role (an extra, or a stale
+      // retired-role leftover) fails closed, same as a missing charter does
+      // above.
+      if (!roles[name]) fail('charter names unknown role ' + name);
     }
   }
 
@@ -1016,10 +1024,35 @@ function createRouter(opts) {
       return disabled;
     }
 
+    // WO-14b leg 2 fix round (finding 6): merging M0 into Investigator
+    // dropped the raw video/audio UNAVAILABLE capability boundary the
+    // retired Archivist role declared (noMirrorFor.videoAudio) — restored
+    // generically here: any mergedClasses entry may declare
+    // `unavailable: { <medium>: reason }`; a request naming that medium is
+    // refused typed UNAVAILABLE before a role/rung is ever consulted. The
+    // medium is read ONLY from castOpts.medium — explicit caller intent,
+    // never inferred from context_packet or any other free-text field — so
+    // order.schema.json (out of this fix round's edit set) needs no change;
+    // a future leg that wants an order-level `medium` field can add it and
+    // fold it into this same read.
+    if (merge && merge.unavailable) {
+      const medium = o.castOpts && o.castOpts.medium;
+      if (medium !== undefined && hasOwn(merge.unavailable, medium)) {
+        return { ok: false, outcome: 'UNAVAILABLE', class: cls, role: roleName, order, reason: merge.unavailable[medium] };
+      }
+    }
+
     // Context shape is dispatcher-enforced (§2.0): a shape the seat may not
     // be handed is rejected outright, not truncated. A merged class may
-    // widen the target role's maximum shapes (E8 → Builder: repo/haystack).
-    const allowedShapes = role.contextShapes.concat((merge && merge.contextShapesAllowed) || []);
+    // widen the target role's maximum shapes (E8 → Builder: repo/haystack)
+    // or, WO-14b leg 2 fix round (finding 7), NARROW them to an exact set
+    // via contextShapesOnly (E1 → Builder: packet only) — the merged
+    // class's own ceiling replaces the target role's, rather than adding to
+    // it, so a class that used to be the "hardest constraint in the roster"
+    // (E1/Runner, packet-only) stays that way after the merge.
+    const allowedShapes = (merge && merge.contextShapesOnly)
+      ? merge.contextShapesOnly
+      : role.contextShapes.concat((merge && merge.contextShapesAllowed) || []);
     if (order.context_shape !== undefined) {
       if (!castings.contextShapes.includes(order.context_shape)) {
         return { ok: false, rejected: 'context-shape', reason: 'unknown context shape ' + JSON.stringify(order.context_shape) };
@@ -1235,7 +1268,24 @@ function createRouter(opts) {
     }
     const roster = o.roster === undefined ? seatAliases.rosterDefault : o.roster;
     if (!hasOwn(seatAliases.aliases, name)) {
-      if (hasOwn(roles, name)) return { roster, alias: false, target: { kind: 'role', role: name } };
+      if (hasOwn(roles, name)) {
+        // WO-14b leg 2 fix round (finding 3): a direct role name (no alias
+        // indirection) used to skip the seat-toggle check entirely and hand
+        // back a usable role target even for a disabled seat. Same typed
+        // DISABLED shape cast()/dispatch() return — including the S0/A0
+        // fallback disclosure — never a usable role target.
+        if (!seatEnabled(name)) {
+          const disabled = { ok: false, outcome: 'DISABLED', role: name, reason: 'seat disabled by the owner-set manifest toggle' };
+          if (name === 'Sweeper') {
+            return Object.assign(disabled, { fallback: 'verifier-census', reason: disabled.reason + ' — the Conductor\'s chain-final step falls to the Verifier\'s census re-run' });
+          }
+          if (name === 'Architect') {
+            return Object.assign(disabled, { fallback: 'conductor-self-plan', reason: disabled.reason + ' — the Conductor plans in its own voice, disclosure recorded on the order' });
+          }
+          return disabled;
+        }
+        return { roster, alias: false, target: { kind: 'role', role: name } };
+      }
       return { roster, alias: false, error: 'unknown seat name: ' + JSON.stringify(name), target: null };
     }
     const a = seatAliases.aliases[name];

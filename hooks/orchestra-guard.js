@@ -384,6 +384,48 @@ function withManifestNote(msg, policy) {
   return out;
 }
 
+// ------------------------------------------------------- Agent seam (leg 4c)
+//
+// Defense in depth for leg 4's ticket gate. The four installed settings.json
+// entries (PreToolUse/PostToolUse matcher "Agent", SubagentStop, Stop ->
+// node .claude/orchestra/bridge/hooks/ticket-gate.js <Event>, registered by
+// install.js under --roster new) are what enforce ticketing in the common
+// case, but nothing stops those entries being stripped from settings.json
+// (by hand, or by a compromised Director) while this guard keeps running.
+// So under roster:new (trusted OR untrusted-but-new — i.e. whenever
+// loadPolicy() resolves roster:'new', cases (a)/(b)/(c)/(d) alike), a
+// PreToolUse for tool Agent is delegated here to the SAME bridge runtime the
+// installed hook uses, and its decision is returned VERBATIM: this makes the
+// guard alone sufficient to enforce ticketing even with the settings entries
+// gone. If the runtime cannot be loaded (missing bridge/runtime.js, or it
+// throws) that is fail-closed — DENY, never allow an ungated spawn. This
+// seam is independent of model dormancy: the ticket gate decides on ticket
+// possession, not on which model is directing — a Sonnet/Haiku session that
+// spawns an Agent is gated exactly the same as an Opus/Fable one. Under
+// roster:legacy, unchanged: this guard has never blocked Agent.
+function delegateAgentGate(input, policy) {
+  let result;
+  try {
+    const runtimePath = path.join(projectDir(), '.claude', 'orchestra', 'bridge', 'runtime.js');
+    const bridgeMod = require(runtimePath);
+    const runtime = bridgeMod.createRuntime({ projectDir: projectDir() });
+    const event = Object.assign({}, input, { hook_event_name: input.hook_event_name || 'PreToolUse' });
+    result = runtime.gate(event);
+  } catch (e) {
+    return deny(
+      withManifestNote(
+        'Orchestra: this project runs roster:new — Agent (subagent spawn) is enforced by the ' +
+          'ticket bridge, but its runtime (.claude/orchestra/bridge/runtime.js) could not be ' +
+          'loaded (' + (e && e.message ? e.message : String(e)) + '). Fail closed rather than ' +
+          'allow an ungated spawn.',
+        policy
+      )
+    );
+  }
+  process.stdout.write(JSON.stringify(result && result.inert ? {} : (result || {})));
+  process.exit(0);
+}
+
 function denyDefault(toolName, policy) {
   const planPatternsRaw = policy.planPatternsRaw;
   const configuredDirs =
@@ -1317,15 +1359,30 @@ function main(raw) {
     return allow();
   }
 
-  // Subagent calls are never restricted. Project-settings PreToolUse hooks
-  // only fire for the main session in current Claude Code, but if this input
-  // carries subagent identity (agent_id / agent_type), exempt it explicitly.
-  if (input.agent_id || input.agent_type) return allow();
-
   const toolName = input.tool_name;
+
+  // Subagent calls are never restricted for Director-law purposes. Project-
+  // settings PreToolUse hooks only fire for the main session in current
+  // Claude Code, but if this input carries subagent identity (agent_id /
+  // agent_type), exempt it explicitly — EXCEPT for tool Agent under the
+  // leg-4c seam below: a subagent's own agent_id must still reach the
+  // bridge gate so it can deny a NESTED spawn (ticket-gate.js's own rule —
+  // no ticket issued to a subagent ever grants SPAWN). Every other tool
+  // keeps the original unconditional exemption.
+  if ((input.agent_id || input.agent_type) && toolName !== 'Agent') return allow();
+
   if (typeof toolName !== 'string') return allow();
 
   const policy = loadPolicy();
+
+  // Agent seam (leg 4c): see delegateAgentGate()'s own comment. Checked
+  // before Director law (self-pause, tightening, plan/memory, BLOCKED) —
+  // Agent is not a Director-law tool and this seam does not participate in
+  // model dormancy at all, so nothing below it applies.
+  if (toolName === 'Agent') {
+    if (policy.roster === 'new') return delegateAgentGate(input, policy);
+    return allow(); // legacy: unchanged — this guard has never blocked Agent
+  }
 
   // Self-pause (item 1, CRITICAL): absolute — checked before every other
   // carve-out and before model dormancy, since the pause switch's whole

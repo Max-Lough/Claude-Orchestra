@@ -978,6 +978,32 @@ const HOOK_ENTRY = {
   ],
 };
 
+// The bridge's ticket-gate hook (WO-14b leg 4c) — registered into
+// .claude/settings.json ONLY under --roster new (the gate is inert under
+// legacy anyway; removed on a legacy flip as hygiene, not a behaviour
+// change). Four events: PreToolUse/PostToolUse matched to tool "Agent" only
+// (the gate has nothing to say about any other tool); SubagentStop/Stop
+// fire on every such event (no matcher concept applies to non-tool events).
+// GATE_HOOK_MARK identifies our entries the same way GUARD_MARK identifies
+// the guard's, via isOurGateHookEntry() below — so a re-run replaces rather
+// than duplicates them, and a user's own entries for these same four events
+// are always left untouched.
+const GATE_HOOK_MARK = 'ticket-gate.js';
+const GATE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop'];
+function gateHookEntry(eventName) {
+  const entry = {
+    hooks: [
+      {
+        type: 'command',
+        command:
+          'node "$CLAUDE_PROJECT_DIR/.claude/orchestra/bridge/hooks/ticket-gate.js" ' + eventName,
+      },
+    ],
+  };
+  if (eventName === 'PreToolUse' || eventName === 'PostToolUse') entry.matcher = 'Agent';
+  return entry;
+}
+
 // ---------------------------------------------------------------- helpers
 
 const actions = [];
@@ -1144,6 +1170,16 @@ function isOurHookEntry(entry) {
     Array.isArray(entry.hooks) &&
     entry.hooks.some(
       (h) => h && typeof h.command === 'string' && h.command.includes(GUARD_MARK)
+    )
+  );
+}
+
+function isOurGateHookEntry(entry) {
+  return (
+    entry &&
+    Array.isArray(entry.hooks) &&
+    entry.hooks.some(
+      (h) => h && typeof h.command === 'string' && h.command.includes(GATE_HOOK_MARK)
     )
   );
 }
@@ -1948,12 +1984,19 @@ if (!uninstall) {
       // every --roster new run, so the tracked list must be too, or a file
       // removed from a later master would linger untracked forever.
       manifest.installedFiles = rosterInstalledFiles.slice();
+      // installedHooks (leg 4c): the four bridge gate hook events this run
+      // registers into .claude/settings.json (section 2, below) — recorded
+      // here, in the SAME manifest write, so --uninstall and a later legacy
+      // flip always know precisely what to remove without re-deriving it
+      // from the CURRENT master's event list.
+      manifest.installedHooks = GATE_HOOK_EVENTS.slice();
       writeManifestAndPin(target, orchestraJsonFile, manifest);
       did(
         '.claude/orchestra.json: roster="new", rosterGeneration=' + manifest.rosterGeneration +
           (flipped ? ' (bumped)' : ' (unchanged — already new)') + ', seats ' +
           (hadSeats ? 'preserved' : 'defaulted to Architect:true, Sweeper:false') +
           ', installedFiles tracks ' + manifest.installedFiles.length + ' path(s)' +
+          ', installedHooks tracks ' + manifest.installedHooks.join(', ') +
           ' (every other key preserved byte-for-byte)'
       );
     } else if (manifestExisted && prevRoster === 'new') {
@@ -1963,6 +2006,12 @@ if (!uninstall) {
       // installedFiles is left exactly as it was: the rollback is a flag
       // flip, never a reinstall or a deletion, so what --uninstall would
       // remove later must not change just because the flag flipped.
+      // installedHooks IS cleared: unlike installedFiles (roster files stay
+      // on disk across a flip), the gate hook entries are actually removed
+      // from settings.json below (section 2) — the gate is inert under
+      // legacy anyway, so leaving stale entries registered would be pure
+      // clutter with no files left to reconcile them against.
+      delete manifest.installedHooks;
       writeManifestAndPin(target, orchestraJsonFile, manifest);
       did(
         '.claude/orchestra.json: roster flipped to "legacy" (rosterGeneration bumped to ' +
@@ -2129,6 +2178,42 @@ if (!uninstall) {
   const kept = pre.filter((e) => !isOurHookEntry(e));
   kept.push(HOOK_ENTRY);
   settings.hooks.PreToolUse = kept;
+
+  // 2a. The bridge's ticket-gate hook entries (leg 4c) — registered under
+  // --roster new, tagged like the guard's own entry (isOurGateHookEntry, so
+  // a re-run replaces rather than duplicates them and a user's own entries
+  // for these four events are always left untouched), removed on a legacy
+  // flip (the gate is inert under legacy anyway — this is hygiene, not a
+  // behaviour change). A plain legacy install (never --roster new) finds
+  // nothing of ours to remove, so these event keys are left exactly as
+  // found — same guarantee as the guard's own PreToolUse entry above.
+  const gateEventsInstalled = [];
+  const gateEventsRemoved = [];
+  for (const eventName of GATE_HOOK_EVENTS) {
+    const priorList = Array.isArray(settings.hooks[eventName]) ? settings.hooks[eventName] : [];
+    const hadOurs = priorList.some((e) => isOurGateHookEntry(e));
+    const keptList = priorList.filter((e) => !isOurGateHookEntry(e));
+    if (roster === 'new') {
+      keptList.push(gateHookEntry(eventName));
+      gateEventsInstalled.push(eventName);
+    } else if (hadOurs) {
+      gateEventsRemoved.push(eventName);
+    }
+    if (keptList.length) settings.hooks[eventName] = keptList;
+    else delete settings.hooks[eventName];
+  }
+  if (gateEventsInstalled.length) {
+    did(
+      'ticket-gate hooks merged into .claude/settings.json (' + gateEventsInstalled.join(', ') +
+        ' -> node .claude/orchestra/bridge/hooks/ticket-gate.js <Event>, other settings preserved)'
+    );
+  }
+  if (gateEventsRemoved.length) {
+    did(
+      'ticket-gate hooks removed from .claude/settings.json (' + gateEventsRemoved.join(', ') +
+        ') — the gate is inert under roster:legacy; this is hygiene, not a behaviour change'
+    );
+  }
 
   const grantsManifestExisted = fs.existsSync(orchestraJsonFile);
   const grantsPriorManifest = grantsManifestExisted ? readJson(orchestraJsonFile) : {};
@@ -2519,17 +2604,41 @@ if (!uninstall) {
     }
   }
 
-  // 2. Hook entry (settings.json PreToolUse) and MCP registrations.
+  // 2. Hook entries (settings.json PreToolUse guard + the four ticket-gate
+  // events, leg 4c) and MCP registrations. The gate entries are removed
+  // unconditionally by marker match here, exactly like the guard's own
+  // entry — never gated on manifest/pin trust: an untrustworthy manifest is
+  // still cleaned up on uninstall.
   if (fs.existsSync(settingsFile)) {
     const settings = readJson(settingsFile);
+    let guardRemoved = false;
     if (settings.hooks && Array.isArray(settings.hooks.PreToolUse)) {
       const kept = settings.hooks.PreToolUse.filter((e) => !isOurHookEntry(e));
       if (kept.length !== settings.hooks.PreToolUse.length) {
         if (kept.length > 0) settings.hooks.PreToolUse = kept;
         else delete settings.hooks.PreToolUse;
-        if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
-        writeJson(settingsFile, settings);
-        did('removed guard entry from .claude/settings.json (other settings preserved)');
+        guardRemoved = true;
+      }
+    }
+    const removedGateEvents = [];
+    for (const eventName of GATE_HOOK_EVENTS) {
+      if (!settings.hooks || !Array.isArray(settings.hooks[eventName])) continue;
+      const keptList = settings.hooks[eventName].filter((e) => !isOurGateHookEntry(e));
+      if (keptList.length !== settings.hooks[eventName].length) {
+        if (keptList.length > 0) settings.hooks[eventName] = keptList;
+        else delete settings.hooks[eventName];
+        removedGateEvents.push(eventName);
+      }
+    }
+    if (guardRemoved || removedGateEvents.length) {
+      if (settings.hooks && Object.keys(settings.hooks).length === 0) delete settings.hooks;
+      writeJson(settingsFile, settings);
+      if (guardRemoved) did('removed guard entry from .claude/settings.json (other settings preserved)');
+      if (removedGateEvents.length) {
+        did(
+          'removed ticket-gate hook entries from .claude/settings.json (' + removedGateEvents.join(', ') +
+            ') (other settings preserved)'
+        );
       }
     }
   }

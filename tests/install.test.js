@@ -249,6 +249,50 @@ function case2_newRosterCensus() {
   check('manifest roster === "new"', manifest.roster === 'new', JSON.stringify(manifest));
   check('manifest seats === {Architect:true, Sweeper:false}', manifest.seats && manifest.seats.Architect === true && manifest.seats.Sweeper === false, JSON.stringify(manifest));
   check('manifest rosterGeneration starts at 1', manifest.rosterGeneration === 1, JSON.stringify(manifest));
+
+  // leg 4c: the four bridge ticket-gate hook entries are registered into
+  // settings.json under --roster new, tagged (isOurGateHookEntry) and
+  // tracked in the manifest's installedHooks.
+  const settings = readJson(path.join(target, '.claude', 'settings.json'));
+  check('manifest installedHooks === the four gate events', JSON.stringify(manifest.installedHooks) === JSON.stringify(['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop']), JSON.stringify(manifest.installedHooks));
+
+  check('settings.json PreToolUse still carries exactly one guard entry PLUS one gate entry',
+    Array.isArray(settings.hooks.PreToolUse) && settings.hooks.PreToolUse.length === 2, JSON.stringify(settings.hooks.PreToolUse));
+  const preGate = (settings.hooks.PreToolUse || []).find((e) => e.matcher === 'Agent');
+  check('PreToolUse gate entry has matcher "Agent"', !!preGate, JSON.stringify(settings.hooks.PreToolUse));
+  check('PreToolUse gate entry command runs ticket-gate.js PreToolUse',
+    !!preGate && preGate.hooks[0].command.indexOf('ticket-gate.js') !== -1 && / PreToolUse$/.test(preGate.hooks[0].command),
+    preGate && JSON.stringify(preGate));
+
+  check('settings.json PostToolUse carries exactly one gate entry, matcher "Agent"',
+    Array.isArray(settings.hooks.PostToolUse) && settings.hooks.PostToolUse.length === 1 && settings.hooks.PostToolUse[0].matcher === 'Agent',
+    JSON.stringify(settings.hooks.PostToolUse));
+  check('PostToolUse gate entry command runs ticket-gate.js PostToolUse',
+    settings.hooks.PostToolUse && / PostToolUse$/.test(settings.hooks.PostToolUse[0].hooks[0].command),
+    settings.hooks.PostToolUse && JSON.stringify(settings.hooks.PostToolUse));
+
+  check('settings.json SubagentStop carries exactly one gate entry, NO matcher key',
+    Array.isArray(settings.hooks.SubagentStop) && settings.hooks.SubagentStop.length === 1 && !('matcher' in settings.hooks.SubagentStop[0]),
+    JSON.stringify(settings.hooks.SubagentStop));
+  check('SubagentStop gate entry command runs ticket-gate.js SubagentStop',
+    settings.hooks.SubagentStop && / SubagentStop$/.test(settings.hooks.SubagentStop[0].hooks[0].command),
+    settings.hooks.SubagentStop && JSON.stringify(settings.hooks.SubagentStop));
+
+  check('settings.json Stop carries exactly one gate entry, NO matcher key',
+    Array.isArray(settings.hooks.Stop) && settings.hooks.Stop.length === 1 && !('matcher' in settings.hooks.Stop[0]),
+    JSON.stringify(settings.hooks.Stop));
+  check('Stop gate entry command runs ticket-gate.js Stop',
+    settings.hooks.Stop && / Stop$/.test(settings.hooks.Stop[0].hooks[0].command),
+    settings.hooks.Stop && JSON.stringify(settings.hooks.Stop));
+
+  // A second --roster new run must replace, never duplicate, these entries.
+  const r2 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('re-running --roster new succeeds', ok(r2), out(r2));
+  const settingsAgain = readJson(path.join(target, '.claude', 'settings.json'));
+  check('re-running --roster new does not duplicate the gate hook entries',
+    settingsAgain.hooks.PreToolUse.length === 2 && settingsAgain.hooks.PostToolUse.length === 1 &&
+      settingsAgain.hooks.SubagentStop.length === 1 && settingsAgain.hooks.Stop.length === 1,
+    JSON.stringify(settingsAgain.hooks));
 }
 
 function case3_flipBumpsGenerationLeavesFiles() {
@@ -269,11 +313,29 @@ function case3_flipBumpsGenerationLeavesFiles() {
   const after = census(target);
   check('every new-roster file installed before the flip is STILL present after it', before.every((f) => after.includes(f)), 'missing: ' + before.filter((f) => !after.includes(f)).join(', '));
 
+  // leg 4c: the flip removes the four gate hook entries (the gate is inert
+  // under legacy anyway — hygiene) but LEAVES the guard's own PreToolUse
+  // entry in place, and clears installedHooks from the manifest.
+  const settingsAfterFlip = readJson(path.join(target, '.claude', 'settings.json'));
+  check('flip to legacy removes the gate PreToolUse(Agent) entry but keeps the guard entry',
+    Array.isArray(settingsAfterFlip.hooks.PreToolUse) && settingsAfterFlip.hooks.PreToolUse.length === 1 &&
+      settingsAfterFlip.hooks.PreToolUse[0].matcher === '',
+    JSON.stringify(settingsAfterFlip.hooks.PreToolUse));
+  check('flip to legacy removes PostToolUse/SubagentStop/Stop entirely (no user entries there)',
+    !settingsAfterFlip.hooks.PostToolUse && !settingsAfterFlip.hooks.SubagentStop && !settingsAfterFlip.hooks.Stop,
+    JSON.stringify(settingsAfterFlip.hooks));
+  check('manifest installedHooks is cleared on the flip to legacy', manifest.installedHooks === undefined, JSON.stringify(manifest));
+
   // Flipping back to new again a second time is a no-op on generation (no
   // flip occurred: roster was already "new" going into a --roster new run).
   install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
   const genFlippedBack = readJson(path.join(target, '.claude', 'orchestra.json')).rosterGeneration;
   check('flipping back to new bumps generation again (new->legacy->new = two flips)', genFlippedBack === genBefore + 2, 'genBefore=' + genBefore + ' now=' + genFlippedBack);
+  const settingsAfterReflip = readJson(path.join(target, '.claude', 'settings.json'));
+  check('flipping back to new re-registers all four gate hook entries',
+    settingsAfterReflip.hooks.PreToolUse.length === 2 && settingsAfterReflip.hooks.PostToolUse.length === 1 &&
+      settingsAfterReflip.hooks.SubagentStop.length === 1 && settingsAfterReflip.hooks.Stop.length === 1,
+    JSON.stringify(settingsAfterReflip.hooks));
   const r2 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
   const genIdempotent = readJson(path.join(target, '.claude', 'orchestra.json')).rosterGeneration;
   check('re-running --roster new with no flip does NOT bump generation again', ok(r2) && genIdempotent === genFlippedBack, 'before=' + genFlippedBack + ' after=' + genIdempotent);
@@ -284,12 +346,42 @@ function case4_userKeysPreserved() {
 
   const target = tmpdir('orchestra-install-');
   fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
-  fs.writeFileSync(path.join(target, '.claude', 'settings.json'), JSON.stringify({ myCustomSetting: 'keep-me', permissions: { allow: ['Bash(npm test:*)'] } }, null, 2), 'utf8');
+  // leg 4c: a user's own hook entries for the same four events the gate
+  // uses (PreToolUse/PostToolUse for a DIFFERENT tool matcher, plus
+  // SubagentStop/Stop) must survive untouched alongside ours.
+  fs.writeFileSync(path.join(target, '.claude', 'settings.json'), JSON.stringify({
+    myCustomSetting: 'keep-me',
+    permissions: { allow: ['Bash(npm test:*)'] },
+    hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'node my-own-bash-hook.js' }] }],
+      PostToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'node my-own-write-hook.js' }] }],
+      SubagentStop: [{ hooks: [{ type: 'command', command: 'node my-own-subagentstop-hook.js' }] }],
+      Stop: [{ hooks: [{ type: 'command', command: 'node my-own-stop-hook.js' }] }],
+    },
+  }, null, 2), 'utf8');
   fs.writeFileSync(path.join(target, '.mcp.json'), JSON.stringify({ mcpServers: { myOwnServer: { command: 'node', args: ['own.js'] } } }, null, 2), 'utf8');
   fs.writeFileSync(path.join(target, '.claude', 'orchestra.json'), JSON.stringify({ directorAllowedTools: ['Glob'], reviewEngine: 'opus' }, null, 2), 'utf8');
 
   const r = install(target, ['--roster', 'new', '--grant-push', '--no-packs', '--no-specialists']);
   check('install over an existing project with user keys succeeds', ok(r), out(r));
+
+  const settingsHooks = readJson(path.join(target, '.claude', 'settings.json')).hooks;
+  check("user's own PreToolUse(Bash) entry survives alongside the guard + gate entries",
+    settingsHooks.PreToolUse.some((e) => e.matcher === 'Bash' && e.hooks[0].command === 'node my-own-bash-hook.js') &&
+      settingsHooks.PreToolUse.length === 3,
+    JSON.stringify(settingsHooks.PreToolUse));
+  check("user's own PostToolUse(Write) entry survives alongside the gate entry",
+    settingsHooks.PostToolUse.some((e) => e.matcher === 'Write' && e.hooks[0].command === 'node my-own-write-hook.js') &&
+      settingsHooks.PostToolUse.length === 2,
+    JSON.stringify(settingsHooks.PostToolUse));
+  check("user's own SubagentStop entry survives alongside the gate entry",
+    settingsHooks.SubagentStop.some((e) => e.hooks[0].command === 'node my-own-subagentstop-hook.js') &&
+      settingsHooks.SubagentStop.length === 2,
+    JSON.stringify(settingsHooks.SubagentStop));
+  check("user's own Stop entry survives alongside the gate entry",
+    settingsHooks.Stop.some((e) => e.hooks[0].command === 'node my-own-stop-hook.js') &&
+      settingsHooks.Stop.length === 2,
+    JSON.stringify(settingsHooks.Stop));
 
   const settings = readJson(path.join(target, '.claude', 'settings.json'));
   check('settings.json: unrelated top-level key preserved', settings.myCustomSetting === 'keep-me', JSON.stringify(settings));
@@ -957,6 +1049,43 @@ function case23_ignoreManifest() {
   check('--ignore-manifest without --uninstall is refused', rNoUninstall.status !== 0, out(rNoUninstall));
 }
 
+function case24_uninstallRemovesGateHooks() {
+  section('24. --uninstall removes the four ticket-gate hook entries (leg 4c), leaving a user\'s own entries for the same events untouched');
+
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+
+  // Plant a user's own entry on each of the four events AFTER the install,
+  // the way a developer's hand-edit would.
+  const settingsFile = path.join(target, '.claude', 'settings.json');
+  const settings = readJson(settingsFile);
+  settings.hooks.PostToolUse = (settings.hooks.PostToolUse || []).concat([
+    { matcher: 'Write', hooks: [{ type: 'command', command: 'node my-own-write-hook.js' }] },
+  ]);
+  settings.hooks.SubagentStop = (settings.hooks.SubagentStop || []).concat([
+    { hooks: [{ type: 'command', command: 'node my-own-subagentstop-hook.js' }] },
+  ]);
+  settings.hooks.Stop = (settings.hooks.Stop || []).concat([
+    { hooks: [{ type: 'command', command: 'node my-own-stop-hook.js' }] },
+  ]);
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2), 'utf8');
+
+  const r = install(target, ['--uninstall']);
+  check('uninstall succeeds', ok(r), out(r));
+
+  const after = readJson(settingsFile);
+  check('the guard PreToolUse entry is gone', !after.hooks || !Array.isArray(after.hooks.PreToolUse) || after.hooks.PreToolUse.length === 0, JSON.stringify(after.hooks));
+  check('the gate PostToolUse entry is gone but the user\'s own PostToolUse(Write) entry survives',
+    after.hooks.PostToolUse && after.hooks.PostToolUse.length === 1 && after.hooks.PostToolUse[0].hooks[0].command === 'node my-own-write-hook.js',
+    JSON.stringify(after.hooks.PostToolUse));
+  check('the gate SubagentStop entry is gone but the user\'s own entry survives',
+    after.hooks.SubagentStop && after.hooks.SubagentStop.length === 1 && after.hooks.SubagentStop[0].hooks[0].command === 'node my-own-subagentstop-hook.js',
+    JSON.stringify(after.hooks.SubagentStop));
+  check('the gate Stop entry is gone but the user\'s own entry survives',
+    after.hooks.Stop && after.hooks.Stop.length === 1 && after.hooks.Stop[0].hooks[0].command === 'node my-own-stop-hook.js',
+    JSON.stringify(after.hooks.Stop));
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -995,6 +1124,7 @@ try {
   case21_permissionOwnershipCrossFile();
   case22_projectIdMovePinRepin();
   case23_ignoreManifest();
+  case24_uninstallRemovesGateHooks();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

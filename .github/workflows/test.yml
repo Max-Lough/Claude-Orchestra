@@ -171,3 +171,23 @@ jobs:
         # quartermaster, no real codex invocation), and score.js's mechanical
         # hit logic, Wilson intervals, and the 12d seed-level union table.
         run: node tests/wo12-tooling.test.js
+
+      - name: Install suite (--roster legacy|new)
+        # WO-14b leg 3: legacy census pinned unchanged; the new-roster file
+        # census (agents, ORCHESTRA-CONDUCTOR.md, .claude/orchestra/
+        # substrates, bridge/ handled silently whether or not it exists);
+        # manifest keys (roster/seats/rosterGeneration) and generation-bump
+        # on every flip; user keys preserved byte-for-byte in settings.json,
+        # .mcp.json, and orchestra.json; malformed JSON and malformed
+        # permissions refused before anything is touched; uninstall order
+        # (settings validated first); default vs --grant-push grants incl.
+        # the deny counterweight; installedPermissions tracking; --lint.
+        run: node tests/install.test.js
+
+      - name: Guard suite (orchestra-guard.js)
+        # sdc-011/012: the .md + real-path plan-file containment fix
+        # (symlink/junction escape denied), the deny hint naming every
+        # configured plan directory, and the roster:new asymmetry — an
+        # undetermined session model denies under roster:new and stands
+        # down under legacy.
+        run: node tests/guard.test.js

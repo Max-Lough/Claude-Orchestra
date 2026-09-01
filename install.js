@@ -7,6 +7,15 @@
  *   node install.js [targetDir] --packs a[,b]          also install optional packs
  *   node install.js [targetDir] --no-packs             install with no packs
  *   node install.js [targetDir] --specialists a[,b]    also install domain specialists
+ *   node install.js [targetDir] --roster legacy|new    roster generation (default legacy;
+ *                                                      "new" co-installs the eleven-file
+ *                                                      roster and its runtime substrates
+ *                                                      ALONGSIDE the legacy six — see
+ *                                                      "Roster generations" below)
+ *   node install.js [targetDir] --grant-push           also grant Bash(git push:*), with a
+ *                                                      permissions.deny counterweight for
+ *                                                      --force/-f/--delete/--mirror (push is
+ *                                                      NOT granted by default)
  *   node install.js [targetDir] --uninstall            remove cleanly
  *   node install.js --scan <dir> [--depth n]           report which installs are behind
  *   node install.js --scan <dir> --update              ...and bring the stale ones up
@@ -15,6 +24,18 @@
  *                                                      this master)
  *
  * targetDir defaults to the current working directory.
+ *
+ * Roster generations: "legacy" (default) is byte-for-byte the original
+ * install — the six core agents/*.md files and nothing under roster/. "new"
+ * installs the eleven roster/*.md role files (minus conductor.md, which is
+ * the session's own standing contract, not a spawnable agent) into
+ * .claude/agents/ IN ADDITION to the legacy six, conductor.md itself to
+ * .claude/ORCHESTRA-CONDUCTOR.md, and the shared substrates (router/,
+ * registry/, verifier/, quartermaster/, and bridge/ once leg 4 adds it) as a
+ * runtime directory, .claude/orchestra/. Both rosters stay installed
+ * together; the manifest flag .claude/orchestra.json "roster" is what a
+ * later leg's runtime reads to decide which one is live, and flipping it
+ * back to "legacy" is a flag flip, never a reinstall or a deletion.
  *
  * Packs (packs/<name>/) are OPTIONAL modules — agents, hook runners, and
  * skills that share a dependency the core harness does not have (e.g. the
@@ -56,6 +77,39 @@ const AGENTS = [
 const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
 const SKILLS_DIR = path.join(SRC, 'skills');
 const PACKS_DIR = path.join(SRC, 'packs');
+
+// --------------------------------------------------------- roster (leg 3)
+//
+// roster/*.md holds the eleven-file new roster PLUS a mix of non-role
+// documents (README.md, dated campaign records, work-order dispositions).
+// This classification mirrors roster/lint.js's own isRoleFile exactly (kept
+// duplicated rather than required-in: install.js has no other dependency on
+// registry/router internals, and lint.js has no exported classifier) so the
+// two never silently disagree about what counts as a role file.
+const ROSTER_DIR = path.join(SRC, 'roster');
+const ROSTER_NON_ROLE_NAMES = new Set(['README.md', 'EXERCISES.md']);
+const ROSTER_RECORD_DOC_RE = /^(wo\d+[a-z]?-|r\d+-ex\d+-|(readiness|roster)-.*-\d{4}-\d{2}-\d{2}\.md$)/;
+function rosterRoleFiles() {
+  if (!fs.existsSync(ROSTER_DIR)) return [];
+  return fs
+    .readdirSync(ROSTER_DIR)
+    .filter(
+      (f) =>
+        f.endsWith('.md') && !ROSTER_NON_ROLE_NAMES.has(f) && !ROSTER_RECORD_DOC_RE.test(f)
+    )
+    .sort();
+}
+const ROSTER_CONDUCTOR_FILE = 'conductor.md';
+const ROSTER_CONDUCTOR_DEST = 'ORCHESTRA-CONDUCTOR.md'; // .claude/ORCHESTRA-CONDUCTOR.md — the
+  // session's standing contract, not a spawnable agent (A.2) — so it does
+  // NOT land in .claude/agents/ with the other ten role files.
+const ORCHESTRA_RUNTIME_DIRNAME = 'orchestra'; // .claude/orchestra/ — the shared substrates
+const ROSTER_SUBSTRATE_DIRS = ['router', 'registry', 'verifier', 'quartermaster'];
+const ROSTER_BRIDGE_DIRNAME = 'bridge'; // leg 4 creates this at the master root; today it
+  // does not exist, and its absence is handled silently (see rosterInstall()).
+const ORCHESTRA_MANIFEST_FILE = 'orchestra.json'; // .claude/orchestra.json — owner-pinned,
+  // read by the guard's loadPolicy() and (leg 4) the activation runtime.
+const DEFAULT_SEATS = { Architect: true, Sweeper: false };
 
 function availableSpecialists() {
   if (!fs.existsSync(SPECIALISTS_DIR)) return [];
@@ -554,11 +608,25 @@ const IMPORT_BLOCK = BEGIN + '\n@.claude/ORCHESTRA.md\n' + END;
 // cannot accept authorization relayed by the Director ("the user said push" in
 // a work order is not a user turn in the subagent's transcript), so the
 // permission classifier denies git commit/push unless the grant lives in
-// settings. These rules make Director-ordered commits and pushes work.
+// settings. These rules make Director-ordered commits work by default.
+//
+// Push is deliberately NOT among them (sdc-012 MAJOR): a session-wide
+// `Bash(git push:*)` grant reaches every window the guard stands down in
+// (see "What these grants reach" in the README), so it is opt-in via
+// --grant-push, which adds it TOGETHER WITH the deny counterweight below —
+// deny wins in Claude Code's permission evaluation, so the broad allow can
+// never authorize the specific dangerous forms even in a stand-down window.
 const GIT_PERMISSIONS = [
   'Bash(git add:*)',
   'Bash(git commit:*)',
-  'Bash(git push:*)',
+];
+const GIT_PUSH_PERMISSION = 'Bash(git push:*)';
+const GIT_PUSH_DENY_PATTERNS = [
+  'Bash(git push --force*)',
+  'Bash(git push -f*)',
+  'Bash(git push --delete*)',
+  'Bash(git push --mirror*)',
+  'Bash(git push * --force*)',
 ];
 
 // Empty matcher = the hook fires on every main-session tool call; the guard
@@ -647,6 +715,50 @@ function readJsonSafe(file) {
 
 function writeJson(file, obj) {
   fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+}
+
+// Refuse before touching ANYTHING (sdc-012 MINOR): malformed JSON in any of
+// the three settings files the installer reads/writes — .claude/settings.json,
+// .mcp.json, .claude/orchestra.json — used to surface only after the install
+// had already copied agents/skills/hooks, and --uninstall used to delete
+// every owned file before ever reading settings, stranding grants in a
+// project left with no guard. This runs first, for both install and
+// uninstall, before any fs mutation. Malformed `permissions` (a string, an
+// array — not an object) is refused too, named explicitly, rather than
+// silently replaced with {} the way a plain readJson() would invite.
+function refuseIfTargetMalformed(settingsFile, mcpFile, orchestraJsonFile) {
+  for (const f of [settingsFile, mcpFile, orchestraJsonFile]) {
+    if (!fs.existsSync(f)) continue;
+    const raw = fs.readFileSync(f, 'utf8').trim();
+    if (raw === '') continue;
+    try {
+      JSON.parse(raw);
+    } catch (e) {
+      fail(
+        f + ' exists but is not valid JSON (' + e.message + '). Refusing to touch ' +
+          'anything in this project (nothing copied or deleted) — fix it first.'
+      );
+    }
+  }
+  if (!fs.existsSync(settingsFile)) return;
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8').trim() || '{}');
+  const perms = settings.permissions;
+  if (perms !== undefined) {
+    if (typeof perms !== 'object' || perms === null || Array.isArray(perms)) {
+      fail(
+        settingsFile + ': "permissions" must be an object, found ' + JSON.stringify(perms) +
+          '. Refusing to touch anything in this project — fix it first.'
+      );
+    }
+    for (const key of ['allow', 'deny']) {
+      if (perms[key] !== undefined && !Array.isArray(perms[key])) {
+        fail(
+          settingsFile + ': "permissions.' + key + '" must be an array, found ' +
+            JSON.stringify(perms[key]) + '. Refusing to touch anything in this project — fix it first.'
+        );
+      }
+    }
+  }
 }
 
 function isOurHookEntry(entry) {
@@ -943,6 +1055,8 @@ let scanArg = null; // null = not scanning
 let updateFlag = false;
 let depthArg = null;
 let lintFlag = false;
+let rosterArg = null; // null = not given (defaults to "legacy" below)
+let grantPushFlag = false;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--uninstall') uninstall = true;
@@ -958,14 +1072,25 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--depth') depthArg = args[++i] || '';
   else if (a.startsWith('--depth=')) depthArg = a.slice('--depth='.length);
   else if (a === '--lint') lintFlag = true;
+  else if (a === '--roster') rosterArg = args[++i] || '';
+  else if (a.startsWith('--roster=')) rosterArg = a.slice('--roster='.length);
+  else if (a === '--grant-push') grantPushFlag = true;
   else if (a.startsWith('--')) {
     fail(
       'Unknown flag: ' + a +
         ' (expected --uninstall, --packs <names>, --no-packs, --specialists <names>,' +
-        ' --no-specialists, --scan <dir>, --update, --depth <n>, or --lint [dir])'
+        ' --no-specialists, --scan <dir>, --update, --depth <n>, --lint [dir],' +
+        ' --roster legacy|new, or --grant-push)'
     );
   } else if (!dirArg) dirArg = a;
   else fail('Unexpected extra argument: ' + a);
+}
+if (rosterArg !== null && rosterArg !== 'legacy' && rosterArg !== 'new') {
+  fail('--roster must be "legacy" or "new", got: ' + JSON.stringify(rosterArg));
+}
+const roster = rosterArg || 'legacy';
+if (grantPushFlag && uninstall) {
+  fail('--grant-push does nothing with --uninstall — grants are removed by uninstall itself.');
 }
 
 // --- lint mode: the frontmatter check on its own, for CI and contributors.
@@ -1024,6 +1149,13 @@ if (scanArg !== null) {
         "project's selection by installing into it directly."
     );
   }
+  if (rosterArg !== null || grantPushFlag) {
+    fail(
+      '--scan cannot be combined with --roster/--grant-push, for the same reason as ' +
+        "--packs/--specialists above: change a project's roster or grants by installing " +
+        'into it directly.'
+    );
+  }
   // Mass uninstall is not a convenience worth building. One project at a time
   // is the honest interface for removing a harness.
   if (uninstall) {
@@ -1061,6 +1193,16 @@ const claudeMd = path.join(target, 'CLAUDE.md');
 const orchestraMd = path.join(dotClaude, 'ORCHESTRA.md');
 const pauseFile = path.join(dotClaude, 'orchestra.pause');
 const gitattributesFile = path.join(dotClaude, '.gitattributes');
+const mcpFile = path.join(target, '.mcp.json');
+const orchestraJsonFile = path.join(dotClaude, ORCHESTRA_MANIFEST_FILE);
+const conductorFile = path.join(dotClaude, ROSTER_CONDUCTOR_DEST);
+const orchestraRuntimeDir = path.join(dotClaude, ORCHESTRA_RUNTIME_DIRNAME);
+
+// Refuse before touching ANYTHING — settings.json, .mcp.json, orchestra.json
+// (A.4/A.5). Runs for both install and uninstall, before any fs mutation
+// below (including the frontmatter lint's own file reads, which touch
+// nothing in the target either way).
+refuseIfTargetMalformed(settingsFile, mcpFile, orchestraJsonFile);
 
 // Exactly what the installer stamps into .claude/.gitattributes today. Never
 // compare a file against this constant byte-for-byte to decide ownership
@@ -1177,6 +1319,99 @@ if (!uninstall) {
     copyFileStamped(path.join(SRC, 'agents', a), path.join(agentsDir, a));
   }
   did('agents: ' + AGENTS.join(', ') + ' -> .claude/agents/');
+
+  // 1a. New roster (--roster new), ALONGSIDE the legacy six (WO-15's
+  // precondition — both stay installed). conductor.md is the session's own
+  // standing contract, not a spawnable agent, so it lands at
+  // .claude/ORCHESTRA-CONDUCTOR.md instead of .claude/agents/ (A.2).
+  // sweeper.md installs like every other role file here; it is the
+  // manifest's seats.Sweeper:false that marks it benched, not withholding
+  // the file. Nothing below runs under --roster legacy (default): the
+  // installed-file census of a legacy install is unchanged by this leg.
+  const rosterFiles = roster === 'new' ? rosterRoleFiles() : [];
+  if (rosterFiles.length) {
+    const installedRoleFiles = [];
+    for (const f of rosterFiles) {
+      if (f === ROSTER_CONDUCTOR_FILE) continue;
+      copyFileStamped(path.join(ROSTER_DIR, f), path.join(agentsDir, f));
+      installedRoleFiles.push(f);
+    }
+    if (installedRoleFiles.length) {
+      did('roster (new): ' + installedRoleFiles.join(', ') + ' -> .claude/agents/');
+    }
+    if (rosterFiles.includes(ROSTER_CONDUCTOR_FILE)) {
+      copyFileStamped(path.join(ROSTER_DIR, ROSTER_CONDUCTOR_FILE), conductorFile);
+      did('roster (new): conductor.md -> .claude/' + ROSTER_CONDUCTOR_DEST + " (the session's standing contract, not a spawnable agent)");
+    }
+    // Substrates as a runtime directory. leg 4 adds dispatch.js/close.js and
+    // the MCP wiring here; this leg only installs what exists today.
+    const installedSubstrates = [];
+    for (const sub of ROSTER_SUBSTRATE_DIRS) {
+      const subSrc = path.join(SRC, sub);
+      if (!fs.existsSync(subSrc)) continue; // defensive — all four exist in this master
+      const subDest = path.join(orchestraRuntimeDir, sub);
+      fs.rmSync(subDest, { recursive: true, force: true });
+      copyDir(subSrc, subDest);
+      installedSubstrates.push(sub);
+    }
+    if (installedSubstrates.length) {
+      did('roster (new): substrates (' + installedSubstrates.join(', ') + ') -> .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/');
+    }
+    // bridge/ — leg 4 creates this top-level directory; today it does not
+    // exist in this master, and that absence is handled silently (no file,
+    // no warning line) — the census test pins both cases.
+    const bridgeSrc = path.join(SRC, ROSTER_BRIDGE_DIRNAME);
+    if (fs.existsSync(bridgeSrc)) {
+      const bridgeDest = path.join(orchestraRuntimeDir, ROSTER_BRIDGE_DIRNAME);
+      fs.rmSync(bridgeDest, { recursive: true, force: true });
+      copyDir(bridgeSrc, bridgeDest);
+      did('roster (new): bridge/ -> .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/' + ROSTER_BRIDGE_DIRNAME + '/');
+    }
+  }
+
+  // 1b. Manifest (.claude/orchestra.json) roster flag — the owner-pinned
+  // value the guard's loadPolicy() and (leg 4) the runtime read (A.3). A
+  // plain legacy install with no prior "new" state touches this file NOT AT
+  // ALL, not even to create an empty one — the legacy install-file census
+  // must stay exactly what it was before this leg (A.1). Two cases write
+  // here: --roster new (create/refresh), and --roster legacy given OVER an
+  // existing new install (the rollback — a flag flip, never a reinstall or
+  // a file deletion: the new-roster files copied above are left in place).
+  {
+    const manifestExisted = fs.existsSync(orchestraJsonFile);
+    const manifest = manifestExisted ? readJson(orchestraJsonFile) : {};
+    const prevRoster = manifest.roster;
+    if (roster === 'new') {
+      const hadSeats = manifest.seats !== undefined;
+      manifest.roster = 'new';
+      if (!hadSeats) manifest.seats = Object.assign({}, DEFAULT_SEATS);
+      const flipped = prevRoster !== 'new';
+      if (flipped) {
+        manifest.rosterGeneration =
+          typeof manifest.rosterGeneration === 'number' ? manifest.rosterGeneration + 1 : 1;
+      }
+      writeJson(orchestraJsonFile, manifest);
+      did(
+        '.claude/orchestra.json: roster="new", rosterGeneration=' + manifest.rosterGeneration +
+          (flipped ? ' (bumped)' : ' (unchanged — already new)') + ', seats ' +
+          (hadSeats ? 'preserved' : 'defaulted to Architect:true, Sweeper:false') +
+          ' (every other key preserved byte-for-byte)'
+      );
+    } else if (manifestExisted && prevRoster === 'new') {
+      manifest.roster = 'legacy';
+      manifest.rosterGeneration =
+        typeof manifest.rosterGeneration === 'number' ? manifest.rosterGeneration + 1 : 1;
+      writeJson(orchestraJsonFile, manifest);
+      did(
+        '.claude/orchestra.json: roster flipped to "legacy" (rosterGeneration bumped to ' +
+          manifest.rosterGeneration + ') — the new-roster files stay installed; this is a ' +
+          'rollback flag, not a reinstall'
+      );
+    }
+    // Otherwise: --roster legacy (explicit or default) with no prior "new"
+    // state — nothing touched, on purpose (A.1).
+  }
+
   for (const s of specialists) {
     copyFileStamped(path.join(SPECIALISTS_DIR, s + '.md'), path.join(agentsDir, s + '.md'));
   }
@@ -1246,7 +1481,6 @@ if (!uninstall) {
   // from other tools survive, ours are overwritten by name on every run so a
   // stale registration cannot linger, and a deselected pack's names are
   // removed the same way its files are above.
-  const mcpFile = path.join(target, '.mcp.json');
   {
     const declared = packMcpServers(packs.filter((p) => availablePacks().includes(p)));
     const stale = packMcpServers(
@@ -1294,6 +1528,18 @@ if (!uninstall) {
       'Installed by the Orchestra harness (v' + VERSION + ').'
     );
   }
+  // A.2: "reference it [conductor.md] from ORCHESTRA.md". Stamped into the
+  // INSTALLED copy only (this is install.js code, not a master ORCHESTRA.md
+  // edit — the master's own §3.1 plan-file bullet is the only master-content
+  // change this leg makes to that file, per the order's FILES list), the
+  // same way the version number above is stamped rather than authored.
+  if (roster === 'new') {
+    protocol = protocol.replace(
+      '<!-- Installed by the Orchestra harness',
+      '<!-- roster:new — the session\'s standing contract is .claude/' + ROSTER_CONDUCTOR_DEST +
+        ' -->\n<!-- Installed by the Orchestra harness'
+    );
+  }
   fs.writeFileSync(orchestraMd, protocol.replace(/\r\n/g, '\n'), 'utf8');
   did('protocol -> .claude/ORCHESTRA.md' + (VERSION ? ' (v' + VERSION + ')' : ''));
 
@@ -1322,14 +1568,27 @@ if (!uninstall) {
   kept.push(HOOK_ENTRY);
   settings.hooks.PreToolUse = kept;
 
-  // Merge git permission grants so the executor can commit/push when a work
-  // order says to (relayed authorization is not enough — see GIT_PERMISSIONS).
+  // Merge git permission grants so the executor can commit (and, opt-in,
+  // push) when a work order says to (relayed authorization is not enough —
+  // see GIT_PERMISSIONS). Push is behind --grant-push and always arrives
+  // together with its deny counterweight (B.1, sdc-012 MAJOR x2) — deny wins
+  // in Claude Code's permission evaluation, so the broad push allow can never
+  // authorize --force/-f/--delete/--mirror even in a guard stand-down window.
   if (typeof settings.permissions !== 'object' || settings.permissions === null) {
     settings.permissions = {};
   }
   const allow = Array.isArray(settings.permissions.allow) ? settings.permissions.allow : [];
-  const missingPerms = GIT_PERMISSIONS.filter((p) => !allow.includes(p));
+  const desiredAllow = GIT_PERMISSIONS.slice();
+  if (grantPushFlag) desiredAllow.push(GIT_PUSH_PERMISSION);
+  const missingPerms = desiredAllow.filter((p) => !allow.includes(p));
   settings.permissions.allow = allow.concat(missingPerms);
+
+  let missingDeny = [];
+  if (grantPushFlag) {
+    const deny = Array.isArray(settings.permissions.deny) ? settings.permissions.deny : [];
+    missingDeny = GIT_PUSH_DENY_PATTERNS.filter((p) => !deny.includes(p));
+    settings.permissions.deny = deny.concat(missingDeny);
+  }
 
   writeJson(settingsFile, settings);
   did(
@@ -1339,11 +1598,33 @@ if (!uninstall) {
   );
   did(
     'git permissions for the executor (' +
-      GIT_PERMISSIONS.join(', ') +
+      desiredAllow.join(', ') +
       ') ' +
       (missingPerms.length ? 'merged into' : 'already present in') +
-      ' .claude/settings.json permissions.allow'
+      ' .claude/settings.json permissions.allow' +
+      (grantPushFlag
+        ? '; deny counterweight (' + GIT_PUSH_DENY_PATTERNS.join(', ') + ') ' +
+          (missingDeny.length ? 'merged into' : 'already present in') + ' permissions.deny'
+        : ' (push NOT granted — pass --grant-push to add it, with its deny counterweight)')
   );
+
+  // installedPermissions bookkeeping (A.5, sdc-012 Sonnet MINOR): tracks
+  // ONLY strings this installer itself has ever added — the union of
+  // whatever a prior run already recorded plus what was genuinely missing
+  // (and therefore just added) THIS run. A string already sitting in the
+  // user's own allow-list before Orchestra ever touched it is never
+  // recorded, so it survives an --uninstall untouched even though it reads
+  // identically to a grant we also manage.
+  {
+    const priorManifest = fs.existsSync(orchestraJsonFile) ? readJson(orchestraJsonFile) : {};
+    const priorTracked = stringList(priorManifest.installedPermissions);
+    if (missingPerms.length) {
+      const trackedPerms = Array.from(new Set(priorTracked.concat(missingPerms)));
+      const manifest = Object.assign({}, priorManifest, { installedPermissions: trackedPerms });
+      writeJson(orchestraJsonFile, manifest);
+      did('.claude/orchestra.json: installedPermissions tracks (' + trackedPerms.join(', ') + ') for a clean --uninstall');
+    }
+  }
 
   // 3. Ensure CLAUDE.md imports the protocol, inside managed markers.
   let md = fs.existsSync(claudeMd) ? fs.readFileSync(claudeMd, 'utf8') : '';
@@ -1457,10 +1738,69 @@ if (!uninstall) {
     );
   }
 } else {
-  // Uninstall: remove our files (core agents, any master-known specialists, and
-  // every master-known pack's files), hook entries, and the CLAUDE.md marker
-  // block. Packs are removed whether or not the state file records them —
-  // master knowledge is what makes removal safe.
+  // Uninstall order (A.5, sdc-012 MINOR): grants, then hook/MCP entries, then
+  // files — reversed from the pre-leg-3 installer, which deleted every owned
+  // file BEFORE ever reading settings, so a crash or malformed settings.json
+  // partway through could strand git-push grants in a project with no guard
+  // left to stand between the Director and the repo. refuseIfTargetMalformed()
+  // above already refused on bad JSON before any of this runs.
+
+  // 1. Grants — installer-tracked only (sdc-012 Sonnet MINOR): an identical
+  // string the USER added independently (not recorded in orchestra.json's
+  // installedPermissions) survives; only entries this installer itself put
+  // there come out. The deny counterweight rides along with the push grant
+  // deterministically (GIT_PUSH_DENY_PATTERNS is a fixed constant), so it
+  // isn't tracked separately.
+  const priorManifest = fs.existsSync(orchestraJsonFile) ? readJson(orchestraJsonFile) : {};
+  const trackedPerms = stringList(priorManifest.installedPermissions);
+  if (fs.existsSync(settingsFile) && trackedPerms.length) {
+    const settings = readJson(settingsFile);
+    let changed = false;
+    if (settings.permissions && Array.isArray(settings.permissions.allow)) {
+      const keptAllow = settings.permissions.allow.filter((p) => !trackedPerms.includes(p));
+      if (keptAllow.length !== settings.permissions.allow.length) {
+        if (keptAllow.length > 0) settings.permissions.allow = keptAllow;
+        else delete settings.permissions.allow;
+        changed = true;
+      }
+    }
+    if (trackedPerms.includes(GIT_PUSH_PERMISSION) && settings.permissions && Array.isArray(settings.permissions.deny)) {
+      const keptDeny = settings.permissions.deny.filter((p) => !GIT_PUSH_DENY_PATTERNS.includes(p));
+      if (keptDeny.length !== settings.permissions.deny.length) {
+        if (keptDeny.length > 0) settings.permissions.deny = keptDeny;
+        else delete settings.permissions.deny;
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (settings.permissions && Object.keys(settings.permissions).length === 0) delete settings.permissions;
+      writeJson(settingsFile, settings);
+      did('removed installer-added git permission grant(s) (' + trackedPerms.join(', ') + ') from .claude/settings.json (identical user-added entries, if any, are preserved)');
+    }
+  }
+  if (fs.existsSync(orchestraJsonFile) && priorManifest.installedPermissions !== undefined) {
+    const manifest = Object.assign({}, priorManifest);
+    delete manifest.installedPermissions;
+    if (JSON.stringify(manifest) !== JSON.stringify(priorManifest)) {
+      writeJson(orchestraJsonFile, manifest);
+      did('cleared installedPermissions bookkeeping from .claude/orchestra.json (roster/seats, if set, are left in place — user/owner-pinned)');
+    }
+  }
+
+  // 2. Hook entry (settings.json PreToolUse) and MCP registrations.
+  if (fs.existsSync(settingsFile)) {
+    const settings = readJson(settingsFile);
+    if (settings.hooks && Array.isArray(settings.hooks.PreToolUse)) {
+      const kept = settings.hooks.PreToolUse.filter((e) => !isOurHookEntry(e));
+      if (kept.length !== settings.hooks.PreToolUse.length) {
+        if (kept.length > 0) settings.hooks.PreToolUse = kept;
+        else delete settings.hooks.PreToolUse;
+        if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+        writeJson(settingsFile, settings);
+        did('removed guard entry from .claude/settings.json (other settings preserved)');
+      }
+    }
+  }
   const packAgents = [];
   const packHooks = [];
   const packSkills = [];
@@ -1470,8 +1810,37 @@ if (!uninstall) {
     packHooks.push(...c.hooks);
     packSkills.push(...c.skills);
   }
+  if (fs.existsSync(mcpFile)) {
+    const names = Object.keys(packMcpServers(availablePacks()));
+    const mcp = readJson(mcpFile);
+    if (names.length && mcp.mcpServers && typeof mcp.mcpServers === 'object') {
+      let changed = false;
+      for (const n of names) {
+        if (n in mcp.mcpServers) { delete mcp.mcpServers[n]; changed = true; }
+      }
+      if (changed) {
+        if (Object.keys(mcp.mcpServers).length === 0) delete mcp.mcpServers;
+        if (Object.keys(mcp).length === 0) {
+          fs.unlinkSync(mcpFile);
+          did('removed .mcp.json (it held only Orchestra MCP registrations)');
+        } else {
+          writeJson(mcpFile, mcp);
+          did('removed Orchestra MCP server registration(s) from .mcp.json (other entries preserved)');
+        }
+      }
+    }
+  }
 
-  const agentFiles = AGENTS.concat(availableSpecialists().map((s) => s + '.md')).concat(packAgents);
+  // 3. Files: core agents, specialists, pack files, the new-roster role
+  // files + conductor file + runtime substrates (removed whether or not the
+  // manifest currently says "roster":"new" — master knowledge of what a
+  // roster install would have written is what makes removal safe, same
+  // principle as pack removal above), hooks, skills, protocol, state,
+  // pause file, .gitattributes, and the CLAUDE.md marker block.
+  const rosterAgentFiles = rosterRoleFiles().filter((f) => f !== ROSTER_CONDUCTOR_FILE);
+  const agentFiles = AGENTS.concat(availableSpecialists().map((s) => s + '.md'))
+    .concat(packAgents)
+    .concat(rosterAgentFiles);
   for (const a of agentFiles) {
     const f = path.join(agentsDir, a);
     if (fs.existsSync(f)) {
@@ -1480,11 +1849,15 @@ if (!uninstall) {
     }
   }
   const hookFiles = [GUARD, HOOKS_PACKAGE_JSON].concat(packHooks).map((h) => path.join(hooksDir, h));
-  for (const f of hookFiles.concat([orchestraMd, pauseFile, stateFile])) {
+  for (const f of hookFiles.concat([orchestraMd, pauseFile, stateFile, conductorFile])) {
     if (fs.existsSync(f)) {
       fs.unlinkSync(f);
       did('removed ' + path.relative(target, f).replace(/\\/g, '/'));
     }
+  }
+  if (fs.existsSync(orchestraRuntimeDir)) {
+    fs.rmSync(orchestraRuntimeDir, { recursive: true, force: true });
+    did('removed .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/ (roster:new runtime substrates)');
   }
 
   // The stamped .gitattributes is removed only when it matches OUR shape —
@@ -1519,57 +1892,6 @@ if (!uninstall) {
     /* leave a non-empty or busy skills dir alone */
   }
 
-  if (fs.existsSync(settingsFile)) {
-    const settings = readJson(settingsFile);
-    let settingsChanged = false;
-    if (settings.hooks && Array.isArray(settings.hooks.PreToolUse)) {
-      const kept = settings.hooks.PreToolUse.filter((e) => !isOurHookEntry(e));
-      if (kept.length !== settings.hooks.PreToolUse.length) {
-        if (kept.length > 0) settings.hooks.PreToolUse = kept;
-        else delete settings.hooks.PreToolUse;
-        if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
-        settingsChanged = true;
-        did('removed guard entry from .claude/settings.json (other settings preserved)');
-      }
-    }
-    if (settings.permissions && Array.isArray(settings.permissions.allow)) {
-      const keptPerms = settings.permissions.allow.filter((p) => !GIT_PERMISSIONS.includes(p));
-      if (keptPerms.length !== settings.permissions.allow.length) {
-        if (keptPerms.length > 0) settings.permissions.allow = keptPerms;
-        else delete settings.permissions.allow;
-        if (Object.keys(settings.permissions).length === 0) delete settings.permissions;
-        settingsChanged = true;
-        did('removed Orchestra git permission grants from .claude/settings.json (re-add manually if you want them without the harness)');
-      }
-    }
-    if (settingsChanged) writeJson(settingsFile, settings);
-  }
-
-  // MCP registrations any known pack declares are removed by name; entries
-  // from other tools are preserved, and a file that held only ours goes with
-  // the install.
-  const mcpFile = path.join(target, '.mcp.json');
-  if (fs.existsSync(mcpFile)) {
-    const names = Object.keys(packMcpServers(availablePacks()));
-    const mcp = readJson(mcpFile);
-    if (names.length && mcp.mcpServers && typeof mcp.mcpServers === 'object') {
-      let changed = false;
-      for (const n of names) {
-        if (n in mcp.mcpServers) { delete mcp.mcpServers[n]; changed = true; }
-      }
-      if (changed) {
-        if (Object.keys(mcp.mcpServers).length === 0) delete mcp.mcpServers;
-        if (Object.keys(mcp).length === 0) {
-          fs.unlinkSync(mcpFile);
-          did('removed .mcp.json (it held only Orchestra MCP registrations)');
-        } else {
-          writeJson(mcpFile, mcp);
-          did('removed Orchestra MCP server registration(s) from .mcp.json (other entries preserved)');
-        }
-      }
-    }
-  }
-
   if (fs.existsSync(claudeMd)) {
     const md = fs.readFileSync(claudeMd, 'utf8');
     const res = stripMarkerBlock(md);
@@ -1584,9 +1906,8 @@ if (!uninstall) {
     }
   }
 
-  const orchestraJson = path.join(dotClaude, 'orchestra.json');
-  if (fs.existsSync(orchestraJson)) {
-    console.log('  ! left in place (user-authored): .claude/orchestra.json — delete it yourself if unwanted');
+  if (fs.existsSync(orchestraJsonFile)) {
+    console.log('  ! left in place (owner-pinned): .claude/orchestra.json — delete it yourself if unwanted (roster/seats survive an uninstall on purpose)');
   }
 
   if (actions.length === 0) console.log('  (nothing to remove — Orchestra was not installed here)');

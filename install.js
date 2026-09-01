@@ -774,6 +774,32 @@ function gitPinFilePath(rootCommitHash) {
   return path.join(PIN_DIR, 'git-' + hash + '.json');
 }
 
+// Item 6 (WO-14b leg-3 fix round 4, CRITICAL, red-team pass #3): sha256 of
+// every INSTALLED bridge runtime file the guard's Agent seam trusts before
+// require()-ing it (see hooks/orchestra-guard.js's delegateAgentGate()) —
+// keyed by the same relative-path strings the guard checks against. Reads
+// straight off .claude/orchestra/<ROSTER_BRIDGE_DIRNAME>/... as it sits on
+// disk RIGHT NOW (after this run's own copy, if any); a file this run did
+// not install (roster:legacy, or a pre-leg-4 project with no bridge/ at
+// all) is simply omitted from the result, never a null placeholder, so the
+// guard's "missing entry" check has something concrete to fail on.
+function computeRuntimeSha256(projectDir) {
+  const bridgeDir = path.join(projectDir, '.claude', ORCHESTRA_RUNTIME_DIRNAME, ROSTER_BRIDGE_DIRNAME);
+  const files = {
+    'bridge/runtime.js': path.join(bridgeDir, 'runtime.js'),
+    'bridge/hooks/ticket-gate.js': path.join(bridgeDir, 'hooks', 'ticket-gate.js'),
+  };
+  const out = {};
+  for (const key of Object.keys(files)) {
+    try {
+      out[key] = crypto.createHash('sha256').update(fs.readFileSync(files[key])).digest('hex');
+    } catch (_) {
+      /* not installed here — omitted */
+    }
+  }
+  return out;
+}
+
 // Writes/refreshes the pin for `projectDir` from the manifest file as JUST
 // WRITTEN to disk (the hash covers the exact bytes written, indentation and
 // all). Returns the path-keyed pin file path. Called after every write to
@@ -790,6 +816,7 @@ function writePin(projectDir, manifestFile, manifestObj) {
     rosterGeneration: typeof manifestObj.rosterGeneration === 'number' ? manifestObj.rosterGeneration : 0,
     seats: manifestObj.seats || {},
     projectId: typeof manifestObj.projectId === 'string' && manifestObj.projectId ? manifestObj.projectId : null,
+    runtimeSha256: computeRuntimeSha256(projectDir),
     writtenAt: new Date().toISOString(),
     by: 'install.js',
   };
@@ -826,20 +853,44 @@ function writePin(projectDir, manifestFile, manifestObj) {
 // read AS WELL, and its projectId (identical content to the other two
 // copies, per writePin) recovers the id-keyed copy too (item 3, WO-14b
 // leg-3 fix round 3B).
+//
+// Item 4 (WO-14b leg-3 fix round 4, MINOR, cross-vendor review #4): every
+// pin file's own content records the projectDir it was written for
+// (writePin() stamps `projectRealPath(projectDir)` verbatim). When that
+// project has since MOVED, `projectDir` here (the current/new location)
+// computes a different path key than the one the pin was originally filed
+// under — so a pin recovered by its git or id key, at the new location,
+// left the OLD path-keyed copy (still sitting at the hash of the pre-move
+// path) on disk forever: nothing else ever revisits it, and a different
+// project later created at that same old path would misread it as its own
+// pin. Every pin object we manage to parse below is checked for a
+// `projectDir` that disagrees with where we are removing FROM; each
+// distinct one found gets its own path key computed and removed too.
 function removePin(projectDir, knownProjectId) {
   const pf = pinFilePath(projectDir);
+  const currentReal = projectRealPath(projectDir);
   let projectId = knownProjectId || null;
   let removedAny = false;
   let removedPath = null;
-  if (fs.existsSync(pf)) {
-    if (!projectId) {
-      try {
-        const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
-        if (pin && pin.projectId) projectId = pin.projectId;
-      } catch (_) {
-        /* unreadable pin — still remove it below */
-      }
+  const oldRecordedDirs = new Set();
+
+  const readPinJson = (file) => {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (_) {
+      return null;
     }
+  };
+  const noteRecordedDir = (pin) => {
+    if (pin && typeof pin.projectDir === 'string' && pin.projectDir && pin.projectDir !== currentReal) {
+      oldRecordedDirs.add(pin.projectDir);
+    }
+  };
+
+  if (fs.existsSync(pf)) {
+    const pin = readPinJson(pf);
+    if (pin && pin.projectId && !projectId) projectId = pin.projectId;
+    noteRecordedDir(pin);
     fs.unlinkSync(pf);
     removedPath = pf;
     removedAny = true;
@@ -851,14 +902,9 @@ function removePin(projectDir, knownProjectId) {
   if (rootCommitHash) {
     const gitPf = gitPinFilePath(rootCommitHash);
     if (fs.existsSync(gitPf)) {
-      if (!projectId) {
-        try {
-          const gitPin = JSON.parse(fs.readFileSync(gitPf, 'utf8'));
-          if (gitPin && gitPin.projectId) projectId = gitPin.projectId;
-        } catch (_) {
-          /* unreadable pin — still remove it below */
-        }
-      }
+      const gitPin = readPinJson(gitPf);
+      if (gitPin && gitPin.projectId && !projectId) projectId = gitPin.projectId;
+      noteRecordedDir(gitPin);
       fs.unlinkSync(gitPf);
       removedAny = true;
       if (!removedPath) removedPath = gitPf;
@@ -867,9 +913,34 @@ function removePin(projectDir, knownProjectId) {
   if (projectId) {
     const idPf = idPinFilePath(projectId);
     if (fs.existsSync(idPf)) {
+      noteRecordedDir(readPinJson(idPf));
       fs.unlinkSync(idPf);
       removedAny = true;
       if (!removedPath) removedPath = idPf;
+    }
+  }
+  // Item 4: the old path-keyed pin(s), named by whatever `projectDir` the
+  // pins we actually found were written for. Prefer sha256(realpath(...))
+  // — matching pinFilePath()'s own scheme exactly for a path that still
+  // resolves to something on disk — and fall back to sha256 of the
+  // recorded string as written when that path no longer exists at all
+  // (the ordinary case for a project that moved rather than was copied):
+  // the recorded value is itself already a realpath as of when the pin was
+  // written (writePin() stamps `projectRealPath(projectDir)`), so hashing
+  // it directly reproduces the exact key pinFilePath() used at write time.
+  for (const recordedDir of oldRecordedDirs) {
+    let real;
+    try {
+      real = fs.realpathSync(recordedDir);
+    } catch (_) {
+      real = recordedDir;
+    }
+    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
+    const oldPf = path.join(PIN_DIR, hash + '.json');
+    if (oldPf !== pf && fs.existsSync(oldPf)) {
+      fs.unlinkSync(oldPf);
+      removedAny = true;
+      if (!removedPath) removedPath = oldPf;
     }
   }
   return removedAny ? removedPath : null;
@@ -879,20 +950,48 @@ function removePin(projectDir, knownProjectId) {
 // pin-before-ledger check (item 2). Returns
 // { status: 'MATCH'|'MISMATCH'|'NO-PIN'|'MOVED', ... } — never throws.
 //
-//   MATCH     — the path-keyed pin exists and its hash + projectDir agree
-//               with the manifest on disk right now.
-//   MISMATCH  — a pin exists (by path, or by id) but its hash disagrees
-//               with the manifest on disk, or the manifest is gone.
-//   NO-PIN    — no pin was ever recorded for this project, by either key.
-//   MOVED     — no path-keyed pin here, but the manifest's own projectId
-//               resolves to an id-keyed pin elsewhere whose hash MATCHES
-//               the manifest on disk now — a relocated, still-trusted
-//               project (item 5's guard-side rule: trusted iff hash
-//               matches). --repin promotes this to a fresh path-keyed pin.
+//   MATCH               — the path-keyed pin exists and its hash + projectDir
+//                          agree with the manifest on disk right now.
+//   MISMATCH            — a pin exists (by path, id, or git-root) but its
+//                          hash disagrees with the manifest on disk, and the
+//                          manifest itself is still readable here.
+//   NO-PIN              — no pin was ever recorded for this project, by any
+//                          key.
+//   NO-MANIFEST-WITH-PIN — .claude/orchestra.json is gone, but a pin for this
+//                          project was found by SOME key (path, id, or
+//                          git-root) — proof of a real prior install even
+//                          though there is no manifest left to hash-check it
+//                          against (item 1, WO-14b leg-3 fix round 4: MAJOR,
+//                          cross-vendor review #4). Callers treat this the
+//                          same as --ignore-manifest: run the canonical-name
+//                          cleanup and remove every discoverable pin.
+//   MOVED               — no path-keyed pin here, but the manifest's own
+//                          projectId (or, failing that, its git root commit)
+//                          resolves to an id- or git-keyed pin elsewhere whose
+//                          hash MATCHES the manifest on disk now — a
+//                          relocated, still-trusted project (item 5's
+//                          guard-side rule: trusted iff hash matches).
+//                          --repin promotes this to a fresh path-keyed pin.
+//
+// Item 1 fix (WO-14b leg-3 fix round 4): review #4's MAJOR found the git-root
+// lookup nested entirely inside `if (fs.existsSync(orchestraJsonFile))` —
+// so a project that was BOTH moved (no path-keyed pin survives at the new
+// location) AND had its manifest deleted (not just replaced) skipped every
+// key but the path one, fell straight through to NO-PIN, and `--uninstall`
+// treated that as "never installed here" — leaving every roster:new file
+// behind with a clean exit 0. The git-root key never needed the manifest to
+// begin with (gitRootCommitHash() reads the project's own commit history,
+// not orchestra.json) — it is now computed and checked UNCONDITIONALLY,
+// manifest present or not. The id key still needs a readable manifest (it is
+// the only place `projectId` lives), so it stays gated on the manifest being
+// parseable — but not on the manifest still EXISTING at the top level; see
+// below.
 function verifyPinStatus(target, orchestraJsonFile) {
   const pf = pinFilePath(target);
   const realDir = projectRealPath(target);
+  const manifestExists = fs.existsSync(orchestraJsonFile);
   const manifestBytes = () => fs.readFileSync(orchestraJsonFile);
+
   if (fs.existsSync(pf)) {
     let pin;
     try {
@@ -900,8 +999,8 @@ function verifyPinStatus(target, orchestraJsonFile) {
     } catch (e) {
       return { status: 'NO-PIN', pf, reason: 'pin file exists but is not valid JSON (' + pf + ': ' + e.message + ')' };
     }
-    if (!fs.existsSync(orchestraJsonFile)) {
-      return { status: 'MISMATCH', pf, pin, realDir, reason: '.claude/orchestra.json no longer exists here' };
+    if (!manifestExists) {
+      return { status: 'NO-MANIFEST-WITH-PIN', pf, pin, realDir, reason: '.claude/orchestra.json no longer exists here' };
     }
     const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
     if (actualSha === pin.manifestSha256 && realDir === pin.projectDir) {
@@ -909,52 +1008,53 @@ function verifyPinStatus(target, orchestraJsonFile) {
     }
     return { status: 'MISMATCH', pf, pin, actualSha, realDir };
   }
-  // No path-keyed pin here — check whether the manifest's own projectId
-  // resolves to an id-keyed pin (a relocated project), and failing that,
-  // whether the project's git root commit resolves to a git-keyed pin (item
-  // 3): unlike the id-keyed lookup, this one does not depend on the
-  // manifest still carrying its original projectId — a manifest that was
-  // replaced wholesale (e.g. down to `{"roster":"legacy"}`) is still found
-  // by its actual commit history.
-  if (fs.existsSync(orchestraJsonFile)) {
-    let manifest = null;
+
+  // No path-keyed pin here. The id key needs a readable manifest carrying a
+  // projectId (that field lives nowhere else); the git-root key needs only
+  // the project's own git history and is tried whether or not the manifest
+  // is readable at all.
+  let manifest = null;
+  if (manifestExists) {
     try {
       manifest = JSON.parse(fs.readFileSync(orchestraJsonFile, 'utf8'));
     } catch (_) {
-      /* unparseable manifest — treated as NO-PIN below, same as before */
+      /* unparseable manifest — id key unavailable; git key is still tried below */
     }
-    if (manifest && typeof manifest.projectId === 'string' && manifest.projectId) {
-      const idPf = idPinFilePath(manifest.projectId);
-      if (fs.existsSync(idPf)) {
-        let idPin;
-        try {
-          idPin = JSON.parse(fs.readFileSync(idPf, 'utf8'));
-        } catch (e) {
-          return { status: 'NO-PIN', pf, reason: 'id-pin file exists but is not valid JSON (' + idPf + ': ' + e.message + ')' };
-        }
-        const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
-        if (actualSha === idPin.manifestSha256) {
-          return { status: 'MOVED', pf, idPf, pin: idPin, actualSha, realDir };
-        }
-        return { status: 'MISMATCH', pf, idPf, pin: idPin, actualSha, realDir };
+  }
+  if (manifest && typeof manifest.projectId === 'string' && manifest.projectId) {
+    const idPf = idPinFilePath(manifest.projectId);
+    if (fs.existsSync(idPf)) {
+      let idPin;
+      try {
+        idPin = JSON.parse(fs.readFileSync(idPf, 'utf8'));
+      } catch (e) {
+        return { status: 'NO-PIN', pf, reason: 'id-pin file exists but is not valid JSON (' + idPf + ': ' + e.message + ')' };
       }
+      const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
+      if (actualSha === idPin.manifestSha256) {
+        return { status: 'MOVED', pf, idPf, pin: idPin, actualSha, realDir };
+      }
+      return { status: 'MISMATCH', pf, idPf, pin: idPin, actualSha, realDir };
     }
-    const rootCommitHash = gitRootCommitHash(target);
-    if (rootCommitHash) {
-      const gitPf = gitPinFilePath(rootCommitHash);
-      if (fs.existsSync(gitPf)) {
-        let gitPin;
-        try {
-          gitPin = JSON.parse(fs.readFileSync(gitPf, 'utf8'));
-        } catch (e) {
-          return { status: 'NO-PIN', pf, reason: 'git-pin file exists but is not valid JSON (' + gitPf + ': ' + e.message + ')' };
-        }
-        const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
-        if (actualSha === gitPin.manifestSha256) {
-          return { status: 'MOVED', pf, gitPf, pin: gitPin, actualSha, realDir };
-        }
-        return { status: 'MISMATCH', pf, gitPf, pin: gitPin, actualSha, realDir };
+  }
+  const rootCommitHash = gitRootCommitHash(target);
+  if (rootCommitHash) {
+    const gitPf = gitPinFilePath(rootCommitHash);
+    if (fs.existsSync(gitPf)) {
+      let gitPin;
+      try {
+        gitPin = JSON.parse(fs.readFileSync(gitPf, 'utf8'));
+      } catch (e) {
+        return { status: 'NO-PIN', pf, reason: 'git-pin file exists but is not valid JSON (' + gitPf + ': ' + e.message + ')' };
       }
+      if (!manifestExists) {
+        return { status: 'NO-MANIFEST-WITH-PIN', pf, gitPf, pin: gitPin, realDir, reason: '.claude/orchestra.json no longer exists here' };
+      }
+      const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
+      if (actualSha === gitPin.manifestSha256) {
+        return { status: 'MOVED', pf, gitPf, pin: gitPin, actualSha, realDir };
+      }
+      return { status: 'MISMATCH', pf, gitPf, pin: gitPin, actualSha, realDir };
     }
   }
   return { status: 'NO-PIN', pf };
@@ -1003,6 +1103,98 @@ function listFilesRecursive(dir) {
 // (item B3, WO-14b leg-3 fix round 3B: judged on the number, not the
 // token's own spelling — see findUnsafeNumericLiterals below).
 
+// Item B3.2 (WO-14b leg-3 fix round 4, MAJOR, cross-vendor review #4): the
+// fractional/exponent branch below used to judge safety by the mantissa's
+// significant-DIGIT COUNT (>15 refused) — a proxy for "fits a double's
+// precision" that both false-refuses an exactly-representable literal whose
+// spelling happens to carry 16+ digits (9007199254740992.0 is 2^53, exact in
+// a double, but "9007199254740992" is 16 digits) and is the wrong test in
+// principle: what matters is whether the literal's own VALUE survives, not
+// how many digits someone chose to spell it with. These three helpers judge
+// the value directly: expand the token to its exact decimal string with pure
+// string/BigInt arithmetic (never float math — that is exactly the
+// operation under test), expand what Number(tok) actually holds to that same
+// number of fraction digits, and compare the two strings textually. Equal
+// strings means the round trip loses nothing.
+
+// Splits a numeric token into (sign, integer digits, fraction digits,
+// exponent as a plain integer, defaulting to 0 when absent). Returns null on
+// a token that does not match NUM_RE's own shape (should not happen, but
+// never assume).
+function parseNumericToken(tok) {
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(tok);
+  if (!m) return null;
+  return {
+    negative: m[1] === '-',
+    intDigits: m[2],
+    fracDigits: m[3] || '',
+    exponent: m[4] ? parseInt(m[4], 10) : 0,
+  };
+}
+
+// Expands a parsed token to its exact decimal value as a normalised plain
+// string: no exponent, leading zeros stripped off the integer part (one
+// digit kept for zero), trailing zeros stripped off the fraction (the '.'
+// dropped entirely once nothing is left), and no '-' on a value that is
+// exactly zero (matching how -0 and 0 print identically as decimal). All
+// arithmetic here is on digit strings/indices — never on a float.
+function expandTokenToDecimalString(parsed) {
+  let digits = parsed.intDigits + parsed.fracDigits; // every significant digit, in order
+  let pointPos = parsed.intDigits.length + parsed.exponent; // decimal point's position from the left, within `digits`
+
+  if (pointPos <= 0) {
+    digits = '0'.repeat(1 - pointPos) + digits;
+    pointPos = 1;
+  } else if (pointPos > digits.length) {
+    digits = digits + '0'.repeat(pointPos - digits.length);
+  }
+
+  let intPart = digits.slice(0, pointPos).replace(/^0+(?=\d)/, '');
+  let fracPart = digits.slice(pointPos).replace(/0+$/, '');
+
+  const isZero = intPart.replace(/0/g, '') === '' && fracPart === '';
+  const sign = parsed.negative && !isZero ? '-' : '';
+  return sign + intPart + (fracPart ? '.' + fracPart : '');
+}
+
+// Expands what the double Number(tok) actually holds to `fractionDigits`
+// decimal places, formatted the same way expandTokenToDecimalString()
+// normalises its output (no trailing zeros are introduced here beyond what
+// toFixed itself produces at that exact precision, so a mismatch anywhere
+// means a real value difference). toFixed is only defined up to 1e21; at or
+// past that every representable double is already an integer (no
+// fractional bits remain at that magnitude), so BigInt(n) — which throws
+// only for a non-integer — always succeeds there and gives the double's
+// exact integer value directly.
+//
+// Item B3.3 (WO-14b leg-3 fix round 4, MEDIUM, red-team pass #3): a
+// UNDERFLOW is caught explicitly, before ever calling toFixed — a nonzero
+// literal far below the smallest representable double (1e-400, -1e-400)
+// rounds Number(tok) to exactly (positive) zero, a FINITE value, so it
+// would otherwise reach here; `0`'s own decimal expansion is always "0"
+// regardless of how many fraction digits are requested, which can never
+// equal a genuinely nonzero token's expanded value — that comparison
+// doesn't even need toFixed to know the answer, which matters because
+// `fractionDigits` for a literal with hundreds of leading zeros in its
+// exact expansion (1e-400 normalises to 400 fraction digits) exceeds
+// toFixed's own hard [0, 100] argument range and would otherwise throw a
+// RangeError. Any OTHER RangeError from toFixed (an absurdly long but
+// nonzero-valued fraction) is caught the same way and treated as "cannot
+// confirm a match" — refused, the fail-safe direction — rather than
+// crashing the installer.
+function expandDoubleToDecimalString(n, fractionDigits) {
+  const v = Object.is(n, -0) ? 0 : n; // -0 prints identically to 0 in exact decimal
+  if (v === 0) return '0';
+  if (Math.abs(v) < 1e21) {
+    try {
+      return v.toFixed(fractionDigits);
+    } catch (_) {
+      return null; // signals "no match possible" to the caller
+    }
+  }
+  return BigInt(v).toString();
+}
+
 function findUnsafeNumericLiterals(raw) {
   let masked = '';
   let inStr = false;
@@ -1037,28 +1229,31 @@ function findUnsafeNumericLiterals(raw) {
   while ((m = NUM_RE.exec(masked))) {
     const tok = m[1];
     if (/[.eE]/.test(tok)) {
-      // Fractional/exponent form: item B3 (WO-14b leg-3 fix round 3B, Red
-      // Team re-verification #2 MEDIUM) — the previous check compared
-      // String(Number(tok)) to the token's own SPELLING (canonicalized only
-      // for case/'+'/trailing ".0"), so exact-value forms JSON re-spells on
-      // a round trip — 1e+10, 1e10, 1.5e3, 1e21, 1e-7 — were refused even
-      // though the round trip changes nothing about the NUMBER, only how it
-      // is written. Judge the VALUE instead: refuse only when the literal
-      // is non-finite (1e400/-1e400/1E400/2e308 all re-serialize as `null`
-      // — a type change, strictly worse than the precision loss this guard
-      // exists to stop) or when its mantissa carries more significant
-      // digits than a double can hold (>15 — 12345678901234567890.5 and
-      // 1.00000000000000000001 both silently lose digits on the round
-      // trip). A short mantissa in scientific notation (1e21's "1") is
-      // exact regardless of how large the exponent is.
+      // Fractional/exponent form: item B3 (WO-14b leg-3 fix round 3B) first
+      // fixed this to judge the literal's VALUE rather than its spelling
+      // (1e+10, 1e10, 1.5e3, 1e21, 1e-7 must not be refused just because
+      // JSON re-spells them on a round trip); item B3.2 (WO-14b leg-3 fix
+      // round 4, MAJOR, cross-vendor review #4) fixes the value judgment
+      // itself — comparing the mantissa's DIGIT COUNT to a fixed threshold
+      // (>15) still false-refused an exactly-representable literal whose
+      // spelling simply carries more digits than that (9007199254740992.0
+      // is 2^53, exact in a double, but 16 digits long). Refuse iff (a) the
+      // literal is non-finite (1e400/-1e400/1E400/2e308 all re-serialize as
+      // `null` — a type change, strictly worse than the precision loss this
+      // guard exists to stop), or (b) the literal's own exact decimal value
+      // — expanded with string/BigInt arithmetic, never float math — does
+      // not equal what Number(tok) actually rounds to, expanded to the same
+      // number of decimal places.
       const n = Number(tok);
       if (!Number.isFinite(n)) {
         bad.push(tok);
         continue;
       }
-      const mantissa = tok.replace(/^-/, '').split(/[eE]/)[0];
-      const sigDigits = mantissa.replace('.', '').replace(/^0+/, '') || '0';
-      if (sigDigits.length > 15) bad.push(tok);
+      const parsed = parseNumericToken(tok);
+      const exact = expandTokenToDecimalString(parsed);
+      const fractionDigits = exact.indexOf('.') === -1 ? 0 : exact.length - exact.indexOf('.') - 1;
+      const actual = expandDoubleToDecimalString(n, fractionDigits);
+      if (exact !== actual) bad.push(tok);
       continue;
     }
     // Integer-shaped (optional '-', digits only): judge by VALUE via BigInt

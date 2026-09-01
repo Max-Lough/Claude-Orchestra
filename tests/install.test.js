@@ -707,6 +707,12 @@ function case13_numericRoundTripRefused() {
   const unsafeFloatFixtures = [
     '9007199254740993', '1e400', '-1e400', '1E400', '2e308',
     '12345678901234567890.5', '1.00000000000000000001',
+    // Item 10 (WO-14b leg-3 fix round 4, MEDIUM, red-team pass #3):
+    // underflow — a NONZERO literal so far below the smallest representable
+    // double that Number(tok) rounds to exactly 0 (still FINITE, so the
+    // non-finite check alone doesn't catch it) must still be refused — the
+    // value plainly changed.
+    '1e-400', '-1e-400',
   ];
   for (const lit of unsafeFloatFixtures) {
     const t = tmpdir('orchestra-install-');
@@ -717,7 +723,14 @@ function case13_numericRoundTripRefused() {
     check('unsafe numeric literal ' + lit + ' -> install exits non-zero', r.status !== 0, out(r));
     check('unsafe numeric literal ' + lit + ' -> nothing touched', JSON.stringify(before) === JSON.stringify(census(t)), '');
   }
-  const safeNumericFixtures = ['1e+10', '1e10', '1.5e3', '1e21', '1e-7', '1.0', '0.1', '3.14159', '-0'];
+  const safeNumericFixtures = [
+    '1e+10', '1e10', '1.5e3', '1e21', '1e-7', '1.0', '0.1', '3.14159', '-0',
+    // Item 3/B3.2 (WO-14b leg-3 fix round 4, MAJOR, cross-vendor review #4):
+    // 2^53 spelled with a cosmetic ".0" — exactly representable in a
+    // double, so it must NOT be refused, even though its mantissa is 16
+    // digits long (the old digit-count check refused it).
+    '9007199254740992.0', '5.0',
+  ];
   for (const lit of safeNumericFixtures) {
     const t = tmpdir('orchestra-install-');
     fs.mkdirSync(path.join(t, '.claude'), { recursive: true });
@@ -1206,7 +1219,10 @@ function caseB2_deletedManifestStrandsNothing() {
 
   const r = install(target, ['--uninstall']);
   check('uninstall over a DELETED manifest still exits 0', ok(r), out(r));
-  check('the report names MISMATCH/pin-untrusted (manifest gone, pin still on record)', /MISMATCH/i.test(out(r)) || /no longer exists/i.test(out(r)), out(r));
+  // Item 1 (WO-14b leg-3 fix round 4): a pin found (here, by the path key)
+  // with the manifest gone is now its own status, NO-MANIFEST-WITH-PIN, not
+  // MISMATCH — same untrusted-fallback behavior, more precise name.
+  check('the report names NO-MANIFEST-WITH-PIN (manifest gone, pin still on record)', /NO-MANIFEST-WITH-PIN/.test(out(r)), out(r));
   check('the eleven roster role files are removed even with no manifest to read (architect.md)', !fs.existsSync(path.join(target, '.claude', 'agents', 'architect.md')), '');
   check('ORCHESTRA-CONDUCTOR.md is removed', !fs.existsSync(path.join(target, '.claude', 'ORCHESTRA-CONDUCTOR.md')), '');
   check('the runtime substrate directories are removed (router)', !fs.existsSync(path.join(target, '.claude', 'orchestra', 'router')), '');
@@ -1302,6 +1318,7 @@ function case24_gitRootPinKey() {
 
   const manifest = readJson(path.join(target, '.claude', 'orchestra.json'));
   const pathPf = pinFilePathFor(target);
+  const oldPathPf = pathPf; // captured BEFORE the move below, for item 4
   const idPf = idPinFilePathFor(manifest.projectId);
   const gitPf = gitPinFilePathFor(rootHash);
   check('pin written under the path-keyed name', fs.existsSync(pathPf), pathPf);
@@ -1333,6 +1350,12 @@ function case24_gitRootPinKey() {
   check('the path-keyed pin (new location) is removed', !fs.existsSync(pinFilePathFor(newTarget)), '');
   check('the id-keyed pin is removed', !fs.existsSync(idPf), '');
   check('the git-keyed pin is removed', !fs.existsSync(gitPf), '');
+  // Item 4 (WO-14b leg-3 fix round 4, MINOR, cross-vendor review #4): the
+  // OLD path-keyed pin — from before the move, recovered here purely
+  // because the git-keyed pin's own `projectDir` field still names it — is
+  // removed too, not left behind to misclassify a different project later
+  // created at that old path.
+  check('item 4: the OLD path-keyed pin (pre-move location) is removed too', !fs.existsSync(oldPathPf), oldPathPf);
 }
 
 // ------------------------------------------------------------------ driver

@@ -1032,6 +1032,24 @@ function case16_agentSeam() {
     );
     fs.writeFileSync(file, lines.join('\n') + '\n');
   }
+  // Item 6 (WO-14b leg-3 fix round 4): delegateAgentGate() now verifies the
+  // installed runtime.js bytes against pin.runtimeSha256 before require()
+  // — setupPinnedProject() writes a pin with no such field (it predates
+  // item 6), so any fixture that wants the seam to actually REACH the
+  // bridge (rather than deny on a missing/mismatched hash) must patch it in
+  // after installBridge() runs, from the SAME files just installed.
+  function patchPinRuntimeHashes(pinDirPath, projectDir) {
+    const real = fs.realpathSync(projectDir);
+    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
+    const pf = path.join(pinDirPath, hash + '.json');
+    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
+    const bridgeDir = path.join(projectDir, '.claude', 'orchestra', 'bridge');
+    pin.runtimeSha256 = {
+      'bridge/runtime.js': crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'runtime.js'))).digest('hex'),
+      'bridge/hooks/ticket-gate.js': crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'hooks', 'ticket-gate.js'))).digest('hex'),
+    };
+    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
+  }
 
   // (a) roster:legacy -> Agent is not intercepted by the seam at all.
   {
@@ -1062,6 +1080,11 @@ function case16_agentSeam() {
     // tests/bridge.test.js's baseRequest() comment) — a plain single ticket.
     const dispatchResult = runtime.dispatch({ class: 'E1', risk: 'T1', goal: 'fix the thing', acceptance_criteria: ['tests pass'] });
     process.env.ORCHESTRA_PIN_DIR = savedPinDir;
+    // Item 6: patch the runtime hashes in AFTER dispatch() — the bridge's
+    // own ticket bookkeeping rewrites this same pin file as part of minting
+    // a ticket (it shares ORCHESTRA_PIN_DIR with the guard), which would
+    // otherwise clobber a hash patched in before it ran.
+    patchPinRuntimeHashes(pinned.pinDirPath, pinned.proj);
     check('(fixture) dispatch() minted a real ticket', dispatchResult.ok === true, JSON.stringify(dispatchResult));
     const ticketId = dispatchResult.ok && dispatchResult.tickets.implementation.id;
     const subagentType = dispatchResult.ok && dispatchResult.spawn.subagent_type;
@@ -1102,20 +1125,26 @@ function case16_agentSeam() {
   }
 
   // (d) untrusted-but-new (pin present, manifest hash mismatch), bridge
-  // runtime present -> the seam still delegates, and the bridge's OWN
-  // fail-closed logic denies (manifest untrusted) — proving the seam
-  // engages for every roster:'new' resolution loadPolicy() can produce,
-  // trusted or not, not only the fully-trusted case (b) above.
+  // runtime present -> item 6 (WO-14b leg-3 fix round 4, CRITICAL): the
+  // seam no longer delegates here AT ALL — delegateAgentGate() only ever
+  // runs for the fully-trusted case (b); every other roster:new resolution,
+  // including this MISMATCH one, denies right at the call site in main(),
+  // named 'bridge runtime not trusted', without ever require()-ing
+  // runtime.js. (Before item 6, this used to reach the bridge and let ITS
+  // own manifest-untrusted logic deny instead — proving the seam engaged
+  // for every roster:'new' state. Item 6 makes that itself the bug: the
+  // bridge's own require() should never even be attempted here.)
   {
     const pinned = setupPinnedProject('new');
     installBridge(pinned.proj);
+    patchPinRuntimeHashes(pinned.pinDirPath, pinned.proj);
     fs.writeFileSync(path.join(pinned.proj, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }), 'utf8');
     const r = runGuard(pinned.proj, {
       tool_name: 'Agent', tool_use_id: 'tu-seam-5',
       tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
     }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
     const d = decisionOf(r);
-    check("untrusted-but-new + bridge present -> the seam DENIES (the bridge's own manifest-untrusted fail-closed logic, not the guard's load-failure one)", d.decision === 'deny' && /manifest untrusted/.test(d.reason), JSON.stringify(d));
+    check("untrusted-but-new + bridge present -> the seam DENIES OUTRIGHT (guard-level 'bridge runtime not trusted', never reaching the bridge)", d.decision === 'deny' && /bridge runtime not trusted/.test(d.reason), JSON.stringify(d));
   }
 
   // (e) unpinned manifest claiming "new" (loadPolicy() case a') -> the seam
@@ -1461,7 +1490,7 @@ function case23_copiedProjectLoosenBlocked() {
 }
 
 function case24_notebookEditPauseAndSidechainTruthy() {
-  section('24. NotebookEdit in the pause-write deny set; truthy isSidechain treated as sidechain (item A8)');
+  section('24. NotebookEdit in the pause-write deny set (item A8)');
 
   const proj = tmpdir('orchestra-guard-');
   check(
@@ -1470,15 +1499,208 @@ function case24_notebookEditPauseAndSidechainTruthy() {
     ''
   );
 
-  const sidechainProj = tmpdir('orchestra-guard-');
-  const transcript = writeTranscript(sidechainProj, [
-    { type: 'assistant', isSidechain: 'true', message: { model: 'claude-opus-4-8' } },
-  ]);
-  check(
-    '(A8) isSidechain: "true" (string, JS-truthy) is treated as a sidechain and excluded — undetermined, legacy stands down',
-    decisionOf(runGuard(sidechainProj, opusEdit('x.js', transcript))).decision === 'allow',
-    ''
+  // The isSidechain: "true" (string) check that used to live here asserted
+  // item A8's "any truthy value counts as a sidechain" reading — item 7
+  // (WO-14b leg-3 fix round 4) reverses that: it was the bug, not the fix.
+  // See case25_isSidechainStrictBoolean() for the full eight-row table now
+  // pinning the STRICT `=== true` behaviour.
+}
+
+function case25_isSidechainStrictBoolean() {
+  section('25. isSidechain discount is STRICT === true only (item 7, WO-14b leg-3 fix round 4, HIGH, red-team pass #3)');
+
+  // Eight-row table: only the literal boolean `true` discounts an
+  // assistant entry as a sidechain. Every other value — including things
+  // that are JS-truthy (the strings "true"/"false", 1, []) — counts as a
+  // real main-session entry, same as the key being absent. A legacy
+  // project (no manifest) is used throughout so the only variable is
+  // whether the director-model (opus) entry is seen at all: seen -> Director
+  // law applies to the Edit -> DENY; discounted -> no director entry ->
+  // undetermined -> legacy stands down -> ALLOW.
+  const rows = [
+    ['absent (no isSidechain key)', undefined, 'deny'],
+    ['null', null, 'deny'],
+    ['false (boolean)', false, 'deny'],
+    ['true (boolean)', true, 'allow'],
+    ['"true" (string)', 'true', 'deny'],
+    ['"false" (string)', 'false', 'deny'],
+    ['1 (number)', 1, 'deny'],
+    ['[] (array)', [], 'deny'],
+  ];
+  for (const [label, value, expected] of rows) {
+    const proj = tmpdir('orchestra-guard-');
+    const entry = { type: 'assistant', message: { model: 'claude-opus-4-8' } };
+    if (value !== undefined) entry.isSidechain = value;
+    const transcript = writeTranscript(proj, [entry]);
+    const d = decisionOf(runGuard(proj, opusEdit('x.js', transcript)));
+    check('isSidechain: ' + label + ' -> ' + expected.toUpperCase(), d.decision === expected, JSON.stringify(d));
+  }
+}
+
+function case26_pauseNameNormalization() {
+  section('26. Pause-name normalisation: ADS suffix, trailing dots/spaces, case-folding on win32 (item 8, WO-14b leg-3 fix round 4, HIGH, red-team pass #3)');
+
+  const adsProj = tmpdir('orchestra-guard-');
+  const dAds = decisionOf(runGuard(adsProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause:note.md', content: 'x' } }));
+  check('Write .claude/orchestra.pause:note.md (NTFS ADS on the pause path) is DENIED', dAds.decision === 'deny', JSON.stringify(dAds));
+
+  if (process.platform === 'win32') {
+    const caseProj = tmpdir('orchestra-guard-');
+    const dCase = decisionOf(runGuard(caseProj, { tool_name: 'Write', tool_input: { file_path: '.claude/ORCHESTRA.PAUSE', content: 'x' } }));
+    check('Write .claude/ORCHESTRA.PAUSE (case-folded on win32) is DENIED', dCase.decision === 'deny', JSON.stringify(dCase));
+  }
+
+  const dotProj = tmpdir('orchestra-guard-');
+  const dDot = decisionOf(runGuard(dotProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause.', content: 'x' } }));
+  check('Write .claude/orchestra.pause. (trailing dot Win32 strips) is DENIED', dDot.decision === 'deny', JSON.stringify(dDot));
+
+  // Control: a name that merely starts with the same prefix is a DIFFERENT
+  // component after normalisation and must not be denied by this rule — a
+  // legacy project with no transcript stands down (allow).
+  const controlProj = tmpdir('orchestra-guard-');
+  const dControl = decisionOf(runGuard(controlProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause-not-really.md', content: 'x' } }));
+  check('Write .claude/orchestra.pause-not-really.md (distinct name, not the pause path) is NOT denied by self-pause', dControl.decision === 'allow', JSON.stringify(dControl));
+}
+
+function case27_pauseOrderingSubagentAndAgentSeam() {
+  section('27. Item 9 (WO-14b leg-3 fix round 4, MEDIUM, red-team pass #3): self-pause runs before the subagent exemption; the genuine-pause short-circuit runs before the Agent seam');
+
+  // (a) A subagent-tagged Write targeting the pause path must still be
+  // DENIED — before item 9, the subagent exemption returned allow() before
+  // classifyPauseWrite() ever ran, letting a subagent create the pause file.
+  const subagentProj = tmpdir('orchestra-guard-');
+  const dSubagent = decisionOf(
+    runGuard(subagentProj, {
+      tool_name: 'Write',
+      agent_id: 'some-subagent',
+      tool_input: { file_path: '.claude/orchestra.pause', content: 'x' },
+    })
   );
+  check('(item 9a) a subagent-tagged Write to the pause path is still DENIED (self-pause beats the subagent exemption)', dSubagent.decision === 'deny', JSON.stringify(dSubagent));
+
+  // (b) A genuine, pre-existing pause file must release an Agent
+  // (subagent-spawn) PreToolUse too — before item 9, the Agent seam ran
+  // before the pause-exists short-circuit, so a real pause file did not
+  // stand the guard down for Agent even though every denial message
+  // documents the pause switch as the universal way out.
+  const pausedAgentProj = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(pausedAgentProj, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(pausedAgentProj, '.claude', 'orchestra.pause'), '', 'utf8');
+  // roster:new claimed with no pin at all -> without the pause release,
+  // this state denies the Agent seam outright (item 6: manifestUntrusted).
+  setManifest(pausedAgentProj, { roster: 'new' });
+  const dPausedAgent = decisionOf(
+    runGuard(pausedAgentProj, {
+      tool_name: 'Agent',
+      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
+    })
+  );
+  check('(item 9b) a genuine pause file releases an Agent PreToolUse too (allow, before the seam is ever reached)', dPausedAgent.decision === 'allow', JSON.stringify(dPausedAgent));
+}
+
+function case28_agentSeamRuntimeTrust() {
+  section('28. Agent seam trust gating (item 6, WO-14b leg-3 fix round 4, CRITICAL, red-team pass #3): delegateAgentGate() reached ONLY for a trusted pin; runtime.js hash-verified before require()');
+
+  function writeFakeRuntime(proj, source) {
+    const dir = path.join(proj, '.claude', 'orchestra', 'bridge');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'runtime.js'), source, 'utf8');
+    return path.join(dir, 'MARKER.txt');
+  }
+  // A fake runtime.js that proves it was require()'d by writing a marker
+  // file as TOP-LEVEL module code — this fires the instant require() loads
+  // the module, before gate() is ever called, so an absent marker proves
+  // require() itself never ran.
+  const FAKE_RUNTIME_SRC =
+    "const fs = require('fs'); const path = require('path');\n" +
+    "fs.writeFileSync(path.join(__dirname, 'MARKER.txt'), 'required', 'utf8');\n" +
+    "module.exports = { createRuntime: () => ({ gate: () => ({ hookSpecificOutput: " +
+    "{ hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'fake-allow' } }) }) };\n";
+
+  // Probe 1: a manifest claiming roster:new + rosterGeneration:0 with NO
+  // pin at all (loadPolicy() case a') plants the fake runtime — Agent must
+  // DENY and the marker must NOT be written (require() never reached).
+  {
+    const proj = tmpdir('orchestra-guard-');
+    setManifest(proj, { roster: 'new', rosterGeneration: 0 });
+    const marker = writeFakeRuntime(proj, FAKE_RUNTIME_SRC);
+    const d = decisionOf(
+      runGuard(proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } })
+    );
+    check('planted runtime under {rosterGeneration:0} without a pin -> Agent DENIED', d.decision === 'deny', JSON.stringify(d));
+    check('...and the marker was NOT written (require() never reached)', !fs.existsSync(marker), '');
+  }
+
+  // Probe 2: a fully-trusted pin, but runtime.js tampered with AFTER the
+  // pin was written (its hash no longer matches) -> DENY, 'bridge runtime
+  // not trusted', never require()d (marker absent).
+  {
+    const pinned = setupPinnedProject('new');
+    const bridgeDir = path.join(pinned.proj, '.claude', 'orchestra', 'bridge');
+    fs.mkdirSync(bridgeDir, { recursive: true });
+    fs.writeFileSync(path.join(bridgeDir, 'runtime.js'), FAKE_RUNTIME_SRC, 'utf8');
+    // Pin recorded a hash for the runtime as it existed at "install" time —
+    // simulate that with a hash that does NOT match the file above.
+    const real = fs.realpathSync(pinned.proj);
+    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
+    const pf = path.join(pinned.pinDirPath, hash + '.json');
+    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
+    pin.runtimeSha256 = { 'bridge/runtime.js': '0'.repeat(64), 'bridge/hooks/ticket-gate.js': '0'.repeat(64) };
+    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
+    const marker = path.join(bridgeDir, 'MARKER.txt');
+    const d = decisionOf(
+      runGuard(pinned.proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath })
+    );
+    check('trusted pin + tampered runtime.js (hash mismatch) -> DENIED, "bridge runtime not trusted"', d.decision === 'deny' && /bridge runtime not trusted/.test(d.reason), JSON.stringify(d));
+    check('...and the marker was NOT written (require() never reached)', !fs.existsSync(marker), '');
+  }
+
+  // Probe 3: trusted pin + matching hash -> delegated (require() DOES run,
+  // marker written, and the bridge's own gate() decision is returned
+  // verbatim). This is the same fixture shape as case16_agentSeam()'s (b),
+  // which already exercises the REAL bridge end to end; here a minimal fake
+  // runtime confirms the seam itself reaches require() when trust holds.
+  {
+    const pinned = setupPinnedProject('new');
+    const bridgeDir = path.join(pinned.proj, '.claude', 'orchestra', 'bridge');
+    fs.mkdirSync(bridgeDir, { recursive: true });
+    fs.writeFileSync(path.join(bridgeDir, 'runtime.js'), FAKE_RUNTIME_SRC, 'utf8');
+    const actualHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'runtime.js'))).digest('hex');
+    const real = fs.realpathSync(pinned.proj);
+    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
+    const pf = path.join(pinned.pinDirPath, hash + '.json');
+    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
+    pin.runtimeSha256 = { 'bridge/runtime.js': actualHash, 'bridge/hooks/ticket-gate.js': '0'.repeat(64) };
+    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
+    const marker = path.join(bridgeDir, 'MARKER.txt');
+    const d = decisionOf(
+      runGuard(pinned.proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath })
+    );
+    check('trusted pin + matching runtime.js hash -> delegated (fake gate() result returned verbatim, allow)', d.decision === 'allow', JSON.stringify(d));
+    check('...and the marker WAS written (require() actually ran)', fs.existsSync(marker), '');
+  }
+
+  // Extra: gate() returning a thenable or a non-plain-object is treated as
+  // deny, never guessed at.
+  {
+    const pinned = setupPinnedProject('new');
+    const bridgeDir = path.join(pinned.proj, '.claude', 'orchestra', 'bridge');
+    fs.mkdirSync(bridgeDir, { recursive: true });
+    const thenableSrc =
+      "module.exports = { createRuntime: () => ({ gate: () => Promise.resolve({}) }) };\n";
+    fs.writeFileSync(path.join(bridgeDir, 'runtime.js'), thenableSrc, 'utf8');
+    const actualHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'runtime.js'))).digest('hex');
+    const real = fs.realpathSync(pinned.proj);
+    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
+    const pf = path.join(pinned.pinDirPath, hash + '.json');
+    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
+    pin.runtimeSha256 = { 'bridge/runtime.js': actualHash };
+    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
+    const d = decisionOf(
+      runGuard(pinned.proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath })
+    );
+    check('gate() returning a thenable (Promise) -> DENIED, never guessed at', d.decision === 'deny', JSON.stringify(d));
+  }
 }
 
 // ------------------------------------------------------------------ driver
@@ -1521,6 +1743,10 @@ try {
   case22_patternArrayCap();
   case23_copiedProjectLoosenBlocked();
   case24_notebookEditPauseAndSidechainTruthy();
+  case25_isSidechainStrictBoolean();
+  case26_pauseNameNormalization();
+  case27_pauseOrderingSubagentAndAgentSeam();
+  case28_agentSeamRuntimeTrust();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

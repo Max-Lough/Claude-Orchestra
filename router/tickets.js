@@ -1155,6 +1155,8 @@ function issue(store, fields) {
       resolved: null,
       outcome: null,
       attempts: [],
+      engine_pass: null,
+      engine_result: null,
     };
     validateTicketShape(ticket);
     data.tickets[id] = ticket;
@@ -1345,6 +1347,100 @@ function expire(store, { id, now } = {}) {
   });
 }
 
+// ---------------------------------------------------------------- enginePass
+//
+// WO-14b leg 4 fix round: the codex-engine ticket lifecycle is TWO passes,
+// not two consumes. The Agent tool's own Pre/PostToolUse hooks already carry
+// a codex-launcher ticket OPEN -> CONSUMED -> LAUNCHED before the launcher
+// ever calls the engine server; enginePass() is a SEPARATE, idempotent
+// marker recorded on an already-LAUNCHED ticket the moment the engine
+// server actually invokes codex — never a second consume() (which used to
+// reject the launcher's own call as a replay of the Agent-hook consume).
+// Lawful only when: status is LAUNCHED, casting.vendor is 'openai' (engine
+// tickets are OpenAI-served by construction), role matches the ticket's own
+// recorded role, and engine_pass is still null (a second call is a replay —
+// refused, never overwritten). The engine server calls this BEFORE spawning
+// codex, never consume(); final resolve() still comes from the launcher's
+// own SubagentStop (see engineResult() below).
+function enginePass(store, id, { run_nonce, role, vendor } = {}) {
+  return withStore(store, (data) => {
+    const at = nowIso();
+    const t = data.tickets[id];
+    const fail = (reason, code) => {
+      const events = recordAttempt(data, id, 'enginePass', reason, at);
+      const err = new TicketTransitionError(reason, { id, ticket: t });
+      if (code) err.code = code;
+      throw new TicketWriteAndThrow(data, events, err);
+    };
+    if (!t) return fail('unknown ticket ' + id);
+    if (t.status !== 'LAUNCHED') return fail('ticket ' + id + ' is ' + t.status + ', enginePass requires LAUNCHED (bound via the Agent tool Pre/PostToolUse hooks before the launcher calls the engine)');
+    if (!t.casting || t.casting.vendor !== 'openai') return fail('ticket ' + id + ' casting vendor is ' + (t.casting && t.casting.vendor) + ', not openai — engine tickets must be OpenAI-served');
+    if (role !== t.role) return fail('ticket ' + id + ' is for role ' + t.role + ', not ' + role);
+    if (t.engine_pass !== null) return fail('ticket ' + id + ' engine_pass already recorded at ' + t.engine_pass.at + ' — replay refused', 'TICKET_REPLAY');
+    t.engine_pass = { run_nonce: run_nonce || null, at };
+    return {
+      data, result: t,
+      events: [{ at, id, from: t.status, to: t.status, event: 'enginePass', data: { run_nonce: run_nonce || null, role, vendor } }],
+    };
+  });
+}
+
+// --------------------------------------------------------------- engineResult
+//
+// Binds the engine's own verbatim report onto the ticket once codex has
+// actually run — additive to (never a substitute for) the launcher's own
+// SubagentStop resolve(), which is the ticket's real terminal transition.
+// Requires a prior enginePass() (never called standalone). Does not itself
+// change status: the ticket stays LAUNCHED until the outer Agent's
+// SubagentStop resolves it — a caller (e.g. close(), leg 5) that wants the
+// engine's own verbatim text rather than the launcher's relay reads
+// ticket.engine_result.report.
+function engineResult(store, id, { report, run_log } = {}) {
+  return withStore(store, (data) => {
+    const at = nowIso();
+    const t = data.tickets[id];
+    const fail = (reason) => {
+      const events = recordAttempt(data, id, 'engineResult', reason, at);
+      throw new TicketWriteAndThrow(data, events, new TicketTransitionError(reason, { id, ticket: t }));
+    };
+    if (!t) return fail('unknown ticket ' + id);
+    if (!t.engine_pass) return fail('ticket ' + id + ' has no engine_pass recorded — engineResult() requires a prior enginePass()');
+    t.engine_result = { report: typeof report === 'string' ? report : null, run_log: typeof run_log === 'string' ? run_log : null, at };
+    return {
+      data, result: t,
+      events: [{ at, id, from: t.status, to: t.status, event: 'engineResult', data: { hasReport: typeof report === 'string' } }],
+    };
+  });
+}
+
+// ----------------------------------------------------------------- invalidate
+//
+// WO-14b leg 4 fix round (config_hash enforcement): a single-ticket,
+// caller-named INVALIDATED transition — bumpGeneration()'s per-store sweep
+// generalised to one id, for the config_hash mismatch guard in
+// bridge/runtime.js (castings/aliases/manifest changed since this ticket was
+// issued). Refuses (typed, recorded in attempts) on an unknown ticket or one
+// already terminal — never re-invalidates or silently no-ops.
+function invalidate(store, id, reason) {
+  return withStore(store, (data) => {
+    const at = nowIso();
+    const t = data.tickets[id];
+    const fail = (why) => {
+      const events = recordAttempt(data, id, 'invalidate', why, at);
+      throw new TicketWriteAndThrow(data, events, new TicketTransitionError(why, { id, ticket: t }));
+    };
+    if (!t) return fail('unknown ticket ' + id);
+    if (TERMINAL.has(t.status)) return fail('ticket ' + id + ' is already ' + t.status + ', cannot invalidate');
+    const from = t.status;
+    t.status = 'INVALIDATED';
+    t.outcome = { code: 'INVALIDATED', reason: reason || null, at };
+    return {
+      data, result: t,
+      events: [{ at, id, from, to: 'INVALIDATED', event: 'invalidate', data: { reason: reason || null } }],
+    };
+  });
+}
+
 // -------------------------------------------------------------- bumpGeneration
 
 function bumpGeneration(store, reason) {
@@ -1414,6 +1510,9 @@ module.exports = {
   expire,
   bumpGeneration,
   denied,
+  enginePass,
+  engineResult,
+  invalidate,
   get,
   list,
   openTickets,

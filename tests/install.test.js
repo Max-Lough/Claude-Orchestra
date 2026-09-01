@@ -269,8 +269,21 @@ function case2_newRosterCensus() {
   );
   check('no warning/error text about bridge/ when it is simply absent', !/bridge/i.test(out(r)) || hasBridgeSrc, out(r));
 
+  // WO-14b leg 4 fix round CONTINUATION (install.js -> init-store): a fresh
+  // --roster new install initialises the ticket store the same way
+  // bridge/cli.js's `init-store` does, and records installedStore:true.
+  const ticketStoreFile = path.join(target, '.claude', 'orchestra', 'tickets', 'tickets.json');
+  check('census includes the initialised ticket store file', c.includes('.claude/orchestra/tickets/tickets.json'), c.join('\n'));
+  check('the ticket store file is well-formed JSON (generation 1, no tickets yet)', (() => {
+    try {
+      const j = readJson(ticketStoreFile);
+      return j && j.generation === 1 && j.tickets && typeof j.tickets === 'object' && Object.keys(j.tickets).length === 0;
+    } catch (_) { return false; }
+  })(), (() => { try { return fs.readFileSync(ticketStoreFile, 'utf8'); } catch (e) { return String(e); } })());
+
   const manifest = readJson(path.join(target, '.claude', 'orchestra.json'));
   check('manifest roster === "new"', manifest.roster === 'new', JSON.stringify(manifest));
+  check('manifest installedStore === true', manifest.installedStore === true, JSON.stringify(manifest));
   check('manifest seats === {Architect:true, Sweeper:false}', manifest.seats && manifest.seats.Architect === true && manifest.seats.Sweeper === false, JSON.stringify(manifest));
   check('manifest rosterGeneration starts at 1', manifest.rosterGeneration === 1, JSON.stringify(manifest));
 
@@ -310,6 +323,7 @@ function case2_newRosterCensus() {
     settings.hooks.Stop && JSON.stringify(settings.hooks.Stop));
 
   // A second --roster new run must replace, never duplicate, these entries.
+  const storeMtimeBefore = fs.statSync(ticketStoreFile).mtimeMs;
   const r2 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
   check('re-running --roster new succeeds', ok(r2), out(r2));
   const settingsAgain = readJson(path.join(target, '.claude', 'settings.json'));
@@ -317,6 +331,13 @@ function case2_newRosterCensus() {
     settingsAgain.hooks.PreToolUse.length === 2 && settingsAgain.hooks.PostToolUse.length === 1 &&
       settingsAgain.hooks.SubagentStop.length === 1 && settingsAgain.hooks.Stop.length === 1,
     JSON.stringify(settingsAgain.hooks));
+  // Idempotent store init: a re-run over an EXISTING store must leave it
+  // byte-untouched (never reinitialised/wiped) — install.js only calls
+  // init-store when no store exists yet.
+  check('re-running --roster new does not touch the already-initialised ticket store (mtime unchanged)',
+    fs.statSync(ticketStoreFile).mtimeMs === storeMtimeBefore, 'before=' + storeMtimeBefore + ' after=' + fs.statSync(ticketStoreFile).mtimeMs);
+  const manifestAgain = readJson(path.join(target, '.claude', 'orchestra.json'));
+  check('re-running --roster new keeps installedStore === true', manifestAgain.installedStore === true, JSON.stringify(manifestAgain));
 }
 
 function case3_flipBumpsGenerationLeavesFiles() {
@@ -326,6 +347,8 @@ function case3_flipBumpsGenerationLeavesFiles() {
   install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
   const before = census(target);
   const genBefore = readJson(path.join(target, '.claude', 'orchestra.json')).rosterGeneration;
+  const ticketStoreFile = path.join(target, '.claude', 'orchestra', 'tickets', 'tickets.json');
+  const storeBytesBefore = fs.readFileSync(ticketStoreFile);
 
   const r = install(target, ['--roster', 'legacy', '--no-packs', '--no-specialists']);
   check('flip to --roster legacy succeeds', ok(r), out(r));
@@ -336,6 +359,11 @@ function case3_flipBumpsGenerationLeavesFiles() {
 
   const after = census(target);
   check('every new-roster file installed before the flip is STILL present after it', before.every((f) => after.includes(f)), 'missing: ' + before.filter((f) => !after.includes(f)).join(', '));
+  // WO-14b leg 4 fix round CONTINUATION: "a legacy flip leaves it" — the
+  // ticket store is neither removed nor reinitialised by a flip to legacy.
+  check('the ticket store SURVIVES the legacy flip (file present, byte-identical)',
+    fs.existsSync(ticketStoreFile) && fs.readFileSync(ticketStoreFile).equals(storeBytesBefore), '');
+  check('manifest.installedStore is left as-is (not cleared) by the legacy flip', manifest.installedStore === true, JSON.stringify(manifest));
 
   // leg 4c: the flip removes the four gate hook entries (the gate is inert
   // under legacy anyway — hygiene) but LEAVES the guard's own PreToolUse
@@ -363,6 +391,10 @@ function case3_flipBumpsGenerationLeavesFiles() {
   const r2 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
   const genIdempotent = readJson(path.join(target, '.claude', 'orchestra.json')).rosterGeneration;
   check('re-running --roster new with no flip does NOT bump generation again', ok(r2) && genIdempotent === genFlippedBack, 'before=' + genFlippedBack + ' after=' + genIdempotent);
+  check('the ticket store is STILL byte-identical after flipping back to new (never reinitialised)',
+    fs.existsSync(ticketStoreFile) && fs.readFileSync(ticketStoreFile).equals(storeBytesBefore), '');
+  const manifestFlippedBack = readJson(path.join(target, '.claude', 'orchestra.json'));
+  check('manifest.installedStore === true after flipping back to new', manifestFlippedBack.installedStore === true, JSON.stringify(manifestFlippedBack));
 }
 
 function case4_userKeysPreserved() {
@@ -1358,6 +1390,89 @@ function case24_gitRootPinKey() {
   check('item 4: the OLD path-keyed pin (pre-move location) is removed too', !fs.existsSync(oldPathPf), oldPathPf);
 }
 
+function case25_userOwnHookBasenameCollisionSurvives() {
+  section("25. WO-14b leg 4 fix round item 11: a user's own `node tools/ticket-gate.js` hook (same BASENAME as ours, different path) survives install/flip/uninstall");
+
+  const target = tmpdir('orchestra-install-');
+  const r1 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('(setup) roster:new install succeeds', ok(r1), out(r1));
+
+  // Plant the user's own entries AFTER install, the way a developer's
+  // hand-edit would — command basename `ticket-gate.js` collides with ours,
+  // but the path (`tools/ticket-gate.js`, not
+  // `.claude/orchestra/bridge/hooks/ticket-gate.js`) does not. Before item
+  // 11's fix, isOurGateHookEntry() matched on basename substring alone and
+  // would have misclassified — and removed — every one of these.
+  const settingsFile = path.join(target, '.claude', 'settings.json');
+  function plantUserHooks() {
+    const settings = readJson(settingsFile);
+    settings.hooks.PreToolUse = (settings.hooks.PreToolUse || []).concat([
+      { matcher: 'Agent', hooks: [{ type: 'command', command: 'node tools/ticket-gate.js PreToolUse' }] },
+    ]);
+    settings.hooks.PostToolUse = (settings.hooks.PostToolUse || []).concat([
+      { matcher: 'Agent', hooks: [{ type: 'command', command: 'node tools/ticket-gate.js PostToolUse' }] },
+    ]);
+    settings.hooks.SubagentStop = (settings.hooks.SubagentStop || []).concat([
+      { hooks: [{ type: 'command', command: 'node tools/ticket-gate.js SubagentStop' }] },
+    ]);
+    settings.hooks.Stop = (settings.hooks.Stop || []).concat([
+      { hooks: [{ type: 'command', command: 'node tools/ticket-gate.js Stop' }] },
+    ]);
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2), 'utf8');
+  }
+  plantUserHooks();
+
+  function userEntriesPresent(label) {
+    const s = readJson(settingsFile);
+    const has = (eventName) =>
+      Array.isArray(s.hooks[eventName]) &&
+      s.hooks[eventName].some((e) => e.hooks && e.hooks[0] && e.hooks[0].command === 'node tools/ticket-gate.js ' + eventName);
+    for (const eventName of ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop']) {
+      check(label + ': user\'s own ' + eventName + ' entry (node tools/ticket-gate.js) survives', has(eventName), JSON.stringify(s.hooks[eventName]));
+    }
+  }
+
+  // (a) a re-run of --roster new (our own entries merged in ALONGSIDE, never
+  //     replacing/removing the user's colliding-basename ones).
+  const r2 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('re-run of --roster new succeeds', ok(r2), out(r2));
+  userEntriesPresent('after a --roster new re-run');
+  {
+    const s = readJson(settingsFile);
+    check('...and OUR gate entry is also present (both coexist)',
+      Array.isArray(s.hooks.PreToolUse) && s.hooks.PreToolUse.some((e) => e.hooks[0].command.indexOf('.claude/orchestra/bridge/hooks/ticket-gate.js') !== -1),
+      JSON.stringify(s.hooks.PreToolUse));
+  }
+
+  // (b) a legacy flip removes OUR gate entries (hygiene) but must not touch
+  //     the user's colliding-basename ones.
+  const r3 = install(target, ['--roster', 'legacy', '--no-packs', '--no-specialists']);
+  check('flip to --roster legacy succeeds', ok(r3), out(r3));
+  userEntriesPresent('after the legacy flip');
+  {
+    const s = readJson(settingsFile);
+    check('...and OUR gate entry is gone (legacy hygiene)',
+      !(Array.isArray(s.hooks.PreToolUse) && s.hooks.PreToolUse.some((e) => e.hooks[0].command.indexOf('.claude/orchestra/bridge/hooks/ticket-gate.js') !== -1)),
+      JSON.stringify(s.hooks.PreToolUse));
+  }
+
+  // (c) flip back to new: our entries return, the user's still survive.
+  const r4 = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('flip back to --roster new succeeds', ok(r4), out(r4));
+  userEntriesPresent('after flipping back to new');
+
+  // (d) --uninstall: our entries are removed, the user's own still survive.
+  const r5 = install(target, ['--uninstall']);
+  check('uninstall succeeds', ok(r5), out(r5));
+  userEntriesPresent('after --uninstall');
+  {
+    const s = readJson(settingsFile);
+    check('...and OUR gate entry is gone after uninstall',
+      !(Array.isArray(s.hooks.PreToolUse) && s.hooks.PreToolUse.some((e) => e.hooks[0].command.indexOf('.claude/orchestra/bridge/hooks/ticket-gate.js') !== -1)),
+      JSON.stringify(s.hooks.PreToolUse));
+  }
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1402,6 +1517,7 @@ try {
   caseB4_userOwnedPermissionsHonoredByFallback();
   caseB5_patternKeyValidation();
   case24_gitRootPinKey();
+  case25_userOwnHookBasenameCollisionSurvives();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

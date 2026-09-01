@@ -19,6 +19,13 @@ Implement a well-scoped change behind a written spec — feature, fix, integrati
 
 Split by order shape (owner ruling 2026-08-28), extended into a four-tier ladder by the WO-14b Builder ladder (owner-ruled 2026-09-01, adopted as proposed): the Conductor selects a `tier` on the order — **bounded** (preferred OpenAI · GPT-5.6 Luna · xhigh–max, for bounded, short-horizon, fully-specified, deterministically-verifiable orders only; substitutes Terra · med then Sonnet · med), **standard** (preferred **this file's casting**, Anthropic · Claude Sonnet 5 · medium, for orders expected to run longer or whose spec is thinner than Luna's bar; substitute Terra · med), **dense** (preferred Sonnet 5 · high for unusually dense but bounded logic; substitute Terra · high; override-only Sol · med), **deep** (preferred Opus 5 · high — absorbing the retired Principal seat's primary rung; no substitute; override-only Sol · high). Each tier walks its preferred casting then its ordered cross-vendor substitute list under the bucket ladder, `recastFrom` disclosed; override-only entries are reached solely through the Conductor's explicit override, and a Sol override additionally requires the Quartermaster's review-reserve check (`castOpts.reserveCheck === 'passed'`) — absent, a typed `FORBIDDEN`, never a silent walk onto Sol. Absent an explicit `tier`, an E2 order defaults to **standard**; merged classes (E0/E1/E3/E5/E6/E8/D0, retired-role work now dispatched through Builder) default per `router/castings.json`'s `mergedClasses` table. Luna never receives under-specified work — that guardrail survives the promotion and the ladder; live escape-rate monitoring (audit finding 5) keeps the entry trial honest in production. Opus (deep tier) stays behind the P15 reserve/Amber-arming gate like every other Opus casting in the roster.
 
+This file is the in-harness launcher for every **Anthropic-served** Builder rung
+(Sonnet 5 primary/dense, Opus 5 deepPrimary). Every OpenAI-served rung on the same
+ladder (Luna preferredBounded, Terra mirror/denseMirror, the override-only Sol rungs)
+spawns `roster/builder-openai.md` instead — the served casting picks the launcher file,
+never a fixed name (`bridge/runtime.js`'s `subagentTypeFor()`); that file is a thin
+relay carrying no judgment of its own, unlike this one.
+
 ## Rationale
 
 The volume seat; its economics dominate. Flagship-director-plus-workhorse reached ≈96% of all-flagship quality at 46% cost in the one available orchestration study; Sonnet and Terra sit within ~0.2 points of each other on SWE-bench Pro, so the choice between them is pool state and cache locality (P2), not capability. Sonnet-primary also protects the OpenAI pool for review — the binding constraint (Part 5).

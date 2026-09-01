@@ -87,10 +87,22 @@ function writePin(dir, manifest, overrides) {
   return pin;
 }
 
+// WO-14b leg 4 fix round (item 9): the runtime never auto-initialises a
+// missing store — bridge/cli.js's `init-store` (called by install.js on a
+// real --roster new) is now the only lawful way to create one. Every
+// fixture below that expects dispatch()/gate() to actually route must
+// create the store explicitly, exactly like a real installed project would;
+// tests that specifically exercise a missing/corrupted store (section 5,
+// and the new item-9 section) skip or undo this on purpose.
+function initStore(dir) {
+  return T.createTicketStore({ dir: path.join(dir, '.claude', 'orchestra', 'tickets'), init: true });
+}
+
 function writeManifest(dir, overrides) {
   const manifest = Object.assign({ roster: 'new', rosterGeneration: 1, seats: {} }, overrides || {});
   fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify(manifest, null, 2));
   writePin(dir, manifest);
+  initStore(dir);
   return manifest;
 }
 const GREEN = { 'AU-all': 0.95, 'AU-opus': 0.95, 'AU-fable': 0.95, 'OU': 0.95 };
@@ -179,13 +191,26 @@ section('2. roster:new happy path — dispatch -> Pre consume -> Post launch -> 
   const result = runtime.dispatch(baseRequest());
   check('dispatch() ok:true on a Green pool', result.ok === true, JSON.stringify(result));
   check('an implementation ticket is issued, OPEN', result.ok && result.tickets.implementation.status === 'OPEN');
-  check('spawn.subagent_type is the installed Builder file name', result.ok && result.spawn.subagent_type === 'builder', result.ok && result.spawn.subagent_type);
-  check('spawn.prompt_header carries TICKET=<id>', result.ok && result.spawn.prompt_header === 'TICKET=' + result.tickets.implementation.id + '\n');
+  // WO-14b leg 4 fix round (item 1 pin): class E1 is Builder's bounded tier
+  // (router/castings.json mergedClasses.E1), whose preferred rung is
+  // OpenAI Luna — on a Green pool that is exactly what gets served, so the
+  // installed launcher the SERVED casting selects is builder-openai, never
+  // the fixed 'builder' name a vendor-blind mapping used to return.
+  check('spawn.subagent_type follows the SERVED casting (Green E1 -> Luna -> builder-openai)',
+    result.ok && result.spawn.subagent_type === 'builder-openai' && result.casting.casting.vendor === 'openai' && result.casting.casting.model === 'GPT-5.6 Luna',
+    result.ok && JSON.stringify({ subagent_type: result.spawn.subagent_type, casting: result.casting.casting }));
+  check('spawn.prompt_header carries TICKET=/MODEL=/EFFORT=/ROLE=',
+    result.ok && result.spawn.prompt_header ===
+      'TICKET=' + result.tickets.implementation.id + '\n' +
+      'MODEL=' + result.casting.casting.model + '\n' +
+      'EFFORT=' + result.casting.casting.effort + '\n' +
+      'ROLE=' + result.spawn.subagent_type + '\n',
+    result.ok && result.spawn.prompt_header);
 
   const ticketId = result.tickets.implementation.id;
   const toolUseId = 'toolu_01AuYt3hjvYc2Yws8FZriovJ';
 
-  const pre = runtime.gate(preEvent('TICKET=' + ticketId, 'builder', toolUseId));
+  const pre = runtime.gate(preEvent('TICKET=' + ticketId, result.spawn.subagent_type, toolUseId));
   check('PreToolUse allows and consumes the ticket', pre.hookSpecificOutput && pre.hookSpecificOutput.permissionDecision === 'allow', JSON.stringify(pre));
 
   const post = runtime.gate(postEvent(toolUseId, AGENT_ID, RESOLVED_MODEL));
@@ -225,9 +250,9 @@ section('3. Pre denials: unticketed, replay, wrong-role, expired, wrong-generati
   const wrongRole = runtime.gate(preEvent('TICKET=' + ticketId, 'not-the-role', 'tu-b'));
   check('wrong-role denies, ticket stays OPEN', wrongRole.hookSpecificOutput.permissionDecision === 'deny' && /for role/.test(wrongRole.hookSpecificOutput.permissionDecisionReason));
 
-  const first = runtime.gate(preEvent('TICKET=' + ticketId, 'builder', 'tu-c'));
-  check('first legitimate consume allows', first.hookSpecificOutput.permissionDecision === 'allow');
-  const replay = runtime.gate(preEvent('TICKET=' + ticketId, 'builder', 'tu-d'));
+  const first = runtime.gate(preEvent('TICKET=' + ticketId, result.spawn.subagent_type, 'tu-c'));
+  check('first legitimate consume allows', first.hookSpecificOutput.permissionDecision === 'allow', JSON.stringify(first));
+  const replay = runtime.gate(preEvent('TICKET=' + ticketId, result.spawn.subagent_type, 'tu-d'));
   check('replay of a CONSUMED ticket denies (one-use)', replay.hookSpecificOutput.permissionDecision === 'deny' && /one-use/.test(replay.hookSpecificOutput.permissionDecisionReason));
 
   // expired
@@ -311,7 +336,7 @@ section('7. Stop: a LAUNCHED ticket the host does not list among background_task
   const result = runtime.dispatch(baseRequest());
   const ticketId = result.tickets.implementation.id;
   const toolUseId = 'tu-orphan';
-  runtime.gate(preEvent('TICKET=' + ticketId, 'builder', toolUseId));
+  runtime.gate(preEvent('TICKET=' + ticketId, result.spawn.subagent_type, toolUseId));
   runtime.gate(postEvent(toolUseId, 'orphan-agent-id', RESOLVED_MODEL));
 
   const stopResult = runtime.gate(stopEvent(false, [])); // host reports NO running subagents at all
@@ -356,7 +381,10 @@ section('9. P0_UNAVAILABLE on missing readings — nothing written');
   const runtime = createRuntime({ projectDir: dir });
   const result = runtime.dispatch(baseRequest());
   check('dispatch() returns typed P0_UNAVAILABLE', result.ok === false && result.outcome === 'P0_UNAVAILABLE', JSON.stringify(result));
-  check('no ticket store was created', !fs.existsSync(path.join(dir, '.claude', 'orchestra', 'tickets', 'tickets.json')));
+  // writeManifest() now explicitly init-stores the fixture (item 9 — the
+  // runtime itself never does), so the store file legitimately exists here;
+  // what P0_UNAVAILABLE must still prove is that dispatch() issued nothing.
+  check('no ticket was issued into the (pre-existing, fixture-created) store', openTicketsCount(dir) === 0 && T.list({ dir: path.join(dir, '.claude', 'orchestra', 'tickets') }).length === 0);
   check('no routing event was written', !fs.existsSync(path.join(dir, '.claude', 'orchestra', 'tickets', 'routing.events.jsonl')));
 }
 
@@ -630,6 +658,7 @@ section("19. Manifest pin verification — moved project: a pin found by id key,
   const manifestBytes = Buffer.from(JSON.stringify(manifestObj, null, 2));
   fs.writeFileSync(path.join(newDir, '.claude', 'orchestra.json'), manifestBytes);
   seedReadings(newDir, GREEN);
+  initStore(newDir); // item 9: dispatch() below needs an explicitly-created store
 
   // The pin was minted while the project lived at oldDir — its projectDir
   // names the OLD path, stored under the id key (what install.js's --repin
@@ -870,6 +899,129 @@ section('27. Rider 2 round-3 — git-keyed pin whose own projectDir differs from
   const state2 = readTrustedManifest({ projectDir: newDir });
   check('git-keyed pin with a differing projectDir, hash MISMATCHES -> trusted:false, moved:true (still exposed)',
     state2.trusted === false && state2.moved === true, JSON.stringify(state2));
+}
+
+// ============ 28. item 6: `medium` survives into the canonical order — M0 UNAVAILABLE
+
+section('28. WO-14b leg 4 fix round item 6: medium reaches the canonical order — M0 videoAudio -> typed UNAVAILABLE');
+
+{
+  const dir = tmpProject('bridge-medium-');
+  writeManifest(dir);
+  seedReadings(dir, GREEN);
+  const runtime = createRuntime({ projectDir: dir });
+  const result = runtime.dispatch(baseRequest({ class: 'M0', risk: 'T1', medium: 'videoAudio' }));
+  check('M0 + medium:videoAudio -> typed UNAVAILABLE through orchestra_dispatch (not routed as an ordinary Investigator ticket)',
+    result.ok === false && result.outcome === 'UNAVAILABLE', JSON.stringify(result));
+}
+
+// ============ 29. item 8: config_hash checked at consume — a changed manifest invalidates an open ticket
+
+section('29. WO-14b leg 4 fix round item 8: config_hash mismatch at consume -> CONFIG_CHANGED, ticket INVALIDATED');
+
+{
+  const dir = tmpProject('bridge-confighash-');
+  writeManifest(dir);
+  seedReadings(dir, GREEN);
+  const runtime = createRuntime({ projectDir: dir });
+  const result = runtime.dispatch(baseRequest());
+  const ticketId = result.tickets.implementation.id;
+
+  // Rewrite the manifest WITHOUT bumping rosterGeneration — configHash()
+  // covers castings+aliases+MANIFEST BYTES, so any manifest edit changes it
+  // even when generation stays put (the generationCheck()/bumpGeneration()
+  // path is a different guard, exercised separately by section 8/3).
+  writeManifest(dir, { seats: { Sweeper: true } });
+  const runtime2 = createRuntime({ projectDir: dir });
+  const denied = runtime2.gate(preEvent('TICKET=' + ticketId, result.spawn.subagent_type, 'tu-confighash'));
+  check('a ticket whose config_hash no longer matches the live configuration is denied CONFIG_CHANGED',
+    denied.hookSpecificOutput && denied.hookSpecificOutput.permissionDecision === 'deny' &&
+      /CONFIG_CHANGED/.test(denied.hookSpecificOutput.permissionDecisionReason),
+    JSON.stringify(denied));
+  const store = { dir: path.join(dir, '.claude', 'orchestra', 'tickets') };
+  check('the ticket is INVALIDATED (never silently left OPEN/CONSUMED against stale config)',
+    T.get(store, ticketId).status === 'INVALIDATED', T.get(store, ticketId).status);
+}
+
+// ============ 30. item 9: a deleted store is STORE_UNAVAILABLE, never silently reinitialised
+
+section('30. WO-14b leg 4 fix round item 9: a deleted ticket store is STORE_UNAVAILABLE, no new generation-1 ledger');
+
+{
+  const dir = tmpProject('bridge-deletedstore-');
+  writeManifest(dir); // this fixture helper now explicitly init-stores
+  seedReadings(dir, GREEN);
+  const ticketsDir = path.join(dir, '.claude', 'orchestra', 'tickets');
+  check('sanity — the store exists after the fixture explicitly created it', fs.existsSync(path.join(ticketsDir, 'tickets.json')));
+  fs.rmSync(ticketsDir, { recursive: true, force: true });
+  check('sanity — the store is now gone', !fs.existsSync(ticketsDir));
+
+  const runtime = createRuntime({ projectDir: dir });
+  const result = runtime.dispatch(baseRequest());
+  check('dispatch() refuses typed STORE_UNAVAILABLE on a deleted store', result.ok === false && result.outcome === 'STORE_UNAVAILABLE', JSON.stringify(result));
+  check('dispatch() did NOT silently create a fresh generation-1 ledger', !fs.existsSync(path.join(ticketsDir, 'tickets.json')));
+
+  const denied = runtime.gate(preEvent('TICKET=tkt-aa11bb22cc33dd44', 'builder', 'tu-deletedstore'));
+  check('gate() also denies (fail closed) rather than silently reinitialising the store',
+    denied.hookSpecificOutput && denied.hookSpecificOutput.permissionDecision === 'deny' && /ticket store unavailable/.test(denied.hookSpecificOutput.permissionDecisionReason),
+    JSON.stringify(denied));
+  check('gate() also did not create a fresh ledger', !fs.existsSync(path.join(ticketsDir, 'tickets.json')));
+
+  // bridge/cli.js init-store is the one lawful, explicit way back.
+  const initOut = spawnSync(process.execPath, [path.join(MASTER, 'bridge', 'cli.js'), 'init-store'],
+    { encoding: 'utf8', env: Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: dir }) });
+  check('bridge/cli.js init-store explicitly recreates it', initOut.status === 0 && fs.existsSync(path.join(ticketsDir, 'tickets.json')), initOut.stdout + initOut.stderr);
+}
+
+// ============ 31. item 10: routing events are mandatory — an unwritable log path refuses the dispatch
+
+section('31. WO-14b leg 4 fix round item 10: routing log unwritable -> typed ROUTING_LOG_UNAVAILABLE, nothing issued');
+
+{
+  const dir = tmpProject('bridge-routinglog-');
+  writeManifest(dir);
+  seedReadings(dir, GREEN);
+  // Replace the routing log PATH with a directory — appendFileSync must fail.
+  fs.mkdirSync(path.join(dir, '.claude', 'orchestra', 'tickets', 'routing.events.jsonl'), { recursive: true });
+  const runtime = createRuntime({ projectDir: dir });
+  const before = openTicketsCount(dir);
+  const result = runtime.dispatch(baseRequest());
+  check('dispatch() refuses typed ROUTING_LOG_UNAVAILABLE when the log path is a directory', result.ok === false && result.outcome === 'ROUTING_LOG_UNAVAILABLE', JSON.stringify(result));
+  check('nothing was issued', openTicketsCount(dir) === before);
+}
+
+// ============ 32. item 12: ticket-gate.js adapter — malformed stdin under legacy/no-manifest is inert
+
+section('32. WO-14b leg 4 fix round item 12: ticket-gate.js reads roster FIRST — malformed stdin under legacy/no manifest is inert {}');
+
+{
+  const dir = tmpProject('bridge-gate-legacy-malformed-'); // no orchestra.json at all
+  const script = path.join(MASTER, 'bridge', 'hooks', 'ticket-gate.js');
+  const pre = spawnSync(process.execPath, [script, 'PreToolUse'], { input: '{ not json', encoding: 'utf8', env: Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: dir }) });
+  check('malformed stdin, no manifest at all: exit 0', pre.status === 0, 'exit ' + pre.status + ' stderr: ' + pre.stderr);
+  check('malformed stdin, no manifest at all: inert {} (never a deny)', pre.stdout.trim() === '{}', pre.stdout);
+
+  const dir2 = tmpProject('bridge-gate-legacy-malformed-2-');
+  fs.writeFileSync(path.join(dir2, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'legacy' }, null, 2));
+  const stop = spawnSync(process.execPath, [script, 'Stop'], { input: 'not json at all', encoding: 'utf8', env: Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: dir2 }) });
+  check('malformed stdin under an explicit roster:legacy manifest: exit 0', stop.status === 0, 'exit ' + stop.status + ' stderr: ' + stop.stderr);
+  check('malformed stdin under roster:legacy: inert {} (never a block)', stop.stdout.trim() === '{}', stop.stdout);
+}
+
+// ============ 33. item 13: request parent_ticket is recorded on the implementation ticket
+
+section('33. WO-14b leg 4 fix round item 13: parent_ticket from the request is recorded on the implementation ticket');
+
+{
+  const dir = tmpProject('bridge-parentticket-');
+  writeManifest(dir);
+  seedReadings(dir, GREEN);
+  const runtime = createRuntime({ projectDir: dir });
+  const parent = runtime.dispatch(baseRequest({ task_id: 'parent-1' }));
+  const child = runtime.dispatch(baseRequest({ task_id: 'child-1', parent_ticket: parent.tickets.implementation.id }));
+  check('the child implementation ticket records the request\'s parent_ticket verbatim',
+    child.ok && child.tickets.implementation.parent_ticket === parent.tickets.implementation.id,
+    child.ok && child.tickets.implementation.parent_ticket);
 }
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed.');

@@ -41,7 +41,7 @@
  *   (i) roster:new FINGERPRINT — see hasRosterNewFingerprint() below: a
  *       project carries one when it has `.claude/orchestra/` populated with
  *       anything beyond the runtime's own `tickets/` subdirectory,
- *       `.claude/ORCHESTRA-CONDUCTOR.md`, any of the eleven roster role
+ *       `.claude/ORCHESTRA-CONDUCTOR.md`, any of the twelve roster role
  *       files under `.claude/agents/` (ROSTER_ROLE_FILES), a manifest whose
  *       `roster` field is itself `"new"`, or a manifest carrying any of
  *       projectId / installedFiles / installedHooks / rosterGeneration
@@ -116,7 +116,7 @@ const MANIFEST_REL = ['.claude', 'orchestra.json'];
 // presence must never be read as roster:new evidence.
 const MANIFEST_FINGERPRINT_KEYS = ['projectId', 'installedFiles', 'installedHooks', 'rosterGeneration'];
 
-// The eleven roster/*.md role files (mirrors install.js's rosterRoleFiles()
+// The twelve roster/*.md role files (mirrors install.js's rosterRoleFiles()
 // output as of this writing — duplicated rather than required-in:
 // install.js has no exported classifier and has execution side effects on
 // require(), and this module runs inside an INSTALLED project, which never
@@ -127,6 +127,7 @@ const MANIFEST_FINGERPRINT_KEYS = ['projectId', 'installedFiles', 'installedHook
 const ROSTER_ROLE_FILES = new Set([
   'architect.md',
   'builder.md',
+  'builder-openai.md',
   'conductor.md',
   'data-engineer.md',
   'investigator.md',
@@ -299,10 +300,24 @@ function loadPin(real, cfg) {
   if (!isValidPinShape(obj)) {
     return { found: true, valid: false, reason: 'corrupt pin' };
   }
+  // WO-14b leg 4 fix round (item 13): manifestSha256 must be exactly 64
+  // lowercase hex characters — the same shape the guard's pinSchemaProblem()
+  // requires — never merely "a string". A pin whose hash is malformed
+  // (wrong length, non-hex, or upper/mixed case) is corrupt the same way a
+  // missing one is; the comparison itself in readTrustedManifest() below is
+  // then a plain case-sensitive ===, matching the guard exactly.
+  if (typeof obj.manifestSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(obj.manifestSha256)) {
+    return { found: true, valid: false, reason: 'corrupt pin' };
+  }
   const pin = {
     projectDir: obj.projectDir,
     roster: obj.roster,
     seats: objOrNull(obj.seats),
+    // isValidPinShape() above already guarantees rosterGeneration is a
+    // non-negative integer for any pin that reaches here — no coercion or
+    // fallback needed (the pre-round-3 lax schema this ternary belonged to
+    // is gone; a pin failing that check is already rejected as 'corrupt pin'
+    // before this object is built).
     rosterGeneration: obj.rosterGeneration,
     manifestSha256: obj.manifestSha256,
   };
@@ -359,6 +374,20 @@ function readTrustedManifest({ projectDir } = {}) {
         moved: false,
       };
     }
+    // Item 3: an install footprint survives even when the manifest itself
+    // does not (missing, corrupt, or claims legacy) — forced to
+    // untrusted-new the same way an explicit roster:"new" claim is, rather
+    // than reading as a plain unpinned legacy install.
+    if (hasRosterNewFingerprint(projectDir, cfg)) {
+      return {
+        manifest: cfg || {},
+        trusted: false,
+        roster: 'new',
+        rosterGeneration: cfg && typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : null,
+        seats: (cfg && objOrNull(cfg.seats)) || {},
+        reason: 'installed roster:new project without a pin',
+      };
+    }
     if (!cfg) return empty();
     return {
       manifest: cfg,
@@ -393,9 +422,13 @@ function readTrustedManifest({ projectDir } = {}) {
   const pin = pinResult.pin;
   const moved = (pinResult.foundBy === 'id' || pinResult.foundBy === 'git') && pin.projectDir !== real;
 
+  // Item 13: case-sensitive, exactly like the guard's own comparison
+  // (crypto's own digest('hex') output is always lowercase, and loadPin()
+  // above already rejects a non-lowercase-hex pin as corrupt) — no
+  // toLowerCase() on either side.
   const manifestSha256 = manifestBytes ? crypto.createHash('sha256').update(manifestBytes).digest('hex') : null;
   const hashMatches =
-    !!manifestSha256 && typeof pin.manifestSha256 === 'string' && pin.manifestSha256.toLowerCase() === manifestSha256;
+    !!manifestSha256 && typeof pin.manifestSha256 === 'string' && pin.manifestSha256 === manifestSha256;
 
   if (hashMatches) {
     // (b) Pin present and valid, manifest bytes hash-match: honour the

@@ -859,7 +859,40 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-08-31, WO-12 in progress)
+## Fresh-session quick start (as of 2026-09-01 evening — WO-14b activation bridge, finishing)
+
+Branch **`claude/wo14b-bridge`** (off `claude/wo12-trials`). Read, in this order, and nothing else
+first:
+
+1. `roster/wo14b-activation-bridge-progress.md` — one line per event; the last lines say exactly
+   where the bridge is and what is in flight.
+2. `roster/wo14b-finish-plan.md` — **the plan of record** (Sol · max, owner-ordered "asap / KISS /
+   YAGNI / DRY"): three cuts to the repairs, leg 6 = four installed scenarios, ONE Sol integrated
+   review (+ one correction + one recheck), then the live gate with the Opus audit folded in;
+   YAGNI/DRY/KISS rulings (what is frozen, what is deferred as a documented limit, what stays
+   duplicated through the gate); binding stopping rules.
+3. The orders to execute, in order: `roster/wo14b-repair-A-order.md` + `wo14b-repair-B-order.md`
+   (owner-approved 17:50Z; amended per the plan; if the progress file's last line says they are
+   merged, skip) → `roster/wo14b-leg6-order.md` → the integrated Sol review over the exact
+   post-leg-6 commit (framing: property review of the whole installed path incl. leg 3R; declared
+   verification = every suite) → `roster/wo14b-leg7-order.md` (owner present).
+4. Context only if needed: `roster/wo14b-session-oracle-verdict.md` (why the per-leg loops were
+   stopped), `roster/wo14b-leg3-oracle-verdict.md` (the guard's closed regime),
+   `roster/wo14b-oracle-verdict.md` (the seven-leg ruling and gate).
+
+Rules a fresh session inherits: the 80-tool-call ceiling is a hard `CHECKPOINT` (eleven builders
+breached it; builder self-counts are wrong — trust the harness); orders plan ≤40 calls; no
+mid-round folding; no new trust layers / telemetry / schemas / seats; component-suite green is not
+installed proof; `CODEX_BIN` pinned to codex-cli 0.151.0 (sha256 `cf68265…`), runners in the
+background, review runner on its own pinned worktree; create worktrees by hand (the Agent tool's
+`isolation: worktree` provisions from `main`); security-flavoured review orders to Sol trip the
+OpenAI cyber classifier — spec-conformance framing for R0, the Opus mirror for E7; write runner
+inputs with the Write tool, not shell heredocs.
+
+Owner actions the live gate needs: record Quartermaster readings into the disposable target; approve
+the engine server in its `.mcp.json`; be present for accept-or-stop.
+
+## Historical: fresh-session quick start (as of 2026-08-31, WO-12 in progress)
 
 0. **Read the three 2026-08-31 entries above first** (WO-13 disposed; codex fault
    root-caused AND CLEARED — alpha.7 runner swap, addendum 2; WO-12 protocol +

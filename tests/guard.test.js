@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Guard tests for hooks/orchestra-guard.js — WO-14b leg 3 (sdc-011/012) +
- * leg-3 fix round A + leg-3 fix round 2A (red team re-verification response).
+ * leg-3 fix rounds through leg 3R (the oracle-ruled bounded rewrite of the
+ * roster:new path, 2026-09-01).
  *
  *   node tests/guard.test.js
  *
@@ -11,54 +12,59 @@
  *
  *   1. The plan-file carve-out requires a `.md` extension on BOTH routes
  *      (the default `.claude/plans/` branch and any `directorPlanPatterns`
- *      entry), and containment is checked on the REAL (symlink-resolved)
- *      path so a pre-existing symlink/junction inside the plans directory
- *      cannot point outside the project and still pass.
+ *      entry, legacy only), and containment is checked on the REAL
+ *      (symlink-resolved) path so a pre-existing symlink/junction inside
+ *      the plans directory cannot point outside the project and still pass.
  *   2. The default-tool denial names every configured plan directory, not
  *      only the default location.
- *   3. Under `roster:new` (owner-PINNED — see 8 below), an undetermined
- *      session model (no transcript, unreadable transcript, or a transcript
- *      with no assistant turn yet) DENIES instead of standing down — the
- *      legacy fail-open window this closes. Legacy behaviour (no manifest,
- *      no pin, or `roster` anything other than `"new"`) is unchanged.
- *   4. The pause-file carve-out is GONE (leg-3 fix round 2A, item 1): no
- *      tool call — Write, Edit, or MultiEdit — may create or edit
- *      `.claude/orchestra.pause` anymore, regardless of model. The pause
- *      switch is out-of-band only: `ORCHESTRA_PAUSE=1`, or the file
- *      pre-existing before the tool call (created by the user outside the
- *      tool loop).
+ *   3. WO-14b leg 3R: `roster:new` is selected ONLY by the guard's own
+ *      `--roster new` invocation argument (`runGuardNew()` below) — never
+ *      by `.claude/orchestra.json`, a pin, an on-disk fingerprint, or
+ *      transcript content. Once selected, a BLOCKED tool call denies
+ *      UNCONDITIONALLY: `latestMainModel()` is never consulted on this
+ *      path, so even a determined non-director (Sonnet/Haiku) transcript
+ *      still denies — unlike legacy, which keeps model-aware dormancy.
+ *   4. The pause-file carve-out is GONE: no tool call — Write, Edit,
+ *      MultiEdit, or NotebookEdit — may create or edit
+ *      `.claude/orchestra.pause` anymore, regardless of model or roster.
+ *      The pause switch is out-of-band only: `ORCHESTRA_PAUSE=1`, or the
+ *      file pre-existing before the tool call (created by the user outside
+ *      the tool loop) — and a genuine pause releases Agent too.
  *   5. Both remaining carve-outs (plan/memory) refuse a resolved target
  *      that already exists as a hardlink (nlink > 1) or shares {dev, ino}
  *      with a protected harness/config file — "hardlinked target".
- *   6. `latestMainModel()` applies a LATCH (leg-3 fix round 2A, item 2):
- *      once ANY non-sidechain assistant entry anywhere in the transcript
- *      names a director model, the session is enforced regardless of what
- *      appears after it in the file — a forged non-director entry appended
- *      later no longer stands the guard down. A transcript with content but
- *      zero parseable entries ("corrupt") denies under BOTH rosters, unless
- *      it is small and was just modified (mid-first-write grace — item 3),
- *      distinct from a transcript with valid-but-non-assistant entries ("no
- *      assistant yet"), which keeps the legacy stand-down / roster:new deny
- *      asymmetry.
- *   7. Malformed PreToolUse stdin denies under a pinned roster:new manifest
- *      (legacy still fails open, unchanged).
- *   8. The manifest pin (`ORCHESTRA_PIN_DIR`/`~/.claude/orchestra/pins`):
- *      no pin AND manifest doesn't claim new -> legacy, loosening keys
- *      honoured ("unpinned legacy install"); no pin AND manifest claims
- *      "new" -> UNTRUSTED-NEW, fail closed (leg-3 fix round 2A, item 5a);
- *      pin + hash-matching manifest -> trust it fully, roster from the pin;
- *      pin + missing/mismatched manifest -> manifest untrusted, loosening
- *      keys ignored, roster/seats/generation from the pin; a corrupt/forged
- *      pin file is UNTRUSTED-NEW, never "no pin" (item 5d). Bash/PowerShell/
- *      Write/Edit/MultiEdit/NotebookEdit can never be loosened out of the
- *      block set under roster:new, trusted manifest or not (item 7).
+ *   6. `latestMainModel()` (legacy path only) applies a LATCH: once ANY
+ *      non-sidechain assistant entry anywhere in the transcript names a
+ *      director model, the session is enforced regardless of what appears
+ *      after it in the file. A transcript with content but zero parseable
+ *      entries ("corrupt") denies under legacy unless it is small and was
+ *      just modified (mid-first-write grace).
+ *   7. Malformed PreToolUse stdin denies under `--roster new` (legacy still
+ *      fails open, unchanged).
+ *   8. The manifest pin (`ORCHESTRA_PIN_DIR`/`~/.claude/orchestra/pins`) is
+ *      now a TAMPER RECEIPT ONLY (see case14): it never selects roster and
+ *      never gates which policy keys apply. Legacy honours
+ *      `directorAllowedTools`/`directorPlanPatterns`/`directorMemoryPatterns`
+ *      directly off the manifest, pin or no pin. `--roster new` ignores all
+ *      three unconditionally, trusted-looking pin or not — a warning names
+ *      any that were set. `directorBlockedPatterns` (tightening) is
+ *      honoured unconditionally in BOTH rosters. A pin/manifest hash
+ *      mismatch or a corrupt pin file appends a warning note to whatever
+ *      denial follows, but is never itself the reason for one.
  *   9. A `directorPlanPatterns`/`directorMemoryPatterns`/`directorBlockedPatterns`
  *      entry shaped like a regex (leading `^`, trailing `$`, or any of
- *      `( ) | + \ { }`) is rejected at load time (leg-3 fix round 2A, item
- *      4 — these keys are globs now, matched by a non-backtracking DP, not
- *      regexes). A rejected entry in a LOOSENING key drops itself; a
- *      rejected entry in directorBlockedPatterns (TIGHTENING) fails the
- *      whole guard closed until fixed.
+ *      `( ) | + \ { }`) is rejected at load time — these keys are globs,
+ *      matched by a non-backtracking DP, not regexes. A rejected entry in a
+ *      LOOSENING key drops itself; a rejected entry in
+ *      directorBlockedPatterns (TIGHTENING) fails the whole guard closed
+ *      until fixed.
+ *   10. Agent under `--roster new` (case16): no project code is required or
+ *      executed by this guard. A nested spawn (`agent_id` present) denies
+ *      outright; otherwise the guard verifies the four ticket-gate hook
+ *      entries are registered in `.claude/settings.json` with the EXACT
+ *      installer command line — missing, altered, or a wrong matcher denies
+ *      ("gate not registered"); a full match allows, letting the host run
+ *      the registered hooks. Legacy: this guard has never blocked Agent.
  *
  * Same conventions as the other suites: no dependencies, exit-code
  * discipline enforced by an exit handler, a suite that ran no checks fails.
@@ -266,6 +272,68 @@ function runGuardRaw(projectDir, rawInput, extraEnv) {
   });
 }
 
+// WO-14b leg 3R: roster:new is selected ONLY by the guard's own
+// `--roster new` argv, written by install.js's guardHookEntry(). These
+// mirror runGuard()/runGuardRaw() but spawn the guard with that argument —
+// the equivalent of a `--roster new` install's PreToolUse hook entry.
+function runGuardNew(projectDir, input, extraEnv) {
+  const env = Object.assign(
+    {},
+    process.env,
+    { CLAUDE_PROJECT_DIR: projectDir, ORCHESTRA_PIN_DIR: NO_PIN_DIR },
+    extraEnv || {}
+  );
+  delete env.ORCHESTRA_PAUSE;
+  return spawnSync(process.execPath, [GUARD, '--roster', 'new'], {
+    encoding: 'utf8',
+    timeout: 15000,
+    input: JSON.stringify(input),
+    env,
+  });
+}
+
+function runGuardRawNew(projectDir, rawInput, extraEnv) {
+  const env = Object.assign(
+    {},
+    process.env,
+    { CLAUDE_PROJECT_DIR: projectDir, ORCHESTRA_PIN_DIR: NO_PIN_DIR },
+    extraEnv || {}
+  );
+  delete env.ORCHESTRA_PAUSE;
+  return spawnSync(process.execPath, [GUARD, '--roster', 'new'], {
+    encoding: 'utf8',
+    timeout: 15000,
+    input: rawInput,
+    env,
+  });
+}
+
+// Writes .claude/settings.json with the four ticket-gate hook entries in
+// the EXACT shape install.js's gateHookEntry() writes (see
+// hooks/orchestra-guard.js's verifyGateHooksRegistered(), which this proves
+// against). `opts.alterEvent` corrupts one event's command string;
+// `opts.dropMatcher` omits `matcher: "Agent"` from the PreToolUse entry;
+// `opts.omitEvent` leaves one event out of `hooks` entirely.
+function writeRegisteredGateSettings(projectDir, opts) {
+  opts = opts || {};
+  const events = ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop'];
+  const hooks = {};
+  for (const ev of events) {
+    if (opts.omitEvent === ev) continue;
+    const cmd =
+      'node "$CLAUDE_PROJECT_DIR/.claude/orchestra/bridge/hooks/ticket-gate.js" ' + ev +
+      (opts.alterEvent === ev ? ' --tampered' : '');
+    const entry = { hooks: [{ type: 'command', command: cmd }] };
+    if (ev === 'PreToolUse' || ev === 'PostToolUse') {
+      if (!(opts.dropMatcher && ev === 'PreToolUse')) entry.matcher = 'Agent';
+    }
+    hooks[ev] = [entry];
+  }
+  const dir = path.join(projectDir, '.claude');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ hooks }), 'utf8');
+}
+
 function decisionOf(r) {
   const out = (r.stdout || '').trim();
   if (!out) return { decision: 'allow', reason: '' };
@@ -391,63 +459,61 @@ function case3_hintNamesConfiguredDirs() {
   );
 }
 
-function case4_undeterminedModelRosterAsymmetry() {
-  section('4. Undetermined model: legacy stands down, PINNED roster:new denies, UNPINNED manifest claiming new is UNTRUSTED-NEW (denies too)');
+function case4_rosterNewSelectedByArgvOnlyAlwaysActive() {
+  section('4. WO-14b leg 3R: mode is selected by the guard\'s OWN --roster new argv ONLY — a manifest/pin claiming "new" has zero effect without it; once selected, roster:new enforces a BLOCKED tool unconditionally (no transcript consultation at all), even for a Sonnet transcript');
 
-  // No transcript_path at all -> latestMainModel() returns 'empty' (undetermined).
+  // No transcript_path, no --roster new argv, no manifest -> legacy stands down.
   const legacyProj = tmpdir('orchestra-guard-');
   const rLegacy = runGuard(legacyProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } });
-  check('legacy (no manifest): undetermined model -> allow (stand down)', decisionOf(rLegacy).decision === 'allow', JSON.stringify(decisionOf(rLegacy)));
+  check('legacy (no argv, no manifest): undetermined model -> allow (stand down)', decisionOf(rLegacy).decision === 'allow', JSON.stringify(decisionOf(rLegacy)));
 
-  const explicitLegacyProj = tmpdir('orchestra-guard-');
-  setManifest(explicitLegacyProj, { roster: 'legacy' });
-  const rExplicitLegacy = runGuard(explicitLegacyProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } });
+  // A manifest CLAIMING roster:"new" — formerly a fail-closed fingerprint/
+  // trust state — now has NO effect on mode selection at all: the guard
+  // never reads .claude/orchestra.json to pick a mode, only process.argv.
+  const claimsNewProj = tmpdir('orchestra-guard-');
+  setManifest(claimsNewProj, { roster: 'new' });
+  const rClaimsNew = runGuard(claimsNewProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } });
   check(
-    'roster:"legacy" explicit: undetermined model -> allow (stand down, unchanged)',
-    decisionOf(rExplicitLegacy).decision === 'allow',
-    JSON.stringify(decisionOf(rExplicitLegacy))
+    'a manifest claiming roster:"new" WITHOUT the --roster new argv stays legacy (mode selection ignores the manifest entirely)',
+    decisionOf(rClaimsNew).decision === 'allow',
+    JSON.stringify(decisionOf(rClaimsNew))
   );
 
-  // leg-3 fix round 2A, item 5(a): an UNPINNED manifest claiming
-  // roster:"new" is now UNTRUSTED-NEW (fail closed), NOT forced legacy —
-  // the old behaviour was the "delete the pin" bypass the red team found.
-  const unpinnedNewProj = tmpdir('orchestra-guard-');
-  setManifest(unpinnedNewProj, { roster: 'new' });
-  const rUnpinnedNew = runGuard(unpinnedNewProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } });
-  const dUnpinnedNew = decisionOf(rUnpinnedNew);
-  check(
-    'UNPINNED manifest roster:"new": undetermined model -> DENY (fail closed, item 5a — no more silent legacy downgrade)',
-    dUnpinnedNew.decision === 'deny',
-    JSON.stringify(dUnpinnedNew)
-  );
-  check(
-    'UNPINNED manifest roster:"new" denial names "manifest claims new without a pin"',
-    /manifest claims new without a pin/.test(dUnpinnedNew.reason),
-    dUnpinnedNew.reason
-  );
+  // --roster new argv, no manifest, no pin, no transcript at all -> still denies.
+  const argvOnlyProj = tmpdir('orchestra-guard-');
+  const dArgvOnly = decisionOf(runGuardNew(argvOnlyProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }));
+  check('--roster new argv alone (no manifest, no pin): undetermined transcript -> DENY', dArgvOnly.decision === 'deny', JSON.stringify(dArgvOnly));
 
-  // A PINNED, trusted roster:"new" manifest is where the asymmetry actually engages.
-  const pinned = setupPinnedProject('new');
-  const rPinnedUndetermined = runGuard(pinned.proj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-  const dPinned = decisionOf(rPinnedUndetermined);
-  check('pinned roster:"new": undetermined model -> deny', dPinned.decision === 'deny', JSON.stringify(dPinned));
-  check('pinned roster:"new" undetermined-model denial names the roster asymmetry', /roster:new/.test(dPinned.reason), dPinned.reason);
-
-  // A DETERMINED non-director model (Sonnet) still stands down under
-  // roster:new — only the undetermined case flips.
-  const sonnetTranscript = writeTranscript(pinned.proj, [assistantTurn('claude-sonnet-4-8')]);
-  const rSonnet = runGuard(pinned.proj, opusEdit('x.js', sonnetTranscript), { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+  // Item 4 (oracle-ruled): under roster:new, latestMainModel() is never
+  // consulted — EVEN a determined non-director (Sonnet) transcript still
+  // denies, unlike the pre-rewrite guard where only the undetermined case
+  // flipped and a determined Sonnet session stood down.
+  const sonnetProj = tmpdir('orchestra-guard-');
+  const sonnetTranscript = writeTranscript(sonnetProj, [assistantTurn('claude-sonnet-4-8')]);
+  const rSonnet = runGuardNew(sonnetProj, opusEdit('x.js', sonnetTranscript));
   check(
-    'pinned roster:"new": a DETERMINED non-director model (Sonnet) still stands down (only undetermined denies)',
-    decisionOf(rSonnet).decision === 'allow',
+    'roster:new: a Sonnet transcript still DENIES — Director law is always active regardless of transcript content',
+    decisionOf(rSonnet).decision === 'deny',
     JSON.stringify(decisionOf(rSonnet))
   );
 
-  // And a determined director model still enforces under roster:new, same
-  // denial shape as legacy.
-  const opusTranscript = writeTranscript(pinned.proj, [assistantTurn('claude-opus-4-8')]);
-  const rOpus = runGuard(pinned.proj, opusEdit('x.js', opusTranscript), { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-  check('pinned roster:"new": a determined director model (Opus) still enforces (denies)', decisionOf(rOpus).decision === 'deny', JSON.stringify(decisionOf(rOpus)));
+  // A director-model transcript denies too, same unconditional enforcement.
+  const opusProj = tmpdir('orchestra-guard-');
+  const opusTranscript = writeTranscript(opusProj, [assistantTurn('claude-opus-4-8')]);
+  const rOpus = runGuardNew(opusProj, opusEdit('x.js', opusTranscript));
+  check('roster:new: an Opus transcript also denies', decisionOf(rOpus).decision === 'deny', JSON.stringify(decisionOf(rOpus)));
+
+  // A corrupt transcript denies too — the same unconditional path, not
+  // "corrupt-transcript" handling (which is a legacy-only concept now).
+  const corruptProj = tmpdir('orchestra-guard-');
+  const corruptTranscript = path.join(corruptProj, 't.jsonl');
+  fs.writeFileSync(corruptTranscript, 'not json at all, no newline', 'utf8');
+  const rCorrupt = runGuardNew(corruptProj, opusEdit('x.js', corruptTranscript));
+  check('roster:new: a corrupt transcript also denies (unconditional enforcement)', decisionOf(rCorrupt).decision === 'deny', JSON.stringify(decisionOf(rCorrupt)));
+
+  // A genuinely non-BLOCKED tool (Read) is unaffected either way.
+  const rReadArgvNew = decisionOf(runGuardNew(argvOnlyProj, { tool_name: 'Read', tool_input: { file_path: 'x.js' } }));
+  check('roster:new: Read (not in BLOCKED) is unaffected -> allow', rReadArgvNew.decision === 'allow', JSON.stringify(rReadArgvNew));
 }
 
 function case5_transcriptStates() {
@@ -467,7 +533,7 @@ function case5_transcriptStates() {
     dLegacyGarbage.decision === 'deny',
     JSON.stringify(dLegacyGarbage)
   );
-  check('corrupt-transcript denial names "both rosters"', /both rosters/.test(dLegacyGarbage.reason), dLegacyGarbage.reason);
+  check('corrupt-transcript denial names the legacy roster', /legacy roster/.test(dLegacyGarbage.reason), dLegacyGarbage.reason);
 
   // leg-3 fix round 2A, item 3: the SAME shape of garbage, but small and
   // JUST written (mtime within the grace window) -> treated as 'empty'
@@ -482,22 +548,23 @@ function case5_transcriptStates() {
     JSON.stringify(decisionOf(rFreshGarbage))
   );
 
-  // Same OLD garbage under a pinned roster:new project: still denies (same state).
-  const pinnedNew = setupPinnedProject('new');
-  const newGarbageTranscript = path.join(pinnedNew.proj, 't.jsonl');
+  // Same OLD garbage under --roster new argv: still denies (unconditional
+  // enforcement now, not transcript-state-driven).
+  const argvNewProj = tmpdir('orchestra-guard-');
+  const newGarbageTranscript = path.join(argvNewProj, 't.jsonl');
   fs.writeFileSync(newGarbageTranscript, 'not json at all\n{"broken\n', 'utf8');
   fs.utimesSync(newGarbageTranscript, oldTime, oldTime);
-  const rNewGarbage = runGuard(pinnedNew.proj, opusEdit('x.js', newGarbageTranscript), { ORCHESTRA_PIN_DIR: pinnedNew.pinDirPath });
-  check('pinned roster:"new": OLD unparseable transcript content -> deny', decisionOf(rNewGarbage).decision === 'deny', JSON.stringify(decisionOf(rNewGarbage)));
+  const rNewGarbage = runGuardNew(argvNewProj, opusEdit('x.js', newGarbageTranscript));
+  check('--roster new: OLD unparseable transcript content -> deny', decisionOf(rNewGarbage).decision === 'deny', JSON.stringify(decisionOf(rNewGarbage)));
 
-  // A missing transcript file entirely is the "empty" (undetermined) case,
-  // NOT "corrupt" — legacy stands down, pinned roster:new denies.
+  // A missing transcript file entirely is the "empty" (undetermined) case
+  // under legacy — legacy stands down; --roster new denies (unconditional).
   const legacyMissingProj = tmpdir('orchestra-guard-');
   const rLegacyMissing = runGuard(legacyMissingProj, opusEdit('x.js', path.join(legacyMissingProj, 'does-not-exist.jsonl')));
   check('legacy: missing transcript file -> allow (undetermined, stand down)', decisionOf(rLegacyMissing).decision === 'allow', JSON.stringify(decisionOf(rLegacyMissing)));
 
-  const rMissing = runGuard(pinnedNew.proj, opusEdit('x.js', path.join(pinnedNew.proj, 'does-not-exist.jsonl')), { ORCHESTRA_PIN_DIR: pinnedNew.pinDirPath });
-  check('pinned roster:"new": missing transcript file -> deny', decisionOf(rMissing).decision === 'deny', JSON.stringify(decisionOf(rMissing)));
+  const rMissing = runGuardNew(argvNewProj, opusEdit('x.js', path.join(argvNewProj, 'does-not-exist.jsonl')));
+  check('--roster new: missing transcript file -> deny', decisionOf(rMissing).decision === 'deny', JSON.stringify(decisionOf(rMissing)));
 
   // Valid JSON entries, but none of them assistant: genuinely "no assistant
   // yet" (undetermined), NOT corrupt -> legacy still stands down.
@@ -714,17 +781,17 @@ function case11_transcriptLatch() {
   check('haiku entry followed by a director entry -> DENY (director present anywhere wins)', decisionOf(rReverse).decision === 'deny', JSON.stringify(decisionOf(rReverse)));
 }
 
-function case12_malformedInputRosterAsymmetry() {
-  section('12. Malformed PreToolUse stdin: legacy fails open (unchanged), pinned roster:new denies');
+function case12_malformedInputArgvAsymmetry() {
+  section('12. Malformed PreToolUse stdin: legacy fails open (unchanged), --roster new argv denies');
 
   const legacyProj = tmpdir('orchestra-guard-');
   const rLegacy = runGuardRaw(legacyProj, '{bad');
   check('legacy: malformed stdin -> allow (fail open, unchanged)', decisionOf(rLegacy).decision === 'allow', JSON.stringify(decisionOf(rLegacy)));
 
-  const pinned = setupPinnedProject('new');
-  const rNew = runGuardRaw(pinned.proj, '{bad', { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+  const newProj = tmpdir('orchestra-guard-');
+  const rNew = runGuardRawNew(newProj, '{bad');
   const dNew = decisionOf(rNew);
-  check('pinned roster:"new": malformed stdin -> deny', dNew.decision === 'deny', JSON.stringify(dNew));
+  check('--roster new: malformed stdin -> deny', dNew.decision === 'deny', JSON.stringify(dNew));
   check('malformed-input denial names roster:new', /roster:new/.test(dNew.reason), dNew.reason);
 }
 
@@ -820,416 +887,153 @@ function case13_globPatternRejection() {
   check('the fail-closed rule still stands down for a non-director (Sonnet) session', decisionOf(rTightSonnet).decision === 'allow', JSON.stringify(decisionOf(rTightSonnet)));
 }
 
-function case14_manifestPin() {
-  section('14. Manifest pin: (a) unpinned legacy manifest honours loosening, (a\') unpinned "new" claim is UNTRUSTED-NEW, (b) trusted pin honours the manifest, (c) untrusted (mismatch) pin ignores loosening keys, (d) corrupt/forged pin is UNTRUSTED-NEW');
+function case14_pinIsTamperReceiptOnly() {
+  section('14. WO-14b leg 3R: the pin is a tamper RECEIPT only — it never selects roster and never gates which policy keys apply. (a) legacy honours loosening with no pin, and even with a pin claiming "new" (mode is argv-only); (b) --roster new ignores loosening even with a hash-matching pin naming it, and warns; (c) a pin/manifest mismatch appends a warning note without being the reason for the denial; (d) directorBlockedPatterns (tightening) is honoured unconditionally in both rosters');
 
-  // (a) No pin at all, manifest claims roster:LEGACY and loosens
-  // directorAllowedTools: unaffected by item 5 — this is the ordinary
-  // "unpinned legacy install" path, unchanged.
-  const unpinnedLegacyProj = tmpdir('orchestra-guard-');
-  const unpinnedLegacyTranscript = writeTranscript(unpinnedLegacyProj, [assistantTurn('claude-opus-4-8')]);
-  setManifest(unpinnedLegacyProj, { roster: 'legacy', directorAllowedTools: ['Grep'] });
-  const rUnpinnedLegacyGrep = runGuard(unpinnedLegacyProj, { tool_name: 'Grep', tool_input: {}, transcript_path: unpinnedLegacyTranscript });
-  check('(a) unpinned manifest roster:"legacy": loosening key (directorAllowedTools) still honoured', decisionOf(rUnpinnedLegacyGrep).decision === 'allow', JSON.stringify(decisionOf(rUnpinnedLegacyGrep)));
+  // (a) Legacy, no pin at all: loosening honoured.
+  const legacyNoPinProj = tmpdir('orchestra-guard-');
+  setManifest(legacyNoPinProj, { roster: 'legacy', directorAllowedTools: ['Grep'] });
+  const rLegacyNoPin = runGuard(legacyNoPinProj, { tool_name: 'Grep', tool_input: {} });
+  check('(a) legacy, no pin at all: directorAllowedTools (Grep) honoured -> allow', decisionOf(rLegacyNoPin).decision === 'allow', JSON.stringify(decisionOf(rLegacyNoPin)));
 
-  // (a') item 5a: no pin, manifest claims roster:"new" -> UNTRUSTED-NEW,
-  // fail closed. The loosening key is now DROPPED (the old test asserted
-  // it stayed honoured — that was the bypass).
-  const unpinnedNewProj = tmpdir('orchestra-guard-');
-  const unpinnedNewTranscript = writeTranscript(unpinnedNewProj, [assistantTurn('claude-opus-4-8')]);
-  setManifest(unpinnedNewProj, { roster: 'new', directorAllowedTools: ['Grep'] });
-  const rUnpinnedNewUndetermined = runGuard(unpinnedNewProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } });
-  check('(a\') unpinned manifest roster:"new": undetermined model -> DENY (fail closed, not forced legacy)', decisionOf(rUnpinnedNewUndetermined).decision === 'deny', JSON.stringify(decisionOf(rUnpinnedNewUndetermined)));
-  const rUnpinnedNewGrep = runGuard(unpinnedNewProj, { tool_name: 'Grep', tool_input: {}, transcript_path: unpinnedNewTranscript });
-  check('(a\') unpinned manifest roster:"new": loosening key (directorAllowedTools) DROPPED -> Grep still denied', decisionOf(rUnpinnedNewGrep).decision === 'deny', JSON.stringify(decisionOf(rUnpinnedNewGrep)));
-
-  // (b) Pin present, manifest hash matches: trust it fully; roster from the pin.
-  const trusted = setupPinnedProject('new', { directorAllowedTools: ['Grep', 'Bash'] });
-  const trustedTranscript = writeTranscript(trusted.proj, [assistantTurn('claude-opus-4-8')]);
-  const rTrustedUndetermined = runGuard(trusted.proj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: trusted.pinDirPath });
-  check('(b) trusted pin + roster:new: undetermined model -> deny', decisionOf(rTrustedUndetermined).decision === 'deny', JSON.stringify(decisionOf(rTrustedUndetermined)));
-  const rTrustedGrep = runGuard(trusted.proj, { tool_name: 'Grep', tool_input: {}, transcript_path: trustedTranscript }, { ORCHESTRA_PIN_DIR: trusted.pinDirPath });
-  check('(b) trusted manifest loosening (Grep) honoured', decisionOf(rTrustedGrep).decision === 'allow', JSON.stringify(decisionOf(rTrustedGrep)));
-  const rTrustedBash = runGuard(trusted.proj, { tool_name: 'Bash', tool_input: { command: 'echo hi' }, transcript_path: trustedTranscript }, { ORCHESTRA_PIN_DIR: trusted.pinDirPath });
+  // (a control) Legacy argv (no --roster new), even with a pin claiming
+  // roster:"new": still legacy, loosening still honoured — mode selection
+  // is argv-only, so the pin's own `roster` value is irrelevant to it.
+  const legacyWithNewPin = setupPinnedProject('new', { directorAllowedTools: ['Grep'] });
+  const rLegacyIgnoresPin = runGuard(legacyWithNewPin.proj, { tool_name: 'Grep', tool_input: {} }, { ORCHESTRA_PIN_DIR: legacyWithNewPin.pinDirPath });
   check(
-    'trusted manifest may NOT loosen Bash under roster:new even though directorAllowedTools names it',
-    decisionOf(rTrustedBash).decision === 'deny',
-    JSON.stringify(decisionOf(rTrustedBash))
+    '(a control) legacy argv, even with a pin claiming roster:"new": still legacy, loosening honoured',
+    decisionOf(rLegacyIgnoresPin).decision === 'allow',
+    JSON.stringify(decisionOf(rLegacyIgnoresPin))
   );
 
-  // item 7: Write/Edit/MultiEdit/NotebookEdit are ALSO unloosenable under
-  // roster:new now, even with a trusted manifest.
-  const unloosenable = setupPinnedProject('new', { directorAllowedTools: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Grep'] });
-  const unloosenableTranscript = writeTranscript(unloosenable.proj, [assistantTurn('claude-opus-4-8')]);
-  for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
+  // (b) --roster new argv: directorAllowedTools is IGNORED even with a
+  // fully hash-matching ("trusted") pin naming it — no manifest field can
+  // loosen roster:new policy any more.
+  const newPinned = setupPinnedProject('new', { directorAllowedTools: ['Grep'] });
+  const rNewIgnoresLoosening = runGuardNew(newPinned.proj, { tool_name: 'Grep', tool_input: {} }, { ORCHESTRA_PIN_DIR: newPinned.pinDirPath });
+  const dNewIgnoresLoosening = decisionOf(rNewIgnoresLoosening);
+  check('(b) --roster new: directorAllowedTools is IGNORED even with a hash-matching pin -> Grep still denied', dNewIgnoresLoosening.decision === 'deny', JSON.stringify(dNewIgnoresLoosening));
+  check(
+    '(b) the denial names the ignored loosening key',
+    /directorAllowedTools/.test(dNewIgnoresLoosening.reason) && /ignores every loosening key/.test(dNewIgnoresLoosening.reason),
+    dNewIgnoresLoosening.reason
+  );
+
+  // (b) The six previously-unloosenable tools are simply denied like every
+  // other BLOCKED tool now — there is no manifest state that changes that
+  // under roster:new, trusted pin or not.
+  for (const tool of ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
     const input = tool === 'MultiEdit'
-      ? { tool_name: tool, tool_input: { file_path: 'x.js', edits: [{ old_string: 'a', new_string: 'b' }] }, transcript_path: unloosenableTranscript }
-      : { tool_name: tool, tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b', content: 'x' }, transcript_path: unloosenableTranscript };
-    const rUnloosenable = runGuard(unloosenable.proj, input, { ORCHESTRA_PIN_DIR: unloosenable.pinDirPath });
-    check('(item 7) trusted manifest may NOT loosen ' + tool + ' under roster:new', decisionOf(rUnloosenable).decision === 'deny', JSON.stringify(decisionOf(rUnloosenable)));
-  }
-  const rUnloosenableGrep = runGuard(unloosenable.proj, { tool_name: 'Grep', tool_input: {}, transcript_path: unloosenableTranscript }, { ORCHESTRA_PIN_DIR: unloosenable.pinDirPath });
-  check('(item 7 control) Grep is still loosenable under roster:new (only the six named tools are not)', decisionOf(rUnloosenableGrep).decision === 'allow', JSON.stringify(decisionOf(rUnloosenableGrep)));
-
-  // (c) Pin present, manifest hash MISMATCH (tampered after pinning): untrusted.
-  const tampered = setupPinnedProject('new', { directorAllowedTools: ['Grep'] });
-  fs.writeFileSync(path.join(tampered.proj, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', directorAllowedTools: ['Grep', 'Bash'] }), 'utf8');
-  const tamperedTranscript = writeTranscript(tampered.proj, [assistantTurn('claude-opus-4-8')]);
-  const rTamperedGrep = runGuard(tampered.proj, { tool_name: 'Grep', tool_input: {}, transcript_path: tamperedTranscript }, { ORCHESTRA_PIN_DIR: tampered.pinDirPath });
-  const dTamperedGrep = decisionOf(rTamperedGrep);
-  check('(c) untrusted manifest (hash mismatch): loosening key ignored -> Grep still denied', dTamperedGrep.decision === 'deny', JSON.stringify(dTamperedGrep));
-  check('(c) untrusted-manifest denial names the hash mismatch', /manifest untrusted \(hash mismatch\)/.test(dTamperedGrep.reason), dTamperedGrep.reason);
-
-  // (c) Pin present, manifest DELETED entirely: still untrusted, roster from pin.
-  const deleted = setupPinnedProject('new', {});
-  fs.rmSync(path.join(deleted.proj, '.claude', 'orchestra.json'));
-  const rDeletedUndetermined = runGuard(deleted.proj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: deleted.pinDirPath });
-  const dDeleted = decisionOf(rDeletedUndetermined);
-  check('(c) pin present, manifest deleted: undetermined model still denies (roster from pin)', dDeleted.decision === 'deny', JSON.stringify(dDeleted));
-  check('(c) deleted-manifest denial names the untrusted reason', /manifest untrusted/.test(dDeleted.reason), dDeleted.reason);
-
-  // (c) Pin present, manifest TRUNCATED (invalid JSON): untrusted, deny.
-  const truncated = setupPinnedProject('new', {});
-  fs.writeFileSync(path.join(truncated.proj, '.claude', 'orchestra.json'), '{"roster":"new",', 'utf8');
-  const rTruncated = runGuard(truncated.proj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: truncated.pinDirPath });
-  check('(c) truncated manifest + undetermined model -> deny', decisionOf(rTruncated).decision === 'deny', JSON.stringify(decisionOf(rTruncated)));
-
-  // (d) item 5d: a malformed pin (bad roster value) is now UNTRUSTED-NEW —
-  // NEVER "no pin". The old test asserted this fell back to forced-legacy
-  // allow; that was the red team's "a corrupt pin is the same as no pin"
-  // CRITICAL. It now denies.
-  const badPin = tmpdir('orchestra-guard-');
-  const badPinDir = tmpdir('orchestra-guard-pindir-');
-  setManifest(badPin, { roster: 'new' });
-  // Otherwise schema-complete (item 2's strict-schema check must not be
-  // what trips this one — the ROSTER value itself is the defect here).
-  writePin(badPinDir, badPin, {
-    projectDir: fs.realpathSync(badPin),
-    manifestSha256: 'a'.repeat(64),
-    roster: 'not-a-real-value',
-    rosterGeneration: 1,
-    writtenAt: new Date().toISOString(),
-    by: 'install.js',
-  });
-  const rBadPin = runGuard(badPin, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: badPinDir });
-  const dBadPin = decisionOf(rBadPin);
-  check('(d) a malformed pin (invalid roster value) is UNTRUSTED-NEW, not "no pin" -> DENIES', dBadPin.decision === 'deny', JSON.stringify(dBadPin));
-  check('(d) malformed-pin denial names "invalid pin"', /invalid pin \(roster\)/.test(dBadPin.reason), dBadPin.reason);
-
-  // (d) item 2, leg-3 fix round 3A: strict pin schema. A pin that parses,
-  // sits at the correct path key, and even carries a recognized `roster`
-  // value is STILL invalid if it's missing required fields — this is the
-  // round-3 REVISE finding at guard:734: {"projectDir":<correct>,
-  // "roster":"legacy"} used to be accepted as a legacy mismatched pin and
-  // allow an undetermined-model Bash call.
-  const incompletePin = tmpdir('orchestra-guard-');
-  const incompletePinDir = tmpdir('orchestra-guard-pindir-');
-  setManifest(incompletePin, { roster: 'new' });
-  writePin(incompletePinDir, incompletePin, {
-    projectDir: fs.realpathSync(incompletePin),
-    roster: 'legacy',
-  });
-  const rIncomplete = runGuard(incompletePin, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: incompletePinDir });
-  const dIncomplete = decisionOf(rIncomplete);
-  check(
-    '(item 2) a structurally incomplete pin (no manifestSha256/rosterGeneration/writtenAt/by) is INVALID -> UNTRUSTED-NEW, Bash denied (undetermined model)',
-    dIncomplete.decision === 'deny',
-    JSON.stringify(dIncomplete)
-  );
-  check(
-    '(item 2) the denial names the invalid pin',
-    /invalid pin \(manifestSha256\)/.test(dIncomplete.reason),
-    dIncomplete.reason
-  );
-
-  // (d) item 5d: a nonexistent ORCHESTRA_PIN_DIR combined with a manifest
-  // claiming roster:new also denies (no pin dir == no pin, and a manifest
-  // claiming new with no pin is the (a') fail-closed case).
-  const noDirProj = tmpdir('orchestra-guard-');
-  setManifest(noDirProj, { roster: 'new' });
-  const nonexistentPinDir = path.join(tmpdir('orchestra-guard-parent-'), 'does-not-exist');
-  const rNoDir = runGuard(noDirProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: nonexistentPinDir });
-  check('(d) ORCHESTRA_PIN_DIR pointing at a nonexistent directory is treated as "no pin dir" -> DENIES (combined with manifest roster:new)', decisionOf(rNoDir).decision === 'deny', JSON.stringify(decisionOf(rNoDir)));
-
-  // (d) forged pin: written by hand with a projectDir naming a completely
-  // different path. Found by the PATH key (filename hash matches this
-  // project), but its own projectDir disagrees -> UNTRUSTED-NEW, denies.
-  const forgedProj = tmpdir('orchestra-guard-');
-  const forgedPinDir = tmpdir('orchestra-guard-pindir-');
-  const forgedManifestBytes = Buffer.from(JSON.stringify({ roster: 'legacy', directorAllowedTools: ['Bash'] }), 'utf8');
-  fs.mkdirSync(path.join(forgedProj, '.claude'), { recursive: true });
-  fs.writeFileSync(path.join(forgedProj, '.claude', 'orchestra.json'), forgedManifestBytes);
-  writePin(forgedPinDir, forgedProj, {
-    projectDir: 'C:/somewhere/else/entirely',
-    manifestSha256: crypto.createHash('sha256').update(forgedManifestBytes).digest('hex'),
-    roster: 'legacy',
-    by: 'ATTACKER',
-  });
-  const rForged = runGuard(forgedProj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: forgedPinDir });
-  const dForged = decisionOf(rForged);
-  check('(d) a forged pin (projectDir naming a different path) is UNTRUSTED-NEW, not trusted -> Bash still denied', dForged.decision === 'deny', JSON.stringify(dForged));
-}
-
-function case15_movedProject() {
-  section('15. Project id / moved project (item 6): a pin found by id whose projectDir differs from the current path is still trusted iff the manifest hash matches');
-
-  // Simulate a project that was pinned at one path, then moved to another.
-  // The manifest carries a stable projectId; the pin is looked up by the id
-  // key since the path-hash file won't exist for the new location.
-  const oldProj = tmpdir('orchestra-guard-old-');
-  const newProj = tmpdir('orchestra-guard-new-');
-  const pinDirPath = tmpdir('orchestra-guard-pindir-');
-  const projectId = 'stable-project-id-abc123';
-  const manifestObj = { roster: 'new', projectId };
-  const manifestBytes = Buffer.from(JSON.stringify(manifestObj), 'utf8');
-
-  // Write the manifest at the NEW location (where the project now lives).
-  fs.mkdirSync(path.join(newProj, '.claude'), { recursive: true });
-  fs.writeFileSync(path.join(newProj, '.claude', 'orchestra.json'), manifestBytes);
-
-  // The pin was minted while the project lived at oldProj -- its
-  // projectDir names the OLD path, and it's stored under the id key (since
-  // that's what a real installer does when re-pinning a moved project it
-  // recognizes by id, or what a fixture simulates directly here).
-  writePinById(pinDirPath, projectId, {
-    projectDir: fs.realpathSync(oldProj),
-    manifestSha256: crypto.createHash('sha256').update(manifestBytes).digest('hex'),
-    roster: 'new',
-    rosterGeneration: 1,
-    seats: {},
-    writtenAt: new Date().toISOString(),
-    by: 'install.js',
-  });
-
-  const rMoved = runGuard(newProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: pinDirPath });
-  const dMoved = decisionOf(rMoved);
-  check('a moved project (pin found by id, projectDir differs) is still ENFORCED (roster:new denies undetermined model)', dMoved.decision === 'deny', JSON.stringify(dMoved));
-  check('the moved-project denial names "project moved since pinning"', /project moved since pinning/.test(dMoved.reason), dMoved.reason);
-
-  // A director-model denial in the moved state also carries the note.
-  const movedTranscript = writeTranscript(newProj, [assistantTurn('claude-opus-4-8')]);
-  const rMovedDirector = runGuard(newProj, opusEdit('x.js', movedTranscript), { ORCHESTRA_PIN_DIR: pinDirPath });
-  const dMovedDirector = decisionOf(rMovedDirector);
-  check('a moved-but-trusted project still enforces normally for a director model', dMovedDirector.decision === 'deny', JSON.stringify(dMovedDirector));
-  check('and still carries the moved note', /project moved since pinning/.test(dMovedDirector.reason), dMovedDirector.reason);
-}
-
-function case16_agentSeam() {
-  section("16. Agent seam (leg 4c): PreToolUse(Agent) is delegated to the bridge gate under roster:new (verbatim), unchanged under legacy, fail-closed if the runtime can't load");
-
-  const { createRuntime } = require(path.join(MASTER, 'bridge', 'runtime.js'));
-
-  function installBridge(proj) {
-    const orchestraDir = path.join(proj, '.claude', 'orchestra');
-    for (const sub of ['bridge', 'router', 'registry', 'verifier', 'quartermaster']) {
-      fs.cpSync(path.join(MASTER, sub), path.join(orchestraDir, sub), { recursive: true });
-    }
-  }
-  function seedGreen(proj) {
-    const file = path.join(proj, '.claude', 'orchestra-pool-readings.jsonl');
-    const lines = ['AU-all', 'AU-opus', 'AU-fable', 'OU'].map((bucket) =>
-      JSON.stringify({ ts: new Date().toISOString(), kind: 'reading', bucket, remainingFraction: 0.95, source: 'guard.test.js fixture' })
-    );
-    fs.writeFileSync(file, lines.join('\n') + '\n');
-  }
-  // Item 6 (WO-14b leg-3 fix round 4): delegateAgentGate() now verifies the
-  // installed runtime.js bytes against pin.runtimeSha256 before require()
-  // — setupPinnedProject() writes a pin with no such field (it predates
-  // item 6), so any fixture that wants the seam to actually REACH the
-  // bridge (rather than deny on a missing/mismatched hash) must patch it in
-  // after installBridge() runs, from the SAME files just installed.
-  function patchPinRuntimeHashes(pinDirPath, projectDir) {
-    const real = fs.realpathSync(projectDir);
-    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
-    const pf = path.join(pinDirPath, hash + '.json');
-    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
-    const bridgeDir = path.join(projectDir, '.claude', 'orchestra', 'bridge');
-    pin.runtimeSha256 = {
-      'bridge/runtime.js': crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'runtime.js'))).digest('hex'),
-      'bridge/hooks/ticket-gate.js': crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'hooks', 'ticket-gate.js'))).digest('hex'),
-    };
-    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
+      ? { tool_name: tool, tool_input: { file_path: 'x.js', edits: [{ old_string: 'a', new_string: 'b' }] } }
+      : { tool_name: tool, tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b', content: 'x', command: 'echo hi' } };
+    const rTool = runGuardNew(newPinned.proj, input, { ORCHESTRA_PIN_DIR: newPinned.pinDirPath });
+    check('(b) --roster new: ' + tool + ' denied regardless of any manifest loosening', decisionOf(rTool).decision === 'deny', JSON.stringify(decisionOf(rTool)));
   }
 
-  // (a) roster:legacy -> Agent is not intercepted by the seam at all.
-  {
-    const legacyProj = tmpdir('orchestra-guard-agentseam-legacy-');
-    const r = runGuard(legacyProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'no ticket here', subagent_type: 'builder' } });
-    check('legacy: Agent is unaffected by the seam (allow, unchanged)', decisionOf(r).decision === 'allow', JSON.stringify(decisionOf(r)));
-  }
-
-  // (b) roster:new (trusted), bridge runtime present, a real ticket store:
-  // the guard's decision must match the bridge's own gate() exactly —
-  // verbatim passthrough of an ALLOW, a "no ticket" DENY, and a
-  // nested-spawn DENY, all with the bridge's OWN reasons, not a
-  // guard-authored one.
-  {
-    const pinned = setupPinnedProject('new');
-    installBridge(pinned.proj);
-    seedGreen(pinned.proj);
-    // The in-process dispatch() call below must resolve its owner pin from
-    // the SAME per-project pin dir setupPinnedProject() just wrote to (its
-    // own createRuntime()/manifest.js reads process.env.ORCHESTRA_PIN_DIR
-    // directly) — the subprocess runGuard() calls further down get it via
-    // extraEnv, but this in-process call needs the real env var swapped in
-    // and back out.
-    const savedPinDir = process.env.ORCHESTRA_PIN_DIR;
-    process.env.ORCHESTRA_PIN_DIR = pinned.pinDirPath;
-    const runtime = createRuntime({ projectDir: pinned.proj });
-    // class E1/T1 is deterministically never Q0-required (see
-    // tests/bridge.test.js's baseRequest() comment) — a plain single ticket.
-    const dispatchResult = runtime.dispatch({ class: 'E1', risk: 'T1', goal: 'fix the thing', acceptance_criteria: ['tests pass'] });
-    process.env.ORCHESTRA_PIN_DIR = savedPinDir;
-    // Item 6: patch the runtime hashes in AFTER dispatch() — the bridge's
-    // own ticket bookkeeping rewrites this same pin file as part of minting
-    // a ticket (it shares ORCHESTRA_PIN_DIR with the guard), which would
-    // otherwise clobber a hash patched in before it ran.
-    patchPinRuntimeHashes(pinned.pinDirPath, pinned.proj);
-    check('(fixture) dispatch() minted a real ticket', dispatchResult.ok === true, JSON.stringify(dispatchResult));
-    const ticketId = dispatchResult.ok && dispatchResult.tickets.implementation.id;
-    const subagentType = dispatchResult.ok && dispatchResult.spawn.subagent_type;
-
-    const rAllow = runGuard(pinned.proj, {
-      tool_name: 'Agent', tool_use_id: 'tu-seam-1',
-      tool_input: { description: 'x', prompt: 'TICKET=' + ticketId, subagent_type: subagentType },
-    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-    check('roster:new, valid ticket -> the seam ALLOWS (verbatim from the bridge gate)', decisionOf(rAllow).decision === 'allow', JSON.stringify(decisionOf(rAllow)));
-
-    const rDeny = runGuard(pinned.proj, {
-      tool_name: 'Agent', tool_use_id: 'tu-seam-2',
-      tool_input: { description: 'x', prompt: 'no ticket in this prompt', subagent_type: 'builder' },
-    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-    const dDeny = decisionOf(rDeny);
-    check('roster:new, unticketed spawn -> the seam DENIES (verbatim, "no TICKET" reason from the bridge)', dDeny.decision === 'deny' && /no TICKET/.test(dDeny.reason), JSON.stringify(dDeny));
-
-    const rNested = runGuard(pinned.proj, {
-      tool_name: 'Agent', tool_use_id: 'tu-seam-3', agent_id: 'some-subagent',
-      tool_input: { description: 'x', prompt: 'TICKET=' + ticketId, subagent_type: 'builder' },
-    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-    const dNested = decisionOf(rNested);
-    check('roster:new, nested spawn -> the seam DENIES (verbatim, "nested spawn" reason from the bridge)', dNested.decision === 'deny' && /nested spawn/.test(dNested.reason), JSON.stringify(dNested));
-  }
-
-  // (c) roster:new (trusted), bridge runtime MISSING -> fail closed, naming
-  // the load failure — never an ungated allow.
-  {
-    const pinned = setupPinnedProject('new');
-    // No .claude/orchestra/bridge/ installed at all.
-    const r = runGuard(pinned.proj, {
-      tool_name: 'Agent', tool_use_id: 'tu-seam-4',
-      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
-    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-    const d = decisionOf(r);
-    check('roster:new, bridge runtime missing -> the seam DENIES (fail closed, never an allow)', d.decision === 'deny', JSON.stringify(d));
-    check('...naming that the runtime could not be loaded', /could not be loaded/.test(d.reason), d.reason);
-  }
-
-  // (d) untrusted-but-new (pin present, manifest hash mismatch), bridge
-  // runtime present -> item 6 (WO-14b leg-3 fix round 4, CRITICAL): the
-  // seam no longer delegates here AT ALL — delegateAgentGate() only ever
-  // runs for the fully-trusted case (b); every other roster:new resolution,
-  // including this MISMATCH one, denies right at the call site in main(),
-  // named 'bridge runtime not trusted', without ever require()-ing
-  // runtime.js. (Before item 6, this used to reach the bridge and let ITS
-  // own manifest-untrusted logic deny instead — proving the seam engaged
-  // for every roster:'new' state. Item 6 makes that itself the bug: the
-  // bridge's own require() should never even be attempted here.)
-  {
-    const pinned = setupPinnedProject('new');
-    installBridge(pinned.proj);
-    patchPinRuntimeHashes(pinned.pinDirPath, pinned.proj);
-    fs.writeFileSync(path.join(pinned.proj, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }), 'utf8');
-    const r = runGuard(pinned.proj, {
-      tool_name: 'Agent', tool_use_id: 'tu-seam-5',
-      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
-    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-    const d = decisionOf(r);
-    check("untrusted-but-new + bridge present -> the seam DENIES OUTRIGHT (guard-level 'bridge runtime not trusted', never reaching the bridge)", d.decision === 'deny' && /bridge runtime not trusted/.test(d.reason), JSON.stringify(d));
-  }
-
-  // (e) unpinned manifest claiming "new" (loadPolicy() case a') -> the seam
-  // still engages (policy.roster === 'new' even though untrusted) and denies.
-  {
-    const proj = tmpdir('orchestra-guard-agentseam-unpinned-');
-    setManifest(proj, { roster: 'new' });
-    const r = runGuard(proj, {
-      tool_name: 'Agent', tool_use_id: 'tu-seam-6',
-      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
-    });
-    const d = decisionOf(r);
-    check('unpinned manifest claiming new -> the seam engages and DENIES (roster:new even though untrusted)', d.decision === 'deny', JSON.stringify(d));
-  }
-}
-
-function case16_gitRootPinKey() {
-  section('16. Third pin key: git-root commit (item 3, fix round 3A) — path -> id -> git-root lookup order; moved project + manifest replaced denies via the git-root pin alone');
-
-  const noGitProj = tmpdir('orchestra-guard-nogit-');
-  setManifest(noGitProj, { roster: 'legacy', directorAllowedTools: ['Grep'] });
-  const rNoGit = runGuard(noGitProj, { tool_name: 'Grep', tool_input: {} });
-  check(
-    'no git repo: git-root lookup skipped, falls through to unpinned-legacy rules (loosening honoured)',
-    decisionOf(rNoGit).decision === 'allow',
-    JSON.stringify(decisionOf(rNoGit))
-  );
-
-  const gitProj = tmpdir('orchestra-guard-git-');
-  const rootCommit = initGitRepoWithRootCommit(gitProj);
-  if (!rootCommit) {
-    check('git-root pin key (moved + replaced manifest)', true, 'SKIPPED — could not create a git repo / read its root commit in this environment');
-    return;
-  }
-  const gitPinDir = tmpdir('orchestra-guard-gitpindir-');
-  const goodManifestBytes = Buffer.from(JSON.stringify({ roster: 'new' }), 'utf8');
-  writePinByGitRoot(gitPinDir, rootCommit, {
-    projectDir: 'C:/some/old/location/before/the/move',
-    manifestSha256: crypto.createHash('sha256').update(goodManifestBytes).digest('hex'),
-    roster: 'new',
-    rosterGeneration: 1,
-    seats: {},
-    writtenAt: new Date().toISOString(),
-    by: 'install.js',
-  });
-  // Manifest at the CURRENT location has been replaced — a minimal legacy
-  // claim with no matching hash and no projectId, so the id key can't find
-  // it either. Only the git-root key resolves this pin.
-  setManifest(gitProj, { roster: 'legacy' });
-  const rGitMoved = runGuard(gitProj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: gitPinDir });
-  const dGitMoved = decisionOf(rGitMoved);
-  check('moved project + manifest replaced, resolved ONLY via the git-root pin key: DENY', dGitMoved.decision === 'deny', JSON.stringify(dGitMoved));
-  check('and the denial names "manifest untrusted"', /manifest untrusted/.test(dGitMoved.reason), dGitMoved.reason);
-  check('and carries the moved-project note (the git-root pin\u2019s own projectDir differs from here)', /project moved since pinning/.test(dGitMoved.reason), dGitMoved.reason);
-
-  // Control: the path key takes priority over a contradicting git-root pin
-  // when both exist for the same project.
-  const priorityProj = tmpdir('orchestra-guard-gitprio-');
-  const priorityRoot = initGitRepoWithRootCommit(priorityProj);
-  const priorityPinDir = tmpdir('orchestra-guard-gitpriopindir-');
-  const pathManifestObj = { roster: 'legacy', directorAllowedTools: ['Grep'] };
-  const pathManifestBytes = Buffer.from(JSON.stringify(pathManifestObj), 'utf8');
-  setManifest(priorityProj, pathManifestObj);
-  writePin(priorityPinDir, priorityProj, {
-    projectDir: fs.realpathSync(priorityProj),
-    manifestSha256: crypto.createHash('sha256').update(pathManifestBytes).digest('hex'),
+  // (c) A pin whose manifestSha256 no longer matches the manifest on disk
+  // appends a warning note but is never itself the reason for a denial —
+  // legacy denies (or stands down) for the ordinary reasons regardless.
+  const mismatchProj = tmpdir('orchestra-guard-');
+  const mismatchPinDir = tmpdir('orchestra-guard-pindir-');
+  setManifest(mismatchProj, { roster: 'legacy' });
+  writePin(mismatchPinDir, mismatchProj, {
+    projectDir: fs.realpathSync(mismatchProj),
+    manifestSha256: '0'.repeat(64),
     roster: 'legacy',
     rosterGeneration: 1,
     seats: {},
     writtenAt: new Date().toISOString(),
     by: 'install.js',
   });
-  if (priorityRoot) {
-    writePinByGitRoot(priorityPinDir, priorityRoot, {
-      projectDir: 'C:/elsewhere',
-      manifestSha256: 'f'.repeat(64),
-      roster: 'new',
-      rosterGeneration: 1,
-      seats: {},
-      writtenAt: new Date().toISOString(),
-      by: 'install.js',
-    });
-  }
-  const rPriority = runGuard(priorityProj, { tool_name: 'Grep', tool_input: {} }, { ORCHESTRA_PIN_DIR: priorityPinDir });
-  check('the path-keyed pin is found before the git-root key (loosening honoured, not roster:new)', decisionOf(rPriority).decision === 'allow', JSON.stringify(decisionOf(rPriority)));
+  const mismatchTranscript = writeTranscript(mismatchProj, [assistantTurn('claude-opus-4-8')]);
+  const rMismatchOpus = runGuard(mismatchProj, opusEdit('x.js', mismatchTranscript), { ORCHESTRA_PIN_DIR: mismatchPinDir });
+  const dMismatchOpus = decisionOf(rMismatchOpus);
+  check('(c) legacy, Opus session, pin/manifest mismatch: still denies for the ordinary Director-law reason (the pin never gates legacy enforcement)', dMismatchOpus.decision === 'deny', JSON.stringify(dMismatchOpus));
+  check('(c) the denial appends the pin-mismatch tamper note', /pin does not match the manifest/.test(dMismatchOpus.reason), dMismatchOpus.reason);
+
+  // (c) A CORRUPT pin file (unparseable) is also just a tamper note, never
+  // a mode change — legacy still stands down for an undetermined model.
+  const corruptPinProj = tmpdir('orchestra-guard-');
+  const corruptPinDir = tmpdir('orchestra-guard-pindir-');
+  fs.mkdirSync(corruptPinDir, { recursive: true });
+  const corruptHash = crypto.createHash('sha256').update(fs.realpathSync(corruptPinProj), 'utf8').digest('hex');
+  fs.writeFileSync(path.join(corruptPinDir, corruptHash + '.json'), '{not json', 'utf8');
+  const rCorruptPinLegacy = runGuard(corruptPinProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: corruptPinDir });
+  check('(c) legacy, corrupt pin file, undetermined model: still stands down (a corrupt pin never forces enforcement any more)', decisionOf(rCorruptPinLegacy).decision === 'allow', JSON.stringify(decisionOf(rCorruptPinLegacy)));
+
+  // (d) directorBlockedPatterns (tightening) is honoured unconditionally in
+  // BOTH rosters — it was never gated by pin/trust, and still isn't.
+  const tighteningLegacyProj = tmpdir('orchestra-guard-');
+  setManifest(tighteningLegacyProj, { roster: 'legacy', directorBlockedPatterns: ['mcp__blender__*'] });
+  const tighteningTranscript = writeTranscript(tighteningLegacyProj, [assistantTurn('claude-opus-4-8')]);
+  const rTighteningLegacy = runGuard(tighteningLegacyProj, { tool_name: 'mcp__blender__paint', tool_input: {}, transcript_path: tighteningTranscript });
+  check('(d) legacy: directorBlockedPatterns tightening honoured -> denied', decisionOf(rTighteningLegacy).decision === 'deny', JSON.stringify(decisionOf(rTighteningLegacy)));
+
+  const tighteningNewProj = tmpdir('orchestra-guard-');
+  setManifest(tighteningNewProj, { directorBlockedPatterns: ['mcp__blender__*'] });
+  const rTighteningNew = runGuardNew(tighteningNewProj, { tool_name: 'mcp__blender__paint', tool_input: {} });
+  check('(d) --roster new: directorBlockedPatterns tightening honoured too, no manifest state changes that', decisionOf(rTighteningNew).decision === 'deny', JSON.stringify(decisionOf(rTighteningNew)));
+}
+
+function case16_agentGateHookVerification() {
+  section('16. Agent (WO-14b leg 3R): legacy unaffected; --roster new denies nested spawns outright, verifies the four gate hook entries against the EXACT installer command line, denies if missing/altered/mismatched-matcher, allows (letting the host run the registered ticket-gate hooks) when they match, and a genuine pause releases Agent even with no gate registered at all');
+
+  // legacy: Agent unaffected regardless of settings.json content (none here).
+  const legacyProj = tmpdir('orchestra-guard-');
+  const rLegacyAgent = runGuard(legacyProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  check('legacy: Agent is unaffected by this guard (allow, unchanged)', decisionOf(rLegacyAgent).decision === 'allow', JSON.stringify(decisionOf(rLegacyAgent)));
+
+  // --roster new, no settings.json at all -> gate not registered -> deny.
+  const noSettingsProj = tmpdir('orchestra-guard-');
+  const rNoSettings = runGuardNew(noSettingsProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  const dNoSettings = decisionOf(rNoSettings);
+  check('--roster new, no settings.json: Agent DENIED (gate not registered)', dNoSettings.decision === 'deny', JSON.stringify(dNoSettings));
+  check('...names the missing registration', /not fully present|missing/.test(dNoSettings.reason), dNoSettings.reason);
+
+  // --roster new, nested spawn (agent_id present) -> DENY outright, even
+  // with a fully-registered gate.
+  const nestedProj = tmpdir('orchestra-guard-');
+  writeRegisteredGateSettings(nestedProj);
+  const rNested = runGuardNew(nestedProj, { tool_name: 'Agent', agent_id: 'some-subagent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  const dNested = decisionOf(rNested);
+  check('--roster new, nested spawn (agent_id present): DENIED outright', dNested.decision === 'deny', JSON.stringify(dNested));
+  check('...names it a nested spawn', /nested/i.test(dNested.reason), dNested.reason);
+
+  // --roster new, gate registered exactly as install.js writes it -> ALLOW.
+  const registeredProj = tmpdir('orchestra-guard-');
+  writeRegisteredGateSettings(registeredProj);
+  const rRegistered = runGuardNew(registeredProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  check('--roster new, all four gate hook entries registered exactly: Agent ALLOWED (host runs the ticket gate)', decisionOf(rRegistered).decision === 'allow', JSON.stringify(decisionOf(rRegistered)));
+
+  // --roster new, one entry ALTERED (different command string) -> DENY.
+  const alteredProj = tmpdir('orchestra-guard-');
+  writeRegisteredGateSettings(alteredProj, { alterEvent: 'Stop' });
+  const rAltered = runGuardNew(alteredProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  const dAltered = decisionOf(rAltered);
+  check('--roster new, Stop entry command altered: Agent DENIED', dAltered.decision === 'deny', JSON.stringify(dAltered));
+  check('...names the altered event', /Stop/.test(dAltered.reason), dAltered.reason);
+
+  // --roster new, PreToolUse entry present but missing matcher:"Agent" -> DENY.
+  const noMatcherProj = tmpdir('orchestra-guard-');
+  writeRegisteredGateSettings(noMatcherProj, { dropMatcher: true });
+  const rNoMatcher = runGuardNew(noMatcherProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  check('--roster new, gate entry missing its matcher:"Agent": Agent DENIED', decisionOf(rNoMatcher).decision === 'deny', JSON.stringify(decisionOf(rNoMatcher)));
+
+  // --roster new, one event entirely missing from settings.json -> DENY.
+  const omittedProj = tmpdir('orchestra-guard-');
+  writeRegisteredGateSettings(omittedProj, { omitEvent: 'SubagentStop' });
+  const rOmitted = runGuardNew(omittedProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  const dOmitted = decisionOf(rOmitted);
+  check('--roster new, SubagentStop entry entirely absent: Agent DENIED', dOmitted.decision === 'deny', JSON.stringify(dOmitted));
+  check('...names SubagentStop', /SubagentStop/.test(dOmitted.reason), dOmitted.reason);
+
+  // A genuine pause releases Agent too, even with no gate registered at all.
+  const pausedProj = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(pausedProj, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(pausedProj, '.claude', 'orchestra.pause'), '', 'utf8');
+  const rPausedAgent = runGuardNew(pausedProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  check('--roster new, genuine pause file, no gate registered at all: Agent ALLOWED (pause releases Agent too)', decisionOf(rPausedAgent).decision === 'allow', JSON.stringify(decisionOf(rPausedAgent)));
 }
 
 function case17_pauseOrderingHardlinkAndDirectory() {
@@ -1294,35 +1098,6 @@ function case17_pauseOrderingHardlinkAndDirectory() {
   check(
     'a pre-created DIRECTORY at the pause path is NOT honoured as a pause signal — guard still enforces',
     decisionOf(runGuard(preDirProj, opusEdit('src/index.js', preDirTranscript))).decision === 'deny',
-    ''
-  );
-}
-
-function case18_rosterNewFingerprintFailsClosed() {
-  section('18. Case (a) roster:new fingerprint (item A2): deleting the pin AND dropping/omitting roster still fails closed when install artifacts remain');
-
-  const pinned = setupPinnedProject('new', { directorAllowedTools: ['Bash', 'Write', 'Grep'] });
-  fs.mkdirSync(path.join(pinned.proj, '.claude', 'agents'), { recursive: true });
-  fs.writeFileSync(path.join(pinned.proj, '.claude', 'agents', 'architect.md'), '# architect', 'utf8');
-  fs.mkdirSync(path.join(pinned.proj, '.claude', 'orchestra'), { recursive: true });
-  fs.writeFileSync(path.join(pinned.proj, '.claude', 'ORCHESTRA-CONDUCTOR.md'), '# conductor', 'utf8');
-
-  fs.rmSync(pinned.pinDirPath, { recursive: true, force: true });
-  setManifest(pinned.proj, { directorAllowedTools: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'PowerShell', 'Grep', 'Glob'] });
-
-  const rBash = runGuard(pinned.proj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-  const dBash = decisionOf(rBash);
-  check('(A2) fingerprinted roster:new project, pin deleted + roster key dropped: Bash still DENIED', dBash.decision === 'deny', JSON.stringify(dBash));
-  check('(A2) the denial names the fingerprint reason', /installed roster:new project without a pin/.test(dBash.reason), dBash.reason);
-
-  const rWrite = runGuard(pinned.proj, { tool_name: 'Write', tool_input: { file_path: 'x.js', content: 'x' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
-  check('(A2) Write is also still DENIED', decisionOf(rWrite).decision === 'deny', JSON.stringify(decisionOf(rWrite)));
-
-  const legacyOnly = tmpdir('orchestra-guard-');
-  setManifest(legacyOnly, { directorAllowedTools: ['Grep'] });
-  check(
-    '(A2 control) a genuinely legacy-only project (no fingerprints) still honours loosening',
-    decisionOf(runGuard(legacyOnly, { tool_name: 'Grep', tool_input: {} })).decision === 'allow',
     ''
   );
 }
@@ -1435,60 +1210,6 @@ function case22_patternArrayCap() {
   );
 }
 
-function case23_copiedProjectLoosenBlocked() {
-  section('23. A verbatim copy of a pinned project does not inherit loosening keys via the id-pin trust transfer (item A7)');
-
-  const projectId = 'orchestra-guard-copy-test-id';
-  const manifestObj = { roster: 'new', projectId, directorPlanPatterns: ['docs/plans/*.md'] };
-  const manifestBytes = Buffer.from(JSON.stringify(manifestObj), 'utf8');
-  const pinDirPath = tmpdir('orchestra-guard-pindir-');
-
-  const originalProj = tmpdir('orchestra-guard-a7-orig-');
-  writePinById(pinDirPath, projectId, {
-    projectDir: fs.realpathSync(originalProj),
-    manifestSha256: crypto.createHash('sha256').update(manifestBytes).digest('hex'),
-    roster: 'new',
-    rosterGeneration: 1,
-    seats: {},
-    writtenAt: new Date().toISOString(),
-    by: 'install.js',
-  });
-
-  // The "copy": a DIFFERENT directory carrying a byte-for-byte identical
-  // manifest (same projectId) — exactly what copying `.claude/` verbatim
-  // produces. Its projectDir disagrees with the pin's (moved-shaped).
-  const copyProj = tmpdir('orchestra-guard-a7-copy-');
-  fs.mkdirSync(path.join(copyProj, '.claude'), { recursive: true });
-  fs.writeFileSync(path.join(copyProj, '.claude', 'orchestra.json'), manifestBytes);
-  fs.mkdirSync(path.join(copyProj, 'docs', 'plans'), { recursive: true });
-
-  check(
-    '(A7) the copy still enforces roster:new (Bash denied)',
-    decisionOf(runGuard(copyProj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinDirPath })).decision === 'deny',
-    ''
-  );
-
-  const copyTranscript = writeTranscript(copyProj, [assistantTurn('claude-opus-4-8')]);
-  const dCopyPlan = decisionOf(runGuard(copyProj, opusEdit('docs/plans/foo.md', copyTranscript), { ORCHESTRA_PIN_DIR: pinDirPath }));
-  check(
-    '(A7) the copy does NOT inherit the plan-pattern loosening via the id-pin trust transfer — plan write is DENIED',
-    dCopyPlan.decision === 'deny',
-    JSON.stringify(dCopyPlan)
-  );
-
-  // Control: the SAME manifest, honoured normally at a project pinned by
-  // PATH (not moved) — confirming the denial above is the moved/copy
-  // restriction specifically, not a general regression.
-  const pathPinned = setupPinnedProject('new', { directorPlanPatterns: ['docs/plans/*.md'] });
-  fs.mkdirSync(path.join(pathPinned.proj, 'docs', 'plans'), { recursive: true });
-  const pathTranscript = writeTranscript(pathPinned.proj, [assistantTurn('claude-opus-4-8')]);
-  check(
-    '(A7 control) a genuinely path-pinned project (not moved) still honours the same loosening key',
-    decisionOf(runGuard(pathPinned.proj, opusEdit('docs/plans/foo.md', pathTranscript), { ORCHESTRA_PIN_DIR: pathPinned.pinDirPath })).decision === 'allow',
-    ''
-  );
-}
-
 function case24_notebookEditPauseAndSidechainTruthy() {
   section('24. NotebookEdit in the pause-write deny set (item A8)');
 
@@ -1586,121 +1307,15 @@ function case27_pauseOrderingSubagentAndAgentSeam() {
   const pausedAgentProj = tmpdir('orchestra-guard-');
   fs.mkdirSync(path.join(pausedAgentProj, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(pausedAgentProj, '.claude', 'orchestra.pause'), '', 'utf8');
-  // roster:new claimed with no pin at all -> without the pause release,
-  // this state denies the Agent seam outright (item 6: manifestUntrusted).
-  setManifest(pausedAgentProj, { roster: 'new' });
+  // --roster new, no gate hook entries registered at all -> without the
+  // pause release, this state denies Agent outright (gate not registered).
   const dPausedAgent = decisionOf(
-    runGuard(pausedAgentProj, {
+    runGuardNew(pausedAgentProj, {
       tool_name: 'Agent',
-      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
+      tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' },
     })
   );
-  check('(item 9b) a genuine pause file releases an Agent PreToolUse too (allow, before the seam is ever reached)', dPausedAgent.decision === 'allow', JSON.stringify(dPausedAgent));
-}
-
-function case28_agentSeamRuntimeTrust() {
-  section('28. Agent seam trust gating (item 6, WO-14b leg-3 fix round 4, CRITICAL, red-team pass #3): delegateAgentGate() reached ONLY for a trusted pin; runtime.js hash-verified before require()');
-
-  function writeFakeRuntime(proj, source) {
-    const dir = path.join(proj, '.claude', 'orchestra', 'bridge');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'runtime.js'), source, 'utf8');
-    return path.join(dir, 'MARKER.txt');
-  }
-  // A fake runtime.js that proves it was require()'d by writing a marker
-  // file as TOP-LEVEL module code — this fires the instant require() loads
-  // the module, before gate() is ever called, so an absent marker proves
-  // require() itself never ran.
-  const FAKE_RUNTIME_SRC =
-    "const fs = require('fs'); const path = require('path');\n" +
-    "fs.writeFileSync(path.join(__dirname, 'MARKER.txt'), 'required', 'utf8');\n" +
-    "module.exports = { createRuntime: () => ({ gate: () => ({ hookSpecificOutput: " +
-    "{ hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'fake-allow' } }) }) };\n";
-
-  // Probe 1: a manifest claiming roster:new + rosterGeneration:0 with NO
-  // pin at all (loadPolicy() case a') plants the fake runtime — Agent must
-  // DENY and the marker must NOT be written (require() never reached).
-  {
-    const proj = tmpdir('orchestra-guard-');
-    setManifest(proj, { roster: 'new', rosterGeneration: 0 });
-    const marker = writeFakeRuntime(proj, FAKE_RUNTIME_SRC);
-    const d = decisionOf(
-      runGuard(proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } })
-    );
-    check('planted runtime under {rosterGeneration:0} without a pin -> Agent DENIED', d.decision === 'deny', JSON.stringify(d));
-    check('...and the marker was NOT written (require() never reached)', !fs.existsSync(marker), '');
-  }
-
-  // Probe 2: a fully-trusted pin, but runtime.js tampered with AFTER the
-  // pin was written (its hash no longer matches) -> DENY, 'bridge runtime
-  // not trusted', never require()d (marker absent).
-  {
-    const pinned = setupPinnedProject('new');
-    const bridgeDir = path.join(pinned.proj, '.claude', 'orchestra', 'bridge');
-    fs.mkdirSync(bridgeDir, { recursive: true });
-    fs.writeFileSync(path.join(bridgeDir, 'runtime.js'), FAKE_RUNTIME_SRC, 'utf8');
-    // Pin recorded a hash for the runtime as it existed at "install" time —
-    // simulate that with a hash that does NOT match the file above.
-    const real = fs.realpathSync(pinned.proj);
-    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
-    const pf = path.join(pinned.pinDirPath, hash + '.json');
-    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
-    pin.runtimeSha256 = { 'bridge/runtime.js': '0'.repeat(64), 'bridge/hooks/ticket-gate.js': '0'.repeat(64) };
-    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
-    const marker = path.join(bridgeDir, 'MARKER.txt');
-    const d = decisionOf(
-      runGuard(pinned.proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath })
-    );
-    check('trusted pin + tampered runtime.js (hash mismatch) -> DENIED, "bridge runtime not trusted"', d.decision === 'deny' && /bridge runtime not trusted/.test(d.reason), JSON.stringify(d));
-    check('...and the marker was NOT written (require() never reached)', !fs.existsSync(marker), '');
-  }
-
-  // Probe 3: trusted pin + matching hash -> delegated (require() DOES run,
-  // marker written, and the bridge's own gate() decision is returned
-  // verbatim). This is the same fixture shape as case16_agentSeam()'s (b),
-  // which already exercises the REAL bridge end to end; here a minimal fake
-  // runtime confirms the seam itself reaches require() when trust holds.
-  {
-    const pinned = setupPinnedProject('new');
-    const bridgeDir = path.join(pinned.proj, '.claude', 'orchestra', 'bridge');
-    fs.mkdirSync(bridgeDir, { recursive: true });
-    fs.writeFileSync(path.join(bridgeDir, 'runtime.js'), FAKE_RUNTIME_SRC, 'utf8');
-    const actualHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'runtime.js'))).digest('hex');
-    const real = fs.realpathSync(pinned.proj);
-    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
-    const pf = path.join(pinned.pinDirPath, hash + '.json');
-    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
-    pin.runtimeSha256 = { 'bridge/runtime.js': actualHash, 'bridge/hooks/ticket-gate.js': '0'.repeat(64) };
-    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
-    const marker = path.join(bridgeDir, 'MARKER.txt');
-    const d = decisionOf(
-      runGuard(pinned.proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath })
-    );
-    check('trusted pin + matching runtime.js hash -> delegated (fake gate() result returned verbatim, allow)', d.decision === 'allow', JSON.stringify(d));
-    check('...and the marker WAS written (require() actually ran)', fs.existsSync(marker), '');
-  }
-
-  // Extra: gate() returning a thenable or a non-plain-object is treated as
-  // deny, never guessed at.
-  {
-    const pinned = setupPinnedProject('new');
-    const bridgeDir = path.join(pinned.proj, '.claude', 'orchestra', 'bridge');
-    fs.mkdirSync(bridgeDir, { recursive: true });
-    const thenableSrc =
-      "module.exports = { createRuntime: () => ({ gate: () => Promise.resolve({}) }) };\n";
-    fs.writeFileSync(path.join(bridgeDir, 'runtime.js'), thenableSrc, 'utf8');
-    const actualHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(bridgeDir, 'runtime.js'))).digest('hex');
-    const real = fs.realpathSync(pinned.proj);
-    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
-    const pf = path.join(pinned.pinDirPath, hash + '.json');
-    const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
-    pin.runtimeSha256 = { 'bridge/runtime.js': actualHash };
-    fs.writeFileSync(pf, JSON.stringify(pin), 'utf8');
-    const d = decisionOf(
-      runGuard(pinned.proj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath })
-    );
-    check('gate() returning a thenable (Promise) -> DENIED, never guessed at', d.decision === 'deny', JSON.stringify(d));
-  }
+  check('(item 9b) a genuine pause file releases an Agent PreToolUse too (allow, before Agent handling is ever reached)', dPausedAgent.decision === 'allow', JSON.stringify(dPausedAgent));
 }
 
 // ------------------------------------------------------------------ driver
@@ -1721,7 +1336,7 @@ try {
   case1_mdRequiredBothRoutes();
   case2_symlinkEscapeDenied();
   case3_hintNamesConfiguredDirs();
-  case4_undeterminedModelRosterAsymmetry();
+  case4_rosterNewSelectedByArgvOnlyAlwaysActive();
   case5_transcriptStates();
   case6_fixedShapeUnchanged();
   case7_pauseHardening();
@@ -1729,24 +1344,19 @@ try {
   case9_hardlinkMemoryRoute();
   case10_hardlinkGenericNlink();
   case11_transcriptLatch();
-  case12_malformedInputRosterAsymmetry();
+  case12_malformedInputArgvAsymmetry();
   case13_globPatternRejection();
-  case14_manifestPin();
-  case15_movedProject();
-  case16_agentSeam();
-  case16_gitRootPinKey();
+  case14_pinIsTamperReceiptOnly();
+  case16_agentGateHookVerification();
   case17_pauseOrderingHardlinkAndDirectory();
-  case18_rosterNewFingerprintFailsClosed();
   case19_oversizedTranscriptHeadWindow();
   case20_truncationBirthtimeGate();
   case21_rootClaudeMdSelfEditNotFlaggedAsHardlink();
   case22_patternArrayCap();
-  case23_copiedProjectLoosenBlocked();
   case24_notebookEditPauseAndSidechainTruthy();
   case25_isSidechainStrictBoolean();
   case26_pauseNameNormalization();
   case27_pauseOrderingSubagentAndAgentSeam();
-  case28_agentSeamRuntimeTrust();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

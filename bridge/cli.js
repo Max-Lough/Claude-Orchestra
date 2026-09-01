@@ -8,6 +8,15 @@
  *   node bridge/cli.js dispatch <request.json>
  *   node bridge/cli.js gate <event> < payload.json
  *   node bridge/cli.js doctor
+ *   node bridge/cli.js init-store
+ *
+ * init-store (WO-14b leg 4 fix round, item 9): the ONLY lawful way to create
+ * a project's ticket store. The runtime never initialises a missing store
+ * implicitly — a missing/unreadable store is a typed STORE_UNAVAILABLE at
+ * dispatch()/gate()/requireTicket() instead. install.js --roster new must
+ * call this explicitly when it creates a fresh project (documented in
+ * bridge/README.md; the Conductor wires the actual install.js call site).
+ * Idempotent: a store that already exists is left untouched.
  *
  * CLAUDE_PROJECT_DIR (or cwd) selects the project whose .claude/orchestra.json
  * and ticket store this runs against, exactly like the hook and MCP adapters.
@@ -73,7 +82,13 @@ function main() {
     return;
   }
 
-  fail('usage: node bridge/cli.js <dispatch <request.json> | gate <event> | doctor>');
+  if (cmd === 'init-store') {
+    const result = runtime.initStore();
+    process.stdout.write(JSON.stringify({ ok: true, dir: result.dir }, null, 2) + '\n');
+    return;
+  }
+
+  fail('usage: node bridge/cli.js <dispatch <request.json> | gate <event> | doctor | init-store>');
 }
 
 main();

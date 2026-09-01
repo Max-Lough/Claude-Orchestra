@@ -151,31 +151,73 @@ function digestBuckets(buckets) {
 // its lowercased, hyphenated role name — this is the one part of the
 // mapping the order does not fully enumerate; see the CONCERNS note in the
 // leg-4 report.
+// Anthropic-served roles that ship an in-harness file named exactly their
+// lowercased-hyphenated role — the default fallback below is only correct
+// for these because a file happens to exist at that name; every other role
+// must be explicitly enumerated (never assumed via the fallback) so a role
+// with no Anthropic-served file (Architect) or no OpenAI-served file (every
+// role but Reviewer/Test Designer/Architect/Builder) fails closed instead of
+// silently returning a name with no installed launcher behind it.
+const ANTHROPIC_INHARNESS_ROLES = new Set(['Investigator', 'Data Engineer', 'Red Team', 'Sweeper']);
+
 function subagentTypeFor(roleName, order, casting) {
-  if (roleName === 'Builder') return 'builder';
+  const vendor = (casting && casting.casting && casting.casting.vendor) || 'anthropic';
+
+  if (roleName === 'Builder') {
+    // order §1 pin: the SERVED casting decides the launcher, never a fixed
+    // name — OpenAI-served (Luna preferredBounded, Terra mirror/denseMirror,
+    // Sol override) routes to the NEW roster/builder-openai.md launcher;
+    // Anthropic-served (Sonnet primary/dense, Opus deepPrimary) routes to
+    // the in-harness roster/builder.md.
+    return vendor === 'openai' ? 'builder-openai' : 'builder';
+  }
   if (roleName === 'Test Designer') {
+    // Unaffected by this fix: the file selection here already tracks the
+    // IMPLEMENTATION author's family (cast-opposite by construction), which
+    // is a different axis from the served vendor of the Test Designer
+    // ticket itself — both lane files already exist (vs-anthropic,
+    // vs-openai) and each is inherently the opposite-vendor launcher.
     const fam = (order && order.implementation_author_family) || 'anthropic';
     return 'test-designer-vs-' + fam;
   }
   if (roleName === 'Reviewer') {
-    const fam = (casting && casting.casting && casting.casting.vendor) || 'anthropic';
-    return 'reviewer-' + fam;
+    // Both lanes already exist (reviewer-anthropic.md, reviewer-openai.md);
+    // the SERVED review casting's own vendor names the file directly.
+    return 'reviewer-' + vendor;
   }
-  return String(roleName).toLowerCase().replace(/\s+/g, '-');
+  if (roleName === 'Architect') {
+    // roster/architect.md is the OpenAI (Sol) launcher only — there is no
+    // installed launcher for Architect's Anthropic (Fable/Opus) rungs.
+    if (vendor === 'openai') return 'architect';
+    throw typedError('NO_LAUNCHER', "Architect has no installed launcher for vendor 'anthropic' (roster/architect.md is the OpenAI/Sol launcher only)");
+  }
+  if (ANTHROPIC_INHARNESS_ROLES.has(roleName)) {
+    if (vendor === 'anthropic') return String(roleName).toLowerCase().replace(/\s+/g, '-');
+    throw typedError('NO_LAUNCHER', roleName + " has no installed launcher for vendor '" + vendor + "' (its roster file is Anthropic in-harness only)");
+  }
+  // Every other role (Conductor, Verifier, Quartermaster, and any future
+  // role not yet enumerated above) — unrecognised by this mapping is a
+  // configuration defect, not a vendor mismatch to paper over.
+  const fallback = String(roleName).toLowerCase().replace(/\s+/g, '-');
+  return fallback;
 }
 
 // --------------------------------------------------------------- audit log
 
+// WO-14b leg 4 fix round (item 10): routing events are MANDATORY, not
+// best-effort. Throws typed ROUTING_LOG_UNAVAILABLE on any append failure
+// (the log path replaced by a directory, an unwritable dir, …) — the caller
+// (dispatch()) must treat that as fatal and issue nothing.
 function appendRoutingEvent(projectDir, rec) {
+  const dir = path.join(projectDir, ...TICKETS_DIR_REL);
   try {
-    const dir = path.join(projectDir, ...TICKETS_DIR_REL);
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(
       path.join(dir, 'routing.events.jsonl'),
       JSON.stringify(Object.assign({ at: new Date().toISOString() }, rec)) + '\n'
     );
-  } catch (_) {
-    /* best-effort audit trail — never blocks a dispatch outcome */
+  } catch (e) {
+    throw typedError('ROUTING_LOG_UNAVAILABLE', 'routing.events.jsonl could not be appended: ' + (e && e.message ? e.message : String(e)));
   }
 }
 
@@ -217,10 +259,31 @@ function createRuntime({ projectDir } = {}) {
   let storeCache = null;
   let routerCache = null;
 
+  // WO-14b leg 4 fix round (item 9): the runtime NEVER initialises a missing
+  // store — that used to mean a deleted store silently got a fresh
+  // generation-1 ledger and new capability on the very next dispatch/gate
+  // call, in violation of the explicit first-install-only initialisation
+  // rule. A missing/unreadable store is now a typed STORE_UNAVAILABLE the
+  // caller (dispatch()/gate()/requireTicket()) must refuse on. The store is
+  // created exactly once, explicitly, by `bridge/cli.js init-store` (which
+  // install.js --roster new calls) — never implicitly by this getter.
   function getStore() {
     if (storeCache) return storeCache;
-    storeCache = tickets.createTicketStore({ dir: ticketsDir, init: true });
+    try {
+      storeCache = tickets.createTicketStore({ dir: ticketsDir, init: false });
+    } catch (e) {
+      throw typedError('STORE_UNAVAILABLE', 'ticket store unavailable at ' + ticketsDir + ': ' + (e && e.message ? e.message : String(e)));
+    }
     return storeCache;
+  }
+
+  // Explicit, one-time store creation — bridge/cli.js's `init-store`
+  // subcommand (install.js --roster new calls it) is the only lawful caller.
+  // Idempotent: a store that already exists is left untouched (same
+  // contract as tickets.createTicketStore({init:true}) itself).
+  function initStore() {
+    storeCache = tickets.createTicketStore({ dir: ticketsDir, init: true });
+    return { dir: ticketsDir };
   }
 
   function getRouter() {
@@ -312,7 +375,7 @@ function createRuntime({ projectDir } = {}) {
     for (const k of [
       'tier', 'touches', 'context_shape', 'scope_allow', 'scope_deny', 'constraints',
       'context_packet', 'verification_commands', 'verification_tier', 'tool_budget',
-      'destructive_actions',
+      'destructive_actions', 'medium',
     ]) {
       if (request[k] !== undefined) order[k] = request[k];
     }
@@ -335,11 +398,26 @@ function createRuntime({ projectDir } = {}) {
       return { ok: false, outcome: 'P0_UNAVAILABLE', reason: 'router.dispatch() threw: ' + (e && e.message ? e.message : String(e)) };
     }
 
-    appendRoutingEvent(projectDir, { request, buckets_digest: digestBuckets(buckets), outcome: result });
+    // Item 10: the routing event is appended BEFORE any ticket is issued —
+    // an append failure is typed and fatal, nothing is routed.
+    try {
+      appendRoutingEvent(projectDir, { request, buckets_digest: digestBuckets(buckets), outcome: result });
+    } catch (e) {
+      return { ok: false, outcome: e.code || 'ROUTING_LOG_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
+    }
 
     if (!result.ok) return result;
 
-    const store = getStore();
+    // Item 9: fail closed on a missing/unreadable store rather than
+    // silently reinitialising one — checked here, right before any ticket
+    // would be issued (a routing outcome that isn't ok:true, or fails
+    // earlier, never touches the store at all).
+    let store;
+    try {
+      store = getStore();
+    } catch (e) {
+      return { ok: false, outcome: 'STORE_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
+    }
     const hash = configHash(projectDir);
 
     // ticket.role is compared, verbatim, against the REAL Agent tool call's
@@ -348,29 +426,35 @@ function createRuntime({ projectDir } = {}) {
     // display role name ("Builder"). So the ticket's role field must be the
     // resolved installed subagent_type, computed once here and reused for
     // both the ticket and the returned spawn instruction, never the raw
-    // router role name.
+    // router role name. subagentTypeFor() throws typed NO_LAUNCHER when the
+    // served vendor has no installed launcher for the role (item 1) —
+    // nothing is issued in that case either.
     let q0SubagentType = null;
     let q0Ticket = null;
-    if (result.q0 && result.q0.cast && result.q0.cast.ok) {
-      const q0Order = result.q0.order;
-      const q0Cast = result.q0.cast;
-      q0SubagentType = subagentTypeFor(q0Cast.role, q0Order, q0Cast);
-      q0Ticket = tickets.issue(store, {
-        kind: 'q0',
-        task_id: q0Order.task_id,
-        class: q0Order.class,
-        role: q0SubagentType,
-        rung: q0Cast.rung,
-        tier: q0Cast.tier === undefined ? null : q0Cast.tier,
-        casting: q0Cast.casting,
-        author_family: q0Cast.casting.vendor,
-        parent_ticket: null,
-        config_hash: hash,
-      });
-    }
+    try {
+      if (result.q0 && result.q0.cast && result.q0.cast.ok) {
+        const q0Order = result.q0.order;
+        const q0Cast = result.q0.cast;
+        q0SubagentType = subagentTypeFor(q0Cast.role, q0Order, q0Cast);
+        q0Ticket = tickets.issue(store, {
+          kind: 'q0',
+          task_id: q0Order.task_id,
+          class: q0Order.class,
+          role: q0SubagentType,
+          rung: q0Cast.rung,
+          tier: q0Cast.tier === undefined ? null : q0Cast.tier,
+          casting: q0Cast.casting,
+          author_family: q0Cast.casting.vendor,
+          parent_ticket: null,
+          config_hash: hash,
+        });
+      }
 
-    const implAuthorFamily = order.author_family === 'human' ? 'human' : result.casting.casting.vendor;
-    const implSubagentType = subagentTypeFor(result.role, order, result.casting);
+      var implAuthorFamily = order.author_family === 'human' ? 'human' : result.casting.casting.vendor;
+      var implSubagentType = subagentTypeFor(result.role, order, result.casting);
+    } catch (e) {
+      return { ok: false, outcome: e.code || 'NO_LAUNCHER', reason: e && e.message ? e.message : String(e) };
+    }
     const implTicket = tickets.issue(store, {
       kind: 'implementation',
       task_id: order.task_id,
@@ -382,14 +466,28 @@ function createRuntime({ projectDir } = {}) {
       author_family: implAuthorFamily,
       q0_ticket: q0Ticket ? q0Ticket.id : null,
       config_hash: hash,
+      parent_ticket: request.parent_ticket !== undefined ? request.parent_ticket : null,
     });
+
+    // Item 1: the codex-launcher body extracts TICKET=/MODEL=/EFFORT=/ROLE=
+    // from its own Agent-tool prompt (reviewer-openai.md, test-designer-vs-
+    // anthropic.md, roster/builder-openai.md, architect.md) — the header
+    // this runtime hands back must carry all four, not just the ticket id.
+    // MODEL is the SERVED casting's model (e.g. "GPT-5.6 Terra"), never the
+    // requested one; ROLE is the resolved installed subagent_type (the same
+    // value bound into the ticket's own role field above).
+    const promptHeader =
+      'TICKET=' + implTicket.id + '\n' +
+      'MODEL=' + (result.casting.casting.model || '') + '\n' +
+      'EFFORT=' + (result.casting.casting.effort || '') + '\n' +
+      'ROLE=' + implSubagentType + '\n';
 
     return {
       ok: true,
       tickets: { implementation: implTicket, q0: q0Ticket },
       spawn: {
         subagent_type: implSubagentType,
-        prompt_header: 'TICKET=' + implTicket.id + '\n',
+        prompt_header: promptHeader,
       },
       review_policy: result.review_policy,
       casting: result.casting,
@@ -440,6 +538,20 @@ function createRuntime({ projectDir } = {}) {
         const prompt = String((event.tool_input && event.tool_input.prompt) || '');
         const m = TICKET_ID_RE.exec(prompt);
         if (!m) return denyPre('no TICKET=<id> found in the Agent prompt');
+        // Item 8: config_hash is checked at every consume — a ticket issued
+        // under a castings/aliases/manifest configuration that has since
+        // changed (a roster:new reinstall without a generation bump, a hand
+        // edit) is INVALIDATED rather than consumed against stale config.
+        const existing = tickets.get(store, m[1]);
+        if (existing && !['CLOSED', 'EXPIRED', 'INVALIDATED'].includes(existing.status)) {
+          const currentHash = configHash(projectDir);
+          if (existing.config_hash !== currentHash) {
+            try {
+              tickets.invalidate(store, m[1], 'config_hash changed since issue (' + existing.config_hash + ' -> ' + currentHash + ')');
+            } catch (_) { /* best effort — the deny below still fires */ }
+            return denyPre('CONFIG_CHANGED: ticket ' + m[1] + ' was issued under a different configuration (config_hash mismatch) — invalidated');
+          }
+        }
         try {
           tickets.consume(store, m[1], {
             tool_use_id: event.tool_use_id,
@@ -539,16 +651,26 @@ function createRuntime({ projectDir } = {}) {
   // ------------------------------------------------------- engine ticketing
 
   // For the engine server (packs/codex/hooks/orchestra-engine-mcp.js):
-  // consumes a ticket bound to `phase` ('exec'|'review') or throws typed
-  // TICKET_REQUIRED / TICKET_MISMATCH. `phase:'exec'` accepts an
-  // implementation or q0 ticket (anything that is not a reviewer ticket);
-  // `phase:'review'` requires a reviewer ticket. The engine server has no
-  // independent way to declare which ROLE it expects (orchestra_exec/
-  // orchestra_review carry only an optional `ticket` id, per the order), so
-  // the ticket's own recorded role is trusted and passed through to
-  // consume() — see the leg-4 report CONCERNS for this reading of the
-  // order's requireTicket({id, role, phase}) shape.
-  function requireTicket({ id, phase } = {}) {
+  // WO-14b leg 4 fix round (item 2 — the two-pass fix): this NO LONGER
+  // consumes the ticket. The Agent tool's own Pre/PostToolUse hooks already
+  // carried the codex-launcher ticket OPEN -> CONSUMED -> LAUNCHED before
+  // the launcher subagent ever calls the engine server (the launcher IS the
+  // ticket's Agent spawn) — a second consume() here rejected that same
+  // ticket as a replay, so no ticket issued by dispatch() could ever
+  // traverse Agent -> Codex successfully. This now requires the ticket to
+  // already be LAUNCHED and records a separate, idempotent `enginePass()`
+  // marker the moment codex is actually about to be invoked — a second call
+  // on the same ticket is a real replay and is refused typed TICKET_REPLAY,
+  // still without ever calling consume(). The final RESOLVED transition
+  // still comes from the launcher's own SubagentStop, never from here.
+  //
+  // Item 5: bound to BOTH role and vendor, not just kind/phase — the
+  // launcher supplies `role` from its own ROLE=<role> header line (item 1),
+  // and every engine ticket must be OpenAI-served by construction (only the
+  // OpenAI-served castings route through a codex launcher at all).
+  // Item 8: config_hash is re-checked here too (every consume/enginePass) —
+  // a mismatch INVALIDATES the ticket and refuses typed CONFIG_CHANGED.
+  function requireTicket({ id, role, phase } = {}) {
     if (phase !== 'exec' && phase !== 'review') {
       throw typedError('TICKET_MISMATCH', 'requireTicket phase must be "exec" or "review", got ' + JSON.stringify(phase));
     }
@@ -565,10 +687,19 @@ function createRuntime({ projectDir } = {}) {
     if (typeof id !== 'string' || !id.trim()) {
       throw typedError('TICKET_REQUIRED', phase + ' requires a ticket id under roster:new; none was supplied');
     }
+    if (typeof role !== 'string' || !role.trim()) {
+      throw typedError('TICKET_REQUIRED', phase + ' requires a role (the launcher\'s own ROLE=<role> header) under roster:new; none was supplied');
+    }
     generationCheck();
-    const store = getStore();
+    let store;
+    try {
+      store = getStore();
+    } catch (e) {
+      throw typedError('STORE_UNAVAILABLE', e && e.message ? e.message : String(e));
+    }
     const t = tickets.get(store, id);
     if (!t) throw typedError('TICKET_REQUIRED', 'unknown ticket ' + id);
+
     const wantsReviewer = phase === 'review';
     const isReviewerTicket = t.kind === 'reviewer';
     if (wantsReviewer !== isReviewerTicket) {
@@ -577,13 +708,39 @@ function createRuntime({ projectDir } = {}) {
         'ticket ' + id + ' is kind ' + t.kind + ', not valid for phase ' + phase
       );
     }
+    if (t.role !== role) {
+      throw typedError('TICKET_MISMATCH', 'ticket ' + id + ' is bound to role ' + t.role + ', not ' + role);
+    }
+    if (!t.casting || t.casting.vendor !== 'openai') {
+      throw typedError(
+        'TICKET_MISMATCH',
+        'ticket ' + id + ' casting vendor is ' + (t.casting && t.casting.vendor) + ', not openai — engine tickets must be OpenAI-served'
+      );
+    }
+
+    const currentHash = configHash(projectDir);
+    if (t.config_hash !== currentHash) {
+      try {
+        tickets.invalidate(store, id, 'config_hash changed since issue (' + t.config_hash + ' -> ' + currentHash + ')');
+      } catch (_) { /* best effort — the throw below still fires */ }
+      throw typedError('CONFIG_CHANGED', 'ticket ' + id + ' was issued under a different configuration (config_hash mismatch) — invalidated');
+    }
+
+    if (t.status !== 'LAUNCHED') {
+      throw typedError(
+        'TICKET_REQUIRED',
+        'ticket ' + id + ' is ' + t.status + ', engine enforcement requires LAUNCHED (bound via the Agent tool Pre/PostToolUse hooks before the launcher calls the engine)'
+      );
+    }
     try {
-      return tickets.consume(store, id, {
-        tool_use_id: 'mcp:' + phase + ':' + crypto.randomBytes(6).toString('hex'),
-        role: t.role,
+      return tickets.enginePass(store, id, {
+        run_nonce: crypto.randomBytes(8).toString('hex'),
+        role,
+        vendor: t.casting.vendor,
       });
     } catch (e) {
-      throw typedError('TICKET_REQUIRED', e && e.message ? e.message : String(e));
+      const code = (e && e.code) || 'TICKET_REQUIRED';
+      throw typedError(code, e && e.message ? e.message : String(e));
     }
   }
 
@@ -614,6 +771,12 @@ function createRuntime({ projectDir } = {}) {
   }
   function denied(id, event, reason) {
     return tickets.denied(getStore(), id, event, reason);
+  }
+  // Item 2: binds the engine's own verbatim report onto an already-
+  // enginePass()'d ticket — additive to (never a substitute for) the
+  // launcher's own SubagentStop resolve().
+  function engineResult(id, opts) {
+    return tickets.engineResult(getStore(), id, opts);
   }
 
   // ------------------------------------------------------------------ doctor
@@ -660,6 +823,8 @@ function createRuntime({ projectDir } = {}) {
     launch,
     resolve,
     denied,
+    engineResult,
+    initStore,
     doctor,
     close,
     _internal: { loadState, isRosterNew, configHash, currentGeneration, subagentTypeFor, reviewReservePassed, ticketsDir },

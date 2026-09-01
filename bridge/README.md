@@ -28,9 +28,18 @@ same file works unmodified from the source tree and from the installed copy.
 - `hooks/ticket-gate.js` — the PreToolUse/PostToolUse/SubagentStop/Stop hook
   script installed under `roster:new`. Exit 0 always; decisions live in the
   JSON on stdout, never in the exit code, so a crash cannot fail a gate open.
-- `cli.js` — `dispatch`/`gate`/`doctor` twins over the same core, for tests
-  and operators. **Not evidence of installed MCP or Agent reachability** —
-  that is leg 6/7's job.
+- `cli.js` — `dispatch`/`gate`/`doctor`/`init-store` twins over the same
+  core, for tests and operators. **Not evidence of installed MCP or Agent
+  reachability** — that is leg 6/7's job. `init-store` (fix-round item 9) is
+  the ONLY lawful way to create a project's ticket store — the runtime
+  itself never does this implicitly (a missing/unreadable store is a typed
+  `STORE_UNAVAILABLE` at `dispatch()`/`gate()`/`requireTicket()` instead).
+  **`install.js --roster new` MUST call `node bridge/cli.js init-store`
+  (or the equivalent `runtime.initStore()`) against the freshly-installed
+  project as part of creating it** — this leg only adds and documents the
+  command; wiring the actual `install.js` call site is the Conductor's job
+  (not yet done as of this fix round — check before relying on a fresh
+  `--roster new` install having a store).
 
 ## What is NOT here yet
 

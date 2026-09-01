@@ -1140,7 +1140,12 @@ const HOOK_ENTRY = {
 // the guard's, via isOurGateHookEntry() below — so a re-run replaces rather
 // than duplicates them, and a user's own entries for these same four events
 // are always left untouched.
-const GATE_HOOK_MARK = 'ticket-gate.js';
+// WO-14b leg 4 fix round (item 11): the FULL relative path our own
+// gateHookEntry() writes below, never the bare basename — a user's own hook
+// command (e.g. `node tools/ticket-gate.js`) contains the basename but not
+// this path, so isOurGateHookEntry() no longer misclassifies it as ours and
+// wrongly removes it on install/legacy-flip/uninstall.
+const GATE_HOOK_MARK = '.claude/orchestra/bridge/hooks/ticket-gate.js';
 const GATE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop'];
 function gateHookEntry(eventName) {
   const entry = {

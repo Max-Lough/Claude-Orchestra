@@ -36,6 +36,17 @@ function blockStop(reason) {
 
 const label = process.argv[2] || '';
 
+// WO-14b leg 4 fix round (item 12): roster state is read FIRST, before
+// stdin is even parsed — a malformed payload under legacy (or no manifest
+// at all) must be inert `{}` (the gate has nothing to enforce there), not a
+// deny/block; only under roster:new is malformed input a denial/block. The
+// old order (parse stdin, deny/block immediately on failure) denied a
+// legacy project's own malformed-but-harmless hook traffic before ever
+// checking whether there was anything to enforce.
+const { createRuntime } = require(path.join(__dirname, '..', 'runtime.js'));
+const runtime = createRuntime({ projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd() });
+const isRosterNew = runtime._internal.isRosterNew(runtime._internal.loadState(process.env.CLAUDE_PROJECT_DIR || process.cwd()));
+
 let raw = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (c) => { raw += c; });
@@ -45,14 +56,13 @@ process.stdin.on('end', () => {
     event = JSON.parse(raw);
     if (!event || typeof event !== 'object') event = {};
   } catch (e) {
-    if (label === 'Stop') return blockStop('malformed hook input on Stop — blocking rather than allowing an unverified stop');
-    return denyPre('malformed hook input on ' + label);
+    if (!isRosterNew) return out({}); // legacy/no-manifest: inert — nothing to enforce
+    if (label === 'Stop') return blockStop('malformed hook input on Stop under roster:new — blocking rather than allowing an unverified stop');
+    return denyPre('malformed hook input on ' + label + ' under roster:new');
   }
   if (!event.hook_event_name) event.hook_event_name = label;
 
   try {
-    const { createRuntime } = require(path.join(__dirname, '..', 'runtime.js'));
-    const runtime = createRuntime({ projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd() });
     const result = runtime.gate(event);
     if (result && result.inert) return out({});
     return out(result);

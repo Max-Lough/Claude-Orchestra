@@ -134,12 +134,15 @@ jobs:
         # end (dispatch -> Pre consume -> Post launch -> SubagentStop resolve
         # -> Stop not blocked), every Pre denial class, generation
         # invalidation, Q0-before-implementation ordering, DISABLED-seat
-        # passthrough, and — leg 4b — the owner-pinned manifest: no pin
-        # forces roster:legacy (inert gate) regardless of what the manifest
-        # says, and a pin present with a manifest hash mismatch fails every
-        # gate/dispatch/ticket decision closed rather than trusting a
-        # tamperable in-project file (roster/wo14b-leg3-redteam-1.md's [HIGH]
-        # finding).
+        # passthrough, and — leg 4b — the owner-pinned manifest: no pin with
+        # a manifest that claims roster:"new" (or an installed roster:new
+        # fingerprint with no manifest at all) is untrusted-new / fail
+        # closed — never a silent downgrade to legacy; only a manifest that
+        # is absent or itself claims legacy, with no pin and no install
+        # fingerprint, reads as unpinned legacy (inert gate). A pin present
+        # with a manifest hash mismatch likewise fails every gate/dispatch/
+        # ticket decision closed rather than trusting a tamperable
+        # in-project file (roster/wo14b-leg3-redteam-1.md's [HIGH] finding).
         run: node tests/bridge.test.js
 
       - name: Quartermaster suite

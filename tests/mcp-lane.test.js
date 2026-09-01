@@ -802,14 +802,49 @@ async function case10() {
   }));
 
   const T = require(path.join(MASTER, 'router', 'tickets.js'));
+  const { createRuntime } = require(path.join(MASTER, 'bridge', 'runtime.js'));
   const store = T.createTicketStore({ dir: path.join(orchestraDir, 'tickets'), init: true });
-  const CFG_HASH = crypto.createHash('sha256').update('mcp-lane case10 fixture').digest('hex');
+  // WO-14b leg 4 fix round (item 8): config_hash must match what the runtime
+  // itself computes (castings+aliases+manifest bytes) or every consume/
+  // enginePass refuses CONFIG_CHANGED before the scenario under test is even
+  // reached — _internal.configHash() is the exact same function runtime.js
+  // uses, so this is not a reimplementation.
+  const CFG_HASH = createRuntime({ projectDir: fx.repo })._internal.configHash(fx.repo);
+  const ENGINE_ROLE = 'test-designer-vs-anthropic'; // a real OpenAI-served codex-launcher role name
   function issueTicket(overrides) {
     return T.issue(store, Object.assign({
-      kind: 'implementation', task_id: 'mcp-lane-case10', class: 'E2', role: 'codex-exec',
-      rung: 'primary', casting: { vendor: 'openai', model: 'gpt-5.6-terra', effort: 'med' },
+      kind: 'implementation', task_id: 'mcp-lane-case10', class: 'Q0', role: ENGINE_ROLE,
+      rung: 'vsAnthropicAuthor', casting: { vendor: 'openai', model: 'GPT-5.6 Terra', effort: 'med' },
       author_family: 'openai', config_hash: CFG_HASH,
     }, overrides || {}));
+  }
+  // WO-14b leg 4 fix round (item 2 — the two-pass fix): the engine server no
+  // longer consume()s a ticket — it requires one already LAUNCHED via the
+  // Agent tool's own Pre/PostToolUse hooks, exactly as a real launcher spawn
+  // would produce. Drives runtime.gate() directly (bypassing a real Agent
+  // tool call, same technique tests/bridge.test.js uses) against the SAME
+  // on-disk store the MCP child process below also opens.
+  function driveToLaunched(ticket) {
+    const savedPinDir = process.env.ORCHESTRA_PIN_DIR;
+    process.env.ORCHESTRA_PIN_DIR = pinDir;
+    try {
+      const rt = createRuntime({ projectDir: fx.repo });
+      const pre = rt.gate({
+        hook_event_name: 'PreToolUse', tool_name: 'Agent',
+        tool_input: { description: 'launch', prompt: 'TICKET=' + ticket.id, subagent_type: ticket.role },
+        tool_use_id: 'tu-' + ticket.id,
+      });
+      if (!(pre.hookSpecificOutput && pre.hookSpecificOutput.permissionDecision === 'allow')) {
+        throw new Error('driveToLaunched(): PreToolUse did not allow: ' + JSON.stringify(pre));
+      }
+      rt.gate({
+        hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: 'tu-' + ticket.id,
+        tool_input: {}, tool_response: { isAsync: true, status: 'async_launched', agentId: 'agent-' + ticket.id, resolvedModel: 'gpt-5.6-terra' },
+      });
+    } finally {
+      process.env.ORCHESTRA_PIN_DIR = savedPinDir;
+    }
+    return ticket;
   }
 
   // STUB_CODEX_ATTEMPT_FILE doubles as an invocation counter here: the stub
@@ -837,41 +872,94 @@ async function case10() {
     check('no ticket -> the stub was never invoked', invocationCount(af) === 0, 'invocations=' + invocationCount(af));
   }
 
-  // --- 10b. a valid exec-phase ticket -> stub invoked once, ticket ends
-  //     RESOLVED with launched.agent_id === 'codex:' + the report's own nonce.
+  // --- 10b. a ticket already LAUNCHED (via the Agent tool's own hooks,
+  //     exactly like a real launcher spawn) -> the FIRST orchestra_exec
+  //     records enginePass(), the stub is invoked once, and the ticket ends
+  //     LAUNCHED (NOT RESOLVED — leg-4-fix-round item 2: the real RESOLVED
+  //     transition comes from the launcher's own SubagentStop, never from
+  //     the engine server) with engine_result carrying the exact report
+  //     text. A SECOND orchestra_exec call on the SAME ticket is a replay:
+  //     TICKET_REPLAY, zero further invocations (item 2's own pin).
   {
     const af = makeAttemptFile();
-    const ticket = issueTicket();
+    const ticket = driveToLaunched(issueTicket());
     const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
     await s.start();
     const res = await s.rpc('tools/call', {
-      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: ticket.id },
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: ticket.id, role: ENGINE_ROLE },
     }, 180000);
     const text = resultText(res);
-    check('valid exec ticket -> not a transport error', !(res.result && res.result.isError), text.slice(0, 400));
-    check('valid exec ticket -> the stub was invoked exactly once', invocationCount(af) === 1, 'invocations=' + invocationCount(af));
+    check('valid LAUNCHED exec ticket -> not a transport error', !(res.result && res.result.isError), text.slice(0, 400));
+    check('valid LAUNCHED exec ticket -> the stub was invoked exactly once', invocationCount(af) === 1, 'invocations=' + invocationCount(af));
     const nonceMatch = /RUN NONCE: ([0-9a-f]+)/.exec(text);
     check('the exec runner\'s own header carries a RUN NONCE', !!nonceMatch, text.slice(0, 500));
-    s.close();
+
     const after = T.get(store, ticket.id);
-    check('the ticket ends RESOLVED', after && after.status === 'RESOLVED', after && after.status);
-    check("launched.agent_id is 'codex:' + the report's own nonce",
-      !!(after && after.launched && nonceMatch && after.launched.agent_id === 'codex:' + nonceMatch[1]),
-      after && after.launched && after.launched.agent_id);
-    check('resolved.last_assistant_message is the exact report text relayed to the caller',
-      !!(after && after.resolved && after.resolved.last_assistant_message === text),
-      after && after.resolved && after.resolved.last_assistant_message.slice(0, 200));
+    check('the ticket stays LAUNCHED (RESOLVED is the launcher\'s own SubagentStop\'s job, not the engine\'s)',
+      after && after.status === 'LAUNCHED', after && after.status);
+    check('engine_pass was recorded (the two-pass marker, never a second consume())',
+      !!(after && after.engine_pass && after.engine_pass.run_nonce), after && after.engine_pass);
+    check('engine_result.report is the exact report text relayed to the caller',
+      !!(after && after.engine_result && after.engine_result.report === text),
+      after && after.engine_result && after.engine_result.report && after.engine_result.report.slice(0, 200));
+
+    // --- 10b2 (item 2's own pin): a SECOND orchestra_exec on the same
+    //     LAUNCHED, already-enginePass()'d ticket is a replay.
+    const res2 = await s.rpc('tools/call', {
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing again', ticket: ticket.id, role: ENGINE_ROLE },
+    });
+    const text2 = resultText(res2);
+    check('a second orchestra_exec on the same ticket -> TICKET_REPLAY',
+      res2.result && res2.result.isError && /^TICKET_REPLAY:/.test(text2), text2.slice(0, 300));
+    check('the replay did NOT invoke the stub a second time', invocationCount(af) === 1, 'invocations=' + invocationCount(af));
+    s.close();
+  }
+
+  // --- 10c1 (item 5's own pin): a ROLE mismatch -> TICKET_MISMATCH, never invoked.
+  {
+    const af = makeAttemptFile();
+    const ticket = driveToLaunched(issueTicket({ task_id: 'mcp-lane-case10-rolemismatch' }));
+    const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
+    await s.start();
+    const res = await s.rpc('tools/call', {
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: ticket.id, role: 'builder-openai' },
+    });
+    const text = resultText(res);
+    check('a role not matching the ticket\'s own recorded role -> TICKET_MISMATCH',
+      res.result && res.result.isError && /^TICKET_MISMATCH:/.test(text), text.slice(0, 300));
+    s.close();
+    check('role mismatch -> the stub was never invoked', invocationCount(af) === 0, 'invocations=' + invocationCount(af));
+    const after = T.get(store, ticket.id);
+    check('the ticket stays LAUNCHED, engine_pass never recorded', after && after.status === 'LAUNCHED' && after.engine_pass === null, after && [after.status, after.engine_pass]);
+  }
+
+  // --- 10c2 (item 5's own pin): an Anthropic-vendor ticket -> TICKET_MISMATCH.
+  {
+    const af = makeAttemptFile();
+    const anthropicTicket = driveToLaunched(issueTicket({
+      task_id: 'mcp-lane-case10-anthropic', role: 'builder', casting: { vendor: 'anthropic', model: 'Sonnet 5', effort: 'med' }, author_family: 'anthropic',
+    }));
+    const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
+    await s.start();
+    const res = await s.rpc('tools/call', {
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: anthropicTicket.id, role: 'builder' },
+    });
+    const text = resultText(res);
+    check('an Anthropic-served builder ticket used against the engine -> TICKET_MISMATCH',
+      res.result && res.result.isError && /^TICKET_MISMATCH:/.test(text), text.slice(0, 300));
+    s.close();
+    check('Anthropic-vendor ticket -> the stub was never invoked', invocationCount(af) === 0, 'invocations=' + invocationCount(af));
   }
 
   // --- 10c. a reviewer-kind ticket used for phase 'exec' -> TICKET_MISMATCH,
   //     zero invocations, the ticket is never consumed.
   {
     const af = makeAttemptFile();
-    const reviewerTicket = issueTicket({ kind: 'reviewer', role: 'codex-review' });
+    const reviewerTicket = issueTicket({ kind: 'reviewer', role: 'reviewer-openai' });
     const s = mcpSession({ fx, env: { ORCHESTRA_PIN_DIR: pinDir, STUB_CODEX_ATTEMPT_FILE: af } });
     await s.start();
     const res = await s.rpc('tools/call', {
-      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: reviewerTicket.id },
+      name: 'orchestra_exec', arguments: { work_order: 'do the thing', ticket: reviewerTicket.id, role: 'reviewer-openai' },
     });
     const text = resultText(res);
     check('a reviewer ticket used for phase exec -> TICKET_MISMATCH',

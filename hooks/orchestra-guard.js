@@ -26,6 +26,17 @@
  *   - the current turn is flushed only after it completes, so a mid-session
  *     /model switch is picked up one turn late.
  *
+ * Asymmetry under roster:new (`.claude/orchestra.json` "roster": "new"):
+ * the two staleness windows above are exactly the gap leg 4's ticket gate
+ * closes for good, and this guard must not paper over it with a stand-down.
+ * So under roster:new only, an UNDETERMINED model (transcript missing,
+ * unreadable, or no assistant turn flushed yet) DENIES instead of standing
+ * down; a *determined* non-director model (Sonnet/Haiku) still stands down
+ * exactly as under legacy. roster:new is off by default and is never set by
+ * this file — only the owner-pinned manifest, via the installer, flips it.
+ * Legacy projects (roster !== "new", including no manifest at all) see no
+ * behaviour change here.
+ *
  * Three classes of writes are exempt from Director law:
  *   - the pause file (.claude/orchestra.pause), at the user's request (§6);
  *   - plan files: Write/Edit/MultiEdit of markdown under .claude/plans/
@@ -63,6 +74,11 @@
  * directorMemoryPatterns: same shape as directorPlanPatterns; matches are
  *   treated as memory files in ADDITION to the defaults above. Marker-block
  *   protection applies to matched files too.
+ * roster: "new" | "legacy" (default) — owner-pinned by the installer
+ *   (`install.js --roster new|legacy`), never by this file. See the
+ *   "Asymmetry under roster:new" note above.
+ * seats / rosterGeneration: read and returned for the leg-4 ticket gate to
+ *   consume; this guard does not act on them itself.
  *
  * Fail-open by design: any unexpected input, config error, or internal error
  * allows the call rather than bricking the session. A broken orchestra.json
@@ -142,10 +158,14 @@ function deny(reason) {
   process.exit(0);
 }
 
-function denyDefault(toolName) {
+function denyDefault(toolName, planPatternsRaw) {
+  const configuredDirs =
+    Array.isArray(planPatternsRaw) && planPatternsRaw.length
+      ? ', plus this project\'s configured pattern(s): ' + planPatternsRaw.join(', ')
+      : '';
   const planHint = FILE_WRITE_TOOLS.has(toolName)
-    ? 'Exceptions: plan files (markdown under .claude/' + PLANS_DIRNAME + '/) and memory ' +
-      'files (CLAUDE.md / CLAUDE.local.md, auto-memory) are Director-authored. '
+    ? 'Exceptions: plan files (markdown under .claude/' + PLANS_DIRNAME + '/' + configuredDirs +
+      ') and memory files (CLAUDE.md / CLAUDE.local.md, auto-memory) are Director-authored. '
     : '';
   deny(
     'Orchestra: the Director does not use ' + toolName + '. Delegate instead — ' +
@@ -153,6 +173,22 @@ function denyDefault(toolName) {
       'file edits and commands -> executor ' +
       'or a domain specialist agent; verification -> reviewer agent. ' + planHint +
       '(User-only pause switch: create .claude/' + PAUSE_BASENAME + ' or set ORCHESTRA_PAUSE=1.)'
+  );
+}
+
+// roster:new only (see the "Asymmetry under roster:new" file header note):
+// an undetermined session model denies rather than standing down, because
+// the fail-open window here is precisely what leg 4's ticket gate must not
+// inherit. A genuinely non-director (Sonnet/Haiku) session's denial clears
+// itself as soon as that model reaches the transcript on the next turn.
+function denyUndeterminedModel(toolName) {
+  deny(
+    'Orchestra: this project runs roster:new, where an undetermined session model ' +
+      '(no assistant turn in the transcript yet, an unreadable transcript, or an ' +
+      'unrecognized model string) denies ' + toolName + ' rather than standing down — ' +
+      'unlike the legacy default. If this is genuinely a non-director (Sonnet/Haiku) ' +
+      'session, the denial clears itself once that model reaches the transcript on your ' +
+      'next turn. (User-only pause switch: .claude/' + PAUSE_BASENAME + ' or ORCHESTRA_PAUSE=1.)'
   );
 }
 
@@ -180,7 +216,19 @@ function denyMarkerBlock(toolName) {
 // Per-project policy. Any failure here returns the empty policy — the default
 // blocklist above is never weakened by a broken config.
 function loadPolicy() {
-  const empty = { patterns: [], allowed: [], planPatterns: [], memoryPatterns: [] };
+  const empty = {
+    patterns: [],
+    allowed: [],
+    planPatterns: [],
+    planPatternsRaw: [],
+    memoryPatterns: [],
+    // roster/seats/rosterGeneration: owner-pinned by install.js, read here
+    // for the model-dormancy asymmetry below and for the leg-4 ticket gate
+    // to consume. Absent/malformed manifest -> "legacy", the unchanged law.
+    roster: 'legacy',
+    seats: null,
+    rosterGeneration: null,
+  };
   try {
     const p = path.join(projectDir(), '.claude', CONFIG_BASENAME);
     if (!fs.existsSync(p)) return empty;
@@ -198,12 +246,19 @@ function loadPolicy() {
         })
         .filter(Boolean);
     const patterns = toRegexes(cfg.directorBlockedPatterns);
+    const planPatternsRaw = (Array.isArray(cfg.directorPlanPatterns) ? cfg.directorPlanPatterns : []).filter(
+      (s) => typeof s === 'string'
+    );
     const planPatterns = toRegexes(cfg.directorPlanPatterns);
     const memoryPatterns = toRegexes(cfg.directorMemoryPatterns);
     const allowed = (Array.isArray(cfg.directorAllowedTools) ? cfg.directorAllowedTools : []).filter(
       (s) => typeof s === 'string'
     );
-    return { patterns, allowed, planPatterns, memoryPatterns };
+    const roster = cfg.roster === 'new' ? 'new' : 'legacy';
+    const rosterGeneration = typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : null;
+    const seats =
+      cfg.seats && typeof cfg.seats === 'object' && !Array.isArray(cfg.seats) ? cfg.seats : null;
+    return { patterns, allowed, planPatterns, planPatternsRaw, memoryPatterns, roster, seats, rosterGeneration };
   } catch (_) {
     return empty;
   }
@@ -248,11 +303,39 @@ function latestMainModel(input) {
   }
 }
 
+// Resolves symlinks/junctions along `p`, treating any non-existing tail
+// literally. path.resolve() never touches the filesystem, so a pre-existing
+// symlink or Windows junction somewhere inside the plans directory (or a
+// directorPlanPatterns location) could point outside the project and still
+// pass a plain path.relative() containment check. This walks up to the
+// deepest existing ancestor, realpaths *that*, and rejoins the (necessarily
+// non-existing, since a plan-file write's target usually doesn't exist yet)
+// tail literally. A realpath failure anywhere leaves the input path
+// unchanged, which the containment check below then fails closed on.
+function realish(p) {
+  let cur = p;
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync(cur);
+      return tail.length ? path.join(real, ...tail) : real;
+    } catch (_) {
+      const parent = path.dirname(cur);
+      if (parent === cur) return p; // exhausted the path — no existing ancestor
+      tail.unshift(path.basename(cur));
+      cur = parent;
+    }
+  }
+}
+
 // Plan-file exception (ORCHESTRA.md §4 PLAN): the Director may author plan
 // files itself — markdown inside <project>/.claude/plans/ by default, plus any
 // project-relative path matching directorPlanPatterns from orchestra.json.
-// Containment is checked on the resolved path so "../" cannot escape, and the
-// default carve-out requires a .md extension so it can't smuggle code.
+// Containment is checked on the REAL (symlink-resolved) path so a pre-existing
+// symlink/junction inside the plans dir cannot escape the project, and BOTH
+// routes require a .md extension on the resolved path — identical
+// case-handling, fail closed on any mismatch, exactly as the default
+// .claude/plans branch always has.
 function isPlanFileOperation(toolName, toolInput, planPatterns) {
   if (!FILE_WRITE_TOOLS.has(toolName)) return false;
   if (!toolInput || typeof toolInput !== 'object') return false;
@@ -264,17 +347,30 @@ function isPlanFileOperation(toolName, toolInput, planPatterns) {
   if (relToProject === '' || relToProject.startsWith('..') || path.isAbsolute(relToProject)) {
     return false; // outside the project — never a plan file
   }
+  if (!/\.md$/i.test(resolved)) return false; // required on BOTH routes below
+
+  const realRoot = realish(root);
+  const realResolved = realish(resolved);
+  const realRelToProject = path.relative(realRoot, realResolved);
+  if (
+    realRelToProject === '' ||
+    realRelToProject.startsWith('..') ||
+    path.isAbsolute(realRelToProject)
+  ) {
+    return false; // a symlink/junction along the path escapes the project — deny
+  }
 
   // Default carve-out: .claude/plans/**/*.md
   const plansRoot = path.join(root, '.claude', PLANS_DIRNAME);
-  const relToPlans = path.relative(plansRoot, resolved);
+  const realPlansRoot = realish(plansRoot);
+  const relToPlans = path.relative(realPlansRoot, realResolved);
   const inPlansDir =
     relToPlans !== '' && !relToPlans.startsWith('..') && !path.isAbsolute(relToPlans);
-  if (inPlansDir && /\.md$/i.test(resolved)) return true;
+  if (inPlansDir) return true;
 
   // Project-configured plan locations (regexes over the forward-slash
-  // project-relative path).
-  const posixRel = relToProject.split(path.sep).join('/');
+  // REAL project-relative path — same containment guarantee as above).
+  const posixRel = realRelToProject.split(path.sep).join('/');
   return planPatterns.some((re) => re.test(posixRel));
 }
 
@@ -438,16 +534,26 @@ function main(raw) {
 
   // Model-aware dormancy (ORCHESTRA.md §1): only Opus/Fable direct. Enforce
   // only on positive evidence of a director model at the helm. Any other
-  // model (Sonnet, Haiku) — or an undetermined one (no transcript, unreadable,
-  // no assistant turn flushed yet, e.g. a fresh session's first turn) — means
-  // the guard stands down so the session behaves like plain Claude Code; a
-  // director session's opening turn is covered by ORCHESTRA.md instructions
-  // until the model reaches the transcript.
+  // model (Sonnet, Haiku) means the guard stands down so the session behaves
+  // like plain Claude Code.
+  //
+  // An UNDETERMINED model (no transcript, unreadable, no assistant turn
+  // flushed yet, e.g. a fresh session's first turn) is legacy's stand-down
+  // case too — a director session's opening turn is covered by ORCHESTRA.md
+  // instructions until the model reaches the transcript. Under roster:new
+  // this same window denies instead (see the file-header "Asymmetry under
+  // roster:new" note): that fail-open gap is exactly what leg 4's ticket
+  // gate closes, and legacy projects (roster !== "new") see no change.
   const model = latestMainModel(input);
-  if (model === null || !DIRECTOR_MODEL.test(model)) return allow();
+  if (model === null) {
+    if (policy.roster !== 'new') return allow();
+    if (memory === 'marker') return denyMarkerBlock(toolName);
+    return denyUndeterminedModel(toolName);
+  }
+  if (!DIRECTOR_MODEL.test(model)) return allow();
 
   if (memory === 'marker') return denyMarkerBlock(toolName);
-  return deniedByDefault ? denyDefault(toolName) : denyByPolicy(toolName);
+  return deniedByDefault ? denyDefault(toolName, policy.planPatternsRaw) : denyByPolicy(toolName);
 }
 
 let raw = '';

@@ -922,6 +922,124 @@ function case15_movedProject() {
   check('and still carries the moved note', /project moved since pinning/.test(dMovedDirector.reason), dMovedDirector.reason);
 }
 
+function case16_agentSeam() {
+  section("16. Agent seam (leg 4c): PreToolUse(Agent) is delegated to the bridge gate under roster:new (verbatim), unchanged under legacy, fail-closed if the runtime can't load");
+
+  const { createRuntime } = require(path.join(MASTER, 'bridge', 'runtime.js'));
+
+  function installBridge(proj) {
+    const orchestraDir = path.join(proj, '.claude', 'orchestra');
+    for (const sub of ['bridge', 'router', 'registry', 'verifier', 'quartermaster']) {
+      fs.cpSync(path.join(MASTER, sub), path.join(orchestraDir, sub), { recursive: true });
+    }
+  }
+  function seedGreen(proj) {
+    const file = path.join(proj, '.claude', 'orchestra-pool-readings.jsonl');
+    const lines = ['AU-all', 'AU-opus', 'AU-fable', 'OU'].map((bucket) =>
+      JSON.stringify({ ts: new Date().toISOString(), kind: 'reading', bucket, remainingFraction: 0.95, source: 'guard.test.js fixture' })
+    );
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+  }
+
+  // (a) roster:legacy -> Agent is not intercepted by the seam at all.
+  {
+    const legacyProj = tmpdir('orchestra-guard-agentseam-legacy-');
+    const r = runGuard(legacyProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'no ticket here', subagent_type: 'builder' } });
+    check('legacy: Agent is unaffected by the seam (allow, unchanged)', decisionOf(r).decision === 'allow', JSON.stringify(decisionOf(r)));
+  }
+
+  // (b) roster:new (trusted), bridge runtime present, a real ticket store:
+  // the guard's decision must match the bridge's own gate() exactly —
+  // verbatim passthrough of an ALLOW, a "no ticket" DENY, and a
+  // nested-spawn DENY, all with the bridge's OWN reasons, not a
+  // guard-authored one.
+  {
+    const pinned = setupPinnedProject('new');
+    installBridge(pinned.proj);
+    seedGreen(pinned.proj);
+    // The in-process dispatch() call below must resolve its owner pin from
+    // the SAME per-project pin dir setupPinnedProject() just wrote to (its
+    // own createRuntime()/manifest.js reads process.env.ORCHESTRA_PIN_DIR
+    // directly) — the subprocess runGuard() calls further down get it via
+    // extraEnv, but this in-process call needs the real env var swapped in
+    // and back out.
+    const savedPinDir = process.env.ORCHESTRA_PIN_DIR;
+    process.env.ORCHESTRA_PIN_DIR = pinned.pinDirPath;
+    const runtime = createRuntime({ projectDir: pinned.proj });
+    // class E1/T1 is deterministically never Q0-required (see
+    // tests/bridge.test.js's baseRequest() comment) — a plain single ticket.
+    const dispatchResult = runtime.dispatch({ class: 'E1', risk: 'T1', goal: 'fix the thing', acceptance_criteria: ['tests pass'] });
+    process.env.ORCHESTRA_PIN_DIR = savedPinDir;
+    check('(fixture) dispatch() minted a real ticket', dispatchResult.ok === true, JSON.stringify(dispatchResult));
+    const ticketId = dispatchResult.ok && dispatchResult.tickets.implementation.id;
+    const subagentType = dispatchResult.ok && dispatchResult.spawn.subagent_type;
+
+    const rAllow = runGuard(pinned.proj, {
+      tool_name: 'Agent', tool_use_id: 'tu-seam-1',
+      tool_input: { description: 'x', prompt: 'TICKET=' + ticketId, subagent_type: subagentType },
+    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+    check('roster:new, valid ticket -> the seam ALLOWS (verbatim from the bridge gate)', decisionOf(rAllow).decision === 'allow', JSON.stringify(decisionOf(rAllow)));
+
+    const rDeny = runGuard(pinned.proj, {
+      tool_name: 'Agent', tool_use_id: 'tu-seam-2',
+      tool_input: { description: 'x', prompt: 'no ticket in this prompt', subagent_type: 'builder' },
+    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+    const dDeny = decisionOf(rDeny);
+    check('roster:new, unticketed spawn -> the seam DENIES (verbatim, "no TICKET" reason from the bridge)', dDeny.decision === 'deny' && /no TICKET/.test(dDeny.reason), JSON.stringify(dDeny));
+
+    const rNested = runGuard(pinned.proj, {
+      tool_name: 'Agent', tool_use_id: 'tu-seam-3', agent_id: 'some-subagent',
+      tool_input: { description: 'x', prompt: 'TICKET=' + ticketId, subagent_type: 'builder' },
+    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+    const dNested = decisionOf(rNested);
+    check('roster:new, nested spawn -> the seam DENIES (verbatim, "nested spawn" reason from the bridge)', dNested.decision === 'deny' && /nested spawn/.test(dNested.reason), JSON.stringify(dNested));
+  }
+
+  // (c) roster:new (trusted), bridge runtime MISSING -> fail closed, naming
+  // the load failure — never an ungated allow.
+  {
+    const pinned = setupPinnedProject('new');
+    // No .claude/orchestra/bridge/ installed at all.
+    const r = runGuard(pinned.proj, {
+      tool_name: 'Agent', tool_use_id: 'tu-seam-4',
+      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
+    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+    const d = decisionOf(r);
+    check('roster:new, bridge runtime missing -> the seam DENIES (fail closed, never an allow)', d.decision === 'deny', JSON.stringify(d));
+    check('...naming that the runtime could not be loaded', /could not be loaded/.test(d.reason), d.reason);
+  }
+
+  // (d) untrusted-but-new (pin present, manifest hash mismatch), bridge
+  // runtime present -> the seam still delegates, and the bridge's OWN
+  // fail-closed logic denies (manifest untrusted) — proving the seam
+  // engages for every roster:'new' resolution loadPolicy() can produce,
+  // trusted or not, not only the fully-trusted case (b) above.
+  {
+    const pinned = setupPinnedProject('new');
+    installBridge(pinned.proj);
+    fs.writeFileSync(path.join(pinned.proj, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }), 'utf8');
+    const r = runGuard(pinned.proj, {
+      tool_name: 'Agent', tool_use_id: 'tu-seam-5',
+      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
+    }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+    const d = decisionOf(r);
+    check("untrusted-but-new + bridge present -> the seam DENIES (the bridge's own manifest-untrusted fail-closed logic, not the guard's load-failure one)", d.decision === 'deny' && /manifest untrusted/.test(d.reason), JSON.stringify(d));
+  }
+
+  // (e) unpinned manifest claiming "new" (loadPolicy() case a') -> the seam
+  // still engages (policy.roster === 'new' even though untrusted) and denies.
+  {
+    const proj = tmpdir('orchestra-guard-agentseam-unpinned-');
+    setManifest(proj, { roster: 'new' });
+    const r = runGuard(proj, {
+      tool_name: 'Agent', tool_use_id: 'tu-seam-6',
+      tool_input: { description: 'x', prompt: 'TICKET=tkt-aa11bb22cc33dd44', subagent_type: 'builder' },
+    });
+    const d = decisionOf(r);
+    check('unpinned manifest claiming new -> the seam engages and DENIES (roster:new even though untrusted)', d.decision === 'deny', JSON.stringify(d));
+  }
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -952,6 +1070,7 @@ try {
   case13_globPatternRejection();
   case14_manifestPin();
   case15_movedProject();
+  case16_agentSeam();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

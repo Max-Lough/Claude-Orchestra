@@ -416,38 +416,52 @@ section('12. DISABLED seat passes through with the router\'s fallback text');
   check('a disabled seat returns typed DISABLED with a fallback', result.ok === false && result.outcome === 'DISABLED' && typeof result.fallback === 'string', JSON.stringify(result));
 }
 
-// ============================== 13. WO-14b leg 4b: unpinned manifest -> LEGACY
+// ============ 13. WO-14b leg 4c: manifest claims new, NO pin -> UNTRUSTED-NEW, fail closed
 
-section("13. Manifest pin verification — NO pin at all: roster forced 'legacy' regardless of the manifest's own roster:new");
+section("13. Manifest pin verification — manifest claims roster:new, NO pin at all: UNTRUSTED-NEW, fail closed (never a silent legacy downgrade)");
 
 {
   const dir = tmpProject('bridge-unpinned-');
   // roster:new written directly to disk, WITHOUT writePin() — this project
-  // was never pinned by an installer (or the pin was lost/removed).
+  // was never pinned by an installer (or the pin was lost/removed). Leg 4c
+  // aligns this module to the guard's fix-2A rule: a manifest that CLAIMS
+  // new must never be trusted just because its own pin is missing — the old
+  // behaviour (silently forcing legacy) made "delete the pin" strictly
+  // safer, for an attacker, than editing the manifest (every loosening key
+  // would go with it). Forcing roster:'new' here, untrusted, fails
+  // dispatch/gate/requireTicket CLOSED instead.
   fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
   seedReadings(dir, GREEN);
   const runtime = createRuntime({ projectDir: dir });
 
-  check('doctor() reports roster legacy despite the manifest saying new',
-    runtime.doctor().roster === 'legacy', JSON.stringify(runtime.doctor()));
-  check("doctor() reports pin.trusted:false, reason:'unpinned'",
-    runtime.doctor().pin.trusted === false && runtime.doctor().pin.reason === 'unpinned', JSON.stringify(runtime.doctor().pin));
-  check('doctor() pin.failClosed is false (unpinned forces legacy — inert, not fail-closed)',
-    runtime.doctor().pin.failClosed === false, JSON.stringify(runtime.doctor().pin));
+  const doc = runtime.doctor();
+  check("doctor() reports roster 'new' (forced, from the manifest's own claim — never a legacy downgrade)",
+    doc.roster === 'new', JSON.stringify(doc));
+  check("doctor() reports pin.trusted:false, reason:'manifest claims new without a pin' (never 'unpinned')",
+    doc.pin.trusted === false && doc.pin.reason === 'manifest claims new without a pin', JSON.stringify(doc.pin));
+  check('doctor() pin.failClosed is true (roster:new + untrusted)',
+    doc.pin.failClosed === true, JSON.stringify(doc.pin));
 
-  check('dispatch() refuses (roster reads as legacy, not new)',
-    runtime.dispatch(baseRequest()).ok === false && runtime.dispatch(baseRequest()).outcome === 'INVALID_REQUEST');
+  const dispatchResult = runtime.dispatch(baseRequest());
+  check('dispatch() refuses with typed MANIFEST_UNTRUSTED naming the reason',
+    dispatchResult.ok === false && dispatchResult.outcome === 'MANIFEST_UNTRUSTED' &&
+      dispatchResult.reason === 'manifest claims new without a pin',
+    JSON.stringify(dispatchResult));
 
   const pre = runtime.gate(preEvent('TICKET=tkt-aa11bb22cc33dd44', 'builder', 'tu-unpinned'));
-  check('gate() is inert for PreToolUse(Agent) — the gate never engages without a pin',
-    JSON.stringify(pre) === JSON.stringify({ inert: true }), JSON.stringify(pre));
+  check('gate() DENIES PreToolUse(Agent) rather than standing down (fail closed, not inert)',
+    pre.hookSpecificOutput && pre.hookSpecificOutput.permissionDecision === 'deny' &&
+      /manifest claims new without a pin/.test(pre.hookSpecificOutput.permissionDecisionReason),
+    JSON.stringify(pre));
   const stop = runtime.gate(stopEvent(false, []));
-  check('gate() is inert for Stop too', JSON.stringify(stop) === JSON.stringify({ inert: true }), JSON.stringify(stop));
+  check('gate() BLOCKS Stop unconditionally (fail closed, not inert)',
+    stop.decision === 'block' && /manifest claims new without a pin/.test(stop.reason), JSON.stringify(stop));
 
   let threw = null;
   try { runtime.requireTicket({ id: 'tkt-aa11bb22cc33dd44', phase: 'exec' }); } catch (e) { threw = e; }
-  check("requireTicket() throws TICKET_NOT_REQUIRED (roster reads as legacy)",
-    threw && threw.code === 'TICKET_NOT_REQUIRED', threw && threw.code + ': ' + threw.message);
+  check('requireTicket() throws TICKET_REQUIRED naming the untrusted manifest (never TICKET_NOT_REQUIRED)',
+    threw && threw.code === 'TICKET_REQUIRED' && /manifest claims new without a pin/.test(threw.message),
+    threw && threw.code + ': ' + threw.message);
 }
 
 // ==================== 14. WO-14b leg 4b: pinned but tampered manifest -> UNTRUSTED, fail-closed
@@ -511,6 +525,152 @@ section('14. Manifest pin verification — pin present, manifest hash mismatch: 
     restoredRuntime.doctor().pin.trusted === true, JSON.stringify(restoredRuntime.doctor().pin));
   check('...and dispatch() routes again (the newly-pinned seats: Architect disabled)',
     restoredRuntime.dispatch(baseRequest({ class: 'A0', risk: 'T1', task_id: 'post-repin' })).outcome === 'DISABLED');
+}
+
+// ============ 15. manifest present but claims legacy, NO pin -> unpinned legacy, inert
+
+section("15. Manifest pin verification — manifest present but claims roster:legacy (or omits it), NO pin: unpinned legacy, gate stays inert");
+
+{
+  const dir = tmpProject('bridge-unpinned-legacy-');
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'legacy' }, null, 2));
+  seedReadings(dir, GREEN);
+  const runtime = createRuntime({ projectDir: dir });
+
+  const doc = runtime.doctor();
+  check("doctor() reports roster 'legacy'", doc.roster === 'legacy', JSON.stringify(doc));
+  check("doctor() reports pin.trusted:false, reason:'unpinned'",
+    doc.pin.trusted === false && doc.pin.reason === 'unpinned', JSON.stringify(doc.pin));
+  check('doctor() pin.failClosed is false (roster is legacy, never fail-closed)', doc.pin.failClosed === false, JSON.stringify(doc.pin));
+
+  check('dispatch() refuses (roster reads as legacy, not new)', runtime.dispatch(baseRequest()).outcome === 'INVALID_REQUEST');
+  check('gate() is inert for PreToolUse(Agent)',
+    JSON.stringify(runtime.gate(preEvent('TICKET=tkt-aa11bb22cc33dd44', 'builder', 'tu-1'))) === JSON.stringify({ inert: true }));
+}
+
+// ============ 16. corrupt pin file -> UNTRUSTED, roster forced 'new', never 'unpinned'
+
+section("16. Manifest pin verification — a pin FILE exists but is corrupt/unparseable: UNTRUSTED, roster forced 'new' (never collapses to 'unpinned')");
+
+{
+  const dir = tmpProject('bridge-corruptpin-');
+  // No manifest at all — the corrupt pin alone must still force roster:'new'
+  // untrusted rather than "no pin" (which would read as legacy/inert).
+  const pinPath = pinFileFor(dir);
+  fs.mkdirSync(path.dirname(pinPath), { recursive: true });
+  fs.writeFileSync(pinPath, '{ not valid json');
+  const runtime = createRuntime({ projectDir: dir });
+
+  const doc = runtime.doctor();
+  check("doctor() reports roster 'new' (forced by the corrupt pin's mere existence)", doc.roster === 'new', JSON.stringify(doc));
+  check("doctor() reports reason:'corrupt pin' (never 'unpinned')", doc.pin.reason === 'corrupt pin', JSON.stringify(doc.pin));
+  check('doctor() pin.failClosed is true', doc.pin.failClosed === true, JSON.stringify(doc.pin));
+
+  const pre = runtime.gate(preEvent('TICKET=tkt-aa11bb22cc33dd44', 'builder', 'tu-corrupt'));
+  check('gate() denies PreToolUse(Agent)',
+    pre.hookSpecificOutput && pre.hookSpecificOutput.permissionDecision === 'deny' &&
+      /corrupt pin/.test(pre.hookSpecificOutput.permissionDecisionReason),
+    JSON.stringify(pre));
+}
+
+// ============ 17. forged pin (path-keyed, projectDir mismatch) -> UNTRUSTED, roster forced 'new'
+
+section("17. Manifest pin verification — a pin found by the PATH key whose own projectDir names a different project: FORGED, UNTRUSTED, roster forced 'new'");
+
+{
+  const dir = tmpProject('bridge-forgedpin-');
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'legacy' }, null, 2));
+  const pinPath = pinFileFor(dir);
+  fs.mkdirSync(path.dirname(pinPath), { recursive: true });
+  fs.writeFileSync(pinPath, JSON.stringify({
+    projectDir: 'C:/somewhere/else/entirely', manifestSha256: 'a'.repeat(64), roster: 'legacy', by: 'ATTACKER',
+  }));
+  const runtime = createRuntime({ projectDir: dir });
+
+  const doc = runtime.doctor();
+  check("doctor() reports roster 'new' (forced by the forged pin) even though both the manifest and the pin's own roster field claim legacy",
+    doc.roster === 'new', JSON.stringify(doc));
+  check("doctor() reports reason:'pin projectDir does not match this project'",
+    doc.pin.reason === 'pin projectDir does not match this project', JSON.stringify(doc.pin));
+  check('doctor() pin.failClosed is true', doc.pin.failClosed === true, JSON.stringify(doc.pin));
+}
+
+// ============ 18. ORCHESTRA_PIN_DIR pointing at a nonexistent directory -> "no pin dir"
+
+section("18. Manifest pin verification — ORCHESTRA_PIN_DIR pointing at a nonexistent directory is treated as 'no pin dir', same as none configured");
+
+{
+  const dir = tmpProject('bridge-nopindir-');
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: {} }, null, 2));
+  seedReadings(dir, GREEN);
+  const savedPinDir = process.env.ORCHESTRA_PIN_DIR;
+  process.env.ORCHESTRA_PIN_DIR = path.join(os.tmpdir(), 'orchestra-pin-dir-does-not-exist-' + crypto.randomBytes(4).toString('hex'));
+  let doc;
+  try {
+    const runtime = createRuntime({ projectDir: dir });
+    doc = runtime.doctor();
+  } finally {
+    process.env.ORCHESTRA_PIN_DIR = savedPinDir;
+  }
+  check('a nonexistent ORCHESTRA_PIN_DIR combined with a manifest claiming new -> UNTRUSTED-NEW (same as no pin dir configured at all)',
+    doc.roster === 'new' && doc.pin.trusted === false && doc.pin.reason === 'manifest claims new without a pin',
+    JSON.stringify(doc));
+}
+
+// ============ 19. moved project (id-keyed pin), hash matches -> trusted
+
+section("19. Manifest pin verification — moved project: a pin found by id key, trusted iff the manifest hash matches, reason carries 'project moved since pinning'");
+
+{
+  const oldDir = tmpProject('bridge-moved-old-');
+  const newDir = tmpProject('bridge-moved-new-');
+  const projectId = 'stable-project-id-leg4c-' + crypto.randomBytes(4).toString('hex');
+  const manifestObj = { roster: 'new', rosterGeneration: 1, seats: {}, projectId };
+  const manifestBytes = Buffer.from(JSON.stringify(manifestObj, null, 2));
+  fs.writeFileSync(path.join(newDir, '.claude', 'orchestra.json'), manifestBytes);
+  seedReadings(newDir, GREEN);
+
+  // The pin was minted while the project lived at oldDir — its projectDir
+  // names the OLD path, stored under the id key (what install.js's --repin
+  // would do for a project it recognizes has moved).
+  const idHash = crypto.createHash('sha256').update(projectId, 'utf8').digest('hex');
+  const idPinPath = path.join(PIN_DIR, 'id-' + idHash + '.json');
+  fs.writeFileSync(idPinPath, JSON.stringify({
+    projectDir: fs.realpathSync(oldDir), manifestSha256: crypto.createHash('sha256').update(manifestBytes).digest('hex'),
+    roster: 'new', rosterGeneration: 1, seats: {}, writtenAt: new Date().toISOString(), by: 'install.js',
+  }));
+
+  const runtime = createRuntime({ projectDir: newDir });
+  const doc = runtime.doctor();
+  check('a moved project (pin found by id, hash matches) is TRUSTED', doc.pin.trusted === true, JSON.stringify(doc.pin));
+  check("doctor() reason carries 'project moved since pinning'", doc.pin.reason === 'project moved since pinning', JSON.stringify(doc.pin));
+  check('doctor() pin.failClosed is false (trusted)', doc.pin.failClosed === false, JSON.stringify(doc.pin));
+  check('dispatch() routes normally despite the move', runtime.dispatch(baseRequest()).ok === true);
+}
+
+// ============ 20. moved project, manifest ALSO tampered since the move -> UNTRUSTED, both notes
+
+section("20. Manifest pin verification — moved project whose manifest was ALSO tampered since the move: UNTRUSTED, reason names both the hash mismatch and the move");
+
+{
+  const oldDir = tmpProject('bridge-moved-tampered-old-');
+  const newDir = tmpProject('bridge-moved-tampered-new-');
+  const projectId = 'stable-project-id-leg4c-tampered-' + crypto.randomBytes(4).toString('hex');
+  fs.writeFileSync(path.join(newDir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: { Architect: false }, projectId }, null, 2));
+
+  const idHash = crypto.createHash('sha256').update(projectId, 'utf8').digest('hex');
+  const idPinPath = path.join(PIN_DIR, 'id-' + idHash + '.json');
+  fs.writeFileSync(idPinPath, JSON.stringify({
+    projectDir: fs.realpathSync(oldDir), manifestSha256: 'f'.repeat(64), // deliberately wrong
+    roster: 'new', rosterGeneration: 1, seats: {}, writtenAt: new Date().toISOString(), by: 'install.js',
+  }));
+
+  const runtime = createRuntime({ projectDir: newDir });
+  const doc = runtime.doctor();
+  check('a moved project whose manifest hash does not match the pin is UNTRUSTED', doc.pin.trusted === false, JSON.stringify(doc.pin));
+  check('reason names both the hash mismatch and the move',
+    /manifest untrusted \(hash mismatch\)/.test(doc.pin.reason) && /project moved since pinning/.test(doc.pin.reason), doc.pin.reason);
+  check('doctor() pin.failClosed is true (roster:new + untrusted)', doc.pin.failClosed === true, JSON.stringify(doc.pin));
 }
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed.');

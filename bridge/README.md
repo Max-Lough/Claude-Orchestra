@@ -39,19 +39,27 @@ same file works unmodified from the source tree and from the installed copy.
 - The strict structured review artifact and verdict-audit construction
   (leg 5).
 - Installed-acceptance and live-canary proof (legs 6 and 7).
-- **leg 4c, owed by this leg**: `install.js` does not yet (a) copy `bridge/`
-  into the runtime dir on `--roster new` / write the four gate hook entries
-  into `.claude/settings.json` (`bridge/hooks/ticket-gate.js` is written and
-  tested standalone, but nothing installs it), or (b) **write the owner pin**
-  `manifest.js` verifies (`<PIN_DIR>/<sha256(realpath(projectDir))>.json`) —
-  until leg 4c lands that write, every real `--roster new` install is
-  `unpinned` by `manifest.js`'s own rule (see below) and therefore runs as
-  plain `legacy` no matter what `orchestra.json` says; `hooks/orchestra-
-  guard.js` does not yet call into `gate()` for the `Agent` tool under
-  `roster:new` (leg 3's `loadPolicy()` seam is the documented hook point, per
-  the leg-4 order, but nothing calls through it yet). None of that wiring is
-  in this leg's FILES list — `install.js` and `hooks/orchestra-guard.js`
-  belong to the two sibling builders finishing leg 4c in separate worktrees.
+
+Leg 4c (this leg) closed out everything previously owed here: `install.js`
+copies `bridge/` into `.claude/orchestra/bridge/` on `--roster new` and
+registers/removes the four gate hook entries in `.claude/settings.json`
+(`PreToolUse`/`PostToolUse` matcher `Agent`, `SubagentStop`, `Stop` -> `node
+.claude/orchestra/bridge/hooks/ticket-gate.js <Event>`, tracked in the
+manifest's `installedHooks`, removed on a legacy flip and on `--uninstall`);
+`install.js` also writes the owner pin (`writePin()`/`writeManifestAndPin()`
+— this existed before leg 4c, from the leg-3 fix round); and
+`hooks/orchestra-guard.js` now delegates `PreToolUse(Agent)` to this
+runtime's `gate()` under `roster:new` (trusted or untrusted-but-new alike),
+returning its decision verbatim, DENYING (fail closed) if the runtime can't
+be loaded — see `tests/guard.test.js` §16. `manifest.js`'s trust rules are
+also now aligned to `hooks/orchestra-guard.js`'s own `loadPin()`/
+`loadPolicy()` rules exactly (see the table below, revised) — the two
+independent implementations are pinned to agree by `tests/guard.test.js`
+and `tests/bridge.test.js`.
+
+Nothing of leg 4 remains owed. Leg 5 owns: closure (the two-stage close
+above), the structured review artifact/verdict-audit construction, and
+everything after — legs 6/7 own installed-acceptance and live-canary proof.
 
 ## Ticket lifecycle this runtime enforces
 
@@ -121,32 +129,47 @@ pin check; `runtime.js`'s `createRuntime()` and the engine server's
 `readOrchestraManifest()` both go through it exclusively — neither reads
 `.claude/orchestra.json`'s `roster` field directly anymore.
 
-**Pin file**: `<PIN_DIR>/<sha256(realpath(projectDir)), lowercase hex>.json`,
-where `PIN_DIR = process.env.ORCHESTRA_PIN_DIR || ~/.claude/orchestra/pins`.
+**Pin file, by resolved project path**:
+`<PIN_DIR>/<sha256(realpath(projectDir)), lowercase hex>.json`.
+**Pin file, by project id** (a project that has MOVED since it was pinned):
+`<PIN_DIR>/id-<sha256(manifest.projectId), lowercase hex>.json` — tried only
+when the path-keyed file is absent and the manifest carries a `projectId`.
+`PIN_DIR = process.env.ORCHESTRA_PIN_DIR || ~/.claude/orchestra/pins`,
+honoured only if that directory actually exists — an env var pointing at a
+nonexistent directory reads as "no pin dir", same as none configured.
 **Pin content**: `{ projectDir, manifestSha256, roster, rosterGeneration,
 seats, writtenAt, by }` — `manifestSha256` is the sha256 of the manifest
 FILE'S BYTES at the moment the pin was written. Writing the pin is
-**install.js's job (leg 4c, not yet landed — see above)**; this leg only
+`install.js`'s job (`writePin()`/`writeManifestAndPin()`); this module only
 verifies it.
 
 **Trust rules** (`{ manifest, trusted, roster, rosterGeneration, seats,
-reason }`):
+reason }`) — leg 4c aligned these to `hooks/orchestra-guard.js`'s own
+`loadPin()`/`loadPolicy()` rules exactly; the two independent
+implementations must never diverge (a request one denies that the other
+would honour reopens the tampering hole the pin exists to close):
 
-| Pin | Manifest hash | Result |
+| Pin | Manifest | Result |
 | --- | --- | --- |
-| absent | — | `roster:'legacy'` regardless of what the manifest says, `trusted:false`, `reason:'unpinned'`. The gate is **inert** — this is the same posture as no manifest at all, not fail-closed. |
-| present | matches | `trusted:true`; `roster`/`rosterGeneration`/`seats` come from the **manifest**. |
-| present | missing/unreadable/mismatches | **UNTRUSTED**: `trusted:false`, `roster`/`rosterGeneration`/`seats` come from the **PIN** instead (the manifest is not trusted enough to read even its own `roster` field from), `reason:'manifest untrusted (hash mismatch)'`. |
+| absent (no path-keyed or id-keyed file, or `ORCHESTRA_PIN_DIR` names a nonexistent directory) | claims `roster:"new"` | **UNTRUSTED-NEW, fail closed**: `trusted:false`, `roster:'new'` (never a silent legacy downgrade — that used to make "delete the pin" strictly safer, for an attacker, than editing the manifest), `reason:'manifest claims new without a pin'`. |
+| absent | absent, or claims `roster:"legacy"` | `trusted:false`, `roster:'legacy'`, `reason:'unpinned'`. The gate is **inert** — a default-on-request posture, not an enforcement boundary. |
+| present, well-formed, hash matches (path-keyed pin's own `projectDir` agrees with the resolved path, or found by the id key) | — | `trusted:true`; `roster`/`rosterGeneration`/`seats` come from the **manifest** (fall back to the pin's own copy if the manifest omits them); `roster` always equals the pin's (by construction, once hash-matched). Found by the id key with a differing `projectDir`: `reason:'project moved since pinning'` (informational — trust is unaffected). |
+| present, well-formed, manifest missing/unreadable/hash mismatch | — | **UNTRUSTED**: `trusted:false`, `roster`/`rosterGeneration`/`seats` come from the **PIN** instead (the manifest is not trusted enough to read even its own `roster` field from), `reason:'manifest untrusted (hash mismatch)'` (with `' [project moved since pinning]'` appended if also found by the id key with a differing `projectDir`). |
+| present but corrupt/unparseable, or a forged path-keyed pin (its own `projectDir` disagrees with the resolved path) | — | **UNTRUSTED-NEW**: `trusted:false`, `roster` forced to `'new'` (a pin file's mere existence signals this project was pinned at some point, so failing toward enforcement is the safe direction), `reason:'corrupt pin'` or `reason:'pin projectDir does not match this project'` — **never** `'unpinned'` (that collapse used to make deleting the pin strictly better, for an attacker, than editing the manifest). |
 
-When the untrusted branch's PIN-sourced `roster` is `'new'`, `runtime.js`
-sets an internal `failClosed` flag and every decision fails closed rather
-than running normal ticket logic against data that could have been
-tampered with since it was pinned: `dispatch()` returns typed
+When the resolved `roster` is `'new'` and the manifest is not `trusted`,
+`runtime.js` sets an internal `failClosed` flag and every decision fails
+closed rather than running normal ticket logic against data that could have
+been tampered with since it was pinned: `dispatch()` returns typed
 `MANIFEST_UNTRUSTED`; `gate()` denies every `PreToolUse(Agent)`, blocks every
 `Stop`, and reports `Post`/`SubagentStop` inert (there is no ticket state
 left to safely mutate); `requireTicket()`/`ticketFor()` throw
-`TICKET_REQUIRED` naming the untrusted reason. `doctor()` reports pin status
-under `.pin`: `{ trusted, reason, file, failClosed }`. See `tests/bridge.test.js`
-§§13–14 for both branches pinned end to end, including a legitimate re-pin
-(what `install.js` would do to re-trust a changed manifest) restoring normal
-operation.
+`TICKET_REQUIRED` naming the untrusted reason. `hooks/orchestra-guard.js`
+(leg 4c) delegates `PreToolUse(Agent)` to this same `gate()` under exactly
+the same condition (`roster:'new'`, trusted or not) and returns its decision
+verbatim — defense in depth if the installed settings.json hook entries are
+ever stripped; if the runtime can't be `require()`'d, the guard denies on
+its own. `doctor()` reports pin status under `.pin`:
+`{ trusted, reason, file, failClosed }`. See `tests/bridge.test.js` §§13–20
+for every branch pinned end to end (including a legitimate re-pin restoring
+normal operation) and `tests/guard.test.js` §16 for the guard-side seam.

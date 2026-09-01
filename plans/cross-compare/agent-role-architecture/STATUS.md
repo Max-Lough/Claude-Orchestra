@@ -859,16 +859,48 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-09-01 evening — WO-14b activation bridge, finishing)
+## Fresh-session quick start (as of 2026-09-02 ~00:40Z — WO-14b SHAKEDOWN in progress)
 
 **OWNER RULING 2026-09-01 ~21:00Z — SHIP TO SHAKEDOWN.** "Keep your goals VERY bounded… KISS,
 YAGNI, DRY and get this project closed out. The only important aspects are telemetry for
 monitoring performance… usable in our actual projects ASAP… fine tune during our shakedown
-cruise/first live tests." Consequence: the plan's steps 4–5 (Sol integrated review + correction +
-recheck; Opus pre-live audit) are CUT. Leg 6 merged → install into one real project with the
-owner present → the first live orders are the review. Non-spine findings go to
-`roster/wo14b-shakedown-punch-list.md`, never to a repair round. Do not add verification steps
-the owner did not order.
+cruise/first live tests." The plan's steps 4–5 (Sol integrated review + correction + recheck;
+Opus pre-live audit) are CUT. Non-spine findings go to `roster/wo14b-shakedown-punch-list.md`
+(PL-1…PL-11), never to a repair round. Do not add verification steps the owner did not order.
+
+**Where it is.** Leg 6 merged (`1967b6e`, acceptance 90/0). The harness is INSTALLED LIVE in
+`E:\Godot Projects\PiratePartyPals` (v2.4.1, `--roster new --packs codex`, generation 1;
+install committed there as `0c8549e6`, runtime state gitignored `073dfe3e`, merged + pushed
+`c096ef08` so `origin/main` carries it). Readings recorded 2026-09-01 15:14Z (AU-all 0.85,
+AU-fable 0.88, AU-opus 0.85 = all-models figure, OU 0.60) — **they expire after 24h; re-record
+before the next order** (`node quartermaster/quartermaster.js --file <target>/.claude/orchestra-pool-readings.jsonl --record <bucket> <remaining 0..1> --source "..."`).
+
+**Live orders so far.** #1 (DM nametag colours) — spine proven through dispatch → envelope →
+ticketed Opus investigator → RESOLVED → Stop blocked while LAUNCHED → replay refused; recon
+found the feature already shipped, so no builder ran; recon tickets cannot close (PL-10, no
+telemetry for recon-only orders). #2 (mortar explosion VFX +30%) — reached the builder, then the
+builder's `checkout -B … origin/main` removed the local-only harness under the session (PL-11);
+target repaired (`tools/shakedown/` + `roster/wo14b-activation-bridge-progress.md` last lines),
+push done. **Next: the owner restarts `claude --model fable` in the target and re-issues order
+#2 (VFX only, tests named).** Expected: builder → close #1 → Verifier → ticketed OpenAI reviewer
+→ close #2 → CLOSED, and the FIRST `casting-record` + `verdict-audit` files under
+`<target>/.claude/orchestra/ledger/<task_id>/`. Read them; anything off → punch list.
+
+**Tools for the next session** (`tools/shakedown/`): `ppp-doctor.js <project>` (stdio probe:
+tools/list + orchestra_doctor of the INSTALLED server), `ppp-call.js <project> <tool> '<json>'`
+(call any installed tool; `schema` prints input schemas). The ticket store is
+`<target>/.claude/orchestra/tickets/tickets.json` (plain JSON; `tickets.events.jsonl` is the WAL).
+
+**Hazards learned the hard way this session.** (1) The owner's pasted transcripts sometimes run as
+`!` commands in THIS repo — check `git status` here after any odd paste. (2) Never `git stash -u`
+or `git restore --source=<tree> -- .` in the target: the first swept the harness (PL-9 fail-open:
+Claude Code treats a MISSING gate script as a non-blocking hook error and Agent launches proceed
+unticketed), the second removed 4,477 tracked files (restore matches the pathspec to the source
+tree). Recovery is always from HEAD/stash — nothing was lost. (3) A Sonnet helm is enforced too
+but told it is dormant (PL-7) — use Fable. (4) `enableAllProjectMcpServers: true` in the
+target's `settings.local.json` means no MCP approval prompt (PL-8). (5) Post-shakedown fix #1 =
+PL-9 (guard must require the gate script to exist); #2 = PL-11 installer `.gitignore`; #3 = PL-10
+recon close path.
 
 Branch **`claude/wo14b-bridge`** (off `claude/wo12-trials`). Read, in this order, and nothing else
 first:

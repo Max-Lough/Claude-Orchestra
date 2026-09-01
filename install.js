@@ -59,7 +59,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { spawnSync } = require('child_process');
+const { spawnSync, execFileSync } = require('child_process');
 
 const SRC = __dirname;
 
@@ -694,6 +694,35 @@ function projectRealPath(dir) {
   }
 }
 
+// Item B1 (WO-14b leg-3 fix round 3B, Red Team re-verification #2 HIGH):
+// resolves `p` through any symlink/junction/reparse point on its path, even
+// when `p` itself does not exist yet — walks up to the deepest existing
+// ancestor, realpath's THAT, then re-appends the non-existent tail. Mirrors
+// the guard's own realish() (hooks/orchestra-guard.js) exactly, so the two
+// never silently disagree about what a path really resolves to. Needed
+// because a syntactic containment check (no `..`, not absolute) is not
+// enough: a junction planted inside .claude/ (`.claude/escape` ->
+// somewhere outside the project) makes a perfectly relative-looking entry
+// like "escape/precious.txt" resolve, on the real filesystem, to a file
+// Windows will transparently delete outside .claude/ when the joined path
+// is opened — the junction is followed on access regardless of what the
+// path string says.
+function realish(p) {
+  let cur = p;
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync(cur);
+      return tail.length ? path.join(real, ...tail) : real;
+    } catch (_) {
+      const parent = path.dirname(cur);
+      if (parent === cur) return p; // exhausted the path — no existing ancestor
+      tail.unshift(path.basename(cur));
+      cur = parent;
+    }
+  }
+}
+
 function pinFilePath(projectDir) {
   const real = projectRealPath(projectDir);
   const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
@@ -710,6 +739,39 @@ function pinFilePath(projectDir) {
 function idPinFilePath(projectId) {
   const hash = crypto.createHash('sha256').update(String(projectId), 'utf8').digest('hex');
   return path.join(PIN_DIR, 'id-' + hash + '.json');
+}
+
+// Item 3 (WO-14b leg-3 fix round 3B): a third pin key, on the project's git
+// root commit — the first line of `git rev-list --max-parents=0 HEAD` in the
+// project directory. Unlike the id-keyed pin, this key does not depend on
+// the manifest still carrying the projectId it was minted with: a manifest
+// can be replaced wholesale (an attacker, a bad merge, a naive template
+// copy) and the git-keyed pin still finds the project by its actual commit
+// history, which nothing but a real git history rewrite can forge. Returns
+// null (never throws) when the directory is not a git repo, has no commits
+// yet (a fresh `git init` has no root commit — the git key appears on the
+// next --repin, or the next manifest write, after the first commit), or git
+// itself is unavailable — callers must treat that as "this key does not
+// apply here" and skip it silently, exactly like `--ignore-manifest` treats
+// a manifest it cannot read.
+function gitRootCommitHash(projectDir) {
+  try {
+    const out = execFileSync('git', ['rev-list', '--max-parents=0', 'HEAD'], {
+      cwd: projectDir,
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const first = out.split(/\r?\n/).find((l) => l.trim());
+    return first ? first.trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function gitPinFilePath(rootCommitHash) {
+  const hash = crypto.createHash('sha256').update(String(rootCommitHash), 'utf8').digest('hex');
+  return path.join(PIN_DIR, 'git-' + hash + '.json');
 }
 
 // Writes/refreshes the pin for `projectDir` from the manifest file as JUST
@@ -740,14 +802,30 @@ function writePin(projectDir, manifestFile, manifestObj) {
     fs.mkdirSync(path.dirname(idPf), { recursive: true });
     fs.writeFileSync(idPf, body, 'utf8');
   }
+  // Item 3: third copy keyed on the git root commit, identical content.
+  // Silently skipped when the project has no resolvable root commit yet
+  // (see gitRootCommitHash) — `--repin` is how that copy gets added later,
+  // after the first commit exists.
+  const rootCommitHash = gitRootCommitHash(projectDir);
+  if (rootCommitHash) {
+    const gitPf = gitPinFilePath(rootCommitHash);
+    fs.mkdirSync(path.dirname(gitPf), { recursive: true });
+    fs.writeFileSync(gitPf, body, 'utf8');
+  }
   return pf;
 }
 
-// Removes both the path-keyed and (if discoverable) the id-keyed pin for a
-// project. `knownProjectId` lets a caller that already has the manifest's
-// projectId (e.g. --uninstall, reading orchestra.json before it clears the
-// file) remove the id-keyed copy even if the path-keyed one is already gone
-// (a moved project that was never --repin'd).
+// Removes the path-keyed, id-keyed, and git-keyed pin for a project — every
+// copy this run can still find or compute. `knownProjectId` lets a caller
+// that already has the manifest's projectId (e.g. --uninstall, reading
+// orchestra.json before it clears the file) remove the id-keyed copy even
+// if the path-keyed one is already gone (a moved project that was never
+// --repin'd). When the manifest has been replaced wholesale (its projectId
+// lost) and no path-keyed pin survives at this location either, the
+// git-keyed pin — found purely from the project's own commit history — is
+// read AS WELL, and its projectId (identical content to the other two
+// copies, per writePin) recovers the id-keyed copy too (item 3, WO-14b
+// leg-3 fix round 3B).
 function removePin(projectDir, knownProjectId) {
   const pf = pinFilePath(projectDir);
   let projectId = knownProjectId || null;
@@ -765,6 +843,26 @@ function removePin(projectDir, knownProjectId) {
     fs.unlinkSync(pf);
     removedPath = pf;
     removedAny = true;
+  }
+  // Git-keyed copy, computed fresh from the project's current git history
+  // (the project directory still exists at uninstall time, unlike after a
+  // move) — silently skipped when there is none to compute.
+  const rootCommitHash = gitRootCommitHash(projectDir);
+  if (rootCommitHash) {
+    const gitPf = gitPinFilePath(rootCommitHash);
+    if (fs.existsSync(gitPf)) {
+      if (!projectId) {
+        try {
+          const gitPin = JSON.parse(fs.readFileSync(gitPf, 'utf8'));
+          if (gitPin && gitPin.projectId) projectId = gitPin.projectId;
+        } catch (_) {
+          /* unreadable pin — still remove it below */
+        }
+      }
+      fs.unlinkSync(gitPf);
+      removedAny = true;
+      if (!removedPath) removedPath = gitPf;
+    }
   }
   if (projectId) {
     const idPf = idPinFilePath(projectId);
@@ -812,7 +910,12 @@ function verifyPinStatus(target, orchestraJsonFile) {
     return { status: 'MISMATCH', pf, pin, actualSha, realDir };
   }
   // No path-keyed pin here — check whether the manifest's own projectId
-  // resolves to an id-keyed pin (a relocated project).
+  // resolves to an id-keyed pin (a relocated project), and failing that,
+  // whether the project's git root commit resolves to a git-keyed pin (item
+  // 3): unlike the id-keyed lookup, this one does not depend on the
+  // manifest still carrying its original projectId — a manifest that was
+  // replaced wholesale (e.g. down to `{"roster":"legacy"}`) is still found
+  // by its actual commit history.
   if (fs.existsSync(orchestraJsonFile)) {
     let manifest = null;
     try {
@@ -834,6 +937,23 @@ function verifyPinStatus(target, orchestraJsonFile) {
           return { status: 'MOVED', pf, idPf, pin: idPin, actualSha, realDir };
         }
         return { status: 'MISMATCH', pf, idPf, pin: idPin, actualSha, realDir };
+      }
+    }
+    const rootCommitHash = gitRootCommitHash(target);
+    if (rootCommitHash) {
+      const gitPf = gitPinFilePath(rootCommitHash);
+      if (fs.existsSync(gitPf)) {
+        let gitPin;
+        try {
+          gitPin = JSON.parse(fs.readFileSync(gitPf, 'utf8'));
+        } catch (e) {
+          return { status: 'NO-PIN', pf, reason: 'git-pin file exists but is not valid JSON (' + gitPf + ': ' + e.message + ')' };
+        }
+        const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
+        if (actualSha === gitPin.manifestSha256) {
+          return { status: 'MOVED', pf, gitPf, pin: gitPin, actualSha, realDir };
+        }
+        return { status: 'MISMATCH', pf, gitPf, pin: gitPin, actualSha, realDir };
       }
     }
   }
@@ -879,16 +999,9 @@ function listFilesRecursive(dir) {
 // re-serializing it must never silently corrupt that value. This scans the
 // raw JSON text (string contents masked out first, so a numeral inside a
 // string is never mistaken for a literal) for every bare numeric token and
-// flags one that would not survive a parse/stringify round trip.
-// WO-14b leg-3 fix round 2B item 4c: normalizes exactly two purely-cosmetic
-// differences a byte round trip should not be judged lossy on — the
-// exponent marker's case, and a redundant '+' immediately after it — plus a
-// trailing ".0" fractional part, which JSON.stringify never writes back for
-// a value that is a whole number. Everything else in the literal's digits
-// must survive the round trip unchanged, or it is lossy.
-function canonicalNumericLiteral(tok) {
-  return tok.replace(/E/, 'e').replace(/e\+/, 'e').replace(/\.0(?=$|e)/, '');
-}
+// flags one that would not survive a parse/stringify round trip BY VALUE
+// (item B3, WO-14b leg-3 fix round 3B: judged on the number, not the
+// token's own spelling — see findUnsafeNumericLiterals below).
 
 function findUnsafeNumericLiterals(raw) {
   let masked = '';
@@ -923,20 +1036,59 @@ function findUnsafeNumericLiterals(raw) {
   let m;
   while ((m = NUM_RE.exec(masked))) {
     const tok = m[1];
-    const n = Number(tok);
     if (/[.eE]/.test(tok)) {
-      // Fractional/exponent form (items 4b/4c, Red Team/cross-vendor review
-      // MEDIUM x2): the old code exempted every such token as "float
-      // precision is expected, not this guard's concern" — but Infinity
-      // re-serializes as `null` (a TYPE change, strictly worse than the
-      // integer rounding this guard was written to stop: 1e400/-1e400/1E400
-      // all become null), and a finite-but-lossy float silently rewrites to
-      // a different number (1.7976931348623159e308, 12345678901234567890.5,
-      // 1.00000000000000000001 all lose digits). Refuse both.
-      if (!Number.isFinite(n) || String(n) !== canonicalNumericLiteral(tok)) bad.push(tok);
+      // Fractional/exponent form: item B3 (WO-14b leg-3 fix round 3B, Red
+      // Team re-verification #2 MEDIUM) — the previous check compared
+      // String(Number(tok)) to the token's own SPELLING (canonicalized only
+      // for case/'+'/trailing ".0"), so exact-value forms JSON re-spells on
+      // a round trip — 1e+10, 1e10, 1.5e3, 1e21, 1e-7 — were refused even
+      // though the round trip changes nothing about the NUMBER, only how it
+      // is written. Judge the VALUE instead: refuse only when the literal
+      // is non-finite (1e400/-1e400/1E400/2e308 all re-serialize as `null`
+      // — a type change, strictly worse than the precision loss this guard
+      // exists to stop) or when its mantissa carries more significant
+      // digits than a double can hold (>15 — 12345678901234567890.5 and
+      // 1.00000000000000000001 both silently lose digits on the round
+      // trip). A short mantissa in scientific notation (1e21's "1") is
+      // exact regardless of how large the exponent is.
+      const n = Number(tok);
+      if (!Number.isFinite(n)) {
+        bad.push(tok);
+        continue;
+      }
+      const mantissa = tok.replace(/^-/, '').split(/[eE]/)[0];
+      const sigDigits = mantissa.replace('.', '').replace(/^0+/, '') || '0';
+      if (sigDigits.length > 15) bad.push(tok);
       continue;
     }
-    if (String(n) !== tok || !Number.isSafeInteger(n)) bad.push(tok);
+    // Integer-shaped (optional '-', digits only): judge by VALUE via BigInt
+    // equality, not by re-comparing String(n) to the token's own spelling —
+    // that byte-for-byte comparison used to refuse "-0", where JSON's round
+    // trip changes only the SPELLING (JSON.stringify(-0) writes "0"), never
+    // the number: -0 and 0 are the same IEEE-754 value and the same
+    // integer, so nothing is lost. BigInt(tok) itself throws on a value
+    // that overflows what BigInt can parse as a base-10 integer — caught
+    // and treated as unsafe, same as a mismatch.
+    let tokBig;
+    try {
+      tokBig = BigInt(tok);
+    } catch (_) {
+      bad.push(tok);
+      continue;
+    }
+    const n = Number(tok);
+    if (!Number.isFinite(n)) {
+      bad.push(tok);
+      continue;
+    }
+    let roundTripBig;
+    try {
+      roundTripBig = BigInt(n);
+    } catch (_) {
+      bad.push(tok);
+      continue;
+    }
+    if (tokBig !== roundTripBig) bad.push(tok);
   }
   return bad;
 }
@@ -1132,6 +1284,68 @@ function refuseIfTargetMalformed(files) {
         fail(
           f + ': "rosterGeneration" must be a non-negative integer, found ' + JSON.stringify(g) +
             '. Refusing to touch anything in this project — fix it first.'
+        );
+      }
+    }
+  }
+}
+
+// Item B5 (WO-14b leg-3 fix round 3B, Red Team re-verification #2 MEDIUM):
+// orchestra.json's directorPlanPatterns / directorMemoryPatterns /
+// directorBlockedPatterns are hooks/orchestra-guard.js's own glob-matched
+// policy keys (see its docstring) — the guard treats them as globs run
+// through a bounded, non-backtracking matcher, never as regular
+// expressions. Validating them here, at install/upgrade time, catches a
+// regex-shaped entry (very likely a hand-authored leftover from before the
+// glob migration) or a runaway array BEFORE anything is touched, instead of
+// leaving it to fail closed only later, silently, at guard runtime.
+const PATTERN_KEYS = ['directorPlanPatterns', 'directorMemoryPatterns', 'directorBlockedPatterns'];
+const REGEX_SHAPE_CHARS_RE = /[()|+\\{}]/;
+function endsWithUnescapedDollar(s) {
+  if (typeof s !== 'string' || !s.endsWith('$')) return false;
+  let i = s.length - 2;
+  let backslashes = 0;
+  while (i >= 0 && s[i] === '\\') {
+    backslashes++;
+    i--;
+  }
+  return backslashes % 2 === 0; // an even count (incl. zero) means the '$' itself is not escaped
+}
+function isRegexShapedPattern(entry) {
+  if (typeof entry !== 'string') return true;
+  return entry.startsWith('^') || endsWithUnescapedDollar(entry) || REGEX_SHAPE_CHARS_RE.test(entry);
+}
+function validatePatternKeys(manifestFile) {
+  if (!manifestFile || !fs.existsSync(manifestFile)) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  } catch (_) {
+    return; // refuseIfTargetMalformed already refuses on bad JSON — nothing more to add here
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return; // also already refused above
+  for (const key of PATTERN_KEYS) {
+    const arr = parsed[key];
+    if (arr === undefined) continue;
+    if (!Array.isArray(arr)) {
+      fail(
+        manifestFile + ': "' + key + '" must be an array of glob strings, found ' + JSON.stringify(arr) +
+          '. Refusing to touch anything in this project — fix it first.'
+      );
+    }
+    if (arr.length > 64) {
+      fail(
+        manifestFile + ': "' + key + '" has ' + arr.length + ' entries (limit 64). Refusing to touch ' +
+          'anything in this project — trim the list first.'
+      );
+    }
+    for (const entry of arr) {
+      if (isRegexShapedPattern(entry)) {
+        fail(
+          manifestFile + ': "' + key + '" contains a regex-shaped entry (' + JSON.stringify(entry) +
+            ') — the guard matches this key as GLOBS (a bounded, non-backtracking matcher), never as ' +
+            'regular expressions. Refusing to touch anything in this project — rewrite it as a glob ' +
+            '(e.g. "**/*.md", not "^.*\\.md$") first.'
         );
       }
     }
@@ -1630,14 +1844,16 @@ if (verifyPinFlag) {
     process.exit(0);
   }
   if (status.status === 'MOVED') {
-    console.log('MOVED — no pin at this path, but the manifest\'s projectId resolves to a pin recorded ' + status.pin.writtenAt + ' at a different location, and its hash MATCHES the manifest here (' + status.idPf + ')');
+    const foundVia = status.idPf ? 'id' : 'git';
+    const foundAt = status.idPf || status.gitPf;
+    console.log('MOVED — no pin at this path, but the project\'s ' + (foundVia === 'id' ? 'manifest projectId' : 'git root commit') + ' resolves to a pin recorded ' + status.pin.writtenAt + ' at a different location, and its hash MATCHES the manifest here (' + foundAt + ')');
     console.log('  pinned projectDir (old): ' + status.pin.projectDir);
     console.log('  actual projectDir (new): ' + status.realDir);
-    console.log('  Trusted (item 5: found by id, hash matches). Run --repin to also write a path-keyed pin for this location.');
+    console.log('  Trusted (item 5/item 3: found by ' + foundVia + ', hash matches). Run --repin to also write a path-keyed pin for this location.');
     process.exit(0);
   }
   // MISMATCH
-  console.log('MISMATCH — .claude/orchestra.json has changed since the pin was written (' + (status.pf && fs.existsSync(status.pf) ? status.pf : status.idPf) + ')');
+  console.log('MISMATCH — .claude/orchestra.json has changed since the pin was written (' + (status.pf && fs.existsSync(status.pf) ? status.pf : (status.idPf || status.gitPf)) + ')');
   console.log('  pin projectDir:     ' + status.pin.projectDir);
   console.log('  actual projectDir:  ' + status.realDir);
   console.log('  pin manifestSha256: ' + status.pin.manifestSha256);
@@ -1667,6 +1883,16 @@ if (repinFlag) {
     const idPf = idPinFilePath(newPin.projectId);
     fs.mkdirSync(path.dirname(idPf), { recursive: true });
     fs.writeFileSync(idPf, body, 'utf8');
+  }
+  // Item 3: also (re)write the git-keyed copy — this is how a project first
+  // pinned before its first commit (no root commit to key on yet) picks one
+  // up later, and how a MOVED project found only via the git key still ends
+  // up with a fresh git-keyed copy at its new writtenAt.
+  const repinRootCommitHash = gitRootCommitHash(target);
+  if (repinRootCommitHash) {
+    const gitPf = gitPinFilePath(repinRootCommitHash);
+    fs.mkdirSync(path.dirname(gitPf), { recursive: true });
+    fs.writeFileSync(gitPf, body, 'utf8');
   }
   console.log('REPINNED — path-keyed pin written for the new location (' + pf + ')');
   process.exit(0);
@@ -1698,6 +1924,12 @@ refuseIfTargetMalformed([
   { file: settingsLocalFile, checkPermissions: true },
   { file: mcpFile },
 ].concat(manifestMalformedCheck));
+// Item B5 (WO-14b leg-3 fix round 3B, Red Team re-verification #2 MEDIUM):
+// install/upgrade only — never on --uninstall, which must stay reachable
+// even over a manifest whose pattern keys are broken (the same class of
+// lock-out --ignore-manifest/item 7 exists to prevent for the rest of the
+// manifest's shape).
+if (!uninstall) validatePatternKeys(orchestraJsonFile);
 // Remember each file's own indentation BEFORE anything below rewrites it —
 // writeJson() re-uses this so a rewrite preserves the source formatting
 // (2-space / 4-space / tab) instead of always re-serializing at 2 spaces.
@@ -2401,24 +2633,49 @@ if (!uninstall) {
   // means installedPermissions/installedDeny/installedFiles could be an
   // attacker-supplied list rather than the truth. --ignore-manifest never
   // even reads this file.
-  const manifestExistsForUninstall = !ignoreManifestFlag && fs.existsSync(orchestraJsonFile);
+  //
+  // Item B2 (WO-14b leg-3 fix round 3B, Red Team re-verification #2 HIGH):
+  // the pin check used to run ONLY when the manifest file currently exists
+  // — but verifyPinStatus() already handles a manifest that is GONE (it
+  // returns MISMATCH, "no longer exists here", for a pin that still does).
+  // Gating the whole check on the manifest's existence meant a DELETED
+  // orchestra.json skipped the check entirely, left ledgerTrusted at its
+  // default `true`, and read an empty priorManifest as an installedFiles
+  // list of zero — stranding every roster:new file with a clean exit 0. The
+  // check now always runs (whenever --ignore-manifest was not passed), and
+  // the manifest's mere on-disk existence is no longer what gates it.
+  const manifestFileExistsNow = fs.existsSync(orchestraJsonFile);
+  const manifestExistsForUninstall = !ignoreManifestFlag && manifestFileExistsNow;
   const priorManifest = manifestExistsForUninstall ? readJson(orchestraJsonFile) : {};
   let ledgerTrusted = true;
+  let pinFoundAnywhere = false; // item B2: a pin can prove a real prior install even with no manifest left to read
   let pinUntrustedReport = '';
-  if (manifestExistsForUninstall) {
+  if (!ignoreManifestFlag) {
     const pinStatus = verifyPinStatus(target, orchestraJsonFile);
     ledgerTrusted = pinStatus.status === 'MATCH' || pinStatus.status === 'MOVED';
-    if (!ledgerTrusted) {
+    pinFoundAnywhere = pinStatus.status !== 'NO-PIN';
+    if (!ledgerTrusted && pinFoundAnywhere) {
       pinUntrustedReport =
         pinStatus.status + ' — this project\'s pin does not vouch for the .claude/orchestra.json on disk now (' +
         (pinStatus.status === 'NO-PIN'
           ? 'a manifest exists but no pin was ever recorded for it'
-          : 'the pin recorded ' + ((pinStatus.pin && pinStatus.pin.writtenAt) || '(unknown time)') + ' does not match') +
+          : 'the pin recorded ' + ((pinStatus.pin && pinStatus.pin.writtenAt) || '(unknown time)') + ' does not match, or the manifest itself is gone') +
         '). Refusing to trust installedPermissions/installedDeny/installedFiles — falling back to ' +
         'the untracked exact-string grant removal and canonical roster-file removal instead.';
       console.error('  ! ' + pinUntrustedReport);
     }
   }
+  // The untracked/canonical fallback applies whenever the ledger cannot be
+  // trusted AND there is affirmative evidence this project was ever a real
+  // Orchestra install — a manifest currently on disk (even a malformed or
+  // substituted one), or a pin recorded for it (proof of a real prior
+  // writeManifestAndPin() call, even if the manifest itself is now gone,
+  // item B2) — or the caller passed --ignore-manifest outright (item 7). A
+  // project with NEITHER a manifest NOR a pin has no evidence it was ever
+  // Orchestra-managed, so nothing here runs the canonical-name sweep against
+  // it (Red Team MAJOR, 2026-09-01: a hand-authored file merely sharing a
+  // roster role's name must never be swept on no evidence at all).
+  const useUntrackedFallback = ignoreManifestFlag || (!ledgerTrusted && (manifestFileExistsNow || pinFoundAnywhere));
 
   // 1. Grants — installer-tracked only (sdc-012 Sonnet MINOR; items 1/2/4;
   // reshaped to {file, entry} pairs by item 3): an identical string the USER
@@ -2428,8 +2685,8 @@ if (!uninstall) {
   // file — a matching string tracked against settings.json is never used to
   // remove a user-owned copy of it in settings.local.json, or vice versa
   // (cross-vendor review #2 MAJOR).
-  const trackedPerms = ledgerTrusted ? permEntryList(priorManifest.installedPermissions) : [];
-  const trackedDeny = ledgerTrusted ? permEntryList(priorManifest.installedDeny) : [];
+  const trackedPerms = !useUntrackedFallback ? permEntryList(priorManifest.installedPermissions) : [];
+  const trackedDeny = !useUntrackedFallback ? permEntryList(priorManifest.installedDeny) : [];
   const grantFiles = [settingsFile, settingsLocalFile];
 
   if (trackedPerms.length || trackedDeny.length) {
@@ -2474,12 +2731,29 @@ if (!uninstall) {
     // Red Team's stranded-push-grant reproduction — installedPermissions
     // edited to `[]` used to leave every push allow/deny entry behind
     // forever). Documented limitation, sdc-012 Sonnet MINOR: an identical
-    // string the user added independently is removed too.
-    const fallbackAllow = GIT_PERMISSIONS.concat(GIT_PUSH_SAFE_ALLOW);
-    const fallbackDeny = GIT_PUSH_DENY_PATTERNS;
-    for (const gf of grantFiles) {
-      if (!fs.existsSync(gf)) continue;
-      const settingsG = readJson(gf);
+    // string the user added independently to settings.json is removed too.
+    //
+    // settings.local.json is NEVER auto-removed from here (WO-14b leg-3 fix
+    // round 3B, review #3 MAJOR): with no trusted ledger to say which copy
+    // is Orchestra's, an identical string there is just as likely the
+    // user's own independently-added grant — settings.local.json is by
+    // convention the user's personal, usually gitignored file, unlike
+    // settings.json (Orchestra's own historical write target, matched here
+    // byte-for-byte against what the pre-leg-3 installer used to write).
+    // Any Orchestra-looking string found in settings.local.json is reported
+    // for the owner to review and remove by hand; it is never deleted
+    // automatically by this fallback.
+    // Item B4 (WO-14b leg-3 fix round 3B, Red Team re-verification #2
+    // MEDIUM): even though the rest of the manifest's ledgers are not
+    // trusted here, a readable manifest's userOwnedPermissions list (the
+    // same hand-authored escape hatch install-time stripping already
+    // honors — see GIT_PUSH_PERMISSION above) is still honored: an entry
+    // named there is never removed by this fallback, trusted ledger or not.
+    const userOwnedForFallback = stringList(priorManifest.userOwnedPermissions);
+    const fallbackAllow = GIT_PERMISSIONS.concat(GIT_PUSH_SAFE_ALLOW).filter((p) => !userOwnedForFallback.includes(p));
+    const fallbackDeny = GIT_PUSH_DENY_PATTERNS.filter((p) => !userOwnedForFallback.includes(p));
+    if (fs.existsSync(settingsFile)) {
+      const settingsG = readJson(settingsFile);
       let changed = false;
       if (settingsG.permissions && Array.isArray(settingsG.permissions.allow)) {
         const keptAllow = settingsG.permissions.allow.filter((p) => !fallbackAllow.includes(p));
@@ -2499,12 +2773,31 @@ if (!uninstall) {
       }
       if (changed) {
         if (settingsG.permissions && Object.keys(settingsG.permissions).length === 0) delete settingsG.permissions;
-        writeJson(gf, settingsG);
+        writeJson(settingsFile, settingsG);
         did(
           'removed Bash(git add:*)/Bash(git commit:*)/the push allowlist+deny by exact string match from ' +
-            '.claude/' + path.basename(gf) + ' (' +
-            (manifestExistsForUninstall ? 'pin-untrusted fallback, item 2' : 'legacy install, untracked — sdc-012 Sonnet MINOR') +
-            ')'
+            '.claude/settings.json ON SUSPICION (no trusted ledger — a userOwnedPermissions entry in ' +
+            'orchestra.json, if readable, is excluded even so) — ' +
+            (ignoreManifestFlag
+              ? '--ignore-manifest, item 7'
+              : (manifestExistsForUninstall || pinFoundAnywhere)
+                ? 'pin-untrusted fallback, item 2/B2/B4'
+                : 'legacy install, untracked — sdc-012 Sonnet MINOR')
+        );
+      }
+    }
+    if (fs.existsSync(settingsLocalFile)) {
+      const settingsL = readJson(settingsLocalFile);
+      const localAllow = (settingsL.permissions && Array.isArray(settingsL.permissions.allow)) ? settingsL.permissions.allow : [];
+      const localDeny = (settingsL.permissions && Array.isArray(settingsL.permissions.deny)) ? settingsL.permissions.deny : [];
+      const foundAllow = localAllow.filter((p) => fallbackAllow.includes(p));
+      const foundDeny = localDeny.filter((p) => fallbackDeny.includes(p));
+      if (foundAllow.length || foundDeny.length) {
+        console.error(
+          '  ! .claude/settings.local.json contains Orchestra-looking permission string(s) that were ' +
+            'NOT removed (no trusted ledger vouches these are Orchestra\'s, and settings.local.json is ' +
+            'conventionally user-owned): ' + foundAllow.concat(foundDeny).join(', ') +
+            ' — review and remove by hand if they are Orchestra\'s.'
         );
       }
     }
@@ -2593,7 +2886,7 @@ if (!uninstall) {
   // wholesale recursive delete of .claude/orchestra/ or .claude/agents/*.
   let removedRosterCount = 0;
   const touchedDirs = new Set();
-  if (ledgerTrusted) {
+  if (!useUntrackedFallback) {
     const trackedInstalledFiles = stringList(priorManifest.installedFiles);
     let skippedUnsafeCount = 0;
     for (const rel of trackedInstalledFiles) {
@@ -2611,6 +2904,18 @@ if (!uninstall) {
         console.error('  ! SKIPPED unsafe installedFiles entry (would resolve outside .claude/, never deleted): ' + rel);
         continue;
       }
+      // Item B1: the string-level check above is not enough — a reparse
+      // point (junction/symlink) planted inside .claude/ can make a
+      // syntactically-contained entry resolve, on the real filesystem, to a
+      // path outside the project. Re-check containment on the REAL path.
+      const resolvedReal = realish(resolved);
+      const dotClaudeReal = realish(dotClaude);
+      const relToDotReal = path.relative(dotClaudeReal, resolvedReal);
+      if (!relToDotReal || relToDotReal.startsWith('..') || path.isAbsolute(relToDotReal)) {
+        skippedUnsafeCount++;
+        console.error('  ! SKIPPED unsafe installedFiles entry (resolves outside .claude/ via a reparse point, never deleted): ' + rel);
+        continue;
+      }
       if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
         fs.unlinkSync(resolved);
         removedRosterCount++;
@@ -2623,11 +2928,20 @@ if (!uninstall) {
     if (removedRosterCount) {
       did('removed ' + removedRosterCount + " roster:new file(s) tracked in orchestra.json's installedFiles");
     }
-  } else if (manifestExistsForUninstall) {
-    // Untracked fallback (item 2): the ledger is not trusted, so remove
-    // only the KNOWN Orchestra roster:new item names — the eleven roster
-    // role files, ORCHESTRA-CONDUCTOR.md, and the named substrate
-    // directories — never the manifest's own (possibly attacker-supplied)
+  } else {
+    // Untracked fallback (item 2: the ledger is not trusted; OR
+    // --ignore-manifest/item 7, which never reads the manifest at all — the
+    // manifest may not even be valid JSON). WO-14b leg-3 fix round 3B,
+    // review #3 MAJOR: --ignore-manifest used to satisfy neither this branch
+    // nor the trusted one above (ledgerTrusted stays true by default when
+    // the manifest was never read, but its priorManifest is `{}`, so
+    // trackedInstalledFiles was always empty) — a malformed-manifest
+    // uninstall exited 0 having removed the guard and grants but left every
+    // roster:new file (architect.md, ORCHESTRA-CONDUCTOR.md, the runtime
+    // substrates) behind. Remove only the KNOWN Orchestra roster:new item
+    // names — the eleven roster role files, ORCHESTRA-CONDUCTOR.md, and the
+    // named substrate directories — never the manifest's own (possibly
+    // attacker-supplied, or in the --ignore-manifest case simply unread)
     // installedFiles list.
     for (const f of rosterRoleFiles()) {
       if (f === ROSTER_CONDUCTOR_FILE) continue;
@@ -2648,13 +2962,15 @@ if (!uninstall) {
       if (fs.existsSync(d)) {
         fs.rmSync(d, { recursive: true, force: true });
         removedRosterCount++;
+        touchedDirs.add(orchestraRuntimeDir); // so the empty-dir prune below considers .claude/orchestra/ itself
       }
     }
     if (removedRosterCount) {
       did(
-        'pin untrusted — removed ' + removedRosterCount + ' known Orchestra roster:new item(s) by ' +
-          'canonical name/path (the eleven roster role files, ORCHESTRA-CONDUCTOR.md, the named ' +
-          'substrate directories) instead of trusting installedFiles (item 2)'
+        (ignoreManifestFlag ? '--ignore-manifest' : 'pin untrusted') + ' — removed ' + removedRosterCount +
+          ' known Orchestra roster:new item(s) by canonical name/path (the eleven roster role files, ' +
+          'ORCHESTRA-CONDUCTOR.md, the named substrate directories) instead of trusting installedFiles ' +
+          '(item 2' + (ignoreManifestFlag ? '/item 7' : '') + ')'
       );
     }
   }

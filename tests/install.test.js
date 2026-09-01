@@ -14,6 +14,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const MASTER = path.resolve(__dirname, '..');
@@ -87,6 +88,42 @@ function census(target) {
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+// After a test hand-edits a manifest in place (to plant a hostile
+// installedFiles/installedPermissions ledger), the pin the installer wrote
+// no longer hash-matches. Some tests (item 1's containment check) want to
+// exercise the LEDGER-TRUSTED path specifically, isolated from item 2's
+// pin-mismatch fallback — so this recomputes the pin's manifestSha256 (and
+// its id-keyed twin, if any) against the edited bytes, the way a real
+// install's writePin() would, without going through the installer CLI.
+function repinAfterHandEdit(target, manifestPath) {
+  const sha = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
+  const realDir = fs.realpathSync(target);
+  const hash = crypto.createHash('sha256').update(realDir, 'utf8').digest('hex');
+  const pf = path.join(DEFAULT_PIN_DIR, hash + '.json');
+  if (!fs.existsSync(pf)) return;
+  const pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
+  pin.manifestSha256 = sha;
+  const body = JSON.stringify(pin, null, 2) + '\n';
+  fs.writeFileSync(pf, body, 'utf8');
+  if (pin.projectId) {
+    const idHash = crypto.createHash('sha256').update(String(pin.projectId), 'utf8').digest('hex');
+    const idPf = path.join(DEFAULT_PIN_DIR, 'id-' + idHash + '.json');
+    if (fs.existsSync(idPf)) fs.writeFileSync(idPf, body, 'utf8');
+  }
+}
+
+// Mirror install.js's pinFilePath()/idPinFilePath() hashing so tests can name
+// the exact files a pin dir should (or shouldn't) hold, without re-deriving
+// the scheme inline at every call site.
+function pinFilePathFor(target, pinDir) {
+  const hash = crypto.createHash('sha256').update(fs.realpathSync(target), 'utf8').digest('hex');
+  return path.join(pinDir || DEFAULT_PIN_DIR, hash + '.json');
+}
+function idPinFilePathFor(projectId, pinDir) {
+  const hash = crypto.createHash('sha256').update(String(projectId), 'utf8').digest('hex');
+  return path.join(pinDir || DEFAULT_PIN_DIR, 'id-' + hash + '.json');
 }
 
 function ok(r) {
@@ -331,11 +368,13 @@ function case7_uninstallOrderSettingsFirst() {
 
 // The exact push allowlist item 3 grants — no `:*` prefix, so anything
 // outside this literal list must prompt instead of matching an allow.
+// WO-14b leg-3 fix round 2B item 6: narrowed from four to these two —
+// `Bash(git push)` and `Bash(git push --set-upstream origin HEAD)` both omit
+// an explicit refspec, so what they push depends on `.git/config` rather
+// than the matched string.
 const PUSH_SAFE_ALLOW = [
-  'Bash(git push)',
   'Bash(git push origin HEAD)',
   'Bash(git push -u origin HEAD)',
-  'Bash(git push --set-upstream origin HEAD)',
 ];
 const PUSH_DENY_EXPECTED = [
   'Bash(git push --force*)',
@@ -406,14 +445,22 @@ function case9_installedPermissionsTracking() {
   install(target, ['--grant-push', '--no-packs', '--no-specialists']);
   const manifest = readJson(path.join(target, '.claude', 'orchestra.json'));
   const expectedTracked = ['Bash(git add:*)'].concat(PUSH_SAFE_ALLOW).sort();
+  // Item 3 (WO-14b leg-3 fix round 2B): installedPermissions/installedDeny
+  // are now {file, entry} pairs, not bare strings.
   check(
-    'installedPermissions tracks only the entries THIS run actually added (not the pre-existing git commit grant)',
-    JSON.stringify(manifest.installedPermissions.slice().sort()) === JSON.stringify(expectedTracked),
+    'installedPermissions entries are {file, entry} pairs, all against settings.json (default, no --grants-local)',
+    Array.isArray(manifest.installedPermissions) && manifest.installedPermissions.every((e) => e && e.file === 'settings.json' && typeof e.entry === 'string'),
     JSON.stringify(manifest.installedPermissions)
   );
   check(
-    'installedDeny tracks the full extended deny set',
-    JSON.stringify(manifest.installedDeny.slice().sort()) === JSON.stringify(PUSH_DENY_EXPECTED.slice().sort()),
+    'installedPermissions tracks only the entries THIS run actually added (not the pre-existing git commit grant)',
+    JSON.stringify(manifest.installedPermissions.map((e) => e.entry).slice().sort()) === JSON.stringify(expectedTracked),
+    JSON.stringify(manifest.installedPermissions)
+  );
+  check(
+    'installedDeny tracks the full extended deny set, all against settings.json',
+    manifest.installedDeny.every((e) => e.file === 'settings.json') &&
+      JSON.stringify(manifest.installedDeny.map((e) => e.entry).slice().sort()) === JSON.stringify(PUSH_DENY_EXPECTED.slice().sort()),
     JSON.stringify(manifest.installedDeny)
   );
 
@@ -535,6 +582,42 @@ function case13_numericRoundTripRefused() {
   const settings3 = readJson(path.join(target3, '.claude', 'settings.json'));
   check('the safe integer value survives byte-for-byte', settings3.safeBigId === 12345678901234, JSON.stringify(settings3.safeBigId));
 
+  // Item 4b/4c (WO-14b leg-3 fix round 2B, Red Team MEDIUM x2): non-finite
+  // exponent literals (type-destroying — they'd re-serialize as `null`) and
+  // finite-but-lossy fractional/exponent literals must both be refused —
+  // the old code exempted every token containing `.`/`e`/`E` outright.
+  const unsafeFloatFixtures = [
+    '1e400', '-1e400', '1E400', '1.7976931348623159e308',
+    '12345678901234567890.5', '1.00000000000000000001',
+  ];
+  for (const lit of unsafeFloatFixtures) {
+    const t = tmpdir('orchestra-install-');
+    fs.mkdirSync(path.join(t, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(t, '.claude', 'settings.json'), '{\n  "someKey": ' + lit + '\n}\n', 'utf8');
+    const before = census(t);
+    const r = install(t, ['--no-packs', '--no-specialists']);
+    check('unsafe float literal ' + lit + ' -> install exits non-zero', r.status !== 0, out(r));
+    check('unsafe float literal ' + lit + ' -> nothing touched', JSON.stringify(before) === JSON.stringify(census(t)), '');
+  }
+  // A trailing ".0" that loses no information must NOT be refused (item 4c's
+  // canonicalization exists precisely so this stays legal).
+  const cosmeticTarget = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(cosmeticTarget, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(cosmeticTarget, '.claude', 'settings.json'), '{\n  "someKey": 5.0\n}\n', 'utf8');
+  const rCosmetic = install(cosmeticTarget, ['--no-packs', '--no-specialists']);
+  check('a cosmetic trailing ".0" (5.0) does NOT trigger a refusal', ok(rCosmetic), out(rCosmetic));
+
+  // Escaped-quote masking bug (item 4a, Red Team HIGH): the pinned unsafe
+  // integer must still be caught when it follows a string containing an
+  // escaped quote — the old state machine mis-tracked string state past the
+  // `\"` and masked the literal itself out of consideration.
+  const escTarget = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(escTarget, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(escTarget, '.claude', 'settings.json'), '{"a":"z\\"", "big": 9007199254740993}', 'utf8');
+  const rEsc = install(escTarget, ['--no-packs', '--no-specialists']);
+  check('escaped-quote fixture {"a":"z\\"", "big": 9007199254740993} -> install exits non-zero', rEsc.status !== 0, out(rEsc));
+  check('escaped-quote fixture -> error names the unsafe value', out(rEsc).indexOf('9007199254740993') !== -1, out(rEsc));
+
   // Indentation preservation: a 4-space settings.json stays 4-space.
   const target4 = tmpdir('orchestra-install-');
   fs.mkdirSync(path.join(target4, '.claude'), { recursive: true });
@@ -629,7 +712,9 @@ function case17_manifestPin() {
 
   const rNew = spawnSync(process.execPath, [INSTALLER, target, '--roster', 'new', '--no-packs', '--no-specialists'], { encoding: 'utf8', timeout: 60000, env });
   check('--roster new install succeeds', ok(rNew), out(rNew));
-  check('--roster new install writes exactly one pin file', fs.readdirSync(pinDir).length === 1, fs.readdirSync(pinDir).join(','));
+  // Item 5 (WO-14b leg-3 fix round 2B): a path-keyed pin AND an id-keyed pin
+  // (keyed on the manifest's minted projectId), identical content.
+  check('--roster new install writes exactly two pin files (path-keyed + id-keyed, item 5)', fs.readdirSync(pinDir).length === 2, fs.readdirSync(pinDir).join(','));
 
   const rMatch = spawnSync(process.execPath, [INSTALLER, target, '--verify-pin'], { encoding: 'utf8', timeout: 60000, env });
   check('--verify-pin reports MATCH right after install', /MATCH/.test(out(rMatch)) && ok(rMatch), out(rMatch));
@@ -659,7 +744,7 @@ function case18_grantsLocal() {
   check('settings.json still carries the PreToolUse hook entry', settings.hooks && Array.isArray(settings.hooks.PreToolUse) && settings.hooks.PreToolUse.length === 1, JSON.stringify(settings.hooks));
 
   const local = readJson(path.join(target, '.claude', 'settings.local.json'));
-  check('settings.local.json carries the git grants', local.permissions && local.permissions.allow.includes('Bash(git add:*)') && local.permissions.allow.includes('Bash(git push)'), JSON.stringify(local.permissions));
+  check('settings.local.json carries the git grants', local.permissions && local.permissions.allow.includes('Bash(git add:*)') && local.permissions.allow.includes('Bash(git push origin HEAD)'), JSON.stringify(local.permissions));
   check('settings.local.json carries the push deny counterweight', local.permissions.deny && local.permissions.deny.includes('Bash(git push --force*)'), JSON.stringify(local.permissions.deny));
 
   const rUninstall = install(target, ['--uninstall']);
@@ -669,6 +754,207 @@ function case18_grantsLocal() {
     : { permissions: {} };
   const allowAfter = (localAfter.permissions && localAfter.permissions.allow) || [];
   check('uninstall removes the grants from settings.local.json', !allowAfter.includes('Bash(git add:*)'), JSON.stringify(allowAfter));
+}
+
+function case19_uninstallContainment() {
+  section('19. Uninstall containment (item 1): a hostile installedFiles never deletes outside .claude/');
+
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+
+  // Victims OUTSIDE the project entirely, and one inside the project but
+  // outside .claude/ — the Red Team's fixture.
+  const victimOutside1 = path.join(path.dirname(target), 'VICTIM-outside-project-' + path.basename(target) + '.txt');
+  const victimOutside2 = path.join(path.dirname(path.dirname(target)), 'VICTIM-two-levels-up.txt');
+  const victimInProject = path.join(target, 'src-file.js');
+  fs.writeFileSync(victimOutside1, 'do not delete me', 'utf8');
+  fs.writeFileSync(victimOutside2, 'do not delete me either', 'utf8');
+  fs.writeFileSync(victimInProject, 'unrelated user source', 'utf8');
+  cleanups.push(() => { try { fs.unlinkSync(victimOutside1); } catch (_) {} });
+  cleanups.push(() => { try { fs.unlinkSync(victimOutside2); } catch (_) {} });
+
+  const relToProjectDotClaude = (p) => path.relative(path.join(target, '.claude'), p).replace(/\\/g, '/');
+  const manifestPath = path.join(target, '.claude', 'orchestra.json');
+  const manifest = readJson(manifestPath);
+  manifest.installedFiles = [
+    relToProjectDotClaude(victimOutside1),
+    relToProjectDotClaude(victimOutside2),
+    relToProjectDotClaude(victimInProject),
+    'C:/Windows/System32/VICTIM-windows-absolute.txt',
+    '/etc/VICTIM-posix-absolute.txt',
+    'agents/architect.md', // one legitimate, safe entry mixed in
+  ];
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  // Refresh the pin so this exercises item 1's containment check specifically
+  // (ledger TRUSTED, hostile entries present) rather than item 2's separate
+  // pin-mismatch fallback, which case 20 covers.
+  repinAfterHandEdit(target, manifestPath);
+  const rVerify = install(target, ['--verify-pin']);
+  check('(setup) pin re-matches the hand-edited manifest (isolating item 1 from item 2)', /MATCH/.test(out(rVerify)) && ok(rVerify), out(rVerify));
+
+  const r = install(target, ['--uninstall']);
+  check('uninstall over a hostile installedFiles list still exits 0', ok(r), out(r));
+  check('victim outside the project (one level up) SURVIVES', fs.existsSync(victimOutside1), '');
+  check('victim outside the project (two levels up) SURVIVES', fs.existsSync(victimOutside2), '');
+  check('victim inside the project but outside .claude/ SURVIVES', fs.existsSync(victimInProject), '');
+  check('warnings name the skipped unsafe entries', /SKIPPED/i.test(out(r)), out(r));
+  check('the one legitimate mixed-in entry (agents/architect.md) IS removed', !fs.existsSync(path.join(target, '.claude', 'agents', 'architect.md')), '');
+}
+
+function case20_uninstallPinUntrustedFallback() {
+  section('20. Uninstall verifies its own pin before trusting the ledger (item 2): MISMATCH -> untracked/canonical fallback, nothing stranded');
+
+  // (a) installedPermissions edited to [] must not strand the push grants.
+  const t1 = tmpdir('orchestra-install-');
+  install(t1, ['--roster', 'new', '--grant-push', '--no-packs', '--no-specialists']);
+  const m1path = path.join(t1, '.claude', 'orchestra.json');
+  const m1 = readJson(m1path);
+  m1.installedPermissions = [];
+  fs.writeFileSync(m1path, JSON.stringify(m1, null, 2) + '\n', 'utf8'); // pin now MISMATCHes
+  const r1 = install(t1, ['--uninstall']);
+  check('(a) uninstall over installedPermissions=[] still succeeds', ok(r1), out(r1));
+  check('(a) pin-untrusted report printed', /MISMATCH/.test(out(r1)) || /pin/i.test(out(r1)), out(r1));
+  const s1 = readJson(path.join(t1, '.claude', 'settings.json'));
+  const allow1 = (s1.permissions && s1.permissions.allow) || [];
+  const deny1 = (s1.permissions && s1.permissions.deny) || [];
+  check('(a) no Orchestra push allow grant is stranded', !allow1.some((p) => p.indexOf('git push') !== -1), JSON.stringify(allow1));
+  check('(a) no Orchestra push deny entry is stranded', deny1.length === 0, JSON.stringify(deny1));
+  check('(a) roster role file removed by canonical fallback', !fs.existsSync(path.join(t1, '.claude', 'agents', 'architect.md')), '');
+  check('(a) conductor file removed by canonical fallback', !fs.existsSync(path.join(t1, '.claude', 'ORCHESTRA-CONDUCTOR.md')), '');
+
+  // (b) installedPermissions substituted with the user's own grants must not
+  // cost the user those grants, and must still remove Orchestra's real ones.
+  const t2 = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(t2, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(t2, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(npm test:*)', 'Read(//home/**)'] } }), 'utf8');
+  install(t2, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  const m2path = path.join(t2, '.claude', 'orchestra.json');
+  const m2 = readJson(m2path);
+  m2.installedPermissions = [{ file: 'settings.json', entry: 'Bash(npm test:*)' }, { file: 'settings.json', entry: 'Read(//home/**)' }];
+  fs.writeFileSync(m2path, JSON.stringify(m2, null, 2) + '\n', 'utf8');
+  const r2 = install(t2, ['--uninstall']);
+  check('(b) uninstall over a substituted ledger succeeds', ok(r2), out(r2));
+  const s2 = readJson(path.join(t2, '.claude', 'settings.json'));
+  const allow2 = (s2.permissions && s2.permissions.allow) || [];
+  check('(b) the user\'s own grants survive (the ledger naming them is not trusted)', allow2.includes('Bash(npm test:*)') && allow2.includes('Read(//home/**)'), JSON.stringify(allow2));
+  check('(b) Orchestra\'s real add/commit grants are still removed (untracked fallback)', !allow2.includes('Bash(git add:*)') && !allow2.includes('Bash(git commit:*)'), JSON.stringify(allow2));
+
+  // (c) manifest deleted entirely before uninstall: NO-PIN-with-manifest is
+  // not reachable this way (deleting the manifest means it no longer
+  // exists), but a manifest present with no pin ever written (simulated by
+  // pointing ORCHESTRA_PIN_DIR elsewhere for the uninstall call) must also
+  // fall back rather than trust installedFiles blindly.
+  const t3 = tmpdir('orchestra-install-');
+  install(t3, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  const otherPinDir = tmpdir('orchestra-pins-other-');
+  const r3 = spawnSync(process.execPath, [INSTALLER, t3, '--uninstall'], { encoding: 'utf8', timeout: 60000, env: Object.assign({}, process.env, { ORCHESTRA_PIN_DIR: otherPinDir }) });
+  check('(c) uninstall with no pin recorded at this PIN_DIR still succeeds', ok(r3), out(r3));
+  check('(c) roster role file removed by canonical fallback (NO-PIN path)', !fs.existsSync(path.join(t3, '.claude', 'agents', 'architect.md')), '');
+}
+
+function case21_permissionOwnershipCrossFile() {
+  section('21. Permission ownership per file (item 3): a cross-file user-owned copy survives; broad legacy push grant stripped from BOTH files on every install');
+
+  // A user-owned Bash(git commit:*) sits in settings.local.json; Orchestra
+  // tracks its OWN copy of the same string against settings.json only.
+  const target = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { allow: ['Bash(git commit:*)'] } }), 'utf8');
+  install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  const r = install(target, ['--uninstall']);
+  check('uninstall succeeds', ok(r), out(r));
+  const settingsAfter = readJson(path.join(target, '.claude', 'settings.json'));
+  const allowAfter = (settingsAfter.permissions && settingsAfter.permissions.allow) || [];
+  check('settings.json copy of Bash(git commit:*) (Orchestra-tracked) is removed', !allowAfter.includes('Bash(git commit:*)'), JSON.stringify(allowAfter));
+  const localAfter = readJson(path.join(target, '.claude', 'settings.local.json'));
+  const localAllowAfter = (localAfter.permissions && localAfter.permissions.allow) || [];
+  check('settings.local.json copy of Bash(git commit:*) (user-owned) SURVIVES', localAllowAfter.includes('Bash(git commit:*)'), JSON.stringify(localAllowAfter));
+
+  // Cross-vendor review #2 MAJOR repro: a broad legacy grant in settings.json
+  // must be stripped even when this run's grants go to settings.local.json.
+  const target2 = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(target2, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(target2, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(git push:*)'] } }), 'utf8');
+  const r2 = install(target2, ['--grants-local', '--no-packs', '--no-specialists']);
+  check('--grants-local install succeeds', ok(r2), out(r2));
+  const settings2 = readJson(path.join(target2, '.claude', 'settings.json'));
+  const allow2 = (settings2.permissions && settings2.permissions.allow) || [];
+  check('the broad Bash(git push:*) grant is stripped from settings.json even though grants went to settings.local.json', !allow2.includes('Bash(git push:*)'), JSON.stringify(allow2));
+}
+
+function case22_projectIdMovePinRepin() {
+  section('22. projectId + dual pin + MOVED + --repin (item 5)');
+
+  const pinDir = tmpdir('orchestra-pins-');
+  const env = Object.assign({}, process.env, { ORCHESTRA_PIN_DIR: pinDir });
+  const oldTarget = tmpdir('orchestra-install-old-');
+
+  const rNew = spawnSync(process.execPath, [INSTALLER, oldTarget, '--roster', 'new', '--no-packs', '--no-specialists'], { encoding: 'utf8', timeout: 60000, env });
+  check('--roster new install succeeds', ok(rNew), out(rNew));
+  const manifest = readJson(path.join(oldTarget, '.claude', 'orchestra.json'));
+  check('manifest carries a projectId', typeof manifest.projectId === 'string' && manifest.projectId.length > 0, JSON.stringify(manifest.projectId));
+  check('exactly two pin files were written (path-keyed + id-keyed)', fs.readdirSync(pinDir).length === 2, fs.readdirSync(pinDir).join(','));
+
+  // Simulate a move: copy the whole project to a new directory (so the
+  // path-keyed pin, which hashes the OLD real path, no longer applies),
+  // remove the old directory, and check the new one.
+  const newTarget = tmpdir('orchestra-install-new-');
+  fs.rmSync(newTarget, { recursive: true, force: true });
+  fs.cpSync(oldTarget, newTarget, { recursive: true });
+  fs.rmSync(oldTarget, { recursive: true, force: true });
+
+  const rMoved = spawnSync(process.execPath, [INSTALLER, newTarget, '--verify-pin'], { encoding: 'utf8', timeout: 60000, env });
+  check('--verify-pin at the new location reports MOVED', /MOVED/.test(out(rMoved)), out(rMoved));
+  check('MOVED exits 0 (trusted: found by id, hash matches)', ok(rMoved), out(rMoved));
+
+  const rRepin = spawnSync(process.execPath, [INSTALLER, newTarget, '--repin'], { encoding: 'utf8', timeout: 60000, env });
+  check('--repin succeeds on a MOVED project', ok(rRepin) && /REPINNED/.test(out(rRepin)), out(rRepin));
+
+  const rMatchAfterRepin = spawnSync(process.execPath, [INSTALLER, newTarget, '--verify-pin'], { encoding: 'utf8', timeout: 60000, env });
+  check('--verify-pin at the new location now reports MATCH', /MATCH/.test(out(rMatchAfterRepin)) && ok(rMatchAfterRepin), out(rMatchAfterRepin));
+
+  // --repin refuses when there is nothing to repin (status is not MOVED).
+  const freshTarget = tmpdir('orchestra-install-');
+  const rRepinRefused = spawnSync(process.execPath, [INSTALLER, freshTarget, '--repin'], { encoding: 'utf8', timeout: 60000, env });
+  check('--repin on an unpinned project refuses (status is NO-PIN, not MOVED)', rRepinRefused.status !== 0, out(rRepinRefused));
+
+  // Uninstall removes the id-keyed pin and the (repinned) path-keyed pin for
+  // the CURRENT location. It cannot know about a path-keyed pin left behind
+  // at the old location, which the move already orphaned before uninstall
+  // ever ran (nothing removed the old directory's pin when the directory
+  // itself was deleted out from under it) — that orphan is a pre-existing
+  // property of path-keyed pins, not something item 5 introduces or claims
+  // to sweep.
+  const pinsBeforeUninstall = fs.readdirSync(pinDir);
+  const newPathPin = path.basename(pinFilePathFor(newTarget, pinDir));
+  const idPin = path.basename(idPinFilePathFor(manifest.projectId, pinDir));
+  const rUninstall = spawnSync(process.execPath, [INSTALLER, newTarget, '--uninstall'], { encoding: 'utf8', timeout: 60000, env });
+  check('uninstall of the moved+repinned project succeeds', ok(rUninstall), out(rUninstall));
+  const pinsAfterUninstall = fs.readdirSync(pinDir);
+  check('uninstall removed the current-location path-keyed pin', pinsBeforeUninstall.includes(newPathPin) && !pinsAfterUninstall.includes(newPathPin), pinsAfterUninstall.join(','));
+  check('uninstall removed the id-keyed pin', pinsBeforeUninstall.includes(idPin) && !pinsAfterUninstall.includes(idPin), pinsAfterUninstall.join(','));
+}
+
+function case23_ignoreManifest() {
+  section('23. --uninstall --ignore-manifest (item 7): a malformed manifest no longer locks the owner out');
+
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  fs.writeFileSync(path.join(target, '.claude', 'orchestra.json'), 'null', 'utf8');
+
+  const rBlocked = install(target, ['--uninstall']);
+  check('a malformed orchestra.json refuses a plain --uninstall', rBlocked.status !== 0, out(rBlocked));
+  check('the refusal message names deletion / --ignore-manifest as the remedy', /--ignore-manifest|delete/i.test(out(rBlocked)), out(rBlocked));
+
+  const rIgnored = install(target, ['--uninstall', '--ignore-manifest']);
+  check('--uninstall --ignore-manifest succeeds despite the malformed manifest', ok(rIgnored), out(rIgnored));
+  check('the guard hook is removed', !fs.existsSync(path.join(target, '.claude', 'hooks', 'orchestra-guard.js')), '');
+  check('the malformed orchestra.json itself is left untouched (never read)', fs.readFileSync(path.join(target, '.claude', 'orchestra.json'), 'utf8').trim() === 'null', '');
+
+  // --ignore-manifest only means something with --uninstall.
+  const target2 = tmpdir('orchestra-install-');
+  const rNoUninstall = install(target2, ['--ignore-manifest', '--no-packs', '--no-specialists']);
+  check('--ignore-manifest without --uninstall is refused', rNoUninstall.status !== 0, out(rNoUninstall));
 }
 
 // ------------------------------------------------------------------ driver
@@ -704,6 +990,11 @@ try {
   case16_rosterLintGateAndCollision();
   case17_manifestPin();
   case18_grantsLocal();
+  case19_uninstallContainment();
+  case20_uninstallPinUntrustedFallback();
+  case21_permissionOwnershipCrossFile();
+  case22_projectIdMovePinRepin();
+  case23_ignoreManifest();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

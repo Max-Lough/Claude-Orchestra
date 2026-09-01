@@ -53,6 +53,60 @@ function resolveRoot() {
 }
 
 const ROOT = resolveRoot();
+
+/* -------------------------------------------------- WO-14b leg 4: bridge -- */
+
+// bridge/runtime.js ships two places: the source tree (ROOT/bridge/) and,
+// after install.js --roster new, the installed copy
+// (ROOT/.claude/orchestra/bridge/). Installed is checked first since that is
+// where a real installed project keeps it; the source-tree path is what
+// tests (and this repo's own dev loop) use.
+function loadBridgeRuntime() {
+  for (const p of [
+    path.join(ROOT, '.claude', 'orchestra', 'bridge', 'runtime.js'),
+    path.join(ROOT, 'bridge', 'runtime.js'),
+  ]) {
+    if (fs.existsSync(p)) {
+      try { return require(p); } catch (_) { return null; }
+    }
+  }
+  return null;
+}
+
+function readOrchestraManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(ROOT, '.claude', 'orchestra.json'), 'utf8'));
+  } catch (_) {
+    return {};
+  }
+}
+
+// Consumes a ticket bound to `phase` ('exec'|'review') before ANY codex
+// spawn. Returns { ok:true, runtime, consumed } to proceed, or { ok:false }
+// after already sending the typed TICKET_REQUIRED/TICKET_MISMATCH result —
+// the caller must return immediately without calling runRunner. Under
+// roster:legacy (or no manifest) this is a no-op pass-through: the ticket
+// input, if any, is ignored.
+function requireEngineTicket(id, phase, ticketId) {
+  const manifest = readOrchestraManifest();
+  if (manifest.roster !== 'new') return { ok: true, skip: true };
+  const bridge = loadBridgeRuntime();
+  if (!bridge) {
+    textResult(id, 'TICKET_REQUIRED: this project runs roster:new but the bridge runtime ' +
+      '(bridge/runtime.js or .claude/orchestra/bridge/runtime.js) could not be loaded — ' +
+      'refusing to invoke codex without ticket enforcement.', true);
+    return { ok: false };
+  }
+  const runtime = bridge.createRuntime({ projectDir: ROOT });
+  try {
+    const consumed = runtime.ticketFor(phase, { id: ticketId });
+    return { ok: true, runtime, consumed };
+  } catch (e) {
+    const code = (e && e.code) || 'TICKET_REQUIRED';
+    textResult(id, code + ': ' + (e && e.message ? e.message : String(e)), true);
+    return { ok: false };
+  }
+}
 const HOOKS_DIR = process.env.ORCHESTRA_MCP_HOOKS_DIR
   ? path.resolve(process.env.ORCHESTRA_MCP_HOOKS_DIR)
   : __dirname;
@@ -325,7 +379,7 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
 
 const OUTPUT_CAP = 4 * 1024 * 1024; // per stream; a runner report is a few KB
 
-function runRunner(id, lane, args, progressToken, extraEnv) {
+function runRunner(id, lane, args, progressToken, extraEnv, prefixText) {
   const runner = RUNNERS[lane === 'doctor' ? 'review' : lane];
   if (!fs.existsSync(runner)) {
     transportError(id, [
@@ -458,7 +512,7 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
 
     if (lane === 'doctor') {
       // --doctor is the one runner mode whose exit code is meaningful.
-      const text = `DOCTOR EXIT CODE: ${code}\n` + out + (err ? `\n[doctor stderr]\n${err}` : '');
+      const text = `DOCTOR EXIT CODE: ${code}\n` + out + (err ? `\n[doctor stderr]\n${err}` : '') + (prefixText ? `\n${prefixText}` : '');
       textResult(id, text, code !== 0);
       return;
     }
@@ -536,10 +590,20 @@ const TOOLS = [
         no_tests: { type: 'boolean', description: 'Hard-forbid running the suite/build/app (order says so). Affected claims come back UNVERIFIED (prohibited).' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the reviewer must not execute.' },
         warmup_cmd: { type: 'string', description: 'Command run unsandboxed in the fresh pinned checkout before the integrity baseline (e.g. "pnpm install"). Pinned reviews only.' },
+        ticket: { type: 'string', description: 'roster:new only: the reviewer ticket this call is bound to. Under roster:new a missing or mismatched ticket is refused (TICKET_REQUIRED/TICKET_MISMATCH) WITHOUT invoking codex. Ignored under legacy.' },
       },
       required: ['work_order', 'executor_report'],
     },
     handler(id, a, progressToken) {
+      // roster:new: consumes the reviewer ticket named by `ticket` BEFORE any
+      // spawn — a missing/mismatched ticket returns typed TICKET_REQUIRED/
+      // TICKET_MISMATCH and never reaches runRunner (codex is never
+      // invoked). gated.consumed is the now-CONSUMED ticket; leg 4 does not
+      // yet bind launched/resolved back onto it once the runner completes
+      // (see bridge/README.md and the leg-4 report CONCERNS) — that wiring
+      // is left for a follow-on pass rather than guessed here.
+      const gated = requireEngineTicket(id, 'review', a && a.ticket);
+      if (!gated.ok) return;
       const dir = makeRunDir('review');
       const args = [
         '--work-order', writeInput(dir, 'work-order.txt', requireString(a, 'work_order')),
@@ -574,10 +638,15 @@ const TOOLS = [
         cd: { type: 'string', description: 'Isolated worktree directory to execute in, only when the order names one.' },
         model: { type: 'string', description: 'Pin a specific model for this run, only when the order names one.' },
         effort: { type: 'string', description: 'Reasoning effort override, only when the order names one.' },
+        ticket: { type: 'string', description: 'roster:new only: the implementation/Q0 ticket this call is bound to. Under roster:new a missing or mismatched ticket is refused (TICKET_REQUIRED/TICKET_MISMATCH) WITHOUT invoking codex. Ignored under legacy.' },
       },
       required: ['work_order'],
     },
     handler(id, a, progressToken) {
+      // See orchestra_review's handler comment — same roster:new ticket gate,
+      // phase 'exec' (accepts an implementation or q0 ticket).
+      const gated = requireEngineTicket(id, 'exec', a && a.ticket);
+      if (!gated.ok) return;
       const dir = makeRunDir('exec');
       const args = ['--work-order', writeInput(dir, 'work-order.txt', requireString(a, 'work_order'))];
       if (a.tier === 'heavy') args.push('--tier', 'heavy');
@@ -641,6 +710,39 @@ const TOOLS = [
     },
   },
   {
+    name: 'orchestra_dispatch',
+    description:
+      'WO-14b leg 4: validate a pre-dispatch request (registry/schemas/dispatch-request.schema.json shape) ' +
+      'against the activation runtime, read one fresh Quartermaster snapshot, route it, and return the ' +
+      'runtime\'s dispatch() result verbatim — on success, the issued implementation/Q0 tickets and the spawn ' +
+      'instruction; otherwise the router\'s typed outcome (GATED, DISABLED, FORBIDDEN, WAIT, blocked:"Q0", ' +
+      'RETIRED_WORKFLOW) or a typed P0_UNAVAILABLE/INVALID_REQUEST. roster:new only — under legacy this returns ' +
+      'a typed refusal rather than dispatching.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request: { type: 'object', description: 'The dispatch request object — see registry/schemas/dispatch-request.schema.json.' },
+      },
+      required: ['request'],
+    },
+    handler(id, a) {
+      const bridge = loadBridgeRuntime();
+      if (!bridge) {
+        transportError(id, ['the bridge runtime (bridge/runtime.js or .claude/orchestra/bridge/runtime.js) could not be loaded']);
+        return;
+      }
+      let result;
+      try {
+        const runtime = bridge.createRuntime({ projectDir: ROOT });
+        result = runtime.dispatch((a && a.request) || {});
+      } catch (e) {
+        transportError(id, ['orchestra_dispatch failed: ' + (e && e.message ? e.message : String(e))]);
+        return;
+      }
+      textResult(id, JSON.stringify(result, null, 2), result && result.ok === false);
+    },
+  },
+  {
     name: 'orchestra_doctor',
     description:
       'Check the Codex install without spending a review: resolves the real codex binary, names the install ' +
@@ -648,7 +750,8 @@ const TOOLS = [
       'copies files into the install on the user\'s machine — run this only on the Director\'s or user\'s say-so), ' +
       'and prints the exact copy command for anything it cannot. The result starts with DOCTOR EXIT CODE: 0 ' +
       '(a review would find a complete install) or 1 (it would not, and the output says why). Pass live=true to ' +
-      'also prove the exec-lane nonce round-trip with a real no-op engine run.',
+      'also prove the exec-lane nonce round-trip with a real no-op engine run. Also reports the WO-14b bridge ' +
+      'state — manifest roster, roster generation, ticket store health, and the count of open tickets.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -658,7 +761,19 @@ const TOOLS = [
     handler(id, a, progressToken) {
       const args = ['--doctor'];
       if (a && a.live) args.push('--live');
-      runRunner(id, 'doctor', args, progressToken);
+      const bridge = loadBridgeRuntime();
+      let bridgeLine = 'BRIDGE: not available (bridge/runtime.js not found — leg 4 not installed/copied)';
+      if (bridge) {
+        try {
+          const d = bridge.createRuntime({ projectDir: ROOT }).doctor();
+          bridgeLine = 'BRIDGE: roster=' + d.roster + ' rosterGeneration=' + d.rosterGeneration +
+            ' store=' + (d.store.ok ? 'ok' : 'UNAVAILABLE (' + d.store.error + ')') +
+            ' openTickets=' + (d.openTickets === null ? 'n/a' : d.openTickets);
+        } catch (e) {
+          bridgeLine = 'BRIDGE: doctor() failed: ' + (e && e.message ? e.message : String(e));
+        }
+      }
+      runRunner(id, 'doctor', args, progressToken, undefined, bridgeLine);
     },
   },
 ];

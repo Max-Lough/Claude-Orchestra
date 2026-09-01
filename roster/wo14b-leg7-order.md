@@ -1,59 +1,62 @@
-# WO-14b leg 7 — live installed canary (the acceptance artefact)
+# WO-14b leg 7 — the live gate (per the finish plan; owner present)
 
-- **Class:** O0 Conductor-driven, from a **fresh installed session** — not a CLI twin,
-  fixture engine, stub, or synthetic hook. Real Anthropic and OpenAI calls at the real
-  castings. Runs after leg 6 is green in CI.
-- **Target:** a disposable git repository installed with `node install.js --roster new
-  --packs codex` (legacy roster co-installed), with real Quartermaster readings recorded
-  by the owner (`quartermaster.js --record`) before the run, and the codex engine server
-  approved in that project's `.mcp.json`. The canary session is `claude -p` (or an
-  interactive session the owner watches) whose main model is the Conductor casting.
-- **Parent:** `roster/wo14b-activation-bridge-order.md` (leg 7). The oracle's stopping
-  rule binds: if authentication, MCP approval, Agent lifecycle, or a provider is
-  unavailable, report `BLOCKED` — synthetic success does not satisfy the gate.
+- **Authority:** `roster/wo14b-finish-plan.md` § ASAP step 5 and § STOPPING RULES. Runs after
+  leg 6 is green and the single integrated Sol review (≤40 calls, + one correction ≤40, + one
+  recheck ≤15) has returned APPROVE on the exact installed commit.
+- **Budget:** ≤10 setup calls, ≤40 workflow calls, ≤40 Opus-audit calls. **The Opus adversarial
+  perspective is folded into this gate's final audit — no separate pre-live Opus cycle.**
+- **Owner in the loop:** records the Quartermaster readings (`quartermaster.js --record`) into the
+  disposable target, approves the engine server in that project's `.mcp.json`, and is present for
+  the final accept-or-stop.
+- **Target:** a disposable git repository installed with `node install.js <tmp> --roster new
+  --packs codex` (legacy co-installed), a fresh `claude` session in it as the Conductor casting.
+  Real Anthropic and OpenAI calls at the real castings.
 
-## The five runs (in order; each run's transcript, ticket ledger, casting records,
-verdict audits, Verifier artefacts, engine provenance, and installed-file census are
-the acceptance artefacts, copied verbatim into `roster/wo14b-leg7-canary/`)
+## The runs (each run's transcript, envelope, ticket ledger, Verifier artefacts, casting records,
+## verdict audit, and engine provenance are copied verbatim into `roster/wo14b-leg7-canary/`)
 
-1. **T2 Anthropic-authored Builder order** (a small real change in the disposable repo
-   with a declared verification command): `orchestra_dispatch` → implementation +
-   Q0 tickets → real `test-designer-vs-anthropic` (OpenAI Q0) launch through Agent →
-   real `builder` launch → real change and report bound at SubagentStop → close #1
-   → Verifier PASS → reviewer ticket → real OpenAI reviewer through the ticket-gated
-   codex review runner → close #2 → `CLOSED`.
-2. **Bounded OpenAI-authored Builder order** (`tier: bounded`, Luna via the codex
-   launcher with its ticket) → real Anthropic Reviewer (`reviewer-anthropic`) through
+1. One real Anthropic-authored T2 order (a small real change with a declared verification
+   command): dispatch → real OpenAI Q0 launch through Agent → real `builder` → SubagentStop →
+   close #1 → Verifier PASS → real OpenAI reviewer through the ticket-gated codex runner → close #2
+   → audited `CLOSED`.
+2. One real bounded OpenAI-authored order (`builder-openai`, Luna) → real Anthropic reviewer through
    Agent → `CLOSED`.
-3. **Denials:** one unticketed Agent attempt (the Conductor tries to spawn `builder`
-   with no ticket) and one unticketed raw `orchestra_exec` attempt — both denied with
-   the reason visible in the transcript; the stub-free engine was never invoked.
-4. **Non-closing paths:** with owner-recorded below-reserve readings, one author
-   refusal (GATED) and one reviewer refusal (NOT_CLOSED: review unavailable); and one
-   REVISE verdict (seed a deliberate defect) that stays `NOT_CLOSED` — none of them
-   representable as completion in the ledger.
-5. **Rollback:** `install.js --roster legacy` (flag flip, no reinstall) with at least one
-   open new-roster ticket → the ticket is INVALIDATED, the next `orchestra_dispatch`
-   returns the legacy identity, a real Agent launch of `executor` proceeds with no
-   ticket, and the ledger records the transition.
+3. One unticketed Agent attempt, one unticketed raw `orchestra_exec` attempt, and one ticket replay
+   attempt — all denied before any engine invocation, visible in the transcript.
+4. Rollback: `install.js --roster legacy` with an open ticket → INVALIDATED; the next dispatch
+   returns the legacy identity; a real Agent launch of `executor` proceeds with no ticket; the
+   ledger records the transition.
 
-## Gate (oracle-authored; verbatim in effect)
+**Cut** (deferred to the shadow period as canaries): reserve-exhaustion and reviewer-unavailable
+refusals, deliberate-REVISE traffic, exhaustive seat/tier runs.
 
-Every active and benched seat, substrate, merged class, and Builder tier resolves
-through the installed runtime; both rosters remain installed. All deterministic
-acceptance cases pass (leg 6). The two real installed orders traverse dispatch → real
-Agent author/Q0 → Verifier → computed opposite-family real Agent Reviewer → audited
-closure in both vendor directions. Rollback invalidates open capability and launches
-the next legacy order without reinstall. Schema-valid routing, casting, and verdict
-records agree with the live transcript and contain no fabricated served-model or
-cross-family value. The declared suite is green in the executor run and independently
-green in the final reviewer run. The final gate-class cross-vendor review returns
-APPROVE with no unresolved MAJOR/CRITICAL. The progress file has a terminal line, no
-ticket remains active, and the disposable target is restored to legacy.
+`UNKNOWN` is acceptable only for an exact served-model field; the engine family and adapter
+provenance used for cross-family closure must be authoritative. Authentication, MCP approval,
+host lifecycle, or provider unavailability → `BLOCKED`, never a synthetic substitute.
 
-## Report
+## The final audit (Opus · high, read-only, ≤40 calls)
 
-`roster/wo14b-leg7-canary-record.md`: per run — the request, every ticket's final
-state, the served models as the host/engine reported them, the verdict block, the
-audit row, and the transcript path. Then the full declared verification and the
-final gate-class review order (Sol · high over the integrated range).
+Over the preserved artefacts and the installed commit: rule APPROVE or STOP. **No live-gate fix
+cycle is authorised** — any code-level MAJOR/CRITICAL returns the bridge to the owner as unable to
+close under this tranche.
+
+## Closed only when (verbatim from the plan)
+
+- Green leg-6 installed acceptance in both vendor directions.
+- A Sol integrated `APPROVE` with no unresolved MAJOR/CRITICAL after at most one correction.
+- Two real live orders reaching audited `CLOSED`, with Q0 and Verifier ordering proven.
+- Unticketed Agent/raw-engine and replay attempts denied before engine invocation.
+- Rollback invalidating an open ticket and restoring legacy operation.
+- A final Opus audit returning `APPROVE` with no MAJOR/CRITICAL.
+- No active ticket, no fabricated base/model/family value, and the disposable target restored to
+  legacy.
+
+## Stop and hand to the owner if (verbatim from the plan)
+
+The same installed-spine failure repeats after the one correction; a new MAJOR/CRITICAL appears
+after correction or during the live audit; either repair required ticket/schema widening or another
+production subsystem; an unticketed engine path remains callable; provider/authentication/MCP/host
+lifecycle is unavailable; or authoritative base, engine family, or provenance requires trusting
+model-authored text.
+
+Record: `roster/wo14b-leg7-canary-record.md`.

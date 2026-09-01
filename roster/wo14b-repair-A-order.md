@@ -1,4 +1,9 @@
-# WO-14b repair A — enforcement composition (oracle-ruled; awaiting owner approval)
+# WO-14b repair A — enforcement composition (oracle-ruled; owner-approved 2026-09-01 17:50Z)
+
+> **Amended by the finish plan (`roster/wo14b-finish-plan.md`, 18:20Z), sent to the running
+> builder:** item 10 — under `roster:new`, `orchestra_crossplan` (every phase) and
+> `orchestra_doctor live=true` return typed `UNSUPPORTED` without invoking the engine (legacy
+> unchanged); pinned with zero stub invocations.
 
 - **Authority:** `roster/wo14b-session-oracle-verdict.md` § SHORTEST HONEST PATH item 2, and the
   finite defect inventory in `roster/wo14b-leg4-review-2.md` (8 MAJOR / 2 MINOR).

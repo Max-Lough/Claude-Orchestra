@@ -1,4 +1,11 @@
-# WO-14b repair B — dispatch-to-close envelope (oracle-ruled; awaiting owner approval)
+# WO-14b repair B — dispatch-to-close envelope (oracle-ruled; owner-approved 2026-09-01 17:50Z)
+
+> **Amended by the finish plan (`roster/wo14b-finish-plan.md`, 18:20Z), sent to the running
+> builder:** item 1's envelope carries **no ticket ids** and is keyed by `task_id`
+> (`ledger/<task_id>/envelope.json`, exclusively created before issuance; closure derives it from
+> `ticket.task_id`; no ticket/schema widening); item 7 returns `NOT_CLOSED: UNSUPPORTED_GATE_CLASS`
+> for gate-class closures (no `falsification_run` construction); DRY — `close.js` uses
+> `bridge/telemetry.js`'s `ledgerDir`/`atomicWriteJson` and `router.familyOf`.
 
 - **Authority:** `roster/wo14b-session-oracle-verdict.md` § SHORTEST HONEST PATH item 3, and the
   finite defect inventory in `roster/wo14b-leg5-review-1.md` (8 MAJOR / 1 MINOR / 1 NIT).

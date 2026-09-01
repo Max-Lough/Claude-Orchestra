@@ -68,15 +68,16 @@ general Builder/Reviewer casting), which ranked them Red Team > Sweeper > Data E
 | Seat | Ruling | Effect |
 |---|---|---|
 | Red Team E7 | **KEEP** (seat) | Stands as a seat: no WRITE-TREE, never-Fable route-filter, never same-vendor as author. The WO-8 evidence (four Red-Team-only findings the cross-vendor review missed) is the basis. |
-| Sweeper S0 | **DITCH** | Owner: "I've literally never encountered that issue personally." File retired. Consequence the Conductor applies: the E8 contract's mandatory independent-Sweeper step is replaced by the Verifier's census re-run (deterministic) — wide changes lose the model completeness pass; the escape metric (a missed site surfacing later) is the signal to revisit. |
+| Sweeper S0 | **BENCHED** (amended same day from DITCH) | Owner: "I've literally never encountered that issue personally" — then, on the Conductor's note that wide changes lose their completeness pass: "keep sweeper on the bench then if we find we are missing the role after our first few live tests." File stays; seat disabled behind the same owner-settable enable flag as the Architect toggle (typed `DISABLED` when off; the Conductor's chain-final step falls to the Verifier's deterministic census re-run, disclosed on the order). Re-enable trigger: a missed-site escape (orphaned call site, stale count, un-migrated consumer) surfacing after a wide change in the first live tests. |
 | Data Engineer E4 | **KEEP** (seat) | Stands as a seat: the `noMirrorFor.irreversible` route-filter and the consequence-trump ("any persisted data changing shape, even when the code is trivial") are the argument; both need a standing file to be lintable. |
 | Architect A0 | **KEEP, toggleable** | Stands as a seat behind an owner-settable switch. Mechanism (to build in the activation bridge, not yet shipped): a per-seat enable flag in the owner-pinned manifest; when off, an A0 order returns a typed `DISABLED` outcome (never a silent recast) and the Conductor plans in its own voice with the disclosure recorded on the order. The staged A0 exercise still runs (its telemetry-extension design is owed regardless). |
 | Everything else non-KEEP | **DITCH** | Files retired: Synthesizer A1, Scout N0, Researcher N1, LC Analyst N2, Archivist M0 (both lanes), Operator E0, Runner E1, Principal E3, Interface Artisan E5, Spatial Specialist E6, Refactorer E8, Doc Writer D0. Their classes remain routing labels in the registry and route to the reviewer's merge targets with no dedicated casting: N0/N1/N2/M0 → Investigator; E0/E1/E5/E6/E8/D0 → Builder (E1 uniform transforms → deterministic tooling under V0); A1 → documented workflow under Conductor + both Reviewer lanes + owner. **Principal's Opus rung is not lost — it is absorbed into the Builder ladder question below.** |
 
 Reviewer KEEPs stand unchanged: Conductor, Investigator, Builder, Test Designer ×2,
 Reviewer ×2, plus the Verifier and Quartermaster substrates. Launch roster is therefore
-**9 seats + 2 substrates**: the reviewer's seven plus Red Team, Data Engineer, and
-Architect (toggleable).
+**9 active seats + 1 benched + 2 substrates**: the reviewer's seven plus Red Team, Data
+Engineer, and Architect (toggleable, default ON); Sweeper benched (toggleable, default
+OFF). One mechanism serves both toggles.
 
 **Opened by the same ruling — the Builder ladder.** The owner asked whether Builder will
 have "levels": the Conductor should be able to select Luna, Terra, Sol, Sonnet, or Opus
@@ -86,4 +87,10 @@ Terra·med), the Conductor picks a rung by name or gets `primary`, and pool stat
 step to `mirror`. No Opus or Sol implementation rung exists on Builder (Opus was Principal's,
 now ditched; Sol has never been an implementation casting on E2). The ladder design is
 registered as an activation-bridge design item in STATUS.md with the Conductor's proposed
-shape; the owner rules on the shape before it is built.
+shape. **Owner ruled the shape the same day: adopted as proposed** — a `tier` on the order
+(`bounded` / `standard` / `dense` / `deep`), each tier a preferred casting plus an ordered
+cross-vendor lawful-substitute list walked under the bucket ladder with `recastFrom`
+disclosed; guardrails carried (Luna never under-specified; Opus behind P15 + Amber arming;
+review computed from the served author family); **`deep` defaults to Opus·high**, with a
+Conductor override to Sol·high that passes the Quartermaster's review-reserve check first —
+Sol is a deliberate choice, never a degradation target.

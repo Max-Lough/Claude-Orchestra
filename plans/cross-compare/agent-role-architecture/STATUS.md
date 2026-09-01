@@ -808,21 +808,23 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   shadow (oracle's rule), tranche CLOSED; (2) reserve calibration LEFT at parity
   (`floorFractionOfBucket` 0.08 == redBelow); (3) roster: KEEP Red Team, Data Engineer,
   Architect (**toggleable** — owner-settable enable flag, typed `DISABLED` when off,
-  Conductor self-plans with disclosure; mechanism built in the bridge); DITCH Sweeper
-  and every other non-KEEP file. Launch roster = 9 seats + 2 substrates
-  (`roster/roster-review-refutations-2026-09-01.md` § Owner rulings). **Opened by the
-  ruling — the Builder ladder:** the owner wants the Conductor to select Luna / Terra /
-  Sonnet / Sol / Opus for Builder work by task shape and per-vendor availability. Today
-  Builder has four rungs and pool state can only step to `mirror`; no Opus or Sol
-  implementation rung exists on E2 (Opus was Principal's). Design item for the bridge:
-  a `tier` dimension on the order (bounded / standard / dense / deep) mapping to a
-  preferred casting plus an ordered lawful-substitute set across both vendors, filtered
-  by bucket state, with the existing guardrails preserved (Luna never under-specified;
-  Opus behind P15 + Amber arming; Sol-authored mutation is mandatory-review by flag and
-  draws down the review reserve, so Sol is a deliberate choice, never a degradation
-  target; review computed from the served author family). Owner rules on the shape
-  before it is built; the file retirements are applied in the same bridge tranche so
-  `roster/lint.js` and `install.js --lint` move once.
+  Conductor self-plans with disclosure; mechanism built in the bridge); BENCH Sweeper
+  (file kept, same toggle, default OFF; re-enable on a missed-site escape in the first
+  live tests); DITCH every other non-KEEP file. Launch roster = 9 active seats + 1
+  benched + 2 substrates (`roster/roster-review-refutations-2026-09-01.md` § Owner
+  rulings). **Builder ladder — ruled, to build in the bridge:** the Conductor selects
+  Luna / Terra / Sonnet / Sol / Opus for Builder work by task shape and per-vendor
+  availability. Today Builder has four rungs and pool state can only step to `mirror`;
+  no Opus or Sol implementation rung exists on E2 (Opus was Principal's, absorbed here).
+  Adopted shape: a `tier` on the order (bounded / standard / dense / deep) mapping to a
+  preferred casting plus an ordered cross-vendor lawful-substitute list walked under the
+  bucket ladder with `recastFrom` disclosed; guardrails preserved (Luna never
+  under-specified; Opus behind P15 + Amber arming; review computed from the served author
+  family); **`deep` defaults to Opus·high**, Conductor override to Sol·high only after the
+  Quartermaster's review-reserve check (Sol-authored mutation is mandatory-review by flag
+  and draws down the review reserve — a deliberate choice, never a degradation target).
+  The file retirements, both toggles, the stale-family MAJOR fix, and the ladder all land
+  in the bridge tranche so `roster/lint.js` and `install.js --lint` move once.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

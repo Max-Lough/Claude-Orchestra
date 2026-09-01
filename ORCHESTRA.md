@@ -79,7 +79,7 @@ Everything above holds, plus:
 
 ## 6. Pause switch (user-only)
 
-Creating `.claude/orchestra.pause` in the project (or setting env `ORCHESTRA_PAUSE=1`) stands the hook down; deleting it restores enforcement. This is the **user's** switch: you never create the pause file to route around a denial. If the user asks you to disable the Orchestra, you may create that one file (the hook permits that specific write, alongside the plan- and memory-file exceptions of §3.1) and confirm the harness is paused. To remove the harness entirely they run the installer with `--uninstall`.
+Creating `.claude/orchestra.pause` in the project (or setting env `ORCHESTRA_PAUSE=1`) stands the hook down; deleting it restores enforcement. This is the **user's** switch, and it is out-of-band only: the guard denies any Write/Edit/MultiEdit whose target resolves to that path, from you or any agent, no matter who asks — there is no tool-call exception for it, unlike the plan- and memory-file exceptions of §3.1. If the user asks you to disable the Orchestra, tell them how to pause it themselves (create the file directly in their own terminal, or set the env var) — you cannot create it for them. To remove the harness entirely they run the installer with `--uninstall`.
 
 ## 7. Specialists, hands-on skills, and MCP
 

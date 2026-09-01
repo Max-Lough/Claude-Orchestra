@@ -1077,7 +1077,9 @@ const TOOLS = [
       'family reviewer ticket and returns stage REVIEW_PENDING. On a RESOLVED reviewer ticket, parses its ' +
       'mandatory trailing verdict-json block, constructs the verdict audit deterministically from replayed ' +
       'citation evidence and dispatcher-owned family facts, and CLOSES both tickets only for a genuinely ' +
-      'closing verdict (APPROVE, cross-family, audit-valid, no blocking finding). Returns bridge/runtime.js\'s ' +
+      'closing verdict (APPROVE, cross-family, audit-valid, no blocking finding). On a RESOLVED Investigator ' +
+      'ticket (class I0/N0/N1/N2/M0 — read-only recon, PL-10), validates the bound I0 VERDICT line, writes the ' +
+      'casting record and CLOSES it directly (stage RECON_CLOSED): no Verifier, no reviewer. Returns bridge/runtime.js\'s ' +
       'close() result verbatim — every non-closing outcome is a typed NOT_CLOSED with a reason, never an ' +
       'exception. Never accepts a caller-supplied report or verdict — only the ticket id; the bound report is ' +
       'the one the host recorded at SubagentStop (or the engine run log for codex tickets).',

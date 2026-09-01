@@ -1383,6 +1383,61 @@ function fail(msg) {
   process.exit(1);
 }
 
+// PL-11: the runtime-state paths (relative to .claude/) that must never be
+// versioned — the live ticket store, the ledger, the MCP scratch dir, and the
+// Quartermaster pool readings. Written to .claude/.gitignore under
+// --roster new (see the 1a block). Also the exact list the tracked-state
+// warning below checks against.
+const RUNTIME_STATE_GITIGNORE_HEADER = '# Orchestra runtime state (live ticket store, ledger, scratch, pool readings) - never versioned';
+const RUNTIME_STATE_GITIGNORE_ENTRIES = [
+  ORCHESTRA_RUNTIME_DIRNAME + '/tickets/',
+  ORCHESTRA_RUNTIME_DIRNAME + '/ledger/',
+  'scratch/',
+  'orchestra-pool-readings.jsonl',
+];
+
+// Idempotent, additive: creates .claude/.gitignore with the runtime-state
+// entries, or appends only the entries an existing file lacks (a user's own
+// lines are never touched or reordered). Then, if the target is a git repo,
+// warns about any runtime-state path ALREADY tracked — a gitignore does not
+// untrack a file, and a tracked ticket store is exactly what collided under
+// the running helm in shakedown finding #4.
+function ensureRuntimeStateGitignore(dotClaudeDir, targetDir) {
+  const file = path.join(dotClaudeDir, '.gitignore');
+  const existed = fs.existsSync(file);
+  const current = existed ? fs.readFileSync(file, 'utf8') : '';
+  const have = new Set(current.split(/\r?\n/).map((l) => l.trim()));
+  const missing = RUNTIME_STATE_GITIGNORE_ENTRIES.filter((e) => !have.has(e));
+  if (missing.length) {
+    let text = current;
+    if (text && !text.endsWith('\n')) text += '\n';
+    if (!have.has(RUNTIME_STATE_GITIGNORE_HEADER)) text += (text ? '\n' : '') + RUNTIME_STATE_GITIGNORE_HEADER + '\n';
+    text += missing.join('\n') + '\n';
+    fs.writeFileSync(file, text, 'utf8');
+    did(
+      '.claude/.gitignore: ' + (existed ? 'appended ' : 'written with ') + missing.length + ' runtime-state entr' +
+        (missing.length === 1 ? 'y' : 'ies') + ' (' + missing.join(', ') + ') — commit the install so a branch ' +
+        'switch or `git stash -u` cannot sweep the harness; the runtime state itself stays untracked'
+    );
+  }
+  // Tracked-state warning: read-only git query; silent when not a repo.
+  let tracked = '';
+  try {
+    const r = spawnSync('git', ['-C', targetDir, 'ls-files', '--', ...RUNTIME_STATE_GITIGNORE_ENTRIES.map((e) => '.claude/' + e)], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (!r.error && r.status === 0) tracked = String(r.stdout || '').trim();
+  } catch (_) { /* not a git repo, or git absent — nothing to warn about */ }
+  if (tracked) {
+    const files = tracked.split(/\r?\n/).filter(Boolean);
+    console.error(
+      '  ! ' + files.length + ' runtime-state file(s) are TRACKED by git and .gitignore cannot untrack them — ' +
+        'run: git rm -r --cached ' + files.map((f) => '"' + f + '"').join(' ') + '  (then commit)'
+    );
+  }
+}
+
 // See HOOKS_PACKAGE_JSON_CONTENT above for why this file exists. Idempotent:
 // a file that already carries the right content is left alone, silently, so
 // a plain re-run stays quiet; a file that exists with something ELSE gets
@@ -2474,6 +2529,17 @@ if (!uninstall) {
       // already there (re-run/--repin) or was just created above.
       storeManaged = true;
     }
+
+    // PL-11 (shakedown finding #4, 2026-09-01): the live ticket store, the
+    // ledger, the MCP scratch dir and the pool readings are RUNTIME STATE
+    // that mutates under a running session. Tracked, they collide with every
+    // branch switch (a builder's `git checkout -B` reverted/removed them
+    // under the helm; `git stash -u` swept the untracked store — PL-9). So
+    // the installer writes .claude/.gitignore for exactly those paths.
+    // Idempotent and additive: an existing user-authored file keeps every
+    // line it has; only the missing entries are appended. Never removed by
+    // --uninstall (a gitignore is harmless and may carry the owner's lines).
+    ensureRuntimeStateGitignore(dotClaude, target);
   }
 
   // 1b. Manifest (.claude/orchestra.json) roster flag — the owner-pinned

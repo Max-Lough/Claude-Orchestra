@@ -989,16 +989,38 @@ async function case11() {
   // The verifier manifest (commands/coverage/versions) lives at the BASE
   // commit only — close #1 passes manifestRef = the base ref (ruling 1a: the
   // manifest is pinned OUTSIDE the audited commit), never the head tree.
+  // roster/rosterGeneration/seats make this a real roster:new install (same
+  // convention as bridge-close.test.js's makeRepo()) so production
+  // dispatch() — driven directly below to mint the section-11b
+  // implementation ticket, the same way close.js's own runtime.dispatch()
+  // does in production — can actually route.
   fs.writeFileSync(path.join(repo, '.claude', 'orchestra.json'), JSON.stringify({
     commands: [{ command: 'node -e "process.exit(0)"' }], coverage: 'complete', versions: [],
+    roster: 'new', rosterGeneration: 1, seats: {},
   }, null, 2));
   fs.writeFileSync(path.join(repo, 'lib.js'), 'module.exports = { ok: true };\n');
   git(['add', '-A'], repo);
   git(['commit', '-qm', 'base'], repo);
-  fs.writeFileSync(path.join(repo, 'feature.js'), 'module.exports = { feature: true };\n');
-  git(['add', '-A'], repo);
-  git(['commit', '-qm', 'add feature'], repo);
-  const closeHead = git(['rev-parse', 'HEAD'], repo);
+
+  // Owner pin (bridge/manifest.js's contract): dispatch() refuses to route
+  // under roster:new unless the manifest is owner-pinned and trusted — same
+  // convention as bridge-close.test.js's writePin()/PIN_DIR.
+  const pinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-close-pins-'));
+  cleanups.push(() => fs.rmSync(pinDir, { recursive: true, force: true }));
+  const manifestSha256 = crypto.createHash('sha256')
+    .update(fs.readFileSync(path.join(repo, '.claude', 'orchestra.json'))).digest('hex');
+  const pinHash = crypto.createHash('sha256').update(fs.realpathSync(repo)).digest('hex');
+  fs.writeFileSync(path.join(pinDir, pinHash + '.json'), JSON.stringify({
+    projectDir: repo, manifestSha256, roster: 'new', rosterGeneration: 1, seats: {},
+    writtenAt: new Date().toISOString(), by: 'mcp-lane.test.js case11 fixture',
+  }));
+
+  function commitFeature() {
+    fs.writeFileSync(path.join(repo, 'feature.js'), 'module.exports = { feature: true };\n');
+    git(['add', '-A'], repo);
+    git(['commit', '-qm', 'add feature'], repo);
+    return git(['rev-parse', 'HEAD'], repo);
+  }
 
   // Installed-copy substrate under .claude/orchestra/ so loadBridgeRuntime()
   // (ORCHESTRA_MCP_ROOT === repo below) can require bridge/runtime.js.
@@ -1012,6 +1034,7 @@ async function case11() {
   })).join('\n') + '\n');
 
   const T = require(path.join(MASTER, 'router', 'tickets.js'));
+  const { createRuntime } = require(path.join(MASTER, 'bridge', 'runtime.js'));
   const store = T.createTicketStore({ dir: path.join(orchestraDir, 'tickets'), init: true });
   const CFG_HASH = crypto.createHash('sha256').update('mcp-lane case11 fixture').digest('hex');
 
@@ -1030,13 +1053,21 @@ async function case11() {
       agent_transcript_path: path.join(root, 'transcript-' + ticketId + '.jsonl'),
     });
   }
-  function bandCReport(status, commit) {
+  function bandCReport(status, commit, extra) {
     return [
       'STATUS: ' + status, 'COMMIT: ' + commit, '',
       'CHANGES', '- feature.js:1 — added feature', '',
       'VERIFICATION', '- node -e "process.exit(0)" -> exit 0', '',
       'DEVIATIONS', '- none', '', 'CONCERNS', '- none', '',
-    ].join('\n');
+    ].join('\n') + (extra || '');
+  }
+  // The Verifier's nonce-echo check requires report.integrity.nonce_echo to
+  // match envelope.order.integrity_nonce byte-for-byte (see
+  // tests/bridge-close.test.js's identically-named helper) — a real Builder
+  // echoes this via a `REPORT INTEGRITY: <nonce>` line.
+  function reportIntegrityLine(taskId) {
+    const env = JSON.parse(fs.readFileSync(path.join(orchestraDir, 'ledger', taskId, 'envelope.json'), 'utf8'));
+    return '\nREPORT INTEGRITY: ' + env.order.integrity_nonce + '\n';
   }
   function verdictBlock(obj) { return '```verdict-json\n' + JSON.stringify(obj, null, 2) + '\n```\n'; }
   function approveVerdict(overrides) {
@@ -1048,9 +1079,29 @@ async function case11() {
       served_model: 'gpt-5.6-sol', run_nonce: null, review: { cross_family: null },
     }, overrides || {});
   }
-  function writeRoutingEvent(ticketId, request) {
-    const file = path.join(orchestraDir, 'tickets', 'routing.events.jsonl');
-    fs.appendFileSync(file, JSON.stringify({ request, outcome: { tickets: { implementation: { id: ticketId } } } }) + '\n');
+  // Mints the section-11b implementation ticket through PRODUCTION
+  // bridge/runtime.js dispatch() — never a hand-built ticket/routing-event
+  // fixture — so close #1's `ledger/<task_id>/envelope.json` read (written
+  // by dispatch() itself before any ticket is issued) finds the real thing,
+  // exactly as tests/bridge-close.test.js's dispatch() helper does. class
+  // E1/tier 'dense' sits outside every q0Triggers list (bridge.test.js's
+  // documented fix) and pins the Builder ladder's preferred rung to Sonnet 5
+  // (anthropic), so this fixture stays deterministic with no Q0 companion to
+  // drive.
+  function dispatchImpl(overrides) {
+    const savedPinDir = process.env.ORCHESTRA_PIN_DIR;
+    process.env.ORCHESTRA_PIN_DIR = pinDir;
+    try {
+      const rt = createRuntime({ projectDir: repo, repoDir: repo });
+      const dres = rt.dispatch(Object.assign({
+        class: 'E1', risk: 'T1', tier: 'dense', goal: 'fix the thing',
+        acceptance_criteria: ['tests pass'], task_id: 'mcp-close-task',
+      }, overrides || {}));
+      if (!dres.ok) throw new Error('fixture dispatch() refused: ' + JSON.stringify(dres));
+      return dres;
+    } finally {
+      process.env.ORCHESTRA_PIN_DIR = savedPinDir;
+    }
   }
 
   const s = mcpSession({ fx: { repo } });
@@ -1067,9 +1118,10 @@ async function case11() {
 
   // --- 11b. CLOSED end-to-end: PASS -> REVIEW_PENDING -> synthetic APPROVE verdict -> CLOSED.
   {
-    const impl = issueImpl();
-    writeRoutingEvent(impl.id, { risk: 'T2', class: 'E2' });
-    driveToResolved(impl.id, 'builder', bandCReport('DONE', closeHead), 'claude-sonnet-5-20260101');
+    const dres = dispatchImpl();
+    const impl = dres.tickets.implementation;
+    const closeHead = commitFeature();
+    driveToResolved(impl.id, impl.role, bandCReport('DONE', closeHead, reportIntegrityLine(impl.task_id)), 'claude-sonnet-5-20260101');
     const r1 = await s.rpc('tools/call', { name: 'orchestra_close', arguments: { ticket: impl.id } });
     const t1 = resultText(r1);
     check('close #1 over MCP -> REVIEW_PENDING', /"stage":\s*"REVIEW_PENDING"/.test(t1), t1.slice(0, 500));

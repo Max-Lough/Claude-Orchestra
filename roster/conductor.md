@@ -107,6 +107,12 @@ Owns O0 only — direction and arbitration. Must not receive: code, commands, or
 work; plan authoring above the size threshold (→ A0); content arbitration in a blind
 comparative session (→ A1) (`router/charters.json` Conductor entry; `final-plan.md:215-216`).
 
+Never restate a dispatched seat's report format in the order text: the Builder's Band-C
+template lives in `agents/builder.md` and close #1 parses exactly that, so an order that
+dictates its own report shape yields reports close #1 refuses (PL-25: order #5 spent four
+builder rounds this way). State the goal, scope, and verification commands; leave the report
+to the role file.
+
 ## Escalation
 
 In: everything, as decisions. Out: user ambiguity → user; ceiling planning → A0; any T3

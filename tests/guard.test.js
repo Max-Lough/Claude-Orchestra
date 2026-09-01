@@ -313,9 +313,16 @@ function runGuardRawNew(projectDir, rawInput, extraEnv) {
 // hooks/orchestra-guard.js's verifyGateHooksRegistered(), which this proves
 // against). `opts.alterEvent` corrupts one event's command string;
 // `opts.dropMatcher` omits `matcher: "Agent"` from the PreToolUse entry;
-// `opts.omitEvent` leaves one event out of `hooks` entirely.
+// `opts.omitEvent` leaves one event out of `hooks` entirely. PL-9: the
+// registered script itself is also written (a stub — the guard only requires
+// it to EXIST); `opts.omitScript` leaves it off disk.
 function writeRegisteredGateSettings(projectDir, opts) {
   opts = opts || {};
+  if (!opts.omitScript) {
+    const scriptDir = path.join(projectDir, '.claude', 'orchestra', 'bridge', 'hooks');
+    fs.mkdirSync(scriptDir, { recursive: true });
+    fs.writeFileSync(path.join(scriptDir, 'ticket-gate.js'), '// stub gate script (guard.test.js fixture)\n', 'utf8');
+  }
   const events = ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop'];
   const hooks = {};
   for (const ev of events) {
@@ -1005,6 +1012,16 @@ function case16_agentGateHookVerification() {
   writeRegisteredGateSettings(registeredProj);
   const rRegistered = runGuardNew(registeredProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
   check('--roster new, all four gate hook entries registered exactly: Agent ALLOWED (host runs the ticket gate)', decisionOf(rRegistered).decision === 'allow', JSON.stringify(decisionOf(rRegistered)));
+
+  // PL-9 (shakedown finding #2): registered exactly, but the script itself
+  // is MISSING on disk -> DENY (the host would report a non-blocking hook
+  // error and launch unticketed — fail-open — so the guard must not allow).
+  const noScriptProj = tmpdir('orchestra-guard-');
+  writeRegisteredGateSettings(noScriptProj, { omitScript: true });
+  const rNoScript = runGuardNew(noScriptProj, { tool_name: 'Agent', tool_input: { description: 'x', prompt: 'p', subagent_type: 'builder' } });
+  const dNoScript = decisionOf(rNoScript);
+  check('PL-9: --roster new, gate registered but ticket-gate.js MISSING on disk: Agent DENIED', dNoScript.decision === 'deny', JSON.stringify(dNoScript));
+  check('...names the missing script', /ticket-gate\.js/.test(dNoScript.reason) && /missing/i.test(dNoScript.reason), dNoScript.reason);
 
   // --roster new, one entry ALTERED (different command string) -> DENY.
   const alteredProj = tmpdir('orchestra-guard-');

@@ -292,6 +292,32 @@ function case2_newRosterCensus() {
     } catch (_) { return false; }
   })(), (() => { try { return fs.readFileSync(ticketStoreFile, 'utf8'); } catch (e) { return String(e); } })());
 
+  // PL-11 (shakedown finding #4): --roster new writes .claude/.gitignore for
+  // the runtime state (ticket store, ledger, scratch, pool readings), so a
+  // branch switch / `git stash -u` never fights the live store. Additive and
+  // idempotent: a user's own lines survive; a re-run appends nothing.
+  const gitignoreFile = path.join(target, '.claude', '.gitignore');
+  const gitignoreLines = () => fs.readFileSync(gitignoreFile, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  check('PL-11: --roster new writes .claude/.gitignore', fs.existsSync(gitignoreFile), c.join('\n'));
+  const RUNTIME_STATE_ENTRIES = ['orchestra/tickets/', 'orchestra/ledger/', 'scratch/', 'orchestra-pool-readings.jsonl'];
+  for (const e of RUNTIME_STATE_ENTRIES) {
+    check('PL-11: .claude/.gitignore ignores ' + e, gitignoreLines().includes(e), gitignoreLines().join('\n'));
+  }
+  const gitignoreBefore = fs.readFileSync(gitignoreFile, 'utf8');
+  const rAgainNew = install(target, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('PL-11: re-running --roster new succeeds', ok(rAgainNew), out(rAgainNew));
+  check('PL-11: re-run leaves .claude/.gitignore byte-identical (idempotent)', fs.readFileSync(gitignoreFile, 'utf8') === gitignoreBefore, fs.readFileSync(gitignoreFile, 'utf8'));
+  // A user-authored .claude/.gitignore is appended to, never overwritten.
+  const userTarget = tmpdir('orchestra-install-');
+  fs.mkdirSync(path.join(userTarget, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(userTarget, '.claude', '.gitignore'), 'settings.local.json\nscratch/\n', 'utf8');
+  const rUser = install(userTarget, ['--roster', 'new', '--no-packs', '--no-specialists']);
+  check('PL-11: --roster new over a user-authored .claude/.gitignore succeeds', ok(rUser), out(rUser));
+  const userLines = fs.readFileSync(path.join(userTarget, '.claude', '.gitignore'), 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  check('PL-11: the user\'s own line survives', userLines[0] === 'settings.local.json', userLines.join('\n'));
+  check('PL-11: an entry the user already had is not duplicated', userLines.filter((l) => l === 'scratch/').length === 1, userLines.join('\n'));
+  check('PL-11: the missing entries are appended', RUNTIME_STATE_ENTRIES.every((e) => userLines.includes(e)), userLines.join('\n'));
+
   const manifest = readJson(path.join(target, '.claude', 'orchestra.json'));
   check('manifest roster === "new"', manifest.roster === 'new', JSON.stringify(manifest));
   check('manifest installedStore === true', manifest.installedStore === true, JSON.stringify(manifest));

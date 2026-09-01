@@ -720,6 +720,85 @@ section('9. close #2 — item 7 (amended): gate-class closure is UNSUPPORTED_GAT
 
 // ------------------------------------------------------------------ section 10
 
+// ----------------------------------------------------------------- section 9b
+
+section('9b. recon close (PL-10): an Investigator ticket (class N0, kind implementation) closes on its I0 VERDICT line, writes the casting record, runs no Verifier and mints no reviewer');
+
+function i0Report(verdictLine) {
+  return [
+    'INVESTIGATION (I0) — question: why does lib.js export ok:true',
+    '',
+  ].concat(verdictLine ? [verdictLine, ''] : []).concat([
+    'EVIDENCE CHAIN',
+    '- lib.js:1 → the export is a literal',
+    '',
+    'REFUTATION DUTY',
+    '- Evidence that would refute the leading hypothesis: a second export site — none found',
+    '',
+    'PHASE: read-only',
+    '',
+    'NEXT STEP: none',
+  ]).join('\n') + '\n';
+}
+function dispatchRecon(dir) {
+  // Not via dispatch(): baseRequest() pins tier:'dense' (a Builder-ladder
+  // field the request schema rejects for a recon class), so the N0 request
+  // is built whole here.
+  const rt = createRuntime({ projectDir: dir, repoDir: dir });
+  const dres = rt.dispatch({ class: 'N0', risk: 'T0', context_shape: 'scoped', goal: 'why does lib.js export ok:true', acceptance_criteria: ['the question is answered with citations'] });
+  if (!dres.ok) throw new Error('fixture recon dispatch() refused: ' + JSON.stringify(dres));
+  return { rt, dres, store: getStore(dir) };
+}
+
+{
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatchRecon(dir);
+  const implId = dres.tickets.implementation.id;
+  const t0 = T.get(store, implId);
+  check('N0 dispatch mints a kind:implementation ticket of class N0 (the merged Investigator class)', t0.kind === 'implementation' && t0.class === 'N0', JSON.stringify(t0));
+  check('close.isReconTicket() recognises it', close.isReconTicket(t0) === true, JSON.stringify(t0));
+  driveToResolved(store, implId, t0.role, i0Report(null), 'claude-opus-5');
+  const rNoVerdict = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('recon report WITHOUT a VERDICT line: NOT_CLOSED naming the VERDICT line', rNoVerdict.ok === false && rNoVerdict.outcome === 'NOT_CLOSED' && /VERDICT/.test(rNoVerdict.reason), JSON.stringify(rNoVerdict));
+  check('...the ticket stays RESOLVED (retryable)', T.get(store, implId).status === 'RESOLVED', T.get(store, implId).status);
+  check('...no casting record was written', !fs.existsSync(path.join(dir, '.claude', 'orchestra', 'ledger', implId, 'casting-record.json')), '');
+}
+
+{
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatchRecon(dir);
+  const implId = dres.tickets.implementation.id;
+  const t0 = T.get(store, implId);
+  driveToResolved(store, implId, t0.role, i0Report('VERDICT: CONFIRMED'), 'claude-opus-5');
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('recon close: ok, outcome CLOSED, stage RECON_CLOSED, verdict CONFIRMED', r.ok === true && r.outcome === 'CLOSED' && r.stage === 'RECON_CLOSED' && r.verdict === 'CONFIRMED', JSON.stringify(r));
+  check('the ticket is CLOSED in the store', T.get(store, implId).status === 'CLOSED', T.get(store, implId).status);
+  check('...with a close reason carrying the verdict', /recon VERDICT: CONFIRMED/.test((T.get(store, implId).outcome || {}).reason || ''), JSON.stringify(T.get(store, implId).outcome));
+  const recFile = path.join(dir, '.claude', 'orchestra', 'ledger', implId, 'casting-record.json');
+  check('casting-record.json written under the ticket\'s ledger dir', fs.existsSync(recFile), '');
+  const rec = fs.existsSync(recFile) ? JSON.parse(fs.readFileSync(recFile, 'utf8')) : {};
+  check('casting record validates against casting-record.schema.json', validate(CASTING_RECORD_SCHEMA, rec).length === 0, validate(CASTING_RECORD_SCHEMA, rec).join('; '));
+  check('casting record: class N0, role from the ticket, risk from the envelope, context_shape scoped, review_cross_family false',
+    rec.class === 'N0' && rec.role === t0.role && rec.risk === 'T0' && rec.context_shape === 'scoped' && rec.review_cross_family === false && rec.status === 'DONE', JSON.stringify(rec));
+  check('casting record: requested casting is the ticket\'s, served model recorded, mismatch computed (canonical name comparison)',
+    JSON.stringify(rec.requested_casting) === JSON.stringify(t0.casting) && rec.served_model === 'claude-opus-5' && typeof rec.served_model_mismatch === 'boolean', JSON.stringify(rec));
+  check('no verifier.json (no Verifier ran)', !fs.existsSync(path.join(dir, '.claude', 'orchestra', 'ledger', implId, 'verifier.json')), '');
+  check('no reviewer ticket was minted', !Object.values(T.list(store)).some((t) => t && t.reviewer_of === implId), JSON.stringify(T.list(store)));
+  const rAgain = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('a second close is refused (one-use: CLOSED is not RESOLVED)', rAgain.ok === false && rAgain.outcome === 'NOT_CLOSED', JSON.stringify(rAgain));
+}
+
+{
+  // A real Builder ticket is untouched by the recon branch.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const t0 = T.get(store, dres.tickets.implementation.id);
+  check('an E1 Builder ticket is NOT a recon ticket (close #1 path unchanged)', close.isReconTicket(t0) === false, JSON.stringify(t0));
+}
+
 section('10. the grep-pin — "CLOSED" as a close code appears only in bridge/close.js');
 {
   const offenders = [];

@@ -82,7 +82,11 @@ proof — the only things not here yet.
 (SubagentStop)`, then `close()` (leg 5) to `CLOSED` or a disclosed
 `NOT_CLOSED`; `EXPIRED`/`INVALIDATED` are the other two terminal states. See
 `router/tickets.js` for the state machine itself — this runtime only calls
-its exported operations, never reimplements them.
+its exported operations, never reimplements them. An Investigator ticket
+(class I0, or a merged recon class N0/N1/N2/M0) takes the recon close (PL-10):
+`close()` reads its I0 `VERDICT:` line, writes the casting record, and CLOSES
+it with `stage: RECON_CLOSED` — no Verifier, no reviewer, since read-only
+research names no commit to certify.
 
 ## Engine ticket lifecycle — the two-pass model (leg 4b, fix round item 2)
 

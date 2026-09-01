@@ -7,6 +7,10 @@
  *     below): validate the bound executor report, run verifier.runVerification
  *     with the manifest pinned OUTSIDE the audited commit, and on PASS mint the
  *     computed opposite-family reviewer ticket.
+ *   - an Investigator ticket (class I0 or a merged recon class N0/N1/N2/M0 —
+ *     kind implementation, but read-only research) goes through the RECON
+ *     CLOSE (closeRecon below, PL-10): validate the bound I0 VERDICT line,
+ *     write the casting record, CLOSE. No Verifier, no reviewer.
  *   - a reviewer ticket goes through CLOSE #2 (closeReview below): parse the
  *     mandatory structured verdict-json block, construct the verdict audit
  *     deterministically from replayed evidence and dispatcher-owned family
@@ -674,21 +678,7 @@ function closeReview(ctx, ticket) {
     /* best effort — keep the DONE default (this branch is only reachable via a prior PASS close #1) */
   }
   const riskForTelemetry = (envelope && envelope.risk) || 'T1';
-  // Telemetry fidelity (shakedown order #5, PL-24): the bucket a casting
-  // draws from follows the casting itself, in the Quartermaster's own bucket
-  // names (OpenAI → OU; Opus → AU-opus; Fable → AU-fable; every other
-  // Anthropic model → AU-all), and context_shape is the envelope's own
-  // declaration — never a constant.
-  function bucketFor(casting) {
-    const vendor = String((casting && casting.vendor) || '').toLowerCase();
-    const model = String((casting && casting.model) || '');
-    if (vendor === 'openai') return 'OU';
-    if (/^opus/i.test(model)) return 'AU-opus';
-    if (/^fable/i.test(model)) return 'AU-fable';
-    return 'AU-all';
-  }
-  const CONTEXT_SHAPES = ['packet', 'scoped', 'subsystem', 'repo', 'haystack'];
-  const contextShape = envOrder && CONTEXT_SHAPES.includes(envOrder.context_shape) ? envOrder.context_shape : 'repo';
+  const contextShape = contextShapeOf(envOrder);
 
   telemetry.writeCastingRecord(ctx.projectDir, implTicket.id, {
     task_id: implTicket.task_id,
@@ -744,6 +734,100 @@ function closeReview(ctx, ticket) {
   };
 }
 
+// ------------------------------------------------------- telemetry helpers
+
+// Telemetry fidelity (shakedown order #5, PL-24): the bucket a casting draws
+// from follows the casting itself, in the Quartermaster's own bucket names
+// (OpenAI → OU; Opus → AU-opus; Fable → AU-fable; every other Anthropic
+// model → AU-all), and context_shape is the envelope's own declaration —
+// never a constant. Shared by close #2 and the recon close.
+function bucketFor(casting) {
+  const vendor = String((casting && casting.vendor) || '').toLowerCase();
+  const model = String((casting && casting.model) || '');
+  if (vendor === 'openai') return 'OU';
+  if (/^opus/i.test(model)) return 'AU-opus';
+  if (/^fable/i.test(model)) return 'AU-fable';
+  return 'AU-all';
+}
+const CONTEXT_SHAPES = ['packet', 'scoped', 'subsystem', 'repo', 'haystack'];
+function contextShapeOf(envOrder) {
+  return envOrder && CONTEXT_SHAPES.includes(envOrder.context_shape) ? envOrder.context_shape : 'repo';
+}
+
+// --------------------------------------------------------------- recon close
+//
+// PL-10 (shakedown finding #3, 2026-09-01): an Investigator ticket (class I0,
+// or a merged recon class N0/N1/N2/M0) is issued as `kind: implementation`,
+// but its I0 report has no STATUS/COMMIT/CHANGES — it is read-only research,
+// so close #1's Band-C parse, the Verifier replay and the cross-family
+// reviewer can never apply, and the ticket used to rest at RESOLVED forever
+// with NO telemetry. The recon close is the typed alternative: validate the
+// bound I0 verdict line, write the casting record (the attestation row is
+// what the telemetry is FOR — what was requested vs what served), and CLOSE
+// the ticket. No Verifier, no reviewer ticket: a recon produces no commit to
+// certify; any fix it recommends is a follow-on Builder order with the
+// ordinary two-stage close.
+const RECON_CLASSES = [CASTINGS.roles.Investigator.class].concat(
+  Object.keys(CASTINGS.mergedClasses || {}).filter((k) => CASTINGS.mergedClasses[k] && CASTINGS.mergedClasses[k].role === 'Investigator')
+);
+const RECON_VERDICTS = ['CONFIRMED', 'LIKELY', 'UNCERTAIN'];
+
+function isReconTicket(ticket) {
+  return !!ticket && ticket.kind === 'implementation' && RECON_CLASSES.includes(ticket.class);
+}
+
+function closeRecon(ctx, ticket) {
+  if (ticket.status !== 'RESOLVED') {
+    return notClosed('ticket ' + ticket.id + ' is ' + ticket.status + ', close requires RESOLVED');
+  }
+  // Same provenance rule as close #2: an engine-driven ticket's report is the
+  // engine's own; otherwise the host-bound last assistant message.
+  const hasEngineResult = !!(ticket.engine_result && typeof ticket.engine_result.report === 'string');
+  const bound = hasEngineResult ? ticket.engine_result.report : (ticket.resolved && ticket.resolved.last_assistant_message);
+  const verdictMatch = /^VERDICT:\s*([A-Z_]+)/m.exec(String(bound || ''));
+  if (!verdictMatch) {
+    return notClosed('recon report unparseable — no VERDICT line found in the bound report (roster/investigator.md report format)');
+  }
+  const verdict = verdictMatch[1];
+  if (!RECON_VERDICTS.includes(verdict)) {
+    return notClosed('recon verdict ' + verdict + ' is not one of ' + RECON_VERDICTS.join('/'));
+  }
+  const envelope = readEnvelope(ctx.projectDir, ticket.task_id);
+  if (!envelope) {
+    return notClosed('envelope unavailable for task ' + ticket.task_id);
+  }
+  if (!envelope.risk) {
+    return notClosed('envelope invalid: missing risk for ticket ' + ticket.id);
+  }
+  const served = (ticket.launched && ticket.launched.served_model) || 'UNKNOWN';
+  let record;
+  try {
+    record = telemetry.writeCastingRecord(ctx.projectDir, ticket.id, {
+      task_id: ticket.task_id,
+      class: ticket.class,
+      risk: envelope.risk,
+      role: ticket.role,
+      requested_casting: ticket.casting,
+      served_model: served,
+      bucket: bucketFor(ticket.casting),
+      context_shape: contextShapeOf(envelope.order),
+      status: 'DONE',
+      review_cross_family: false, // recon is never reviewed — by design, not an incident
+    });
+  } catch (e) {
+    return notClosed('casting record refused: ' + (e && e.message ? e.message : String(e)));
+  }
+  const closed = tickets.close(ctx.store, ticket.id, { code: 'CLOSED', reason: 'recon VERDICT: ' + verdict + ' (read-only; no verifier, no reviewer)' });
+  return {
+    ok: true,
+    outcome: 'CLOSED',
+    stage: 'RECON_CLOSED',
+    verdict,
+    implementation: closed,
+    casting_record: record,
+  };
+}
+
 // -------------------------------------------------------------------- close
 
 function close({ ticket, projectDir, repoDir, store } = {}) {
@@ -756,6 +840,7 @@ function close({ ticket, projectDir, repoDir, store } = {}) {
   const ticketsDir = path.join(projectDir, ...TICKETS_DIR_REL);
   const ctx = { projectDir, repoDir, store: store || tickets.createTicketStore({ dir: ticketsDir, init: true }) };
   if (ticket.kind === 'reviewer') return closeReview(ctx, ticket);
+  if (isReconTicket(ticket)) return closeRecon(ctx, ticket); // PL-10
   return closeImplementation(ctx, ticket);
 }
 
@@ -764,6 +849,8 @@ module.exports = {
   normalizeClaims,
   closeImplementation,
   closeReview,
+  closeRecon,
+  isReconTicket,
   parseBandCReport,
   buildVerifierReport,
   extractVerdictBlock,

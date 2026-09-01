@@ -48,6 +48,7 @@
     "constraints": { "type": "array", "items": { "type": "string" } },
     "context_packet": { "type": "string" },
     "context_shape": { "enum": ["packet", "scoped", "subsystem", "repo", "haystack"] },
+    "tier": { "enum": ["bounded", "standard", "dense", "deep"], "description": "WO-14b Builder ladder: the tier the Conductor selects for a Builder-cast (or Builder-merged) order — bounded (Luna, xhigh–max), standard (Sonnet, med), dense (Sonnet, high), deep (Opus 5, high, absorbing Principal's retired primary rung). Optional; router cast()/dispatch() default by class when absent." },
     "touches": {
       "type": "array",
       "items": { "enum": ["auth", "authz", "concurrency", "crypto", "dependencies", "deserialization", "file-paths", "parsing", "persistent-data", "public-api", "secrets", "subprocess"] },

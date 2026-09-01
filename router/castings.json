@@ -1,7 +1,7 @@
 {
-  "$comment": "WO-6 casting tables — machine-readable transcription of final-plan.md Part 2 (per-role castings), Part 3.4 (review mandate + R0 matrix), Part 5.5 (pool states / degradation ladder), and the Q0 automatic triggers (seat 19). The registry (registry/classes.json) owns the taxonomy; this file owns who runs it at which rung under which pool state. Edit the plan first, then mirror here — router/router.js cross-checks this file against the registry at load and fails closed on any drift. Two entries are WO-6 defaults the plan leaves unstated, marked unstatedInPlan.",
-  "version": "2026-08-30",
-  "source": "plans/cross-compare/agent-role-architecture/final-plan.md — Parts 2, 3.4, 5.5; WO-6 order",
+  "$comment": "WO-6 casting tables — machine-readable transcription of final-plan.md Part 2 (per-role castings), Part 3.4 (review mandate + R0 matrix), Part 5.5 (pool states / degradation ladder), and the Q0 automatic triggers (seat 19). WO-14b leg 2b (readiness-repair tranche, 2026-09-01 owner rulings): twelve roles retired — merged into Builder/Investigator, or (A1) a documented workflow — via the mergedClasses table below; classes remain routing labels in registry/classes.json regardless. Builder gained a four-tier ladder (bounded/standard/dense/deep) absorbing Principal's Opus rung. Architect and Sweeper carry owner-settable seat toggles (defaultEnabled). The registry (registry/classes.json) owns the taxonomy; this file owns who runs it at which rung under which pool state. Edit the plan first, then mirror here — router/router.js cross-checks this file against the registry at load and fails closed on any drift. Two entries are WO-6 defaults the plan leaves unstated, marked unstatedInPlan.",
+  "version": "2026-09-01",
+  "source": "plans/cross-compare/agent-role-architecture/final-plan.md — Parts 2, 3.4, 5.5; WO-6 order; WO-14b leg 2b owner rulings (roster-review-refutations-2026-09-01.md, readiness-repair-tranche-2026-09-01.md)",
   "families": {
     "anthropic": ["Fable 5", "Opus 5", "Sonnet 5", "Haiku 4.5"],
     "openai": ["GPT-5.6 Sol", "GPT-5.6 Terra", "GPT-5.6 Luna"]
@@ -62,7 +62,7 @@
   },
   "securityTriggerList": ["auth", "authz", "crypto", "parsing", "deserialization", "file-paths", "subprocess", "dependencies", "secrets"],
   "mandatoryReview": {
-    "$comment": "§3.4 — the set that can never degrade; fixed at design time, no degradation rung edits it.",
+    "$comment": "§3.4 — the set that can never degrade; fixed at design time, no degradation rung edits it. Unchanged by WO-14b leg 2b: A1's row is unreachable now that A1 has no role (dispatch returns typed RETIRED_WORKFLOW before review is ever computed) and stays as documentation.",
     "classes": ["E4", "E7", "E3", "A1"],
     "riskTiers": ["T3"],
     "flags": ["integrationGate", "chainFinal", "ceilingAuthored", "solAuthoredMutation", "gateClassConfirmed", "securityRelevant", "unattributed"],
@@ -103,7 +103,7 @@
     }
   },
   "q0Triggers": {
-    "$comment": "Seat 19's automatic triggers — policy, not discretion. The scheduler creates Q0 when the implementation order is created; a missing required Q0 order blocks the work. Q0 is always Director-created, never implementer-spawned.",
+    "$comment": "Seat 19's automatic triggers — policy, not discretion. The scheduler creates Q0 when the implementation order is created; a missing required Q0 order blocks the work. Q0 is always Director-created, never implementer-spawned. Class ids are unchanged by WO-14b leg 2b's role retirements — E0/E1/E3/E5/E6/E8 still trigger exactly as before even though they now dispatch through Builder via mergedClasses.",
     "classes": ["E3", "E4", "E7"],
     "riskTiers": ["T2", "T3"],
     "sourceChangeClasses": ["E0", "E1", "E2", "E3", "E4", "E5", "E6", "E8"],
@@ -113,6 +113,7 @@
   "roles": {
     "Conductor": {
       "class": "O0",
+      "defaultEnabled": true,
       "contextShapes": ["packet"],
       "rungs": {
         "primary": { "vendor": "anthropic", "model": "Fable 5", "effort": "owner-set", "note": "the interactive session model IS the Conductor; no bootstrap layer" },
@@ -123,6 +124,7 @@
     },
     "Architect": {
       "class": "A0",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
       "rungs": {
         "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "xhigh" },
@@ -134,49 +136,9 @@
       },
       "securityRouteFilter": "security-sensitive planning is a hard route-filter to the Sol lane — never the Fable casting (silent classifier fallback on cyber/bio topics)"
     },
-    "Synthesizer": {
-      "class": "A1",
-      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
-      "rungs": {
-        "primary": { "vendor": "anthropic", "model": "Fable 5", "effort": "xhigh" },
-        "rationSpent": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
-        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "max" }
-      },
-      "never": ["Haiku 4.5", "GPT-5.6 Luna", "GPT-5.6 Terra"],
-      "neverReason": "never any cheap tier — the merge is the longest-horizon synthesis in the system"
-    },
-    "Scout": {
-      "class": "N0",
-      "contextShapes": ["packet", "scoped"],
-      "shapeNote": "scoped maximum — never haystack (§ seat 4); truncation or unexhausted surface auto-reclassifies to N2/I0",
-      "rungs": {
-        "primary": { "vendor": "anthropic", "model": "Haiku 4.5", "effort": "off" },
-        "mirror": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "low", "note": "pool-aware — N0 stays on Haiku by default to protect the OpenAI review reserve" }
-      }
-    },
-    "Researcher": {
-      "class": "N1",
-      "contextShapes": ["packet", "scoped", "haystack"],
-      "rungs": {
-        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med" },
-        "deep": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high", "note": "deep, contradictory retrieval chains or safety/architecture/procurement-relevant research" },
-        "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "med" }
-      },
-      "never": ["GPT-5.6 Luna", "Haiku 4.5"],
-      "neverReason": "the corpus is a haystack by definition",
-      "$comment": "`never` binds the CASTING (the engine doing the work, e.g. GPT-5.6 Sol) — not a thin OpenAI-launcher file's own `model: haiku` shell, which carries no judgment and is a different actor from the casting it dispatches to"
-    },
-    "LC Analyst": {
-      "class": "N2",
-      "contextShapes": ["packet", "scoped", "subsystem", "haystack"],
-      "rungs": {
-        "primary": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
-        "dense": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "high", "note": "dense cross-document inference" },
-        "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "med", "note": "covers corpora up to ~1M tokens — full mirror, not partial" }
-      }
-    },
     "Investigator": {
       "class": "I0",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "repo"],
       "rungs": {
         "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
@@ -184,59 +146,32 @@
         "ceiling": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "trail cold and blocking, or after two failed hunts with different hypotheses" }
       }
     },
-    "Archivist": {
-      "class": "M0",
-      "contextShapes": ["packet", "scoped", "haystack"],
-      "rungs": {
-        "documents": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med", "note": "documents, PDFs, logs, pre-extracted text" },
-        "images": { "vendor": "anthropic", "model": "Opus 5", "effort": "med", "note": "images, charts, renders" }
-      },
-      "defaultRung": "documents",
-      "noMirrorFor": {
-        "videoAudio": "declared no-mirror exception: raw video and audio go below the model layer — deterministic frame extraction + local speech-to-text, else typed UNAVAILABLE; never a silent narrowing to stills"
-      }
-    },
-    "Operator": {
-      "class": "E0",
-      "contextShapes": ["packet", "scoped", "subsystem", "haystack"],
-      "rungs": {
-        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
-        "tacticalRaise": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "max", "note": "one effort raise on the same casting, once (tactical stall)" },
-        "mirror": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "strategy-level stall crosses families — a different lineage brings a different prior; ordering provisional pending WO-12e" }
-      }
-    },
-    "Runner": {
-      "class": "E1",
-      "contextShapes": ["packet"],
-      "shapeNote": "packet — the hardest constraint in the roster, dispatcher-enforced",
-      "rungs": {
-        "primary": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "low–med" },
-        "mirror": { "vendor": "anthropic", "model": "Haiku 4.5", "effort": "off", "note": "choose by pool room and parent cache locality; never mix vendors inside one cached prefix" }
-      }
-    },
     "Builder": {
       "class": "E2",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem"],
       "rungs": {
         "preferredBounded": { "vendor": "openai", "model": "GPT-5.6 Luna", "effort": "xhigh–max", "note": "bounded, short-horizon, fully-specified, deterministically-verifiable orders only; Luna never receives under-specified work" },
         "primary": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med", "note": "orders expected to run longer or whose spec is thinner than Luna's bar" },
         "dense": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "high", "note": "unusually dense but bounded logic" },
-        "mirror": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" }
+        "mirror": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
+        "denseMirror": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "high", "note": "WO-14b Builder ladder: the dense tier's cross-vendor lawful substitute, walked under the bucket ladder like any other mirror" },
+        "denseOverrideSol": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med", "note": "WO-14b Builder ladder: dense tier, override-only — reachable solely through castOpts.override from the Conductor, subject to the Quartermaster's review-reserve check (leg 4); never walked" },
+        "deepPrimary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "WO-14b Builder ladder: deep tier preferred — absorbs Principal's (E3) retired primary rung" },
+        "deepOverrideSol": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high", "note": "WO-14b Builder ladder: deep tier, override-only — a deliberate Conductor choice, never a degradation target; subject to the Quartermaster's review-reserve check (leg 4); never walked" }
+      },
+      "tiers": {
+        "$comment": "WO-14b Builder ladder (owner-ruled 2026-09-01, adopted as proposed): a tier on the order picks a preferred casting plus an ordered cross-vendor substitute list walked under the bucket ladder; override-only entries are reachable solely through castOpts.override, never walked.",
+        "bounded": { "preferred": "preferredBounded", "substitutes": ["mirror", "primary"] },
+        "standard": { "preferred": "primary", "substitutes": ["mirror"] },
+        "dense": { "preferred": "dense", "substitutes": ["denseMirror"], "overrideOnly": ["denseOverrideSol"] },
+        "deep": { "preferred": "deepPrimary", "substitutes": [], "overrideOnly": ["deepOverrideSol"] }
       },
       "guardrail": "Luna never receives under-specified work — the guardrail survives the promotion"
     },
-    "Principal": {
-      "class": "E3",
-      "contextShapes": ["packet", "scoped", "subsystem", "repo"],
-      "rungs": {
-        "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
-        "effortPoint2": { "vendor": "anthropic", "model": "Opus 5", "effort": "xhigh", "note": "one tier, two effort points — not two rungs of the ladder" },
-        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
-        "ceiling": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "Max seat only; reached only after both Opus effort points bounced AND the diagnosis is ceiling, not under-specified" }
-      }
-    },
     "Data Engineer": {
       "class": "E4",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "haystack"],
       "rungs": {
         "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
@@ -246,30 +181,9 @@
         "irreversible": "declared no-mirror exception: the irreversible half. Pool pressure changes WHEN T2/T3 data work is scheduled, never WHO prepares it; if the Anthropic pool is exhausted, irreversible data work waits"
       }
     },
-    "Interface Artisan": {
-      "class": "E5",
-      "contextShapes": ["packet", "scoped", "subsystem"],
-      "rungs": {
-        "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med–high", "note": "generation, with a browser/screenshot loop" },
-        "closing": { "vendor": "anthropic", "model": "Opus 5", "effort": "high", "note": "dispatched as a separate READ-ONLY order — no WRITE-TREE; an edit would make it a co-author and disqualify it from closing; always a different family from the generator" },
-        "critic": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "rare — passes every check and still looks wrong; effort unstated in the plan, high adopted to match the E6 critic (WO-6 default)", "unstatedInPlan": "effort" }
-      },
-      "noMirrorFor": {
-        "primary": "declared no-mirror exception, unstated in the plan: final-plan.md Part 2 seat 15 names no authoring mirror for the E5 primary — closing (Opus 5, high) is dispatched as a SEPARATE READ-ONLY order (an edit would make it a co-author and disqualify it from closing) and critic (Fable 5, ceiling) is a rare global-critique ceiling; neither is an authoring substitution target for the Sol primary. Pool outage on the primary casting waits or returns typed UNAVAILABLE.",
-        "unstatedInPlan": true
-      }
-    },
-    "Spatial Specialist": {
-      "class": "E6",
-      "contextShapes": ["packet", "scoped", "subsystem"],
-      "rungs": {
-        "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
-        "critic": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "global visual critique; runs last and rarely" },
-        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high", "note": "the agentic engine loop (build-run-screenshot-adjust) rather than the geometry itself" }
-      }
-    },
     "Red Team": {
       "class": "E7",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "repo"],
       "rungs": {
         "primary": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high" },
@@ -279,18 +193,9 @@
       "never": ["Fable 5"],
       "neverReason": "a policy fact, not a capability judgment: silent classifier fallback on cyber topics — a security review routed there may be answered by a different model with nothing saying so. Hard route-filter"
     },
-    "Refactorer": {
-      "class": "E8",
-      "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
-      "shapeNote": "unstated in the plan; repo+haystack adopted (the consumer census is the point of the Terra 1M window) — WO-6 default",
-      "unstatedInPlan": "contextShapes",
-      "rungs": {
-        "primary": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
-        "mirror": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" }
-      }
-    },
     "Test Designer": {
       "class": "Q0",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem"],
       "rungs": {
         "vsAnthropicAuthor": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
@@ -299,40 +204,30 @@
       "castRule": "cast opposite the implementation author's family; a human-authored implementation takes whichever pool is healthier, tie → the Anthropic lane (protects the OpenAI review reserve, Part 5)",
       "directorCreated": "Q0 is always Director-created, never spawned by the implementer — the independence is the point",
       "crossFamilyByConstruction": {
-        "reason": "mirror substitution is unlawful by construction — the seat is cast opposite the implementation author's family, so substituting the other lane under pool outage would place the test designer same-family with the author, violating the invariant. router.js has no special-cased Q0 outage handling: rung selection (router.js:417-430) always names vsAnthropicAuthor or vsOpenaiAuthor from implementationAuthorFamily, and this role carries no `mirror` rung, so when that rung's bucket cannot take the authoring purpose, cast()'s generic degradation fallback (router.js:475-488) finds role.rungs.mirror undefined, the Data-Engineer-only reversibleT1 fallback does not apply, and it falls through to the final refusal: outcome WAIT, reason 'no lawful casting: <model> bucket at <state> ... and the role declares no mirror for this work' (router.js:485-488). Outage means wait, or a typed UNAVAILABLE at the caller — never a same-family substitution."
+        "reason": "mirror substitution is unlawful by construction — the seat is cast opposite the implementation author's family, so substituting the other lane under pool outage would place the test designer same-family with the author, violating the invariant. router.js has no special-cased Q0 outage handling: rung selection always names vsAnthropicAuthor or vsOpenaiAuthor from implementationAuthorFamily, and this role carries no `mirror` rung, so when that rung's bucket cannot take the authoring purpose, cast()'s generic degradation fallback finds role.rungs.mirror undefined, the Data-Engineer-only reversibleT1 fallback does not apply, and it falls through to the final refusal: outcome WAIT, reason 'no lawful casting: <model> bucket at <state> ... and the role declares no mirror for this work'. Outage means wait, or a typed UNAVAILABLE at the caller — never a same-family substitution."
       }
-    },
-    "Doc Writer": {
-      "class": "D0",
-      "contextShapes": ["packet", "scoped", "subsystem", "repo"],
-      "shapeNote": "unstated in the plan; repo adopted (runbooks and migration guides read the tree) — WO-6 default",
-      "unstatedInPlan": "contextShapes",
-      "rungs": {
-        "primary": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med", "note": "routine developer documentation tied to verified behavior" },
-        "deliverable": { "vendor": "anthropic", "model": "Opus 5", "effort": "med", "note": "deliverable-grade documents, public contracts, migration guides" },
-        "ceiling": { "vendor": "anthropic", "model": "Fable 5", "effort": "med", "ceiling": true, "note": "documents that are themselves deliverables; Max seat only" },
-        "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "med", "note": "declared non-equivalent (~12 Elo behind on knowledge-work artifacts): add a cross-family register/over-claiming read; deliverable-grade documents wait for the primary pool rather than shipping on the mirror" }
-      },
-      "never": ["GPT-5.6 Terra", "GPT-5.6 Luna"],
-      "neverReason": "both identified as their family's weak writers in a blind prose panel; bad docs are not caught by tests and are read for years"
     },
     "Reviewer": {
       "class": "R0",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "repo"],
       "computed": true,
       "computedRule": "family(reviewer) ∉ families(author + co-authors), evaluated at dispatch from the ledger's recorded family set — the full co-author set, never just the original author. Use reviewer(), never cast()"
     },
     "Sweeper": {
       "class": "S0",
+      "defaultEnabled": false,
       "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
       "rungs": {
         "primary": { "vendor": "openai", "model": "GPT-5.6 Terra", "effort": "med" },
         "mirror": { "vendor": "anthropic", "model": "Sonnet 5", "effort": "med" }
       },
-      "castRule": "never the instance that performed the fan-out; prefer the opposite family from the author"
+      "castRule": "never the instance that performed the fan-out; prefer the opposite family from the author",
+      "benchedNote": "owner ruling 2026-09-01: BENCHED, not ditched — file stays, seat disabled behind the seat-toggle mechanism (defaultEnabled: false). Re-enable trigger: a missed-site escape surfacing after a wide change in the first live tests. Disabled dispatch of S0 carries fallback:'verifier-census' (the Conductor's chain-final step falls to the Verifier's deterministic census re-run, disclosed on the order)."
     },
     "Verifier": {
       "class": "V0",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
       "substrate": true,
       "modelAssist": {
@@ -343,6 +238,7 @@
     },
     "Quartermaster": {
       "class": "P0",
+      "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "repo", "haystack"],
       "substrate": true,
       "modelAssist": {
@@ -351,5 +247,20 @@
         "note": "deterministic code over the ledger; cheapest-tier model only for summarization"
       }
     }
+  },
+  "mergedClasses": {
+    "$comment": "WO-14b leg 2b (owner rulings 2026-09-01): every class stays a routing label in registry/classes.json even though its dedicated role/file is retired. A1 has no role at all — dispatch returns typed RETIRED_WORKFLOW naming the documented workflow. N0/N1/N2/M0 merge into Investigator (mode = the former class id; N0 keeps the read-only pin behavior). E0/E1/E3/E5/E6/E8/D0 merge into Builder at a default tier (mode = the former class id, overridable by an explicit order.tier); E8 additionally widens Builder's context shapes to include repo/haystack (the census-first work the old Refactorer needed).",
+    "A1": { "workflow": "A1 comparative-plan synthesis under Conductor + both Reviewer lanes + owner" },
+    "N0": { "role": "Investigator", "mode": "N0", "pin": "read-only" },
+    "N1": { "role": "Investigator", "mode": "N1" },
+    "N2": { "role": "Investigator", "mode": "N2" },
+    "M0": { "role": "Investigator", "mode": "M0" },
+    "E0": { "role": "Builder", "tier": "standard", "mode": "E0" },
+    "E1": { "role": "Builder", "tier": "bounded", "mode": "E1" },
+    "E3": { "role": "Builder", "tier": "deep", "mode": "E3", "contextShapesAllowed": ["repo"], "note": "Conductor rider 2026-09-01: deep work inherits Principal's repo shape — the merge absorbs the rung, not the shape restriction" },
+    "E5": { "role": "Builder", "tier": "standard", "mode": "E5" },
+    "E6": { "role": "Builder", "tier": "standard", "mode": "E6" },
+    "E8": { "role": "Builder", "tier": "standard", "mode": "E8", "contextShapesAllowed": ["repo", "haystack"] },
+    "D0": { "role": "Builder", "tier": "bounded", "mode": "D0" }
   }
 }

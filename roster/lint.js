@@ -40,6 +40,7 @@ const ROSTER_DIR = __dirname;
 const MASTER = path.resolve(ROSTER_DIR, '..');
 const castings = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'castings.json'), 'utf8'));
 const charters = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charters.json'), 'utf8'));
+const { load: loadRegistry } = require(path.join(MASTER, 'registry', 'load.js'));
 
 // Non-role documents living in roster/ — everything else *.md must be a
 // role file with full frontmatter and the nine fields. Record documents
@@ -184,8 +185,34 @@ function lint() {
       problems.push(file + ': seat ' + seat + ' has neither a mirror rung nor a declared no-mirror exception in castings.json');
     }
   }
+
+  // WO-14b: every active registry class must be owned by exactly one live
+  // casting-table role OR declared in castings.json's mergedClasses table
+  // (a retired-workflow class, or a class merged into a surviving role at a
+  // default tier/mode) — never neither. This mirrors router.js's load-time
+  // cross-check so a drift between the registry and castings.json/roster
+  // fails the lint too, not only the router's own construction.
+  {
+    const { registry, problems: regProblems } = loadRegistry();
+    if (regProblems.length > 0) {
+      problems.push('registry/load.js reports ' + regProblems.length + ' violation(s) — cannot cross-check merged classes: ' + regProblems[0]);
+    } else {
+      const ownedClasses = new Set();
+      for (const seat of Object.keys(castings.roles)) ownedClasses.add(castings.roles[seat].class);
+      const merged = castings.mergedClasses || {};
+      for (const c of registry.classes) {
+        if (ownedClasses.has(c.id)) continue;
+        if (!hasOwn2(merged, c.id)) { problems.push('registry class ' + c.id + ' is neither owned by a casting-table role nor declared in castings.json mergedClasses'); continue; }
+        const m = merged[c.id];
+        if (m.workflow !== undefined) continue;
+        if (!m.role || !castings.roles[m.role]) problems.push('mergedClasses.' + c.id + ' targets unknown role ' + JSON.stringify(m.role));
+      }
+    }
+  }
   return problems;
 }
+
+function hasOwn2(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
 
 module.exports = { lint, NINE_FIELDS };
 

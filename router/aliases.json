@@ -10,14 +10,14 @@
       "deprecation": "executor is retired: routine implementation is Builder (E2); the Luna preferred-bounded lane and Terra mirror replace engine flags"
     },
     "executor-heavy": {
-      "new": { "role": "Principal", "rung": "primary" },
+      "new": { "role": "Builder", "tier": "deep" },
       "legacy": { "agent": "executor-heavy", "model": "Opus 5", "effort": "high" },
-      "deprecation": "executor-heavy is retired: hard-tier authoring is Principal (E3) at the high effort point"
+      "deprecation": "executor-heavy is retired: hard-tier authoring is Principal's absorbed casting, now the Builder deep tier (E3 mode) at Opus 5 · high — Principal is retired as a role (WO-14b readiness-repair tranche, owner ruling 2026-09-01)"
     },
     "executor-heavy-xhigh": {
-      "new": { "role": "Principal", "rung": "effortPoint2" },
+      "new": { "role": "Builder", "tier": "deep", "downgradeNote": "legacy xhigh effort point lands on the Builder deep tier's Opus 5 · high preferred casting — the WO-14b Builder ladder has no xhigh point on deep; the downgrade is deliberate and ledgered" },
       "legacy": { "agent": "executor-heavy-xhigh", "model": "Opus 5", "effort": "xhigh" },
-      "deprecation": "executor-heavy-xhigh is retired as a second definition: it is Principal's routed xhigh effort point, one tier, two effort points"
+      "deprecation": "executor-heavy-xhigh is retired as a second definition: Principal is retired as a role and its effortPoint2 does not survive into the Builder ladder — this alias now resolves to the same Builder deep tier as executor-heavy, at high, not xhigh"
     },
     "executor-codex": {
       "new": { "role": "Builder", "rung": "mirror" },
@@ -25,9 +25,9 @@
       "deprecation": "executor-codex is retired as a role: it is Builder's Terra mirror casting; executorEngine fallback logic is removed"
     },
     "executor-codex-heavy": {
-      "new": { "role": "Principal", "rung": "mirror" },
+      "new": { "role": "Builder", "tier": "deep", "override": { "rung": "deepOverrideSol", "reason": "executor-codex-heavy is retired as a role: Principal's Sol mirror casting is now the Builder deep tier's override-only Sol entry, a deliberate Conductor choice, never a degradation target" }, "downgradeNote": "resolves to FORBIDDEN until leg 4 wires the Quartermaster's review-reserve check (castOpts.reserveCheck === 'passed') — the override-only entry is never walked and is not reachable without it" },
       "legacy": { "agent": "executor-codex-heavy", "model": "GPT-5.6 Sol", "effort": "high" },
-      "deprecation": "executor-codex-heavy is retired as a role: it is Principal's Sol mirror casting"
+      "deprecation": "executor-codex-heavy is retired as a role: it is Principal's Sol mirror casting, now the Builder deep tier's override-only Sol entry"
     },
     "reviewer": {
       "new": { "role": "Reviewer", "computed": true },
@@ -40,9 +40,9 @@
       "deprecation": "reviewer-codex is retired as a role: it is the OpenAI lane of the computed Reviewer matrix"
     },
     "scout": {
-      "new": { "role": "Scout", "rung": "primary" },
+      "new": { "role": "Investigator", "rung": "primary", "pin": "read-only", "downgradeNote": "Scout is retired as a role (WO-14b readiness-repair tranche, owner ruling 2026-09-01): N0 merges into Investigator (mode N0), which keeps N0's read-only pin behavior; the cheap Haiku casting does not survive — N0 work now runs at the Investigator's Opus 5 · high primary casting" },
       "legacy": { "agent": "scout", "model": "Haiku 4.5" },
-      "deprecation": "scout keeps its seat, re-contracted: N0 only — external research is N1, long-context reconciliation N2, media intake M0"
+      "deprecation": "scout is retired as a role: N0 merges into the Investigator (mode N0), read-only pin carried; external research is N1, long-context reconciliation N2, media intake M0 — all now Investigator modes too"
     },
     "detective": {
       "new": { "role": "Investigator", "rung": "primary", "pin": "read-only" },
@@ -50,9 +50,9 @@
       "deprecation": "detective is merged into the Investigator (I0, 2026-08-29 ruling): the read-only law survives as the read-only-first law plus this alias's read-only tool pin"
     },
     "modeler": {
-      "new": { "role": "Spatial Specialist", "rung": "primary" },
+      "new": { "role": "Builder", "tier": "standard", "downgradeNote": "Spatial Specialist is retired as a role (WO-14b readiness-repair tranche, owner ruling 2026-09-01): E6 merges into Builder (mode E6) at the standard tier, Sonnet 5 · med preferred — the Opus 5 · high casting does not survive; specialists remain for project-specific domains only" },
       "legacy": { "agent": "modeler", "model": "Sonnet 5", "specialist": true },
-      "deprecation": "modeler is promoted: spatial/procedural work is the first-class Spatial Specialist (E6, Opus 5 · high); specialists remain for project-specific domains only"
+      "deprecation": "modeler is retired as a role: spatial/procedural work (E6) merges into Builder (mode E6, standard tier)"
     },
     "architect-claude": {
       "new": { "role": "Architect", "rung": "nebulous" },
@@ -80,9 +80,9 @@
       "deprecation": "planner-gpt is retired: §6.6 wrote it as Architect(mirror) before the same-day Sol-default re-cast made the GPT lane the primary; operatively it is the Architect's Sol casting, and its metered API transport is replaced by the subscription Codex CLI (WO-13) or reported unavailable"
     },
     "plan-synthesizer": {
-      "new": { "role": "Synthesizer", "rung": "primary" },
+      "new": { "retiredWorkflow": true, "workflow": "A1 comparative-plan synthesis under Conductor + both Reviewer lanes + owner" },
       "legacy": { "agent": "plan-synthesizer", "model": "Opus 5" },
-      "deprecation": "plan-synthesizer keeps its charter as the Synthesizer (A1); the blind-merge anonymity law carries over unchanged"
+      "deprecation": "plan-synthesizer is retired as a role (WO-14b readiness-repair tranche, owner ruling 2026-09-01): Synthesizer (A1) is DITCH'd, once-per-project and deferred by design; the contest-ledger blind-merge protocol survives as a documented workflow under Conductor + both Reviewer lanes + owner, never a model seat"
     }
   }
 }

@@ -10,7 +10,7 @@ run before any dispatch.
 
 | File | What it is |
 |---|---|
-| `castings.json` | The Part-2 casting tables (58 rungs across 23 roles, with the hard never-rules), the §3.4 computed R0 review matrix and mandatory set, the §5.5 pool-state ladder and exhaustion behavior, the seat-19 Q0 automatic triggers, and WO-2's measured liveness/reserve numbers |
+| `castings.json` | The Part-2 casting tables (28 rungs across 11 live roles, with the hard never-rules) plus the WO-14b `mergedClasses` table (twelve retired-role classes routed through a surviving role at a default tier/mode, or — A1 — a documented workflow with no role), the §3.4 computed R0 review matrix and mandatory set, the §5.5 pool-state ladder and exhaustion behavior, the seat-19 Q0 automatic triggers, WO-2's measured liveness/reserve numbers, and per-role `defaultEnabled` seat toggles (Architect/Sweeper toggleable; `createRouter({ seats })` overrides) |
 | `router.js` | `route(class) → role` · `cast(role, bucket_state) → (vendor, model, effort)` · `reviewer(author_families, risk) → casting` · the pool-state machine · the pre-dispatch AU-O gate (P15) · automatic Q0 creation · the assembled `dispatch()` pipeline |
 | `tickets.js` | WO-14b leg 2a — the ticket state machine + JSON-file store that is the only way work is reached under `roster:new` (`registry/schemas/ticket.schema.json`) |
 
@@ -23,11 +23,41 @@ it).
 
 `createRouter()` refuses to construct at all when: the registry violates the
 WO-4 ownership invariant (loaded through `registry/load.js`); any active
-class lacks a casting-table role, or a role claims a class the registry gives
-someone else; a rung's vendor disagrees with its model's family, or its
-effort is off the vendor's ladder; a role's own never-rule is violated by any
-of its rungs (e.g. Red Team must carry never-Fable). A missing bucket in a
-`bucket_state` is an error, never assumed Green.
+class lacks a casting-table role AND lacks a `mergedClasses` entry, or a
+class is claimed by both (drift still fails closed either way); a
+`mergedClasses` entry names a role that does not exist, or a tier the role
+does not have; a rung's vendor disagrees with its model's family, or its effort is off
+the vendor's ladder; a role's own never-rule is violated by any of its rungs
+(e.g. Red Team must carry never-Fable). A missing bucket in a `bucket_state`
+is an error, never assumed Green.
+
+## WO-14b: merged classes and the Builder ladder
+
+Twelve roles retired 2026-09-01 (readiness-repair tranche, owner rulings) —
+their classes stay routing labels, resolved through `castings.json`'s
+`mergedClasses` table: `N0/N1/N2/M0 → Investigator` (mode = the former class
+id; N0 keeps its read-only pin), `E0/E1/E3/E5/E6/E8/D0 → Builder` at a
+default tier (mode = the former class id; E8 additionally widens Builder's
+context shapes to repo/haystack), `A1 → no role` — `dispatch()` returns a
+typed `RETIRED_WORKFLOW` naming the documented workflow. `dispatch()` on a
+merged class returns `class` unchanged, `role` = the target, `tier` = the
+default unless the order set one, and `mode` = the former class id.
+
+Builder itself gained a four-tier ladder (`bounded`/`standard`/`dense`/
+`deep`) on `cast()`: each tier picks a preferred casting and walks an ordered
+cross-vendor substitute list under the bucket ladder (`recastFrom`
+disclosed); `deep` absorbs the retired Principal seat's Opus 5 · high
+primary rung. Override-only entries (Sol at `dense`/`deep`) are reachable
+only through `castOpts.override = {rung|model, reason}`, never walked; a Sol
+override additionally requires `castOpts.reserveCheck === 'passed'` — absent,
+a typed `FORBIDDEN`.
+
+Seat toggles: `castings.json` roles carry `defaultEnabled` (`Architect: true`,
+`Sweeper: false`, everything else `true`); `createRouter({ seats })` accepts
+an override map. `cast()`/`dispatch()`/`resolveSeat()` on a disabled seat
+return a typed `DISABLED` outcome, never a recast — dispatch of a disabled
+Sweeper (S0) carries `fallback: 'verifier-census'`, a disabled Architect (A0)
+carries `fallback: 'conductor-self-plan'`, both disclosed.
 
 ## The structural guarantees (WO-6 unit proof)
 

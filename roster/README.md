@@ -1,14 +1,22 @@
 # WO-8–11 — the next-generation roster
 
 Seat definitions for the role architecture of
-`plans/cross-compare/agent-role-architecture/final-plan.md`, staffed band by
-band per the WO-8–11 order: **assurance first** (Reviewer both castings,
-Sweeper, Red Team), then **evidence** (Scout re-contracted, merged
-Investigator, Researcher, LC Analyst, Archivist), then **construction**
-(Builder and Principal first, then Operator, Test Designer, Refactorer, then
-domain seats), **orchestration last** (Conductor, Architect, Synthesizer,
-Quartermaster). The Verifier and Quartermaster substrates are code
-(`verifier/`, and P0 pending), not agent files.
+`plans/cross-compare/agent-role-architecture/final-plan.md`, originally
+staffed band by band per the WO-8–11 order. **WO-14b leg 2b (readiness-repair
+tranche, owner rulings 2026-09-01)** retired twelve of those seats: their
+classes remain routing labels in `registry/classes.json`, now dispatched
+through a surviving role via `router/castings.json`'s `mergedClasses` table
+— N0/N1/N2/M0 (Scout, Researcher, LC Analyst, Archivist) merge into
+Investigator; E0/E1/E3/E5/E6/E8/D0 (Operator, Runner, Principal, Interface
+Artisan, Spatial Specialist, Refactorer, Doc Writer) merge into Builder at a
+default tier (Principal's Opus rung is absorbed as Builder's new `deep`
+tier); A1 (Synthesizer) has no role at all — `dispatch()` returns a typed
+`RETIRED_WORKFLOW` naming the documented Conductor+both-Reviewer-lanes+owner
+workflow. **Eleven role files ship today**: Conductor, Architect (toggleable,
+default ON), Builder, Data Engineer, Investigator, Red Team, Reviewer (both
+castings), Test Designer (both castings), and Sweeper (toggleable, default
+OFF — benched, not ditched). The Verifier and Quartermaster substrates are
+code (`verifier/`, and P0 pending), not agent files.
 
 These co-install alongside the legacy `agents/` roster for the §6.6 shadow
 period — names never collide (the lint enforces it), and the WO-14 alias

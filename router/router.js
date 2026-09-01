@@ -46,6 +46,16 @@ const STATE_ORDER = { Green: 0, Amber: 1, Orange: 2, Red: 3, Exhausted: 4 };
 const FAMILIES = ['anthropic', 'openai'];
 const AUTHOR_FAMILIES = ['anthropic', 'openai', 'human'];
 
+// WO-14b readiness-repair tranche: twelve roles retired from castings.json,
+// merged into Builder/Investigator or (A1) a documented workflow. Their
+// roster/*.md files are deleted and router/charters.json (out of this
+// order's edit set) still carries their charter entries — tolerated at load
+// (see the charter cross-check) rather than treated as drift.
+const RETIRED_ROLE_NAMES = new Set([
+  'Synthesizer', 'Scout', 'Researcher', 'LC Analyst', 'Archivist', 'Operator',
+  'Runner', 'Principal', 'Interface Artisan', 'Spatial Specialist', 'Refactorer', 'Doc Writer',
+]);
+
 // ---------------------------------------------------------------------------
 // Pool-state machine (§5.5). Pure: one Quartermaster reading in, one state
 // out. Reserve breach and observed throttle force Red regardless of the
@@ -200,8 +210,28 @@ function createRouter(opts) {
       fail('role ' + name + ' has no rungs and is neither computed nor a substrate');
     }
   }
+  // ---- WO-14b merged classes: a class may be routed by a mergedClasses
+  // entry instead of owned by a role — a retired-workflow class (A1) names a
+  // `workflow` and no role; a merged-into-a-role class (N0/N1/N2/M0 →
+  // Investigator, E0/E1/E3/E5/E6/E8/D0 → Builder) names the target role, an
+  // optional default `tier` (Builder-tiered targets only) and the `mode`
+  // (the former class id) dispatch() reports. A class owned by BOTH a role
+  // and mergedClasses, or neither, fails closed — drift still refuses.
+  const mergedClasses = castings.mergedClasses || {};
+  for (const id of Object.keys(mergedClasses)) {
+    if (id === '$comment') continue;
+    const m = mergedClasses[id];
+    if (classToRole.has(id)) fail('class ' + id + ' is both owned by a role and listed in mergedClasses');
+    if (m.workflow !== undefined) continue;
+    if (!m.role || !hasOwn(roles, m.role)) { fail('mergedClasses.' + id + ' targets unknown role ' + JSON.stringify(m.role)); continue; }
+    if (m.tier !== undefined && !((roles[m.role].tiers || {})[m.tier])) {
+      fail('mergedClasses.' + id + ' names tier ' + JSON.stringify(m.tier) + ' that ' + m.role + ' does not have');
+    }
+  }
   for (const c of registry.classes) {
-    if (!classToRole.has(c.id)) fail('active class has no casting-table entry: ' + c.id);
+    if (classToRole.has(c.id)) continue;
+    if (hasOwn(mergedClasses, c.id)) continue;
+    fail('active class has no casting-table entry: ' + c.id);
   }
   const q0cfg = castings.q0Triggers || {};
   for (const id of [].concat(q0cfg.classes || [], q0cfg.sourceChangeClasses || [], (q0cfg.calibrationSample || {}).classes || [])) {
@@ -302,7 +332,12 @@ function createRouter(opts) {
       }
     }
     for (const name of Object.keys(charters.charters || {})) {
-      if (!roles[name]) fail('charter names unknown role ' + name);
+      // charters.json is not in the WO-14b leg 2b edit set — its entries for
+      // the twelve retired roles (merged into Builder/Investigator, or A1's
+      // retired workflow) are stale by construction, not drift. Tolerate
+      // exactly those names; anything else naming an unknown role still
+      // fails closed.
+      if (!roles[name] && !RETIRED_ROLE_NAMES.has(name)) fail('charter names unknown role ' + name);
     }
   }
 
@@ -316,7 +351,7 @@ function createRouter(opts) {
     'modeler', 'architect-claude', 'architect-claude-xhigh', 'architect-claude-max',
     'architect-codex', 'planner-gpt', 'plan-synthesizer',
   ];
-  const ALIAS_PINS = { 'detective': 'read-only' }; // §6.6: detective → Investigator(read-only pinned)
+  const ALIAS_PINS = { 'detective': 'read-only', 'scout': 'read-only' }; // §6.6: detective → Investigator(read-only pinned); WO-14b: scout → Investigator(N0 mode, read-only pin carried)
   let seatAliases;
   try {
     seatAliases = JSON.parse(fs.readFileSync(options.aliasesFile || path.join(path.dirname(castingsFile), 'aliases.json'), 'utf8'));
@@ -344,13 +379,23 @@ function createRouter(opts) {
         legacyAgents.add(a.legacy.agent);
       }
       const n = a.new || {};
-      if (!n.role || !hasOwn(roles, n.role)) fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
-      else if (!n.computed && (!n.rung || !hasOwn(roles[n.role].rungs || {}, n.rung))) {
-        fail('alias ' + name + ' names rung ' + JSON.stringify(n.rung) + ' that ' + n.role + ' does not have');
+      if (n.retiredWorkflow) {
+        // WO-14b: plan-synthesizer's target is A1's retired workflow — no
+        // role, no casting; the note IS the target.
+        if (!n.workflow) fail('alias ' + name + ' declares retiredWorkflow with no workflow note');
+        if (n.role || n.rung || n.tier || n.computed) fail('alias ' + name + ' declares retiredWorkflow alongside a role/rung/tier/computed target');
+      } else if (!n.role || !hasOwn(roles, n.role)) {
+        fail('alias ' + name + ' resolves to unknown role ' + JSON.stringify(n.role));
       } else if (n.computed && !roles[n.role].computed) {
         fail('alias ' + name + ' claims a computed casting but ' + n.role + ' is not computed');
-      } else if (n.computed && n.rung) {
-        fail('alias ' + name + ' declares a rung on a computed casting — the lane is computed, not pinned');
+      } else if (n.computed && (n.rung || n.tier)) {
+        fail('alias ' + name + ' declares a rung/tier on a computed casting — the lane is computed, not pinned');
+      } else if (!n.computed) {
+        if (n.tier) {
+          if (!((roles[n.role].tiers || {})[n.tier])) fail('alias ' + name + ' names tier ' + JSON.stringify(n.tier) + ' that ' + n.role + ' does not have');
+        } else if (!n.rung || !hasOwn(roles[n.role].rungs || {}, n.rung)) {
+          fail('alias ' + name + ' names rung ' + JSON.stringify(n.rung) + ' that ' + n.role + ' does not have');
+        }
       }
       // The pin carries a safety law (§6.6) — unvalidated, it could be
       // silently dropped or rewritten by a bad merge. Enum + required where
@@ -370,6 +415,15 @@ function createRouter(opts) {
 
   const aliasById = new Map(registry.aliases.map((a) => [a.id, a.resolvesTo]));
   const ladderCfg = castings.poolStateLadder;
+
+  // ---- WO-14b seat toggles: an owner-set manifest override map, merged
+  // over castings.json's per-role defaultEnabled (true when unset). cast(),
+  // dispatch() and resolveSeat() on a disabled seat all return a typed
+  // DISABLED outcome — never a silent recast.
+  const seatFlags = {};
+  for (const name of roleNames) seatFlags[name] = roles[name].defaultEnabled !== false;
+  Object.assign(seatFlags, options.seats || {});
+  const seatEnabled = (name) => hasOwn(seatFlags, name) ? seatFlags[name] : true;
 
   // ---- buckets normalization --------------------------------------------
   // Input: { 'AU-all': X, 'AU-opus': X, 'AU-fable': X, 'OU': X } where X is a
@@ -416,7 +470,10 @@ function createRouter(opts) {
     throw new Error('unknown class identifier: ' + JSON.stringify(id));
   }
   function route(id) {
-    return classToRole.get(resolveClass(id));
+    const cls = resolveClass(id);
+    if (classToRole.has(cls)) return classToRole.get(cls);
+    const m = mergedClasses[cls];
+    return m && m.role ? m.role : undefined; // A1's retired workflow routes to no role
   }
 
   // ---- the pre-dispatch AU-O gate (P15) ---------------------------------
@@ -465,6 +522,77 @@ function createRouter(opts) {
     return { allowed: true };
   }
 
+  // ---- WO-14b Builder ladder: tier walk + override-only entries ---------
+  // castOpts.tier picks the tier (order tier; else the caller-passed
+  // default, else 'standard' for Builder); the preferred casting is walked
+  // first, then the tier's ordered substitute list, under the same
+  // purposesAllowedOnBucket ladder every other degradation uses;
+  // `requested` is always the tier's PREFERRED casting, per the order.
+  // Override-only entries (Sol at dense/deep) are reachable only through
+  // castOpts.override = {rung|model, reason}; a Sol override additionally
+  // requires castOpts.reserveCheck === 'passed' (Quartermaster-set, leg 4) —
+  // absent, a typed FORBIDDEN, never a silent walk onto Sol.
+  function castTiered(roleName, role, nb, o, purpose) {
+    const tierName = o.tier || (roleName === 'Builder' ? 'standard' : role.defaultTier);
+    const tierDef = (role.tiers || {})[tierName];
+    if (!tierDef) {
+      return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'unknown tier ' + JSON.stringify(tierName) + ' for ' + roleName };
+    }
+    const preferredRungName = tierDef.preferred;
+    const preferredRung = role.rungs[preferredRungName];
+    const requested = { model: preferredRung.model, rung: preferredRungName };
+
+    if (roleName === 'Builder' && preferredRungName === 'preferredBounded' && o.underSpecified) {
+      return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'Luna never receives under-specified work — the guardrail survives the promotion; route the order to the Sonnet lane or back to A0' };
+    }
+
+    if (o.override) {
+      const overrideOnly = tierDef.overrideOnly || [];
+      let overrideRungName = o.override.rung;
+      if (!overrideRungName && o.override.model) {
+        overrideRungName = overrideOnly.find((rn) => role.rungs[rn].model === o.override.model);
+      }
+      if (!overrideRungName || !overrideOnly.includes(overrideRungName)) {
+        return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'override target is not a declared override-only entry for the ' + tierName + ' tier', requested };
+      }
+      const overrideRung = role.rungs[overrideRungName];
+      if (overrideRung.model === 'GPT-5.6 Sol' && o.reserveCheck !== 'passed') {
+        return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'FORBIDDEN: Sol override requires the review-reserve check', requested };
+      }
+      const state = effectiveState(overrideRung.model, nb);
+      const allowed = ladderCfg.purposesAllowedOnBucket[state];
+      if (!allowed.includes(purpose)) {
+        return { ok: false, outcome: 'WAIT', role: roleName, rung: overrideRungName, reason: 'override casting ' + overrideRung.model + ' bucket at ' + state + ' — no lawful casting', requested };
+      }
+      return {
+        ok: true, role: roleName, rung: overrideRungName,
+        casting: { vendor: overrideRung.vendor, model: overrideRung.model, effort: overrideRung.effort },
+        note: overrideRung.note, bucketState: state, requested,
+        override: true, overrideReason: (o.override && o.override.reason) || null,
+      };
+    }
+
+    const chain = [preferredRungName].concat(tierDef.substitutes || []);
+    for (const rn of chain) {
+      const rg = role.rungs[rn];
+      const state = effectiveState(rg.model, nb);
+      const allowed = ladderCfg.purposesAllowedOnBucket[state];
+      if (allowed.includes(purpose)) {
+        const preferredState = effectiveState(preferredRung.model, nb);
+        const extra = rn === preferredRungName ? {} : { recastFrom: preferredRungName, recastReason: preferredRung.model + ' bucket at ' + preferredState + ' — ' + ladderCfg.behavior[preferredState] };
+        return Object.assign({
+          ok: true, role: roleName, rung: rn,
+          casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
+          note: rg.note, bucketState: state, requested,
+        }, extra);
+      }
+    }
+    return {
+      ok: false, outcome: 'WAIT', role: roleName, rung: preferredRungName, requested,
+      reason: 'no lawful casting on the ' + tierName + ' tier ladder: ' + chain.map((rn) => role.rungs[rn].model + ' @ ' + effectiveState(role.rungs[rn].model, nb)).join(', '),
+    };
+  }
+
   // ---- cast(role, bucket_state) → (vendor, model, effort) ---------------
   // The degradation machine: Green dispatches the requested rung; Amber
   // re-casts authoring to the healthy pool's mirror; Orange suspends
@@ -474,6 +602,9 @@ function createRouter(opts) {
   function cast(roleName, buckets, castOpts) {
     const o = castOpts || {};
     if (!hasOwn(roles, roleName)) throw new Error('unknown role: ' + JSON.stringify(roleName));
+    if (!seatEnabled(roleName)) {
+      return { ok: false, outcome: 'DISABLED', role: roleName, reason: 'seat disabled by the owner-set manifest toggle' };
+    }
     const role = roles[roleName];
     if (role.computed) throw new Error(roleName + ' casting is computed from the author family set — use reviewer(), never cast()');
     if (role.substrate) {
@@ -492,6 +623,18 @@ function createRouter(opts) {
     }
     if (roleName === 'Data Engineer' && o.rung === 'reversibleT1' && o.risk !== undefined && tier !== 'T1') {
       return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'Terra is permitted only for reversible T1 sub-work — ' + role.noMirrorFor.irreversible };
+    }
+
+    // The WO-14b Builder ladder: a tiered role (Builder only, today), when
+    // no explicit rung is requested, picks its tier (castOpts.tier; default
+    // 'standard' for Builder) and walks that tier's preferred casting then
+    // its ordered substitute list under the bucket ladder — never the
+    // override-only entries, reachable solely through castOpts.override. An
+    // explicit o.rung bypasses the ladder and falls through to the ordinary
+    // single-rung path below (unchanged), so every existing direct-rung call
+    // keeps its documented behavior.
+    if (role.tiers && !o.rung) {
+      return castTiered(roleName, role, nb, o, purpose);
     }
 
     // Rung selection.
@@ -844,17 +987,45 @@ function createRouter(opts) {
       order.touches = [...new Set([].concat(order.touches || [], flagTouches))];
     }
 
-    const roleName = classToRole.get(cls);
+    // WO-14b merged classes: a retired-workflow class (A1) dispatches to no
+    // role at all — a typed refusal naming the documented workflow.
+    const merge = mergedClasses[cls];
+    if (merge && merge.workflow !== undefined) {
+      return { ok: false, outcome: 'RETIRED_WORKFLOW', class: cls, order, reason: merge.workflow };
+    }
+
+    // A merged class (N0/N1/N2/M0 → Investigator, E0/E1/E3/E5/E6/E8/D0 →
+    // Builder) routes through its target role, carrying the class UNCHANGED
+    // (it still carries its own review row — E3/E4 etc. mandatory), the
+    // target role, a default tier (Builder-tiered targets only, overridden
+    // by an explicit order.tier), and `mode` — the former class id, read by
+    // the served seat's own logic (e.g. N0's read-only pin).
+    const roleName = merge ? merge.role : classToRole.get(cls);
     const role = roles[roleName];
+    const mode = merge ? merge.mode : undefined;
+    const mergedDefaultTier = merge ? merge.tier : undefined;
+
+    if (!seatEnabled(roleName)) {
+      const disabled = { ok: false, outcome: 'DISABLED', role: roleName, class: cls, order, reason: 'seat disabled by the owner-set manifest toggle' };
+      if (cls === 'S0') {
+        return Object.assign(disabled, { fallback: 'verifier-census', reason: disabled.reason + ' — the Conductor\'s chain-final step falls to the Verifier\'s census re-run' });
+      }
+      if (cls === 'A0') {
+        return Object.assign(disabled, { fallback: 'conductor-self-plan', reason: disabled.reason + ' — the Conductor plans in its own voice, disclosure recorded on the order' });
+      }
+      return disabled;
+    }
 
     // Context shape is dispatcher-enforced (§2.0): a shape the seat may not
-    // be handed is rejected outright, not truncated.
+    // be handed is rejected outright, not truncated. A merged class may
+    // widen the target role's maximum shapes (E8 → Builder: repo/haystack).
+    const allowedShapes = role.contextShapes.concat((merge && merge.contextShapesAllowed) || []);
     if (order.context_shape !== undefined) {
       if (!castings.contextShapes.includes(order.context_shape)) {
         return { ok: false, rejected: 'context-shape', reason: 'unknown context shape ' + JSON.stringify(order.context_shape) };
       }
-      if (!role.contextShapes.includes(order.context_shape)) {
-        return { ok: false, rejected: 'context-shape', reason: roleName + ' (' + cls + ') may not be handed ' + JSON.stringify(order.context_shape) + ' — maximum shapes: [' + role.contextShapes.join(', ') + ']' };
+      if (!allowedShapes.includes(order.context_shape)) {
+        return { ok: false, rejected: 'context-shape', reason: roleName + ' (' + cls + ') may not be handed ' + JSON.stringify(order.context_shape) + ' — maximum shapes: [' + allowedShapes.join(', ') + ']' };
       }
     }
 
@@ -888,7 +1059,7 @@ function createRouter(opts) {
     let casting = role.computed
       ? null
       : cast(roleName, buckets, Object.assign(
-          { risk: order.risk, purpose: o.purpose || 'authoring' },
+          { risk: order.risk, purpose: o.purpose || 'authoring', tier: order.tier || mergedDefaultTier },
           o.castOpts,
           {
             securitySensitive,
@@ -942,6 +1113,20 @@ function createRouter(opts) {
     }
     if (casting && !casting.ok) {
       return { ok: false, outcome: casting.outcome, rejected: casting.rejected, role: roleName, class: cls, order, reason: casting.reason };
+    }
+
+    // Stale-family fix (cycle-2 MAJOR, router.js:895): a Q0 order's
+    // author_family is the family of the SERVED Q0 casting at THIS dispatch
+    // — after any recast — never the family recorded when the order was
+    // first created. A human-authored implementation's Q0, created while
+    // both pools are Green (tie → Anthropic/Sonnet), re-dispatched after
+    // AU-all turns Amber and now serves OpenAI/Terra, must report
+    // author_family:"openai" here, not the stale "anthropic" the order
+    // arrived with. implementation_author_family is the PARENT
+    // implementation's family and is never touched — it is what the casting
+    // was chosen opposite of, not what this order's own author_family means.
+    if (cls === 'Q0' && casting && casting.ok && !casting.substrate) {
+      order = Object.assign({}, order, { author_family: familyOf(casting.casting.model) });
     }
 
     // Automatic Q0: created with the implementation order, cast opposite the
@@ -998,7 +1183,10 @@ function createRouter(opts) {
         : reviewer(authorFams, order.risk, { policy, buckets, terraT1Qualified: o.terraT1Qualified, authorModel: casting && casting.ok ? casting.casting.model : undefined, unattributed: o.flags && o.flags.unattributed });
     }
 
-    return { ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion, order };
+    const mergedFields = merge
+      ? Object.assign({ mode: mode }, mergedDefaultTier !== undefined ? { tier: order.tier || mergedDefaultTier } : {}, mode === 'N0' && merge.pin ? { pin: merge.pin } : {})
+      : {};
+    return Object.assign({ ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion, order }, mergedFields);
   }
 
   // ---- RECLASSIFY hop machinery (Part 4 error stance, WO-4 encoding) ----
@@ -1058,13 +1246,21 @@ function createRouter(opts) {
     if (a.new.computed) {
       return { roster, alias: true, ledger, target: { kind: 'computed-reviewer', role: a.new.role, laneNote: a.new.laneNote } };
     }
-    // The alias's declared rung ALWAYS wins over caller castOpts — a caller
-    // override here would silently re-cast a §6.6 mapping while the ledger
-    // records the alias's rung (the silent-substitution failure, P15/§7.1).
+    if (a.new.retiredWorkflow) {
+      return { roster, alias: true, ledger, target: { kind: 'retired-workflow', workflow: a.new.workflow, note: a.new.downgradeNote || null } };
+    }
+    // The alias's declared rung/tier/override ALWAYS wins over caller
+    // castOpts — a caller override here would silently re-cast a §6.6
+    // mapping while the ledger records the alias's own mapping (the
+    // silent-substitution failure, P15/§7.1).
     if (o.buckets === undefined) {
       throw new Error('new-roster resolution requires bucket_state — fail closed, not Green (P15)');
     }
-    const castOpts = Object.assign({}, o.castOpts, { rung: a.new.rung });
+    const forced = {};
+    if (a.new.tier) { forced.tier = a.new.tier; forced.rung = undefined; }
+    else if (a.new.rung) { forced.rung = a.new.rung; forced.tier = undefined; }
+    if (a.new.override) forced.override = a.new.override;
+    const castOpts = Object.assign({}, o.castOpts, forced);
     if (o.purpose !== undefined) castOpts.purpose = o.purpose;
     let c = cast(a.new.role, o.buckets, castOpts);
     let gate = { allowed: true };
@@ -1080,7 +1276,7 @@ function createRouter(opts) {
     }
     return {
       roster, alias: true, ledger,
-      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung, pin: a.new.pin || null, cast: c, gate, note: a.new.downgradeNote },
+      target: { kind: 'new-roster', role: a.new.role, rung: a.new.rung || null, tier: a.new.tier || null, pin: a.new.pin || null, cast: c, gate, note: a.new.downgradeNote },
     };
   }
 

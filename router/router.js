@@ -76,6 +76,17 @@ function requiredReserve(forecast, reserveCfg) {
   const i = (forecast && forecast.incidentDraw) || 0;
   const dynamic = (m + i) * (1 + cfg.uncertaintyBuffer);
   const floor = Math.max(cfg.floorFractionOfBucket, cfg.twoGateClassReviewsCostFraction);
+  // KNOWN PARITY (finding C, report-only — a calibration decision reserved
+  // to the owner, not changed here): under the WO-2 default forecast, the
+  // dynamic term (0.03 + 0) × 1.3 ≈ 0.039 sits below floorFractionOfBucket
+  // (0.08), so the floor governs and requiredReserve(defaultForecast()) ===
+  // poolStateLadder.thresholds.redBelow exactly. belowReserve then fires
+  // (quartermaster.js: remainingFraction < requiredReserve) at precisely the
+  // same boundary poolState() already calls Red — the reserve gate carries
+  // NO independent signal past what the pool-state ladder already gives,
+  // under the default forecast. The reserve gets a genuine lead over
+  // redBelow only under an override forecast busy enough to push the
+  // dynamic term above the floor (see requiredReserve.test pin).
   return Math.max(dynamic, floor);
 }
 
@@ -83,7 +94,13 @@ function fnv1a(str) {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
-    h = (h * 0x01000193) >>> 0;
+    // Math.imul, not `h * 0x01000193`: the plain float64 multiply can reach
+    // ~7.2e16 (0xffffffff * 0x01000193), 8000x past 2^53 — every digest is
+    // wrong past the point float64 can no longer represent the integer
+    // product exactly, which is effectively every digest (finding H). imul
+    // does the multiply in true 32-bit integer arithmetic and truncates by
+    // construction, matching the FNV-1a spec's implicit mod 2^32.
+    h = Math.imul(h, 0x01000193) >>> 0;
   }
   return h >>> 0;
 }
@@ -126,6 +143,33 @@ function createRouter(opts) {
   const familyOf = (model) => familyByModel.get(model) || null;
   const bucketsFor = (model) => (hasOwn(castings.modelBuckets, model) ? castings.modelBuckets[model] : null);
 
+  // A single per-casting-row validator (finding F): castings.roles used to
+  // be the ONLY table this cross-check covered — a hand-edited reviewMatrix
+  // or degradedSameFamilyCandidates row (unknown model, vendor/family
+  // mismatch, off-ladder effort) loaded clean and only surfaced when
+  // reviewer() actually reached that row at call time. Every casting-shaped
+  // row this file trusts — a role's rung, a review-matrix lane, a degraded
+  // candidate — now goes through the SAME checks. Returns the row's model
+  // family (or null if the row is incomplete or names an unknown model), so
+  // a caller that needs it (the same-family cross-check below) doesn't
+  // re-derive it.
+  function validateCastingRow(label, row) {
+    if (!row || !row.vendor || !row.model || !row.effort) { fail(label + ' incomplete'); return null; }
+    const fam = familyOf(row.model);
+    if (!fam) fail(label + ' names unknown model ' + row.model);
+    else if (fam !== row.vendor) fail(label + ' vendor ' + row.vendor + ' disagrees with model family ' + fam);
+    if (!bucketsFor(row.model)) fail(label + ' model has no bucket mapping: ' + row.model);
+    const ladder = (castings.effortLadders || {})[row.vendor] || [];
+    const specials = (castings.effortLadders || {}).specials || [];
+    const parts = String(row.effort).split('–'); // en-dash range
+    for (const p of parts) {
+      if (!ladder.includes(p) && !specials.includes(p)) {
+        fail(label + ' effort ' + JSON.stringify(row.effort) + ' is off the ' + row.vendor + ' ladder');
+      }
+    }
+    return fam;
+  }
+
   // ---- cross-check castings against the registry ------------------------
   const activeById = new Map(registry.classes.map((c) => [c.id, c]));
   const roles = castings.roles || {};
@@ -147,20 +191,10 @@ function createRouter(opts) {
     }
     const never = new Set(role.never || []);
     for (const [rungName, rung] of Object.entries(role.rungs || {})) {
-      if (!rung.vendor || !rung.model || !rung.effort) { fail(name + '.' + rungName + ' incomplete'); continue; }
-      const fam = familyOf(rung.model);
-      if (!fam) fail(name + '.' + rungName + ' names unknown model ' + rung.model);
-      else if (fam !== rung.vendor) fail(name + '.' + rungName + ' vendor ' + rung.vendor + ' disagrees with model family ' + fam);
-      if (never.has(rung.model)) fail(name + '.' + rungName + ' violates the role’s own never-rule: ' + rung.model);
-      if (!bucketsFor(rung.model)) fail(name + '.' + rungName + ' model has no bucket mapping: ' + rung.model);
-      const ladder = (castings.effortLadders || {})[rung.vendor] || [];
-      const specials = (castings.effortLadders || {}).specials || [];
-      const parts = String(rung.effort).split('–'); // en-dash range
-      for (const p of parts) {
-        if (!ladder.includes(p) && !specials.includes(p)) {
-          fail(name + '.' + rungName + ' effort ' + JSON.stringify(rung.effort) + ' is off the ' + rung.vendor + ' ladder');
-        }
-      }
+      const label = name + '.' + rungName;
+      if (!rung.vendor || !rung.model || !rung.effort) { fail(label + ' incomplete'); continue; }
+      validateCastingRow(label, rung);
+      if (never.has(rung.model)) fail(label + ' violates the role’s own never-rule: ' + rung.model);
     }
     if (!role.computed && !role.substrate && Object.keys(role.rungs || {}).length === 0) {
       fail('role ' + name + ' has no rungs and is neither computed nor a substrate');
@@ -196,6 +230,54 @@ function createRouter(opts) {
   const rm = castings.reviewMatrix || {};
   for (const fam of ['anthropic', 'openai', 'human']) {
     if (!rm[fam]) fail('review matrix missing the ' + fam + ' author row');
+  }
+  // Every reviewMatrix[fam][tier] row — including the nested
+  // .qualified/.untilQualified (anthropic T1) and .secondOpinion (human T3)
+  // shapes — through the same validator as a role's rung (finding F), plus
+  // the no-self-family invariant checked in the TABLE, not only defensively
+  // at reviewer()'s return: an anthropic-author row naming an anthropic
+  // model (or an openai-author row naming an openai model) is a same-family
+  // row baked into the source of truth, which no runtime re-check catches
+  // until reviewer() happens to be called for that exact lane.
+  for (const fam of ['anthropic', 'openai', 'human']) {
+    const famRows = rm[fam] || {};
+    for (const [tier, row] of Object.entries(famRows)) {
+      const label = 'reviewMatrix.' + fam + '.' + tier;
+      const subRows = row && (row.qualified || row.untilQualified)
+        ? [['qualified', row.qualified], ['untilQualified', row.untilQualified]]
+        : [[null, row]];
+      for (const [subName, subRow] of subRows) {
+        const subLabel = subName ? label + '.' + subName : label;
+        const rowFam = validateCastingRow(subLabel, subRow);
+        if ((fam === 'anthropic' || fam === 'openai') && rowFam === fam) {
+          fail(subLabel + ' names a same-family (' + fam + ') model ' + subRow.model + ' — the review matrix must never table a same-family row');
+        }
+      }
+      if (row && row.secondOpinion) validateCastingRow(label + '.secondOpinion', row.secondOpinion);
+    }
+  }
+  const degradedCandidates = rm.degradedSameFamilyCandidates || {};
+  for (const fam of Object.keys(degradedCandidates)) {
+    const list = Array.isArray(degradedCandidates[fam]) ? degradedCandidates[fam] : [];
+    list.forEach((cand, i) => {
+      const label = 'reviewMatrix.degradedSameFamilyCandidates.' + fam + '[' + i + ']';
+      const rowFam = validateCastingRow(label, cand);
+      // Finding F (MAJOR, fixed): validateCastingRow alone only checks a
+      // row's OWN internal consistency (vendor agrees with ITS OWN model's
+      // family) — it never checked the row against the KEY it is filed
+      // under. An `anthropic` key holding valid, internally-consistent
+      // OpenAI/Terra fields (vendor: 'openai', model: 'GPT-5.6 Terra')
+      // constructed cleanly under the old check, and degradedPath() trusts
+      // the outer key as the reviewer's family without re-deriving it from
+      // the model actually served — an unattributed preferred review then
+      // returned Terra while reporting reviewerFamily:'anthropic' and
+      // review_cross_family:false: false metadata. A row whose model names
+      // an unknown model, or is otherwise incomplete, is already reported by
+      // validateCastingRow above (rowFam is null) — nothing further to add.
+      if (rowFam && rowFam !== fam) {
+        fail(label + ' is filed under degradedSameFamilyCandidates.' + fam + ' but names a ' + rowFam + ' model (' + cand.model + ') — a degraded-candidate\'s actual family must equal the key it is filed under');
+      }
+    });
   }
   const redTeam = roles['Red Team'];
   if (redTeam && !(redTeam.never || []).includes('Fable 5')) fail('Red Team must carry the never-Fable hard route-filter');
@@ -417,7 +499,14 @@ function createRouter(opts) {
     if (!rungName && roleName === 'Test Designer') {
       const fam = o.implementationAuthorFamily;
       if (!fam || !AUTHOR_FAMILIES.includes(fam)) {
-        throw new Error('Test Designer casting needs implementationAuthorFamily (anthropic|openai|human) — Q0 is Director-created and cast opposite the author');
+        // A Q0 order dispatched with no attributable implementation author
+        // family cannot be cast (Test Designer is cast OPPOSITE the author,
+        // by construction — there is no lawful default). This is a typed
+        // refusal, not a throw (finding D): dispatch()'s own createQ0Order()
+        // output — or any hand-built Q0 order missing author_family — must
+        // fail closed through the ordinary ok:false path, never crash the
+        // dispatcher uncaught.
+        return { ok: false, rejected: 'implementationAuthorFamily', role: roleName, reason: 'Test Designer casting needs implementationAuthorFamily (anthropic|openai|human) — Q0 is Director-created and cast opposite the author' };
       }
       if (fam === 'anthropic') rungName = 'vsAnthropicAuthor';
       else if (fam === 'openai') rungName = 'vsOpenaiAuthor';
@@ -439,20 +528,27 @@ function createRouter(opts) {
     if (roleName === 'Builder' && rungName === 'preferredBounded' && o.underSpecified) {
       return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: 'Luna never receives under-specified work — the guardrail survives the promotion; route the order to the Sonnet lane or back to A0' };
     }
-    if (roleName === 'Architect' && o.securitySensitive && familyOf(rung.model) === 'anthropic') {
-      return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: role.securityRouteFilter };
-    }
 
     const state = effectiveState(rung.model, nb);
     // `requested` records the rung selected BEFORE degradation: the reserve
     // gate (P15) is evaluated against this, not the recast output — a
-    // degraded recast must never silently satisfy a reserve stop.
-    const result = (rg, name, extra) => Object.assign({
-      ok: true, role: roleName, rung: name,
-      casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
-      note: rg.note, bucketState: state,
-      requested: { model: rung.model, rung: rungName },
-    }, extra || {});
+    // degraded recast must never silently satisfy a reserve stop. The
+    // security route-filter is the same shape of guardrail and belongs in
+    // the same choke-point (both `result()` call sites — the direct grant
+    // AND the §5.5 mirror fallback): checking only the REQUESTED rung let a
+    // degraded recast (Amber → mirror) silently smuggle a security-sensitive
+    // order onto the Fable lane the filter exists to block (probe A2d).
+    const result = (rg, name, extra) => {
+      if (roleName === 'Architect' && o.securitySensitive && familyOf(rg.model) === 'anthropic') {
+        return { ok: false, outcome: 'FORBIDDEN', role: roleName, reason: role.securityRouteFilter };
+      }
+      return Object.assign({
+        ok: true, role: roleName, rung: name,
+        casting: { vendor: rg.vendor, model: rg.model, effort: rg.effort },
+        note: rg.note, bucketState: state,
+        requested: { model: rung.model, rung: rungName },
+      }, extra || {});
+    };
 
     // Ceiling rungs defer from Orange down (AU-fable stops first, §5.5).
     if (rung.ceiling && STATE_ORDER[state] >= STATE_ORDER.Orange) {
@@ -652,8 +748,13 @@ function createRouter(opts) {
     const risk = normalizeRisk(order.risk);
     const cfg = castings.q0Triggers;
     if (cfg.classes.includes(cls)) return { required: true, reason: 'every ' + cls + ' change (class trigger)' };
+    // Gated on sourceChangeClasses exactly like the tier trigger below
+    // (finding G): a read-only/doc class (N0, D0, I0, N1, M0, S0, …) makes
+    // no source change for an independent test oracle to cover, so a touch
+    // area recorded on it (carried for the security-review triggers, which
+    // DO apply to every class) must not also hard-block on a missing Q0.
     const touches = order.touches || [];
-    const hit = touches.find((t) => cfg.touchAreas.includes(t));
+    const hit = cfg.sourceChangeClasses.includes(cls) ? touches.find((t) => cfg.touchAreas.includes(t)) : undefined;
     if (hit) return { required: true, reason: hit + ' change regardless of nominal tier (touch trigger)' };
     // An unrecognized risk tier fails closed to the highest gated tier, so a
     // malformed tier cannot dodge the tier trigger.
@@ -689,7 +790,19 @@ function createRouter(opts) {
         class: 'Q0',
         risk: implOrder.risk,
         requested_casting: castResult.ok ? castResult.casting : null,
+        // author_family is the Q0 ORDER'S OWN family — the family that will
+        // actually author the test-oracle work (the casting result above,
+        // opposite the implementation by construction). It must never be
+        // confused with the implementation's family below (finding D): a
+        // caller re-dispatching this order (dispatch() seeding
+        // castOpts.implementationAuthorFamily) needs the IMPLEMENTATION's
+        // family, not the Q0's own, or the re-cast lands same-family as the
+        // implementation and Q0 independence is defeated.
         author_family: castResult.ok ? familyOf(castResult.casting.model) : null,
+        // implementation_author_family: the PARENT implementation's author
+        // family — what the Q0 casting was chosen opposite of. This is the
+        // field dispatch() must read when re-dispatching a Q0 order.
+        implementation_author_family: authorFamily,
         co_author_families: [],
         goal: 'Independent test oracle for ' + implOrder.task_id + ': black-box tests drafted before or parallel to implementation, diff withheld where practical',
         acceptance_criteria: ['mutation check: inverted assertion or reverted fix goes red (Verifier, contractual)', 'flake check passes'],
@@ -747,10 +860,41 @@ function createRouter(opts) {
 
     const policy = reviewPolicy(cls, order.risk, Object.assign({}, o.flags, { touches: order.touches || [] }));
 
-    // Casting for the executor, through the degradation machine…
+    // securitySensitive is derived from the canonical order.touches against
+    // the SAME securityTriggerList the load-time cross-check ties to the
+    // order schema (line ~183) — never left for the caller to remember to
+    // set. A caller-supplied o.castOpts.securitySensitive can only ADD to
+    // this (a caller who knows more than the touches list can still flag
+    // it); it can never suppress a touch-derived true, which is why the OR
+    // is applied AFTER spreading o.castOpts rather than merged into it.
+    const securitySensitive =
+      (order.touches || []).some((t) => castings.securityTriggerList.includes(t)) ||
+      !!(o.castOpts && o.castOpts.securitySensitive);
+
+    // Casting for the executor, through the degradation machine… Test
+    // Designer (Q0) needs implementationAuthorFamily to pick its
+    // opposite-family rung; a Q0 order dispatched directly (createQ0Order()'s
+    // own output, or any hand-built Q0 order) rarely repeats it in castOpts,
+    // so it is seeded from the order's own implementation_author_family —
+    // the PARENT IMPLEMENTATION's author family, exactly the field
+    // createQ0Order() stamps for this purpose. Finding D (MAJOR, fixed):
+    // this used to fall back to order.author_family, which on a Q0 order is
+    // the Q0's OWN family (already opposite the implementation) — feeding
+    // that back in as "the implementation's family" re-cast the Q0 opposite
+    // ITSELF, landing same-family as the original implementation and
+    // defeating Q0 independence. order.author_family must never be read
+    // here. Harmless for every non-Test-Designer role, which never reads
+    // this key.
     let casting = role.computed
       ? null
-      : cast(roleName, buckets, Object.assign({ risk: order.risk, purpose: o.purpose || 'authoring' }, o.castOpts));
+      : cast(roleName, buckets, Object.assign(
+          { risk: order.risk, purpose: o.purpose || 'authoring' },
+          o.castOpts,
+          {
+            securitySensitive,
+            implementationAuthorFamily: (o.castOpts && o.castOpts.implementationAuthorFamily) || order.implementation_author_family,
+          }
+        ));
 
     // …then the mechanical pre-dispatch gates on what came out — BEFORE Q0
     // creation, so the companion is cast opposite the family that will
@@ -797,7 +941,7 @@ function createRouter(opts) {
       }
     }
     if (casting && !casting.ok) {
-      return { ok: false, outcome: casting.outcome, role: roleName, class: cls, order, reason: casting.reason };
+      return { ok: false, outcome: casting.outcome, rejected: casting.rejected, role: roleName, class: cls, order, reason: casting.reason };
     }
 
     // Automatic Q0: created with the implementation order, cast opposite the
@@ -827,13 +971,32 @@ function createRouter(opts) {
     }
 
     // Prospective review of the artifact this order will produce, computed
-    // from the family that will author it (plus recorded co-authors).
-    const authorFams = role.computed
-      ? (o.reviewOf && o.reviewOf.authorFamilies)
-      : [familyOf(casting.casting.model)].concat(order.co_author_families || []);
-    const review = policy === 'none'
-      ? { closes: true, policy: 'none', reason: 'provably inert — lint + targeted checks; inertness verified from the diff first' }
-      : reviewer(authorFams, order.risk, { policy, buckets, terraT1Qualified: o.terraT1Qualified, authorModel: casting && casting.ok ? casting.casting.model : undefined, unattributed: o.flags && o.flags.unattributed });
+    // from the family that will author it (plus recorded co-authors). A
+    // substrate casting (V0 Verifier, P0 Quartermaster) is deterministic
+    // code — never a model-authored artifact — so this MUST branch before
+    // authorFams is even computed (finding I): familyOf('deterministic') is
+    // null, and feeding that into reviewer() falls into the
+    // unattributed-authorship path, which fabricates a degraded same-family
+    // Opus review of code that has no author family to review at all. The
+    // mandatory-gated branch (policy === 'mandatory', or T2/T3 nominal tier —
+    // the exact condition reviewer()'s own unattributed check applies)
+    // reuses that same reviewer() call so its DOES_NOT_CLOSE outcome is
+    // byte-for-byte the prior behavior, unchanged.
+    let review;
+    if (casting && casting.ok && casting.substrate && policy !== 'none' && !(policy === 'mandatory' || tier === 'T2' || tier === 'T3')) {
+      review = {
+        closes: true, substrate: true, casting: null,
+        requirement: 're-execution / Verifier confirms deterministic substrate behavior — no model casting is a review target',
+        reason: 'deterministic substrate (' + roleName + ') — code first; not a model-authored artifact requiring cross-family review',
+      };
+    } else {
+      const authorFams = role.computed
+        ? (o.reviewOf && o.reviewOf.authorFamilies)
+        : [familyOf(casting.casting.model)].concat(order.co_author_families || []);
+      review = policy === 'none'
+        ? { closes: true, policy: 'none', reason: 'provably inert — lint + targeted checks; inertness verified from the diff first' }
+        : reviewer(authorFams, order.risk, { policy, buckets, terraT1Qualified: o.terraT1Qualified, authorModel: casting && casting.ok ? casting.casting.model : undefined, unattributed: o.flags && o.flags.unattributed });
+    }
 
     return { ok: true, class: cls, role: roleName, casting: casting, gate, review_policy: policy, review, q0: q0Companion, order };
   }

@@ -781,6 +781,31 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   (`node quartermaster/quartermaster.js --record <AU-all|AU-opus|AU-fable|OU>
   <remaining-fraction> --source "..."`). Then: phase-0 pilot with `--yes`, the
   in-harness 12d arms, and the owed E8/E1/A0 exercises.**
+- **WO-12 STOPPED AT PHASE 0; campaign re-aimed (2026-08-31 → 09-01):** the phase-0
+  pilot ran on all three lanes (X-Sol 5/6 seeds, 1 UNAVAILABLE; S-Sonnet 6/6; S-Opus
+  6/6; no cross-family complementarity on the subset) — `wo12/PHASE0-PILOT-NOTE.md`,
+  raw results committed. An open-ended second-pass scope oracle (Sol·xhigh,
+  `roster/wo12-scope-oracle-2-2026-08-31.md`, after the owner rejected the first
+  oracle order's pre-cut options) ruled: phases 1–3 are an optional research asset,
+  not a gate; the S-lane control reviews' live router/quartermaster findings are
+  READINESS BLOCKERS; and the campaign's largest gap is **activation** — nothing
+  installed calls `dispatch()`, `install.js` still installs the legacy core. Binding
+  path (owner-ratified): readiness-repair tranche → activation bridge → E8/E1/A0
+  through the working path → WO-15. **Readiness-repair tranche executed and STOPPED
+  TO OWNER** (`roster/readiness-repair-tranche-2026-09-01.md`): 11 confirmed
+  defects fixed and pinned (router 135→153 checks, quartermaster 195→216), incl. the
+  auth-touch→Fable dispatch and the future-dated-throttle fail-open; two cross-vendor
+  review cycles (cycle 1: 2 MAJOR, fixed — one was an inverted Q0 family fix the
+  Conductor's ambiguous pin spec let through; cycle 2: 1 new MAJOR on human-authored
+  Q0 re-dispatch under pool transition + 1 MINOR) — the oracle's two-cycle cap halts
+  it here. **Adversarial roster review (Sol·max)** recorded with the Conductor's
+  full refutation pass (`roster/roster-adversarial-review-2026-09-01.md`,
+  `roster/roster-review-refutations-2026-09-01.md`): keep 5 seats + 2 substrates,
+  16 files demote/merge/ditch; Red Team and Sweeper premises refuted (WO-8 exercises
+  the reviewer never saw), Data Engineer contested. **Owner decisions pending:**
+  cycle-3 on the tranche residuals or accept-as-registered; reserve calibration
+  (requiredReserve == redBelow); roster seat rulings — all three gate the
+  activation-bridge order.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

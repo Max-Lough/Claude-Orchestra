@@ -773,4 +773,180 @@ check('cast() uses the same risk oracle as every other risk read (sloppy T1 allo
     return ok.ok === true && no.outcome === 'FORBIDDEN' && garbage.outcome === 'FORBIDDEN';
   })());
 
+// ------------------------------------- 14. readiness-repair tranche (pins)
+section('14. Readiness-repair tranche: A(ii) security, D Q0-throw, F review-matrix load, G touch-trigger class gate, H fnv1a, I substrate review, C reserve parity');
+
+// ---- A(ii): securitySensitive derived from order.touches, and the
+// route-filter applies to whichever casting is actually served (requested
+// rung OR a §5.5 degradation recast), never only the requested rung.
+check('A(ii): securitySensitive derived from order.touches blocks a §5.5 degradation recast onto Fable — no castOpts at all (OU Amber, crypto touch)',
+  (() => {
+    const d = router.dispatch(order('A0', 'T1', { touches: ['crypto'] }), buckets({ OU: 'Amber' }), { q0OrderPresent: true });
+    return d.ok === false && d.outcome === 'FORBIDDEN';
+  })());
+check('A(ii): the same derivation blocks an explicitly-requested Fable rung at Green, with no castOpts.securitySensitive set by the caller',
+  (() => {
+    const d = router.dispatch(order('A0', 'T1', { touches: ['auth'] }), G, { q0OrderPresent: true, castOpts: { rung: 'nebulous' } });
+    return d.ok === false && d.outcome === 'FORBIDDEN';
+  })());
+check('A(ii): a non-security A0 still dispatches on the same Fable rung (the filter does not over-block)',
+  (() => {
+    const d = router.dispatch(order('A0', 'T1'), G, { q0OrderPresent: true, castOpts: { rung: 'nebulous' } });
+    return d.ok === true && d.casting.casting.model === 'Fable 5';
+  })());
+
+// ---- D: dispatch() of a Q0 order (the router's own createQ0Order() output,
+// or any hand-built Q0 order) casts opposite the PARENT IMPLEMENTATION's
+// author family — never the Q0 order's own author_family. Finding D
+// (MAJOR, fixed): the previous fix seeded castOpts.implementationAuthorFamily
+// from the Q0 order's own author_family (already opposite the
+// implementation), re-casting the Q0 opposite ITSELF and landing same-family
+// as the implementation — Q0 independence defeated. createQ0Order() now
+// stamps an explicit implementation_author_family field naming the parent
+// implementation's family, and dispatch() reads THAT (never author_family).
+check('D: Anthropic-authored implementation → dispatched Q0 casting vendor is openai (opposite)',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'anthropic' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
+    const d = router.dispatch(q0.order, G, { q0OrderPresent: true });
+    return d.ok === true && d.casting.casting.vendor === 'openai';
+  })());
+check('D: OpenAI-authored implementation → dispatched Q0 casting vendor is anthropic (opposite)',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'openai' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'openai' });
+    const d = router.dispatch(q0.order, G, { q0OrderPresent: true });
+    return d.ok === true && d.casting.casting.vendor === 'anthropic';
+  })());
+check('D: the family recorded on the Q0 order\'s own author_family stays the Q0\'s own casting family, never the implementation\'s',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'anthropic' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
+    return q0.order.author_family === 'openai' && q0.order.implementation_author_family === 'anthropic';
+  })());
+check('D: a caller-supplied castOpts.implementationAuthorFamily still wins over the order\'s own implementation_author_family',
+  (() => {
+    const impl = order('E2', 'T2', { author_family: 'anthropic' });
+    const q0 = router.createQ0Order(impl, G, { implementationAuthorFamily: 'anthropic' });
+    const d = router.dispatch(q0.order, G, { q0OrderPresent: true, castOpts: { implementationAuthorFamily: 'openai' } });
+    return d.ok === true && d.casting.rung === 'vsOpenaiAuthor' && d.casting.casting.model === 'Sonnet 5';
+  })());
+check('D: a Q0 order with no attributable implementation_author_family is a typed ok:false refusal, never an uncaught throw',
+  (() => {
+    const o = order('Q0', 'T1');
+    delete o.author_family;
+    delete o.implementation_author_family;
+    let threw = false, d;
+    try { d = router.dispatch(o, G, { q0OrderPresent: true }); } catch (e) { threw = true; }
+    return !threw && !!d && d.ok === false && d.rejected === 'implementationAuthorFamily';
+  })());
+
+// ---- F: load-time validation reaches reviewMatrix / degradedSameFamilyCandidates
+// rows (including the nested .qualified/.untilQualified/.secondOpinion
+// shapes), not only castings.roles — table-driven over every drift class.
+{
+  const F_DRIFTS = [
+    ['same-family reviewMatrix row (anthropic author names an anthropic model)',
+      (c) => { c.reviewMatrix.anthropic.T2 = { vendor: 'anthropic', model: 'Opus 5', effort: 'high' }; }, /names a same-family/],
+    ['unknown model in a flat reviewMatrix row',
+      (c) => { c.reviewMatrix.openai.T2 = { vendor: 'anthropic', model: 'Opus 6 Imaginary', effort: 'high' }; }, /names unknown model/],
+    ['vendor/family mismatch in a reviewMatrix row',
+      (c) => { c.reviewMatrix.openai.T2 = { vendor: 'openai', model: 'Opus 5', effort: 'high' }; }, /disagrees with model family/],
+    ['off-ladder effort in a reviewMatrix row',
+      (c) => { c.reviewMatrix.openai.T2 = { vendor: 'anthropic', model: 'Opus 5', effort: 'ludicrous' }; }, /off the anthropic ladder/],
+    ['unknown model in the nested .qualified shape (anthropic T1)',
+      (c) => { c.reviewMatrix.anthropic.T1.qualified = { vendor: 'openai', model: 'Opus 6 Imaginary', effort: 'med' }; }, /qualified names unknown model/],
+    ['unknown model in the nested .secondOpinion shape (human T3)',
+      (c) => { c.reviewMatrix.human.T3.secondOpinion = { vendor: 'openai', model: 'Nope 1', effort: 'high' }; }, /secondOpinion names unknown model/],
+    ['unknown model in degradedSameFamilyCandidates',
+      (c) => { c.reviewMatrix.degradedSameFamilyCandidates.anthropic = [{ vendor: 'anthropic', model: 'Nope 1', effort: 'high' }]; }, /degradedSameFamilyCandidates\.anthropic\[0\] names unknown model/],
+    ['degradedSameFamilyCandidates row family drifts from its own key (an anthropic key holding valid, internally-consistent Terra/openai fields)',
+      (c) => { c.reviewMatrix.degradedSameFamilyCandidates.anthropic = [{ vendor: 'openai', model: 'GPT-5.6 Terra', effort: 'med' }]; }, /is filed under degradedSameFamilyCandidates\.anthropic but names a openai model.*actual family must equal the key/],
+  ];
+  let bad = [];
+  for (const [label, mutate, re] of F_DRIFTS) {
+    const e = tamperedCastings(mutate);
+    if (!e) bad.push(label + ' (loaded clean — did not refuse)');
+    else if (!re.test(e.message)) bad.push(label + ' (refused, but for the wrong reason: ' + e.message.split('\n')[0] + ')');
+  }
+  check('F: every reviewMatrix / degradedSameFamilyCandidates drift class refuses construction, table-driven', bad.length === 0, bad.join('\n'));
+}
+
+// ---- G: the Q0 touch trigger is gated on sourceChangeClasses, exactly like
+// the tier trigger already is — a read-only/doc class touching a trigger
+// area does not hard-block on a missing Q0.
+check('G: q0Required touch trigger does not fire for a read-only class (N0) touching auth',
+  router.q0Required({ class: 'N0', risk: 'T0', touches: ['auth'] }).required === false);
+check('G: q0Required touch trigger still fires for a real source-change class (E2) touching auth',
+  router.q0Required({ class: 'E2', risk: 'T0', touches: ['auth'] }).required === true);
+check('G: through dispatch, a read-only Scout order touching auth is no longer blocked on a missing Q0',
+  (() => { const d = router.dispatch(order('N0', 'T0', { touches: ['auth'] }), G, { q0OrderPresent: false }); return d.ok === true; })());
+
+// ---- H: fnv1a() matches the FNV-1a spec exactly (Math.imul, no lossy
+// float64 intermediate past 2^53), pinned against an exact BigInt reference
+// and against the downstream calibration draw's actual fire rate/spread.
+// NOTE (see DEVIATIONS in the builder report): no existing test or artifact
+// in this repo pins the OLD (broken) fnv1a digests — every existing
+// calibration test (section 9 above) searches dynamically for a
+// sampled/unsampled nonce using fnv1a() itself, so it is self-consistent
+// under either the broken or the fixed implementation and needed no change.
+{
+  const FNV_PRIME = 16777619n, MASK = 0xffffffffn;
+  function fnv1aRef(str) {
+    let h = 2166136261n;
+    for (let i = 0; i < str.length; i++) {
+      h ^= BigInt(str.charCodeAt(i));
+      h = (h * FNV_PRIME) & MASK;
+    }
+    return Number(h);
+  }
+  const VECTORS = ['', 'a', 'abc', 'nonce-cal-0', 'deadbeefdeadbeef', 'the quick brown fox',
+    '0123456789abcdef0123456789abcdef', String.fromCharCode(0, 1, 2, 255, 65535)];
+  const vecBad = VECTORS.filter((v) => fnv1a(v) !== fnv1aRef(v));
+  check('H: fnv1a() matches the exact BigInt FNV-1a reference over a pinned vector set', vecBad.length === 0, JSON.stringify(vecBad));
+
+  const nodeCrypto = require('crypto');
+  const N = 100000;
+  let hits = 0;
+  const residues = new Array(100).fill(0);
+  for (let i = 0; i < N; i++) {
+    const h = fnv1a(nodeCrypto.randomBytes(12).toString('hex')); // same shape as the dispatcher-minted nonce
+    residues[h % 100]++;
+    if (h % 100 < 25) hits++;
+  }
+  const fireRate = hits / N;
+  const emptyBuckets = residues.filter((c) => c === 0).length;
+  check('H: over ' + N + ' synthetic hex nonces the q0Required calibration fire-rate lands in [24%, 26%]',
+    fireRate >= 0.24 && fireRate <= 0.26, (fireRate * 100).toFixed(3) + '%');
+  check('H: no mod-100 residue bucket is empty over ' + N + ' nonces (no 16x skew)', emptyBuckets === 0, emptyBuckets + ' empty buckets');
+}
+
+// ---- I: dispatching a substrate class (V0 Verifier, P0 Quartermaster) at a
+// non-mandatory tier returns a typed substrate review verdict — never a
+// degraded same-family model review of code that has no author family.
+check('I: V0/P0 at T1 (non-mandatory) return a typed substrate review verdict, no model casting',
+  (() => {
+    const dv = router.dispatch(order('V0', 'T1'), G);
+    const dp = router.dispatch(order('P0', 'T1'), G);
+    return dv.ok && dv.review.substrate === true && dv.review.closes === true && dv.review.casting === null &&
+      dp.ok && dp.review.substrate === true && dp.review.closes === true && dp.review.casting === null;
+  })());
+check('I: V0/P0 T2/T3 anchors unchanged — still DOES_NOT_CLOSE (unattributed provenance at mandatory class)',
+  (() => {
+    const t2 = router.dispatch(order('V0', 'T2'), G);
+    const t3 = router.dispatch(order('P0', 'T3'), G);
+    return t2.ok && t2.review.closes === false && t2.review.outcome === 'DOES_NOT_CLOSE' &&
+      t3.ok && t3.review.closes === false && t3.review.outcome === 'DOES_NOT_CLOSE';
+  })());
+
+// ---- C: REPORT ONLY — the requiredReserve/redBelow parity under the
+// default forecast is a known, unchanged calibration fact, not a bug fixed
+// here. Pinned explicitly so it screams if either side moves silently.
+check('C: KNOWN PARITY (no independent signal under the default forecast) — requiredReserve(defaultForecast()) === poolStateLadder.thresholds.redBelow === 0.08',
+  (() => {
+    const qm = require(path.join(MASTER, 'quartermaster', 'quartermaster.js'));
+    const req = router.requiredReserve(qm.defaultForecast());
+    return req === router.castings.poolStateLadder.thresholds.redBelow && req === 0.08;
+  })());
+
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

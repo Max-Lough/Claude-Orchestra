@@ -47,7 +47,11 @@ const { createRouter } = require(path.join(MASTER, 'router', 'router.js'));
 // so "it never exists" is no longer a lawful assertion. What the suite DOES
 // owe is proof that it never creates, modifies, or deletes that file itself.
 // Snapshot it now, before any fixture work below, and compare at the end.
-const REAL_READINGS = path.join(MASTER, '.claude', 'orchestra-pool-readings.jsonl');
+// Q8(a) (triage): use the module's own exported DEFAULT_READINGS_FILE rather
+// than hand-deriving the same path a second time — a hand-derived path can
+// silently drift from the module's actual default if quartermaster.js's own
+// path construction ever changes, defeating the whole point of this guard.
+const REAL_READINGS = qm.DEFAULT_READINGS_FILE;
 function snapshotRealReadings() {
   if (!fs.existsSync(REAL_READINGS)) return { exists: false };
   const stat = fs.statSync(REAL_READINGS);
@@ -77,6 +81,39 @@ function check(name, ok, detail) {
 function section(title) { console.log('\n' + title); }
 process.on('exit', () => {
   for (const fn of cleanups) { try { fn(); } catch (e) { /* best effort */ } }
+  // Q8(b) (triage): this byte-identity guard used to be a check() sitting
+  // mid-suite in section 12 (CLI). Two failure modes followed from that
+  // placement: (1) an early abort — any uncaught throw in sections 1-11 —
+  // exits the process before section 12 ever runs, so the guard silently
+  // never executes at all; (2) sections 13-16 run AFTER section 12, so any
+  // fixture bug introduced there that somehow touched the real file would
+  // land completely unprotected — the guard had already reported "fine" and
+  // would never run again. Moving the comparison here, into the exit
+  // handler, makes it run unconditionally on every exit path (normal
+  // completion OR an uncaught throw from any section), and it fails LOUDLY
+  // — a nonzero exit code plus a printed message — rather than depending on
+  // a check() that may never execute.
+  const after = snapshotRealReadings();
+  let realReadingsOk;
+  if (after.exists !== REAL_READINGS_BEFORE.exists) {
+    realReadingsOk = false;
+  } else if (!after.exists) {
+    realReadingsOk = true;
+  } else {
+    realReadingsOk = after.size === REAL_READINGS_BEFORE.size
+      && after.mtimeMs === REAL_READINGS_BEFORE.mtimeMs
+      && after.hash === REAL_READINGS_BEFORE.hash;
+  }
+  if (!realReadingsOk) {
+    console.error(
+      '\nFATAL: the repository\'s real readings file (' + REAL_READINGS + ') was created, modified, or deleted ' +
+      'by this suite run (present or absent, it is supposed to be byte-identical before and after — every ' +
+      'fixture call in this suite uses an explicit --file). This is a bug in the suite itself, not an ordinary ' +
+      'test failure, and it is checked unconditionally here — on every exit path, not only when every earlier ' +
+      'section ran to completion — so it cannot be silently skipped by an early abort.'
+    );
+    process.exitCode = 1;
+  }
   if (failures > 0) process.exitCode = 1;
   else if (passes === 0) {
     console.log('\nFAILED — no checks ran at all (the suite did not execute)');
@@ -303,6 +340,56 @@ section('3. Fail-closed: absent, too stale, malformed-latest');
   const e = threw(() => qm.bucketState({ file: f, now: NOW, forecast: FC0 }));
   check('a future-dated reading fails closed (clock skew or tamper, not evidence)',
     e !== null && /dated in the future/.test(e.message) && /OU/.test(e.message));
+}
+{
+  // Q4 CRITICAL (triage): future-dated THROTTLES and CONFIRMATIONS used to be
+  // silently FILTERED (not partitioned) at analyze()'s throttle-window and
+  // confirmation-window checks, and at confirm()'s own throttle check — the
+  // opposite of what already happened to a future-dated READING two blocks
+  // above, which correctly fails the bucket closed. A HARD throttle
+  // timestamped +2h used to just vanish: the bucket published Green, and
+  // preDispatchGate let an Opus dispatch straight through it with zero
+  // disclosure that a throttle had ever been recorded at all.
+  const f = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.75 : 0.92, 'vendor UI', undefined, { file: f, now: ago(1) });
+  qm.recordThrottle('AU-opus', 'hard', 'weekly Opus limit — dated ahead of now', { file: f, now: new Date(NOW.getTime() + 2 * H) });
+  const e = threw(() => qm.bucketState({ file: f, now: NOW, forecast: FC0 }));
+  check('a future-dated HARD throttle fails the bucket closed, exactly like a future-dated reading — it is never silently dropped',
+    e !== null && e.failClosed === true && /AU-opus/.test(e.message) && /hard throttle/.test(e.message) && /dated in the future/.test(e.message));
+  const d = qm.bucketStateDetail({ file: f, now: NOW, forecast: FC0 });
+  check('bucketStateDetail agrees: not ok, buckets null, and the problem is on AU-opus specifically (the other three buckets are fine)',
+    d.ok === false && d.buckets === null && d.analysis.buckets['AU-opus'].problem !== null && d.analysis.buckets['OU'].problem === null);
+  check('EXPLOIT REPRODUCTION CLOSED: preDispatchGate can never even be reached with a silently-Green bucket — bucketState() itself refuses first',
+    (() => {
+      // Before the fix this would have returned {allowed:true} on a Green
+      // bucket with the hard throttle discarded; now bucketState() throws
+      // before preDispatchGate is ever called with anything for this bucket.
+      let threwFirst = false;
+      try { qm.bucketState({ file: f, now: NOW, forecast: FC0 }); } catch (e2) { threwFirst = e2.failClosed === true; }
+      return threwFirst;
+    })());
+
+  // A future-dated confirmation is the same signal and must refuse the same way.
+  const g = newFile();
+  for (const b of qm.BUCKETS) qm.recordReading(b, b === 'AU-opus' ? 0.30 : 0.92, 'vendor UI', undefined, { file: g, now: ago(1) });
+  fs.appendFileSync(g, JSON.stringify({
+    ts: new Date(NOW.getTime() + 2 * H).toISOString(), kind: 'confirmation', bucket: 'AU-opus',
+    evidenceTs: ago(1).toISOString(), remainingFraction: 0.30,
+  }) + '\n', 'utf8');
+  const e2 = threw(() => qm.bucketState({ file: g, now: NOW, forecast: FC0 }));
+  check('a future-dated CONFIRMATION fails the bucket closed too, not just silently un-counted as "not fresh"',
+    e2 !== null && e2.failClosed === true && /AU-opus/.test(e2.message) && /confirmation/.test(e2.message) && /dated in the future/.test(e2.message));
+
+  // …and confirm() itself refuses while a future-dated throttle is on file,
+  // even against an otherwise perfectly confirmable Amber reading.
+  const h = newFile();
+  qm.recordReading('AU-opus', 0.30, 'vendor UI', undefined, { file: h, now: ago(1) });
+  qm.recordThrottle('AU-opus', 'soft', 'dated ahead of now', { file: h, now: new Date(NOW.getTime() + 2 * H) });
+  const before = lines(h).length;
+  const r = qm.confirm('AU-opus', { file: h, now: NOW });
+  check('confirm() REFUSES while a future-dated throttle is on file for the bucket, even on an otherwise-confirmable Amber reading',
+    r.confirmed === false && /throttle/.test(r.reason) && /future/.test(r.reason));
+  check('…and appends nothing', lines(h).length === before);
 }
 
 // =========================================================================
@@ -531,6 +618,27 @@ section('8. The confirmation protocol (ruling R5)');
   seedAll(i, 0.2001, ago(1));
   check('just above orangeBelow it is granted', qm.confirm('AU-opus', { file: i, now: NOW }).confirmed === true);
 
+  // Q1 (triage): confirm() used to enforce only the LOWER band bound
+  // (> orangeBelow) — a Green-band reading (0.92) minted a real,
+  // arm-lifting confirmation, contradicting the function's own docstring
+  // ("the Amber band only"). Both the upper bound and the lawful lower-band
+  // grant are pinned together here so a future regression to either edge is caught.
+  const l = newFile();
+  seedAll(l, 0.92, ago(1));
+  const beforeGreen = lines(l).length;
+  const green = qm.confirm('AU-opus', { file: l, now: NOW });
+  check('Q1: a Green-band 0.92 reading is REFUSED confirmation — the Amber-arm confirmation covers the Amber band only',
+    green.confirmed === false && /amberBelow/.test(green.reason));
+  check('…and appends nothing', lines(l).length === beforeGreen);
+  // The existing lawful 0.30-band grant (Amber, above orangeBelow and below
+  // amberBelow) is already pinned at the top of this section — "a fresh
+  // above-Orange reading grants confirmation" — so the upper-bound fix above
+  // is proven not to have disturbed it without duplicating that fixture here.
+  const m = newFile();
+  seedAll(m, 0.30, ago(1));
+  check('Q1: a genuine Amber-band reading (0.30) is still granted after the upper-bound fix',
+    qm.confirm('AU-opus', { file: m, now: NOW }).confirmed === true);
+
   const j = newFile();
   const none = qm.confirm('AU-opus', { file: j, now: NOW });
   check('with no reading at all, confirmation is refused and points at --record',
@@ -705,6 +813,13 @@ section('12. CLI');
   check('CLI --publish writes the snapshot and exits 0', r6.status === 0 && fs.existsSync(snap));
   const r7 = run(['--file', f, '--throttle', 'OU', 'hard', '--message', 'weekly cap']);
   check('CLI --throttle records a hard throttle', r7.status === 0 && /"severity":"hard"/.test(r7.stdout));
+  // Q1 (triage): AU-opus's only reading on `f` so far is the 0.5 recorded
+  // above (Green — >= amberBelow) — before the Q1 upper-bound fix confirm()
+  // granted on it anyway; now it correctly refuses (see section 8's
+  // Green-band pin), so a genuinely Amber-band reading must be recorded
+  // first for this CLI grant path to still exercise a real grant.
+  const r7b = run(['--file', f, '--record', 'AU-opus', '0.30', '--source', 'vendor UI']);
+  check('setup: CLI --record lands a fresh Amber-band AU-opus reading for the grant path below', r7b.status === 0);
   const r8 = run(['--file', f, '--confirm', 'AU-opus', '--dispatch-ref', 'cli-1']);
   check('CLI --confirm exits 0 on a grant', r8.status === 0 && /"confirmed": true/.test(r8.stdout));
   const g = newFile();
@@ -713,16 +828,13 @@ section('12. CLI');
   check('CLI --confirm exits 1 on a refusal', r9.status === 1 && /"confirmed": false/.test(r9.stdout));
   const r10 = run([]);
   check('CLI with no command prints usage and exits 1', r10.status === 1 && /usage:/.test(r10.stderr));
-  check('the suite created, modified, or deleted no bytes of the repository\'s real readings file '
-      + '(present or absent, it is byte-identical before and after — every fixture call above used an explicit --file)',
-    (() => {
-      const after = snapshotRealReadings();
-      if (after.exists !== REAL_READINGS_BEFORE.exists) return false;
-      if (!after.exists) return true;
-      return after.size === REAL_READINGS_BEFORE.size
-        && after.mtimeMs === REAL_READINGS_BEFORE.mtimeMs
-        && after.hash === REAL_READINGS_BEFORE.hash;
-    })());
+  // Q8(b): the actual byte-identity comparison against the real readings file
+  // now runs unconditionally in the process.on('exit') handler above (it
+  // covers every section and every abort path, not just "the suite reached
+  // section 12"); this check is a placeholder only, kept so this section's
+  // check count does not silently drop, and so a reader landing here is
+  // pointed at where the real guard lives.
+  check('the real-readings byte-identity guard runs in process.on(\'exit\') (see above), unconditionally on every exit path', true);
 }
 
 // =========================================================================
@@ -808,6 +920,31 @@ section('13. CRITICAL (round 2) — confirmation validity re-anchored to LIVE ev
   const e = threw(() => qm.bucketState({ file: k, now: NOW, forecast: FC0 }));
   check('(e) a malformed-latest poison after a valid confirmation still fails the bucket closed',
     e !== null && e.failClosed === true && /AU-opus/.test(e.message));
+
+  // (f) Q2 (triage): the confirmation void-chain had no belowReserve clause
+  // at all, so the published contract could carry BOTH
+  // {reserveBreached:true (poolState Red)} AND {quartermasterConfirmation:
+  // true} on the same bucket at once — an asserted arm-lift on a bucket the
+  // router itself calls Red. A 0.30 reading grants confirmation lawfully
+  // (Amber band); an explicit forecast override then pushes requiredReserve
+  // above 0.30, so the SAME reading is simultaneously below reserve — this
+  // constructs the state the way probe2.js's triage evidence did.
+  const n = newFile();
+  seedAll(n, 0.30, ago(1));
+  const grant3 = qm.confirm('AU-opus', { file: n, now: ago(1) });
+  check('(f) setup: 0.30 grants confirmation lawfully (Amber band)', grant3.confirmed === true);
+  const FC_HIGH_RESERVE = { mandatoryReviewDraw: 0.25, incidentDraw: 0 }; // requiredReserve = 0.325 > 0.30
+  const a4 = qm.analyze({ file: n, now: NOW, forecast: FC_HIGH_RESERVE });
+  const inf4 = a4.buckets['AU-opus'];
+  check('(f) setup sanity: under the override forecast the bucket is belowReserve and Red by the ladder',
+    inf4.value.belowReserve === true && inf4.poolState === 'Red');
+  check('(f) a confirmation is voided when the bucket is belowReserve at analyze() time',
+    !Object.prototype.hasOwnProperty.call(inf4.value, 'quartermasterConfirmation'));
+  check('(f) …and the void reason names the reserve breach, not a superseded-evidence or band mismatch',
+    /below the required reserve/.test(inf4.confirmation.voidReason));
+  const st4 = qm.bucketState({ file: n, now: NOW, forecast: FC_HIGH_RESERVE });
+  check('(f) the published contract never carries {reserveBreached:true, quartermasterConfirmation:true} together',
+    st4['AU-opus'].state.reserveBreached === true && !Object.prototype.hasOwnProperty.call(st4['AU-opus'], 'quartermasterConfirmation'));
 }
 
 // =========================================================================
@@ -891,6 +1028,24 @@ section('15. MAJOR (round 2) — module-boundary validation');
   const e2 = threw(() => qm.bucketState({ file: g, now: NOW, forecast: FC0, maxStaleMs: 'abc' }));
   check('a 400-day-old reading is refused by maxFreshMs alone, unaffected by a bogus maxStaleMs opt',
     e2 !== null && e2.failClosed === true && /freshness window/.test(e2.message));
+
+  // Q6 (triage): analyze() gated `forecast` on TRUTHINESS
+  // (`opts.forecast ? validateForecast(...) : defaultForecast()`) rather than
+  // identity, so null/0/''/false silently substituted the loosest default
+  // reserve instead of being refused as a malformed caller-supplied option —
+  // the same class of module-boundary bug round 2 already closed for string
+  // coercion. Each falsy-but-not-undefined value must now THROW at the
+  // boundary, same as any other malformed forecast.
+  for (const bad of [null, 0, '']) {
+    rej('Q6: forecast=' + JSON.stringify(bad) + ' is refused at the boundary, not silently substituted with the default',
+      () => qm.bucketState({ file: f, now: NOW, forecast: bad }),
+      /forecast.*must be an object/);
+  }
+  check('Q6: an OMITTED forecast (no key at all) still defaults, unaffected by the identity-check fix',
+    (() => {
+      const a = qm.analyze({ file: f, now: NOW });
+      return a.forecast.estimate === true && /WO-2-MEASURED/.test(a.forecast.basis);
+    })());
 }
 
 // =========================================================================
@@ -924,6 +1079,20 @@ section('16. MINOR (round 2) — predictThrottle staleness refusal and RangeErro
   try { txt = qm.report({ file: g, now: NOW }); } catch (e) { reportThrew = e; }
   check('report() never throws on the 1e-12 decline vector', reportThrew === null, reportThrew && reportThrew.message);
   check('…and prints the beyond-horizon note rather than a bogus far-future date', txt && /beyond representable horizon/.test(txt));
+
+  // Q7 (triage): predictThrottle() had no future-date guard on the latest
+  // reading at all — a reading dated +10h produced a confident declining-
+  // trend ETA (even an "already crossed" rung) exactly where analyze()
+  // refuses the same record outright as a clock-skew/tamper signal. Pinned
+  // beside the existing staleness refusal above.
+  const h = newFile();
+  qm.recordReading('AU-all', 0.6, 'vendor UI', undefined, { file: h, now: ago(1) });
+  qm.recordReading('AU-all', 0.4, 'vendor UI', undefined, { file: h, now: new Date(NOW.getTime() + 10 * H) });
+  const p3 = qm.predictThrottle('AU-all', { file: h, now: NOW });
+  check('predictThrottle refuses when the latest reading is dated in the future, before the staleness check ever runs',
+    p3.ok === false && /dated in the future/.test(p3.reason));
+  check('…the refusal is typed, not a confident ETA or a fictional "already crossed" rung',
+    !('estimates' in p3) && !('confidence' in p3));
 }
 
 console.log('\n' + (failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED') + ' — ' + passes + ' passed');

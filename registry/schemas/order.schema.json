@@ -32,6 +32,10 @@
       "additionalProperties": false
     },
     "author_family": { "enum": ["anthropic", "openai", "human"] },
+    "implementation_author_family": {
+      "enum": ["anthropic", "openai", "human"],
+      "description": "Q0 orders only (router createQ0Order()): the PARENT IMPLEMENTATION's author family — the family the Q0 casting was chosen opposite of. Never the same as this order's own author_family field on a Q0 order. Absent on non-Q0 orders."
+    },
     "co_author_families": {
       "type": "array",
       "items": { "enum": ["anthropic", "openai", "human"] },

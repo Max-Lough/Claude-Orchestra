@@ -71,7 +71,9 @@ function writePin(dir, manifest, overrides) {
   const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
   const pin = Object.assign(
     {
-      projectDir: dir,
+      // Compared against the REAL path (bridge/manifest.js realDir()), as
+      // install.js writes it — on macOS os.tmpdir() is a symlink.
+      projectDir: fs.realpathSync(dir),
       manifestSha256,
       roster: manifest.roster,
       rosterGeneration: manifest.rosterGeneration,

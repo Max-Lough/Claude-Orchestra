@@ -67,7 +67,10 @@ function writePin(dir, manifest) {
   const manifestPath = path.join(dir, '.claude', 'orchestra.json');
   const manifestSha256 = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
   const pin = {
-    projectDir: dir,
+    // The runtime compares the pin's projectDir against the REAL path
+    // (bridge/manifest.js realDir()), exactly as install.js writes it —
+    // on macOS os.tmpdir() is a symlink (/var -> /private/var).
+    projectDir: fs.realpathSync(dir),
     manifestSha256,
     roster: manifest.roster,
     rosterGeneration: manifest.rosterGeneration,
@@ -395,12 +398,21 @@ section('1b. parseBandCReport — PL-15 near-miss aliases (order #3, 2026-09-01)
   check('BRANCH/COMMIT lines produce no bogus claims; backticks stripped',
     JSON.stringify(lp.changes) === JSON.stringify(['E:\\Godot Projects\\Game\\src\\ship\\name_label.gd:22-27', 'E:\\Godot Projects\\Game\\tests\\ship\\it_test.gd:65,79']),
     JSON.stringify(lp.changes));
+  // normalizeClaims strips the repo ROOT, and roots are platform-native
+  // (path.resolve on POSIX cannot treat "E:\..." as absolute — that literal
+  // above only exercises the parser). Build the root and the claims natively:
+  // backslashes on Windows, slashes elsewhere; both must come out relative.
+  const nativeRoot = path.resolve(os.tmpdir(), 'Godot Projects', 'Game');
+  const nativeClaims = [
+    path.join(nativeRoot, 'src', 'ship', 'name_label.gd') + ':22-27',
+    path.join(nativeRoot, 'tests', 'ship', 'it_test.gd') + ':65,79',
+  ];
   check('normalizeClaims: absolute -> repo-relative forward slashes, comma list expanded',
-    JSON.stringify(close.normalizeClaims(lp.changes, 'E:\\Godot Projects\\Game')) ===
+    JSON.stringify(close.normalizeClaims(nativeClaims, nativeRoot)) ===
       JSON.stringify(['src/ship/name_label.gd:22-27', 'tests/ship/it_test.gd:65', 'tests/ship/it_test.gd:79']),
-    JSON.stringify(close.normalizeClaims(lp.changes, 'E:\\Godot Projects\\Game')));
+    JSON.stringify(close.normalizeClaims(nativeClaims, nativeRoot)));
   check('normalizeClaims leaves already-relative claims untouched',
-    JSON.stringify(close.normalizeClaims(['src/a.gd:5'], 'E:\\x')) === JSON.stringify(['src/a.gd:5']));
+    JSON.stringify(close.normalizeClaims(['src/a.gd:5'], nativeRoot)) === JSON.stringify(['src/a.gd:5']));
   check('the canonical bare-header report still parses byte-identically',
     (() => { const q = close.parseBandCReport('STATUS: DONE\n\nCHANGES\n- a.gd:1 — x\n\nVERIFICATION\n- ok\n\nDEVIATIONS\n- none\n\nCONCERNS\n- none\n'); return q.changesRaw === '- a.gd:1 — x' && q.deviationsRaw === '- none' && JSON.stringify(q.changes) === JSON.stringify(['a.gd:1']); })());
 }

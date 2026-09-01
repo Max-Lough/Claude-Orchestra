@@ -361,7 +361,7 @@ function pinProject(pinDir, repo, manifest) {
   const pinHash = crypto.createHash('sha256').update(fs.realpathSync(repo)).digest('hex');
   fs.mkdirSync(pinDir, { recursive: true });
   fs.writeFileSync(path.join(pinDir, pinHash + '.json'), JSON.stringify({
-    projectDir: repo, manifestSha256, roster: manifest.roster, rosterGeneration: manifest.rosterGeneration, seats: manifest.seats || {},
+    projectDir: fs.realpathSync(repo), manifestSha256, roster: manifest.roster, rosterGeneration: manifest.rosterGeneration, seats: manifest.seats || {},
     writtenAt: new Date().toISOString(), by: 'bridge-acceptance.test.js fixture',
   }));
 }

@@ -12,8 +12,18 @@
 - **Law (Band C):** execute the order, the whole order, nothing but the order; blocked
   beats guessed; the report is a claim, not evidence.
 
+## Rider from leg-2 review #6 (APPROVE with 1 MINOR + 1 NIT — `roster/wo14b-leg2-review-6.md`)
+
+Also in scope, in `router/tickets.js` + `tests/tickets.test.js` (public API unchanged): (a) the
+anomaly-sidecar drain must never lose a record it could not parse — unparseable lines are written
+back to the sidecar (same write-all discipline) instead of being truncated away, and a
+`lock_anomaly` event with `data.torn:true` names them; (b) the `_fs` test hooks (incl.
+`afterRename`) are honoured only when `process.env.ORCHESTRA_TICKETS_TEST_HOOKS === '1'`;
+otherwise the constructor refuses `_fs` with a typed `TicketStoreError`. Pin both.
+
 ## FILES
 
+`router/tickets.js` + `tests/tickets.test.js` (the rider above only),
 `bridge/runtime.js` (replace the leg-4 `close` stub), `bridge/close.js` (new — the
 closure logic), `bridge/telemetry.js` (new — the two schema-validated writers),
 `bridge/cli.js` (add `close`), `bridge/README.md`, `packs/codex/hooks/

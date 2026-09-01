@@ -358,6 +358,26 @@ section('1. close #1 — refusals');
   check('item 2: schema-invalid envelope order -> NOT_CLOSED envelope invalid', r8.outcome === 'NOT_CLOSED' && /envelope invalid/.test(r8.reason), JSON.stringify(r8));
 }
 
+// -------------------------------------------------------------- section 1b
+
+section('1b. parseBandCReport — PL-15 near-miss aliases (order #3, 2026-09-01)');
+{
+  // The exact label drift the live builder emitted: OPEN ISSUES for CONCERNS,
+  // and the hash on a "Full hash:" bullet under a COMMIT heading.
+  const drifted =
+    'STATUS: DONE\n\nCHANGES\n- tools/x.gd:204 — guarded the scale parse\n\n' +
+    'VERIFICATION\n- gdlint → clean\n\nCOMMIT\n- Branch: `fix/x`\n- Full hash: `902ed9e2a1d421b0316077ff7651517fa5358c59`\n\n' +
+    'DEVIATIONS\n- none\n\nOPEN ISSUES\n- none\n';
+  const p = close.parseBandCReport(drifted);
+  check('OPEN ISSUES parses as the CONCERNS section', p.concernsRaw === '- none', JSON.stringify(p.concernsRaw));
+  check('"Full hash:" yields the commit', p.commit === '902ed9e2a1d421b0316077ff7651517fa5358c59', JSON.stringify(p.commit));
+  check('COMMIT heading terminates the VERIFICATION section (not swallowed into it)', /gdlint/.test(p.verificationRaw) && !/Full hash/.test(p.verificationRaw), JSON.stringify(p.verificationRaw));
+  check('canonical CONCERNS still wins over OPEN ISSUES when both exist',
+    close.parseBandCReport(drifted.replace('DEVIATIONS\n- none', 'DEVIATIONS\n- none\n\nCONCERNS\n- real concern')).concernsRaw === '- real concern');
+  check('a report with neither CONCERNS nor OPEN ISSUES still has no concerns section',
+    close.parseBandCReport('STATUS: DONE\n\nCHANGES\n- a:1 — x\n\nVERIFICATION\n- ok\n\nDEVIATIONS\n- none\n').concernsRaw === null);
+}
+
 // ------------------------------------------------------------------ section 2
 
 section('2. close #1 — verifier FAIL vs PASS, and item 1 envelope.base');

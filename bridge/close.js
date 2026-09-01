@@ -95,7 +95,7 @@ function section(text, name, otherHeaders) {
   return (stopM ? rest.slice(0, stopM.index) : rest).trim();
 }
 
-const BAND_C_HEADERS = ['CHANGES', 'VERIFICATION', 'DEVIATIONS', 'CONCERNS'];
+const BAND_C_HEADERS = ['CHANGES', 'VERIFICATION', 'DEVIATIONS', 'CONCERNS', 'COMMIT', 'OPEN ISSUES'];
 
 function parseBandCReport(text) {
   const s = String(text || '');
@@ -104,7 +104,13 @@ function parseBandCReport(text) {
   const changesRaw = section(s, 'CHANGES', BAND_C_HEADERS.filter((h) => h !== 'CHANGES'));
   const verificationRaw = section(s, 'VERIFICATION', BAND_C_HEADERS.filter((h) => h !== 'VERIFICATION'));
   const deviationsRaw = section(s, 'DEVIATIONS', BAND_C_HEADERS.filter((h) => h !== 'DEVIATIONS'));
-  const concernsRaw = section(s, 'CONCERNS', BAND_C_HEADERS.filter((h) => h !== 'CONCERNS'));
+  // PL-15 hardening (order #3, 2026-09-01): builders emit near-miss labels —
+  // "OPEN ISSUES" for CONCERNS, and a COMMIT section whose hash rides a
+  // "Full hash:" bullet. Accept those exact aliases; anything else still
+  // refuses, so a report with no concerns/commit at all parses no further.
+  const concernsRaw =
+    section(s, 'CONCERNS', BAND_C_HEADERS.filter((h) => h !== 'CONCERNS')) ||
+    section(s, 'OPEN ISSUES', BAND_C_HEADERS.filter((h) => h !== 'OPEN ISSUES'));
   // Each CHANGES bullet is "<path:line> — <prose>" (final-plan.md's Band C
   // format); verifier.claimedChanges()/parseChangeClaim() need the bare
   // "path:line" token, not the trailing prose, so split on the first
@@ -119,6 +125,9 @@ function parseBandCReport(text) {
     : [];
   const commitMatch =
     /\bcommit\b\s*[:=]?\s*`?([0-9a-f]{7,40})`?/i.exec(s) ||
+    // PL-15 hardening: the "Full hash:" bullet builders write under a COMMIT
+    // heading ("- Full hash: `902ed9e2...`").
+    /\b(?:full\s+)?hash\b\s*[:=]\s*`?([0-9a-f]{7,40})`?/i.exec(s) ||
     /\bhead\b\s*[:=]\s*`?([0-9a-f]{7,40})`?/i.exec(s);
   const nonceMatch = /REPORT INTEGRITY:\s*(\S+)/.exec(s);
   return {

@@ -889,11 +889,19 @@ same day (typed `COMPUTED_CASTING`; installer grants `git checkout -b:*` / `git 
 PL-7 docs rewritten, and PL-14 found+fixed while reinstalling (a plain `install.js` re-run
 downgraded the target to legacy — always verify `gate hooks: 4` / doctor `roster=new` after any
 reinstall). The mortar change is committed by hand as `843a29d5` on `feat/mortar-vfx-scale` and
-was reviewed out-of-band (Opus, APPROVE, 5 NITs) — **its telemetry is lost; no order has reached
-CLOSED yet.** Target now v2.4.1 roster:new generation 3, pin MATCH. **Next: the owner restarts
-`claude --model fable` in the target and issues order #3 — small, code-bearing, tests named.**
-Expected: builder commits on a feature branch → close #1 → Verifier → ticketed OpenAI reviewer
-→ close #2 → CLOSED, and the FIRST `casting-record` + `verdict-audit` files under
+was reviewed out-of-band (Opus, APPROVE, 5 NITs) — its telemetry is lost. #3 (env-var guard,
+2026-09-01 fresh Fable helm) — Q0 companion enforced, codex EXEC_UNAVAILABLE escalated cleanly
+to Sonnet, work delivered green (`902ed9e2`+`904aa036` on `fix/bkw5a-explosion-scale-guard`,
+out-of-band Opus review APPROVE, 1 MINOR: missing test `.gd.uid`), but its telemetry is ALSO
+lost: the builder's branch checkout made the manifest untrusted exactly when the report arrived
+(PL-15, bound a housekeeping reply), plus Stop-block spam (PL-16), stale-base commits that can
+never pass the claimed-changes replay (PL-17), and the codex lane dead on this ChatGPT-plan
+account (PL-18, owner decision). PL-15/16 fixed in code, PL-17 in builder.md + conductor rule.
+**No order has reached CLOSED yet.** **Next: (1) owner merges `feat/mortar-vfx-scale` then
+`fix/bkw5a-explosion-scale-guard` into target main (+ commit the test's `.gd.uid`); (2) owner
+issues order #4 — small, code-bearing, tests named — under a fresh `claude --model fable`.**
+Expected: builder branches from the dispatch-time HEAD, commits → close #1 → Verifier →
+ticketed reviewer → close #2 → CLOSED, and the FIRST `casting-record` + `verdict-audit` under
 `<target>/.claude/orchestra/ledger/<task_id>/`. Read them; anything off → punch list.
 
 **Tools for the next session** (`tools/shakedown/`): `ppp-doctor.js <project>` (stdio probe:

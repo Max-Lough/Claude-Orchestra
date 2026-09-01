@@ -580,6 +580,48 @@ section('14. Manifest pin verification — pin present, manifest hash mismatch: 
     restoredRuntime.dispatch(baseRequest({ class: 'A0', risk: 'T1', task_id: 'post-repin' })).outcome === 'DISABLED');
 }
 
+// ==================== 14b. PL-15/PL-16: fail-closed still binds results and does not spin Stop
+
+section('14b. Untrusted manifest with a LAUNCHED ticket — SubagentStop still binds the report (PL-15); Stop honors stop_hook_active (PL-16)');
+
+{
+  const dir = tmpProject('bridge-untrusted-bind-');
+  writeManifest(dir);
+  seedReadings(dir, GREEN);
+
+  // Full trusted lifecycle up to LAUNCHED, exactly as order #3 stood when the
+  // builder's branch checkout made the manifest untrusted mid-flight.
+  const trusted = createRuntime({ projectDir: dir });
+  const d = trusted.dispatch(baseRequest({ task_id: 'bind-under-mismatch' }));
+  check('(setup) dispatch ok', d.ok === true, JSON.stringify(d));
+  const ticketId = d.tickets.implementation.id;
+  trusted.gate(preEvent('TICKET=' + ticketId, d.spawn.subagent_type, 'tu-14b'));
+  trusted.gate(postEvent('tu-14b', AGENT_ID, RESOLVED_MODEL));
+  const store = { dir: path.join(dir, '.claude', 'orchestra', 'tickets') };
+  check('(setup) ticket LAUNCHED', T.get(store, ticketId).status === 'LAUNCHED', T.get(store, ticketId).status);
+
+  // Tamper the manifest without re-pinning -> failClosed, fresh process.
+  fs.writeFileSync(path.join(dir, '.claude', 'orchestra.json'), JSON.stringify({ roster: 'new', rosterGeneration: 1, seats: { Architect: false } }, null, 2));
+  const runtime = createRuntime({ projectDir: dir });
+  check('(setup) failClosed', runtime.doctor().pin.failClosed === true, JSON.stringify(runtime.doctor().pin));
+
+  // PL-16: one block per stop gesture — a repeat under stop_hook_active passes.
+  const firstStop = runtime.gate(stopEvent(false, []));
+  check('Stop still blocks once under fail-closed', firstStop.decision === 'block' && /manifest untrusted/.test(firstStop.reason), JSON.stringify(firstStop));
+  const repeatStop = runtime.gate(stopEvent(true, []));
+  check('Stop with stop_hook_active:true returns {} under fail-closed (no spin loop)', JSON.stringify(repeatStop) === '{}', JSON.stringify(repeatStop));
+
+  // PL-15: the real report arrives while untrusted — it must still bind.
+  const bind = runtime.gate(subagentStopEvent(AGENT_ID, 'STATUS: DONE\nREAL-REPORT', AGENT_TRANSCRIPT_PATH));
+  check('SubagentStop returns {} under fail-closed', JSON.stringify(bind) === '{}', JSON.stringify(bind));
+  const after = T.get(store, ticketId);
+  check('the report is bound: ticket RESOLVED with the real message (PL-15)',
+    after.status === 'RESOLVED' && after.resolved.last_assistant_message === 'STATUS: DONE\nREAL-REPORT',
+    after.status + ' | ' + (after.resolved && after.resolved.last_assistant_message));
+  check('PreToolUse(Agent) still denies under fail-closed (binding grants no authority)',
+    (() => { const g = runtime.gate(preEvent('TICKET=' + ticketId, 'builder', 'tu-14b2')); return g.hookSpecificOutput && g.hookSpecificOutput.permissionDecision === 'deny'; })());
+}
+
 // ============ 15. manifest present but claims legacy, NO pin -> unpinned legacy, inert
 
 section("15. Manifest pin verification — manifest present but claims roster:legacy (or omits it), NO pin: unpinned legacy, gate stays inert");

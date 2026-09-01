@@ -72,7 +72,15 @@ DEVIATIONS
 
 CONCERNS
 - <risks, smells, or follow-ups the dispatcher should weigh — or "none">
+
+COMMIT
+- commit: <full 40-char hash> on <branch>
 ```
+
+Three mechanics of that report the closer depends on (order #3 lessons, 2026-09-01):
+- The hash line must read `commit: <hash>` — that exact label is what the closer parses; "Commit 1:" or a hash with no label does not close the ticket. Branch work starts from the dispatch-time HEAD (`git checkout -b <branch>` from where you were launched), never from an older unmerged branch — the Verifier replays your claimed changes against the base recorded at dispatch, and a stale base fails that replay.
+- The report is bound from the LAST message of the turn in which you finish — and only your FIRST finished turn binds. So the turn that completes the work must end with the full report above, nothing after it; if you are resumed for housekeeping afterward, the bound report does not change, so never move real results into a resumed turn.
+- Section labels are exact: `CONCERNS`, not "OPEN ISSUES"; `CHANGES` bullets are `path:line — prose`, not a pasted diff.
 
 For BLOCKED: state exactly what you need decided, what you found that caused the block, and leave the tree untouched or clearly note any partial changes made.
 

@@ -617,12 +617,26 @@ function createRuntime({ projectDir, repoDir } = {}) {
           return denyPre('manifest untrusted (' + state.reason + ') — ticket gate fails closed under roster:new');
         }
         if (hookEvent === 'Stop') {
+          // PL-16 (shakedown finding, 2026-09-01, order #3): blocking every
+          // Stop attempt while the mismatch persisted (a builder had an older
+          // branch checked out) looped the helm through dozens of identical
+          // block/`Waiting.` rounds until the host's 9-block cap overrode.
+          // One block per stop gesture informs; repeats are pure spin.
+          if (event.stop_hook_active) return {};
           return {
             decision: 'block',
             reason: 'manifest untrusted (' + state.reason + ') — ticket gate fails closed under roster:new',
           };
         }
-        return { inert: true };
+        // PL-15 (shakedown finding, 2026-09-01, order #3 — the telemetry
+        // killer): SubagentStop used to be inert here, so the builder's REAL
+        // Band-C report (which arrived while a subagent's branch checkout had
+        // the manifest untrusted) was never bound; the one-use resolve() then
+        // bound a 5-line housekeeping reply from the next warm resume, and
+        // close #1 could never parse a report. Binding a host-recorded result
+        // records evidence — it grants no authority, spawns nothing, and the
+        // ticket store is not the manifest — so it must not fail closed.
+        if (hookEvent !== 'SubagentStop') return { inert: true };
       }
 
       generationCheck();

@@ -65,16 +65,30 @@
  * The pause switch (.claude/orchestra.pause / ORCHESTRA_PAUSE=1, §6) is
  * OUT-OF-BAND ONLY (leg-3 fix round 2A, FIX FIRST — closes the red team's
  * self-pause CRITICAL). There is no tool-call carve-out that creates or
- * edits the pause file anymore: main() checks for the env var and a
- * PRE-EXISTING pause file (created by the user outside the tool loop)
- * before it even parses the PreToolUse payload — that check is unaffected
- * by this fix and is the only legitimate way to pause. Any Write/Edit/
- * MultiEdit whose target resolves to <project>/.claude/orchestra.pause is
- * now DENIED instead (classifyPauseWrite() / denySelfPause()), with a
- * reason that says how to pause properly. Previously, an ALLOWed Write to
- * that exact path let a compromised Director/subagent flip the switch
- * itself and everything downstream (including the manifest pin) stood
- * down permanently — one Write, unconditional shell forever after.
+ * edits the pause file anymore. Any Write/Edit/MultiEdit whose target
+ * resolves to <project>/.claude/orchestra.pause is DENIED
+ * (classifyPauseWrite() / denySelfPause()), with a reason that says how to
+ * pause properly. Previously, an ALLOWed Write to that exact path let a
+ * compromised Director/subagent flip the switch itself and everything
+ * downstream (including the manifest pin) stood down permanently — one
+ * Write, unconditional shell forever after.
+ *
+ * Ordering (leg-3 fix round 3A, MAJOR — closes review #3's finding at
+ * guard:1303): main() now runs classifyPauseWrite()'s deny check BEFORE the
+ * pause-exists short-circuit that stands the rest of the guard down, not
+ * after. Under the old ordering, a pre-existing file at the pause path —
+ * including one an attacker hardlinked to something else — short-circuited
+ * straight to allow() before classifyPauseWrite() ever ran, so a Write to
+ * the pause path itself was ALLOWED whenever *anything* already sat there.
+ * The self-pause denial is now unconditional in truth, not just in the
+ * common case. The pause-exists short-circuit itself is also narrower now
+ * (item 1b): it only honours a GENUINE pause file — a regular file with
+ * exactly one hard link, not a symlink/junction (see pauseFileStatus()). A
+ * hardlinked or linked file at the pause path is IGNORED as a pause
+ * signal: it neither stands the guard down nor (since the deny above always
+ * wins) can any tool call ever create it in the first place. When an
+ * ignored pause file is the reason the guard did NOT stand down, whatever
+ * denial follows names that reason (see withManifestNote()).
  *
  * Two classes of writes remain exempt from Director law (a third — the
  * pause file — was retired above):
@@ -182,14 +196,39 @@
  *   PIN_DIR = $ORCHESTRA_PIN_DIR || ~/.claude/orchestra/pins   (item 5d:
  *     honoured only if this directory actually exists — an env var pointing
  *     at a nonexistent directory is "no pin dir", same as none configured)
+ * Lookup order — path key, then id key, then git-root key (leg-3 fix round
+ * 3A, item 3, adds the third):
  *   pin file, by resolved project path: <PIN_DIR>/<sha256 hex of the
  *     project's real path>.json
  *   pin file, by project id (item 6 — a project that has MOVED since it was
  *     pinned): <PIN_DIR>/id-<sha256 hex of manifest.projectId>.json, tried
  *     only when the path-keyed file is absent and the manifest carries a
  *     projectId
+ *   pin file, by git root commit (item 3 — a moved project whose manifest
+ *     was also replaced, so projectId is no longer readable from it):
+ *     <PIN_DIR>/git-<sha256 hex of the first line of `git rev-list
+ *     --max-parents=0 HEAD` run in the project>.json, tried only when
+ *     neither of the above resolves. `git` is invoked via
+ *     child_process.execFileSync with a 5s timeout, cwd = the project; ANY
+ *     failure (no git repo, git not installed, timeout, non-zero exit)
+ *     simply skips this key — see gitRootPinKey(). A pin found this way is
+ *     treated exactly like an id-found pin for the moved-project note; it
+ *     is exempt from the path key's projectDir-must-agree forgery check.
  *   { projectDir, manifestSha256, roster, rosterGeneration, seats,
  *     writtenAt, by: "install.js" }
+ * Strict pin schema (leg-3 fix round 3A, item 2, closes review #3's finding
+ * at guard:734): a pin file that parses as an object is valid only if EVERY
+ * field below is well-shaped — anything less (missing, wrong type, or the
+ * wrong shape) is INVALID, same as a corrupt/forged pin (case d below),
+ * never silently accepted because it happens to carry a recognized
+ * `roster`. See pinSchemaProblem().
+ *   projectDir       non-empty string
+ *   manifestSha256   exactly 64 lowercase hex characters
+ *   roster           "new" | "legacy"
+ *   rosterGeneration non-negative integer
+ *   writtenAt        parses as a date (Date.parse/`new Date()` non-NaN)
+ *   by               non-empty string
+ *   projectId        string, IF PRESENT (optional key)
  * Four cases (loadPolicy()):
  *   (a) no pin resolves by either key (including "no pin dir") ->
  *       - if the manifest itself claims roster:"new": UNTRUSTED-NEW,
@@ -208,11 +247,11 @@
  *       own projectDir agrees with the resolved project path, and the
  *       manifest's bytes hash to pin.manifestSha256 -> the manifest is
  *       trusted: honour it fully, but roster still comes from the pin. A
- *       pin found by the ID key needs no projectDir agreement (that
- *       disagreement IS the moved-project case, item 6) but still needs the
- *       hash match for trust; a moved-but-trusted project has
- *       "project moved since pinning" appended to any denial reason it
- *       produces, for visibility;
+ *       pin found by the ID key (or, item 3, the GIT-ROOT key) needs no
+ *       projectDir agreement (that disagreement IS the moved-project case,
+ *       item 6) but still needs the hash match for trust; a moved-but-trusted
+ *       project has "project moved since pinning" appended to any denial
+ *       reason it produces, for visibility;
  *   (c) pin resolves and is well-formed, but the manifest is missing/
  *       unreadable/hash-mismatched -> the manifest is UNTRUSTED: every
  *       loosening key is ignored, roster/seats/rosterGeneration come from
@@ -249,6 +288,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 // Tools the Director may not use (default law).
 const BLOCKED = new Set([
@@ -278,9 +318,18 @@ const MEMORY_BASENAMES = new Set(['CLAUDE.md', 'CLAUDE.local.md']);
 const MARKER_BEGIN = '<!-- ORCHESTRA:BEGIN'; // loose: matches older stamped variants
 const MARKER_END = '<!-- ORCHESTRA:END -->';
 
-// Tools whose calls can qualify for the plan-file and memory-file exceptions
-// (and, before this fix round, the pause-file one — see classifyPauseWrite()).
+// Tools whose calls can qualify for the plan-file and memory-file exceptions.
 const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
+
+// Tools the self-pause write detector watches (item A8, red-team
+// re-verification #2, adds NotebookEdit to FILE_WRITE_TOOLS' three — a
+// NotebookEdit whose notebook_path resolves to the pause path was
+// previously not even considered). Deliberately a separate set from
+// FILE_WRITE_TOOLS: the plan/memory carve-outs stay scoped to Write/Edit/
+// MultiEdit as before (a .md-extension requirement excludes .ipynb anyway),
+// while the pause deny — an absolute rule, not a carve-out — covers one
+// more write surface.
+const PAUSE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 
 // Transcript reading (latestMainModel()): read the whole file rather than a
 // fixed-size tail, up to this cap. Session transcripts are bounded by
@@ -292,9 +341,19 @@ const MAX_TRANSCRIPT_BYTES = 64 * 1024 * 1024;
 // Bounded tail size once a transcript exceeds MAX_TRANSCRIPT_BYTES (item 3).
 const TAIL_BYTES = 8 * 1024 * 1024;
 
+// Bounded HEAD window read alongside the tail once a transcript exceeds
+// MAX_TRANSCRIPT_BYTES (item A3, red-team re-verification #2). A oversized
+// transcript with a genuine director entry on line 1 and enough forged
+// non-director filler to push that line out of the tail window used to
+// stand the guard down under BOTH rosters — the latch only ever saw the
+// tail. The latch now applies over head UNION tail (see latestMainModel()):
+// a director entry in EITHER window still wins.
+const HEAD_BYTES = 2 * 1024 * 1024;
+
 // Legacy corrupt-state regression grace window (item 3): a transcript this
-// small AND this recently modified is treated as "mid first write", not
-// garbage, when it has content but zero parseable entries.
+// small AND this recently CREATED AND MODIFIED (item A4 adds birthtimeMs —
+// see below) is treated as "mid first write", not garbage, when it has
+// content but zero parseable entries.
 const CORRUPT_GRACE_BYTES = 64 * 1024;
 const CORRUPT_GRACE_MS = 10 * 1000;
 
@@ -368,11 +427,10 @@ function deny(reason) {
   process.exit(0);
 }
 
-// Appends the "manifest untrusted" note (loadPolicy() cases c/d) and, when
-// applicable, the "project moved since pinning" note (item 6) to a denial
-// message. Independent flags: a trusted-but-moved pin (case b) carries only
-// the move note; an untrusted pin carries its reason and, if it was also
-// found by the id key with a different projectDir, both.
+// Appends the "manifest untrusted" note (loadPolicy() cases c/d), the
+// "project moved since pinning" note (item 6), and — item 1(b), leg-3 fix
+// round 3A — the "pause file ignored as a pause signal" note, to a denial
+// message. Independent flags, any combination may apply at once.
 function withManifestNote(msg, policy) {
   let out = msg;
   if (policy && policy.manifestUntrusted && policy.manifestUntrustedReason) {
@@ -380,6 +438,11 @@ function withManifestNote(msg, policy) {
   }
   if (policy && policy.pinMoved) {
     out += ' [project moved since pinning]';
+  }
+  if (policy && policy.pauseIgnoredReason) {
+    out +=
+      ' [a file exists at .claude/' + PAUSE_BASENAME + ' but was not honoured as a pause ' +
+      'signal: ' + policy.pauseIgnoredReason + ']';
   }
   return out;
 }
@@ -461,9 +524,13 @@ function denyUndeterminedModel(toolName, policy) {
         '(no assistant turn in the transcript yet, an unreadable transcript, or an ' +
         'unrecognized model string) denies ' + toolName + ' rather than standing down — ' +
         'unlike the legacy default. If this is genuinely a non-director (Sonnet/Haiku) ' +
-        'session, the denial clears itself once that model reaches the transcript on your ' +
-        'next turn. (User-only pause switch, out-of-band only: ORCHESTRA_PAUSE=1 or a ' +
-        'pre-existing .claude/' + PAUSE_BASENAME + ' file.)',
+        'session with no director entry anywhere in what the guard has read so far, this ' +
+        'denial clears once that model reaches the transcript. It is NOT guaranteed to clear ' +
+        'on a session where a director model already appears anywhere in the transcript ' +
+        '(item A8) — the latch (see the file header "Model-aware" note) makes that entry win ' +
+        'regardless of what appears after it, including a forged non-director marker. The ' +
+        'reliable way out is the user-only pause switch, out-of-band only: ORCHESTRA_PAUSE=1 ' +
+        'or a pre-existing .claude/' + PAUSE_BASENAME + ' file.',
       policy
     )
   );
@@ -677,11 +744,22 @@ function isPatternSafe(src) {
   return typeof src === 'string' && src.length > 0 && src.length <= MAX_PATTERN_LEN && !isRegexShaped(src);
 }
 
+// Array-length cap on every pattern key (item A6, red-team re-verification
+// #2): an oversized array (e.g. 100k entries) is rejected WITHOUT compiling
+// a single glob — the check is on the RAW array length, before even
+// filtering to strings, so it returns in O(1) regardless of what the array
+// holds. A single grossly long pattern was already capped (MAX_PATTERN_LEN,
+// isPatternSafe()); this caps the ARRAY, closing the same class of DoS one
+// level up.
+const MAX_PATTERN_ARRAY_LEN = 64;
+
 // LOOSENING-key compilation (directorPlanPatterns / directorMemoryPatterns):
 // a rejected entry silently drops itself, same fail-safe convention as the
 // rest of loadPolicy() — a bad entry loses only itself, never the whole
-// policy.
+// policy. An oversized array drops ENTIRELY (item A6) — not just its excess
+// entries — same as any other rejected loosening-key entry.
 function compileGlobsLoosening(arr) {
+  if (Array.isArray(arr) && arr.length > MAX_PATTERN_ARRAY_LEN) return [];
   return arrOfStrings(arr)
     .filter((s) => isPatternSafe(s))
     .map((s) => compileGlob(s));
@@ -690,8 +768,12 @@ function compileGlobsLoosening(arr) {
 // TIGHTENING-key compilation (directorBlockedPatterns): callers also need to
 // know whether ANY entry was rejected, because a rejected entry here fails
 // the whole guard closed (see denyBlockedPatternsInvalid()) rather than
-// dropping silently.
+// dropping silently. An oversized array (item A6) is `invalid` the same way
+// a single malformed entry is.
 function compileGlobsTightening(arr) {
+  if (Array.isArray(arr) && arr.length > MAX_PATTERN_ARRAY_LEN) {
+    return { patterns: [], invalid: true };
+  }
   const strings = arrOfStrings(arr);
   const patterns = [];
   let invalid = false;
@@ -719,21 +801,146 @@ function stripUnloosenableUnderNewRoster(allowed, roster) {
   return allowed.filter((t) => !UNLOOSENABLE_UNDER_NEW_ROSTER.has(t));
 }
 
+// Roster:new install fingerprints (item A2, red-team re-verification #2 —
+// closes "delete the pin AND drop/omit the roster key" as a second, easier
+// bypass of case (a)'s fail-closed branch: the manifest-level check above
+// only fires when the manifest itself still SAYS roster:"new". An attacker
+// who also rewrites the manifest to omit `roster` (or say "legacy") used to
+// fall straight into "unpinned legacy install", which honours every
+// loosening key — stripUnloosenableUnderNewRoster() only strips when
+// roster === 'new', so it is a no-op on that path. These marks exist ONLY
+// because some install wrote roster:new here at some point, independent of
+// what the current (possibly attacker-edited) manifest claims: the ten
+// roster agent files, the conductor file, the shared runtime substrate
+// directory, or any manifest key only a roster:new install ever writes.
+const ROSTER_NEW_AGENT_FILES = [
+  'architect.md',
+  'builder.md',
+  'data-engineer.md',
+  'investigator.md',
+  'red-team.md',
+  'reviewer-anthropic.md',
+  'reviewer-openai.md',
+  'sweeper.md',
+  'test-designer-vs-anthropic.md',
+  'test-designer-vs-openai.md',
+];
+const ROSTER_NEW_MANIFEST_KEYS = [
+  'projectId',
+  'installedFiles',
+  'installedPermissions',
+  'installedHooks',
+  'rosterGeneration',
+];
+
+function hasRosterNewFingerprint(root, cfg) {
+  try {
+    if (fs.existsSync(path.join(root, '.claude', 'orchestra'))) return true;
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    if (fs.existsSync(path.join(root, '.claude', 'ORCHESTRA-CONDUCTOR.md'))) return true;
+  } catch (_) {
+    /* ignore */
+  }
+  for (const f of ROSTER_NEW_AGENT_FILES) {
+    try {
+      if (fs.existsSync(path.join(root, '.claude', 'agents', f))) return true;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  if (cfg && typeof cfg === 'object') {
+    for (const k of ROSTER_NEW_MANIFEST_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(cfg, k)) return true;
+    }
+  }
+  return false;
+}
+
 // ------------------------------------------------------------- manifest pin
-//
+
+// Third pin lookup key (item 3, leg-3 fix round 3A): the project's git root
+// commit, for a project that has both moved AND had its manifest replaced
+// (so projectId — the id-key's source — is no longer readable from it
+// either). rootCommitHash = the FIRST line of `git rev-list --max-parents=0
+// HEAD`, run with cwd = the project. ANY failure (no git repo, git not on
+// PATH, timeout, non-zero exit — e.g. a repo with no commits yet) simply
+// skips this key: it returns null rather than throwing, same fail-open
+// posture as every other pin lookup here. 5s timeout matches the installer
+// side's contract for this same command.
+function gitRootPinKey(real) {
+  try {
+    const out = execFileSync('git', ['rev-list', '--max-parents=0', 'HEAD'], {
+      cwd: real,
+      timeout: 5000,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const firstLine = String(out).split(/\r?\n/)[0];
+    if (!firstLine) return null;
+    return 'git-' + crypto.createHash('sha256').update(firstLine, 'utf8').digest('hex') + '.json';
+  } catch (_) {
+    return null;
+  }
+}
+
+// Strict pin schema (item 2, leg-3 fix round 3A) — see the file-header
+// "Strict pin schema" note. Returns null when `obj` (already known to be a
+// parsed, non-array object) satisfies every required field; otherwise a
+// short reason string naming the first defect found, in the fixed order
+// below. A pin missing a field entirely fails the same way as one that has
+// it in the wrong shape — there is no partial credit for "the fields it did
+// include look fine".
+function pinSchemaProblem(obj) {
+  if (typeof obj.projectDir !== 'string' || obj.projectDir === '') {
+    return 'invalid pin (projectDir)';
+  }
+  if (typeof obj.manifestSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(obj.manifestSha256)) {
+    return 'invalid pin (manifestSha256)';
+  }
+  if (obj.roster !== 'new' && obj.roster !== 'legacy') {
+    return 'invalid pin (roster)';
+  }
+  if (
+    typeof obj.rosterGeneration !== 'number' ||
+    !Number.isInteger(obj.rosterGeneration) ||
+    obj.rosterGeneration < 0
+  ) {
+    return 'invalid pin (rosterGeneration)';
+  }
+  if (
+    (typeof obj.writtenAt !== 'string' && typeof obj.writtenAt !== 'number') ||
+    Number.isNaN(new Date(obj.writtenAt).getTime())
+  ) {
+    return 'invalid pin (writtenAt)';
+  }
+  if (typeof obj.by !== 'string' || obj.by === '') {
+    return 'invalid pin (by)';
+  }
+  if (Object.prototype.hasOwnProperty.call(obj, 'projectId') && typeof obj.projectId !== 'string') {
+    return 'invalid pin (projectId)';
+  }
+  return null;
+}
+
 // Resolves the owner pin for this project — see the file-header "Manifest
-// pin" note for the (a)/(b)/(c)/(d) cases this feeds into loadPolicy(). Two
-// lookup keys (item 6, moved projects): the resolved-path hash first, then
-// (only if that misses and the manifest carries a projectId) the id hash.
+// pin" note for the (a)/(b)/(c)/(d) cases this feeds into loadPolicy().
+// Three lookup keys, tried in order (item 6 / item 3, moved projects): the
+// resolved-path hash first; then, only if that misses and the manifest
+// carries a projectId, the id hash; then, only if BOTH of those miss, the
+// git-root hash (skipped entirely when gitRootPinKey() can't determine one
+// — no git repo, git not installed, etc.).
 // Returns a discriminated result so loadPolicy() can tell "no pin anywhere"
-// (case a) apart from "a pin file exists but is corrupt or forged" (case d)
-// — a corrupt/forged pin NEVER silently collapses to "no pin"; that
-// collapse is the red-team finding this closes ("a corrupt pin is the same
-// as no pin", "deleting the pin is strictly better than editing the
-// manifest").
+// (case a) apart from "a pin file exists but is corrupt, forged, or
+// schema-invalid" (case d) — that state NEVER silently collapses to "no
+// pin"; that collapse is the red-team finding this closes ("a corrupt pin
+// is the same as no pin", "deleting the pin is strictly better than editing
+// the manifest").
 //   { found: false }
 //   { found: true, valid: false, reason }
-//   { found: true, valid: true, foundBy: 'path'|'id', pin: {...} }
+//   { found: true, valid: true, foundBy: 'path'|'id'|'git', pin: {...} }
 function loadPin(real, cfg) {
   const dir = pinDir();
   if (dir === '') return { found: false };
@@ -762,6 +969,20 @@ function loadPin(real, cfg) {
       foundBy = 'id';
     }
   }
+  if (pinFilePath === null) {
+    // item 3: third key, tried only when both of the above miss. A project
+    // that moved AND had its manifest replaced can no longer be found by
+    // path (stale) or id (the replaced manifest carries no projectId, or a
+    // different one) — its git history is the one thing that survives both.
+    const gitKeyName = gitRootPinKey(real);
+    if (gitKeyName !== null) {
+      const byGit = path.join(dir, gitKeyName);
+      if (fs.existsSync(byGit)) {
+        pinFilePath = byGit;
+        foundBy = 'git';
+      }
+    }
+  }
   if (pinFilePath === null) return { found: false };
 
   let obj;
@@ -773,15 +994,16 @@ function loadPin(real, cfg) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
     return { found: true, valid: false, reason: 'corrupt pin' };
   }
-  if (obj.roster !== 'new' && obj.roster !== 'legacy') {
-    return { found: true, valid: false, reason: 'corrupt pin' };
+  const schemaProblem = pinSchemaProblem(obj);
+  if (schemaProblem) {
+    return { found: true, valid: false, reason: schemaProblem };
   }
   const pin = {
-    projectDir: typeof obj.projectDir === 'string' ? obj.projectDir : null,
+    projectDir: obj.projectDir,
     roster: obj.roster,
     seats: objOrNull(obj.seats),
-    rosterGeneration: typeof obj.rosterGeneration === 'number' ? obj.rosterGeneration : null,
-    manifestSha256: typeof obj.manifestSha256 === 'string' ? obj.manifestSha256 : null,
+    rosterGeneration: obj.rosterGeneration,
+    manifestSha256: obj.manifestSha256,
   };
   // Forged-pin check (red team: a hand-written pin with a projectDir naming
   // a completely different path was accepted). When found by the PATH key,
@@ -855,7 +1077,14 @@ function loadPolicy() {
         patterns: g.patterns,
         blockedPatternsInvalid: g.invalid,
         allowed: stripUnloosenableUnderNewRoster(cfg ? arrOfStrings(cfg.directorAllowedTools) : [], roster),
-        planPatternsRaw: cfg ? arrOfStrings(cfg.directorPlanPatterns) : [],
+        // item A6: planPatternsRaw feeds straight into denyDefault()'s
+        // user-facing hint (see withManifestNote() callers) — an oversized
+        // array dropped everywhere else must not still get dumped verbatim
+        // into a denial message.
+        planPatternsRaw:
+          cfg && !(Array.isArray(cfg.directorPlanPatterns) && cfg.directorPlanPatterns.length > MAX_PATTERN_ARRAY_LEN)
+            ? arrOfStrings(cfg.directorPlanPatterns)
+            : [],
         planPatterns: cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [],
         memoryPatterns: cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [],
       };
@@ -863,19 +1092,27 @@ function loadPolicy() {
 
     if (!pinResult.found) {
       // (a) No pin resolves by either key.
-      if (cfg && cfg.roster === 'new') {
-        // Fail-closed sub-case (item 5a): the manifest itself claims
-        // roster:new but nothing outside the project backs that claim.
+      const claimsNew = cfg && cfg.roster === 'new';
+      // item A2: even when the manifest DOESN'T claim roster:new (omitted,
+      // or rewritten to "legacy"), on-disk/manifest fingerprints from a
+      // real roster:new install still fail this closed — see
+      // hasRosterNewFingerprint()'s doc comment.
+      const fingerprint = !claimsNew && hasRosterNewFingerprint(root, cfg);
+      if (claimsNew || fingerprint) {
+        // Fail-closed sub-case (item 5a / item A2): nothing outside the
+        // project backs a roster:new claim (explicit or fingerprinted).
         // Forcing this to LEGACY (the old behaviour) is exactly the "delete
         // the pin" bypass the red team found — force NEW instead and drop
         // every loosening key.
-        const g = compileGlobsTightening(cfg.directorBlockedPatterns);
+        const g = compileGlobsTightening(cfg ? cfg.directorBlockedPatterns : null);
         return Object.assign({}, empty, {
           patterns: g.patterns,
           blockedPatternsInvalid: g.invalid,
           roster: 'new',
           manifestUntrusted: true,
-          manifestUntrustedReason: 'manifest untrusted (manifest claims new without a pin)',
+          manifestUntrustedReason: claimsNew
+            ? 'manifest untrusted (manifest claims new without a pin)'
+            : 'manifest untrusted (installed roster:new project without a pin)',
         });
       }
       if (!cfg) return empty;
@@ -902,7 +1139,11 @@ function loadPolicy() {
     }
 
     const pin = pinResult.pin;
-    const moved = pinResult.foundBy === 'id' && pin.projectDir !== real;
+    // item 3: a pin found by the git-root key is the same "moved project"
+    // shape as one found by id — its own projectDir names wherever it was
+    // pinned, which need not be here.
+    const moved =
+      (pinResult.foundBy === 'id' || pinResult.foundBy === 'git') && pin.projectDir !== real;
 
     const trusted =
       cfg !== null &&
@@ -914,7 +1155,22 @@ function loadPolicy() {
       // (b) Pin present and valid, manifest bytes hash-match: honour the
       // manifest fully; roster still comes from the pin (it always does).
       const f = fieldsFromManifest(pin.roster);
-      return Object.assign({}, empty, f, {
+      // item A7 (red-team re-verification #2): a pin found by the id or
+      // git-root key with a projectDir that still differs from here is
+      // "moved" — but a verbatim COPY of a pinned project's .claude/ (not
+      // an actual move) is indistinguishable from a real move by this
+      // check alone: the manifest hash matches byte-for-byte either way.
+      // Enforcement (roster, seats, rosterGeneration, the tightening key)
+      // is honoured regardless — it can only restrict, so trusting it here
+      // is safe even for a copy. LOOSENING keys are not: a copy landing
+      // anywhere would otherwise inherit the victim project's loosened
+      // tools/plan/memory patterns wherever it's placed. Only a fresh
+      // path-keyed pin (--repin, which asserts this specific path really
+      // is the project that moved) restores loosening trust.
+      const unloosened = moved
+        ? { allowed: [], planPatternsRaw: [], planPatterns: [], memoryPatterns: [] }
+        : {};
+      return Object.assign({}, empty, f, unloosened, {
         roster: pin.roster,
         rosterGeneration: typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : pin.rosterGeneration,
         seats: objOrNull(cfg.seats) || pin.seats,
@@ -985,25 +1241,37 @@ function latestMainModel(input) {
     if (!stat.isFile()) return { state: 'empty' };
     if (stat.size === 0) return { state: 'empty' };
 
-    let content;
+    let lines;
     if (stat.size > MAX_TRANSCRIPT_BYTES) {
-      // Bounded tail (item 3 / file header "Size"): never a blanket deny
-      // purely for size. A director entry older than this window is not
-      // seen — documented, not silently assumed away.
+      // Bounded tail + HEAD (item 3 / item A3 / file header "Size"): never
+      // a blanket deny purely for size. The tail alone used to be an
+      // attacker-sized gap — a director entry on line 1 of a 66 MB
+      // transcript, followed by enough forged non-director filler to push
+      // it out of an 8 MB tail window, stood the guard down under BOTH
+      // rosters. Reading a bounded HEAD window too and applying the latch
+      // over head UNION tail closes that: a director entry in EITHER
+      // window still wins. A director entry older than BOTH windows is
+      // still not seen — documented, not silently assumed away.
       const fd = fs.openSync(tp, 'r');
       try {
-        const readSize = Math.min(TAIL_BYTES, stat.size);
-        const buf = Buffer.alloc(readSize);
-        fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
-        content = buf.toString('utf8');
+        const tailSize = Math.min(TAIL_BYTES, stat.size);
+        const tailBuf = Buffer.alloc(tailSize);
+        fs.readSync(fd, tailBuf, 0, tailSize, stat.size - tailSize);
+        let headLines = [];
+        const headSize = Math.min(HEAD_BYTES, stat.size - tailSize);
+        if (headSize > 0) {
+          const headBuf = Buffer.alloc(headSize);
+          fs.readSync(fd, headBuf, 0, headSize, 0);
+          headLines = headBuf.toString('utf8').split('\n');
+        }
+        lines = headLines.concat(tailBuf.toString('utf8').split('\n'));
       } finally {
         fs.closeSync(fd);
       }
     } else {
-      content = fs.readFileSync(tp, 'utf8');
+      lines = fs.readFileSync(tp, 'utf8').split('\n');
     }
 
-    const lines = content.split('\n');
     let sawValidEntry = false;
     let directorModel = null;
     let otherModel = null;
@@ -1023,7 +1291,11 @@ function latestMainModel(input) {
         continue; // partial/corrupt line (e.g. a tail read's truncated first line) — keep scanning
       }
       sawValidEntry = true;
-      if (entry && entry.type === 'assistant' && entry.isSidechain !== true) {
+      // item A8: any TRUTHY isSidechain counts as a sidechain, not only the
+      // literal boolean `true` — a forged/hand-appended entry carrying the
+      // string "true" (JS truthy, but `!== true` under strict equality)
+      // used to be read as a non-sidechain assistant entry.
+      if (entry && entry.type === 'assistant' && !entry.isSidechain) {
         const model = entry.message && entry.message.model;
         if (typeof model === 'string' && model !== '' && model !== '<synthetic>') {
           if (DIRECTOR_MODEL.test(model)) {
@@ -1042,9 +1314,21 @@ function latestMainModel(input) {
     // Legacy regression fix (item 3): a transcript genuinely mid-first-
     // write is small and was just touched — treat that shape as 'empty'
     // (stand down) instead of denying a Sonnet/Haiku session that hasn't
-    // produced one complete flushed line yet. Anything else with content
-    // but no parseable entry denies under both rosters, unchanged.
-    if (stat.size < CORRUPT_GRACE_BYTES && Date.now() - stat.mtimeMs < CORRUPT_GRACE_MS) {
+    // produced one complete flushed line yet. Item A4 (red-team
+    // re-verification #2) gates this on birthtimeMs as well as mtimeMs: an
+    // EXISTING transcript truncated to garbage (e.g. overwritten with a
+    // single "x") gets a fresh mtime from the truncation but keeps its
+    // original birth time, so mtime alone used to let a truncation-bypass
+    // through the grace window. Requiring the file to have been CREATED
+    // within the window too — not merely modified — closes that; a
+    // genuinely new, still-being-written transcript satisfies both.
+    // Anything else with content but no parseable entry denies under both
+    // rosters, unchanged.
+    if (
+      stat.size < CORRUPT_GRACE_BYTES &&
+      Date.now() - stat.mtimeMs < CORRUPT_GRACE_MS &&
+      Date.now() - stat.birthtimeMs < CORRUPT_GRACE_MS
+    ) {
       return { state: 'empty' };
     }
     return { state: 'corrupt' };
@@ -1087,7 +1371,14 @@ function realish(p) {
 // under .claude/hooks/. Computed fresh on each carve-out match (cheap —
 // this only runs when a Write/Edit/MultiEdit already matched a plan/memory
 // route, not on every tool call).
-function protectedFileStats() {
+// `excludeRealPath` (item A5, red-team re-verification #2): when given, a
+// candidate whose OWN realpath equals it is left out of the returned set.
+// Without this, editing the project's OWN root CLAUDE.md via the memory
+// carve-out compared its target against the CLAUDE.md protected-candidate
+// entry — which is the exact same file, trivially matching {dev, ino} — and
+// denied a completely legitimate edit as "hardlinked target". The nlink > 1
+// check in linkSafety() is untouched and still catches a genuine alias.
+function protectedFileStats(excludeRealPath) {
   const root = projectDir();
   const candidates = [
     __filename,
@@ -1109,6 +1400,13 @@ function protectedFileStats() {
   for (const c of candidates) {
     try {
       const st = fs.statSync(c);
+      if (excludeRealPath) {
+        try {
+          if (fs.realpathSync(c) === excludeRealPath) continue; // this candidate IS the write's own target
+        } catch (_) {
+          /* realpath failed even though stat succeeded — fall through, still protect it */
+        }
+      }
       stats.push({ dev: st.dev, ino: st.ino });
     } catch (_) {
       /* doesn't exist — nothing to protect */
@@ -1123,15 +1421,18 @@ function protectedFileStats() {
 //   - nlink > 1: the target already exists with more than one hard link —
 //     refused regardless of what it's linked to, since a legitimate
 //     Director-authored plan/memory file is never pre-linked;
-//   - {dev, ino} match against protectedFileStats(): catches the case even
-//     if nlink reporting is unavailable/unreliable for some reason.
+//   - {dev, ino} match against protectedFileStats(realPath), which excludes
+//     realPath's own identity (item A5): catches the case even if nlink
+//     reporting is unavailable/unreliable for some reason, without
+//     self-matching a legitimate edit of the protected file itself (e.g.
+//     the project's own root CLAUDE.md via the memory carve-out).
 // A target that doesn't exist yet (the common case — most writes create a
 // new file) is safe: there is nothing to have hardlinked.
 function linkSafety(realPath) {
   try {
     const st = fs.statSync(realPath);
     if (st.nlink > 1) return { safe: false };
-    const protectedSet = protectedFileStats();
+    const protectedSet = protectedFileStats(realPath);
     for (const p of protectedSet) {
       if (p.dev === st.dev && p.ino === st.ino) return { safe: false };
     }
@@ -1141,27 +1442,83 @@ function linkSafety(realPath) {
   }
 }
 
+// NotebookEdit names its target under `notebook_path`, not `file_path` —
+// every other PAUSE_WRITE_TOOLS member uses `file_path`.
+function pauseWriteTargetPath(toolName, toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return null;
+  const field = toolName === 'NotebookEdit' ? 'notebook_path' : 'file_path';
+  const v = toolInput[field];
+  return typeof v === 'string' && v !== '' ? v : null;
+}
+
 // Self-pause write detector (item 1, CRITICAL fix — replaces the old
 // classifyPauseOperation() carve-out entirely). No tool call may create or
 // edit .claude/orchestra.pause anymore: the pause switch is out-of-band
-// only (env var, or the user creating the file directly). A Write/Edit/
-// MultiEdit whose target resolves to that exact path is flagged for denial
-// here — unconditionally, before any model-dormancy check, since this is an
-// absolute rule about the file, not part of Director law. linkSafety() is
-// deliberately NOT consulted here: there is no more "allow" outcome on this
-// route to protect, so calling it would be the same dead code the red team
-// flagged against the old allow-carve-out.
+// only (env var, or the user creating the file directly). A write whose
+// target resolves to that exact path — OR is nested UNDER it, treating the
+// pause path as a directory (item A1, red-team re-verification #2: `Write
+// .claude/orchestra.pause/CLAUDE.md` matched the memory carve-out, and the
+// Write tool creating the parent directory made a bare existsSync() check
+// see "a pause file" that was really an attacker-created directory) — is
+// flagged for denial here, unconditionally, before any model-dormancy
+// check and before either remaining carve-out (plan/memory) is even
+// consulted, since this is an absolute rule about the path, not part of
+// Director law. linkSafety() is deliberately NOT consulted here: there is
+// no more "allow" outcome on this route to protect, so calling it would be
+// the same dead code the red team flagged against the old allow-carve-out.
 // Returns 'none' | 'deny'.
 function classifyPauseWrite(toolName, toolInput) {
-  if (!FILE_WRITE_TOOLS.has(toolName)) return 'none';
-  if (!toolInput || typeof toolInput !== 'object') return 'none';
-  if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '') return 'none';
+  if (!PAUSE_WRITE_TOOLS.has(toolName)) return 'none';
+  const targetPath = pauseWriteTargetPath(toolName, toolInput);
+  if (targetPath === null) return 'none';
   const root = projectDir();
-  const resolved = path.resolve(root, toolInput.file_path);
+  const resolved = path.resolve(root, targetPath);
   const wantPath = path.join(root, '.claude', PAUSE_BASENAME);
   const realResolved = realish(resolved);
   const realWant = realish(wantPath);
-  return realResolved === realWant ? 'deny' : 'none';
+  if (realResolved === realWant) return 'deny';
+  // Nested under the pause path, treating it as a directory: containment
+  // check on the REAL (symlink/junction-resolved) paths, same discipline
+  // as the plan/memory carve-outs use.
+  const rel = path.relative(realWant, realResolved);
+  if (rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)) return 'deny';
+  return 'none';
+}
+
+// Pause-file validity (item 1b, MAJOR fix round 3A — closes review #3's
+// finding at guard:1303). The pause-exists short-circuit in main() must
+// stand the guard down ONLY for a GENUINE pause file: one the user created
+// directly, out-of-band. A hardlinked file at the pause path (e.g. the
+// red team's `mklink /H .claude/orchestra.pause .claude/settings.json`) is
+// the same file as whatever it's linked to under a second name — treating
+// its mere existence as "the user paused this" would let that second name
+// be edited (via the pause path itself, or the real name) with the guard
+// standing down for everything else too. lstat (not stat) is used first so
+// a symlink/junction at the exact pause path is detected as such rather
+// than silently followed.
+// Returns:
+//   { state: 'absent' }             — nothing at the pause path.
+//   { state: 'active' }             — a regular file, exactly one hard
+//                                      link, not a symlink/junction: honour
+//                                      it, stand the guard down.
+//   { state: 'ignored', reason }    — something exists at the path but
+//                                      isn't a genuine pause file; treated
+//                                      the same as 'absent' for standing
+//                                      down, but the reason is surfaced in
+//                                      whatever denial follows (see
+//                                      withManifestNote()).
+function pauseFileStatus(root) {
+  const wantPath = path.join(root, '.claude', PAUSE_BASENAME);
+  let lst;
+  try {
+    lst = fs.lstatSync(wantPath);
+  } catch (_) {
+    return { state: 'absent' };
+  }
+  if (lst.isSymbolicLink()) return { state: 'ignored', reason: 'symlink or junction' };
+  if (!lst.isFile()) return { state: 'ignored', reason: 'not a regular file' };
+  if (lst.nlink > 1) return { state: 'ignored', reason: 'hardlinked (nlink > 1)' };
+  return { state: 'active' };
 }
 
 // Plan-file carve-out (ORCHESTRA.md §4 PLAN): the Director may author plan
@@ -1335,26 +1692,39 @@ function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
 }
 
 function main(raw) {
-  // Escape hatches (user-controlled) — checked first and independent of the
-  // (possibly unparseable) input payload, so the pause switch always works.
-  // This is the ONLY route that stands the guard down: no tool call reaches
-  // an "allow" outcome for the pause file itself anymore — see
-  // classifyPauseWrite()/denySelfPause() below.
+  // Escape hatches (user-controlled). ORCHESTRA_PAUSE=1 is checked first,
+  // independent of the (possibly unparseable) input payload, exactly as
+  // before. The pause-FILE short-circuit used to run here too, before
+  // parsing — but that let a pre-existing (or hardlinked) file at the pause
+  // path short-circuit straight to allow() BEFORE classifyPauseWrite() ever
+  // got a chance to deny a Write/Edit/MultiEdit targeting the pause path
+  // itself (leg-3 fix round 3A, item 1a — review #3's finding at
+  // guard:1303). It now runs further down, after the self-pause deny check,
+  // once tool_name/tool_input are known — see below. Unparseable input
+  // can't name the pause path either way, so it gets its own pause-file
+  // check immediately below instead.
   if (process.env.ORCHESTRA_PAUSE === '1') return allow();
-  try {
-    if (fs.existsSync(path.join(projectDir(), '.claude', PAUSE_BASENAME))) return allow();
-  } catch (_) {
-    /* fall through — treat as no pause file */
-  }
 
   let input;
   try {
     input = JSON.parse(raw);
   } catch (_) {
-    // Unparseable PreToolUse payload. Legacy fails open (unchanged); under
-    // roster:new this is the same undetermined-state asymmetry as the model
-    // checks below, so it denies instead — see denyMalformedInput().
+    // Unparseable PreToolUse payload — self-pause write detection needs a
+    // parsed tool_name/tool_input and cannot apply here; a genuine
+    // pre-existing pause file (item 1b — pauseFileStatus()) still stands
+    // the guard down, same as always. Legacy then fails open (unchanged);
+    // under roster:new this is the same undetermined-state asymmetry as
+    // the model checks below, so it denies instead — see
+    // denyMalformedInput().
+    let status;
+    try {
+      status = pauseFileStatus(projectDir());
+    } catch (_) {
+      status = { state: 'absent' };
+    }
+    if (status.state === 'active') return allow();
     const policy = loadPolicy();
+    if (status.state === 'ignored') policy.pauseIgnoredReason = status.reason;
     if (policy.roster === 'new') return denyMalformedInput(policy);
     return allow();
   }
@@ -1384,12 +1754,29 @@ function main(raw) {
     return allow(); // legacy: unchanged — this guard has never blocked Agent
   }
 
-  // Self-pause (item 1, CRITICAL): absolute — checked before every other
-  // carve-out and before model dormancy, since the pause switch's whole
-  // value is that it cannot be flipped by a tool call at all.
+  // Self-pause (item 1, MAJOR fix round 3A): absolute — checked before
+  // every other carve-out, before model dormancy, and now (item 1a) before
+  // the pause-exists short-circuit too, since the pause switch's whole
+  // value is that it cannot be flipped by a tool call at all — not even
+  // when a file already sits at that path (genuine pause file or not).
   if (classifyPauseWrite(toolName, input.tool_input) === 'deny') {
     return denySelfPause(toolName, policy);
   }
+
+  // The pause-exists short-circuit itself, now second: only a GENUINE
+  // pause file (item 1b — regular file, exactly one hard link, not a
+  // symlink/junction; see pauseFileStatus()) stands the guard down for
+  // every OTHER tool call. A hardlinked/linked file at the path is IGNORED
+  // as a pause signal — the reason rides along on `policy` so whatever
+  // denial follows can name it (see withManifestNote()).
+  let pauseStatus;
+  try {
+    pauseStatus = pauseFileStatus(projectDir());
+  } catch (_) {
+    pauseStatus = { state: 'absent' };
+  }
+  if (pauseStatus.state === 'active') return allow();
+  if (pauseStatus.state === 'ignored') policy.pauseIgnoredReason = pauseStatus.reason;
 
   // Tightening-key fail-closed (item 4): a malformed directorBlockedPatterns
   // entry means the guard cannot trust what it was told to add to the

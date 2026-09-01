@@ -149,6 +149,63 @@ function writePinById(pinDirPath, projectId, obj) {
   return hash;
 }
 
+// Writes an owner pin file at the git-root-keyed path (item 3, fix round
+// 3A: a project moved AND manifest-replaced, so projectId is unreadable).
+function gitRootKeyFilename(rootCommitHash) {
+  return 'git-' + crypto.createHash('sha256').update(rootCommitHash, 'utf8').digest('hex') + '.json';
+}
+function writePinByGitRoot(pinDirPath, rootCommitHash, obj) {
+  fs.mkdirSync(pinDirPath, { recursive: true });
+  fs.writeFileSync(path.join(pinDirPath, gitRootKeyFilename(rootCommitHash)), JSON.stringify(obj), 'utf8');
+}
+
+// Initializes a throwaway git repo at `dir` with one empty root commit and
+// returns the first line of `git rev-list --max-parents=0 HEAD` — or ''
+// if git isn't usable here. Callers SKIP (not fail) on an empty return.
+function initGitRepoWithRootCommit(dir) {
+  const opts = { cwd: dir, encoding: 'utf8' };
+  spawnSync('git', ['init', '-q'], opts);
+  spawnSync('git', ['config', 'user.email', 'orchestra-guard-test@example.com'], opts);
+  spawnSync('git', ['config', 'user.name', 'Orchestra Guard Test'], opts);
+  spawnSync('git', ['-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-q', '-m', 'root'], opts);
+  const r = spawnSync('git', ['rev-list', '--max-parents=0', 'HEAD'], opts);
+  if (r.status !== 0) return '';
+  const firstLine = (r.stdout || '').trim().split(/\r?\n/)[0];
+  return firstLine || '';
+}
+
+// Creates a transcript-shaped file whose reported size exceeds
+// MAX_TRANSCRIPT_BYTES: real JSONL content at the very start (within the
+// HEAD window) and more at the very end (within the TAIL window), with the
+// middle extended via ftruncate rather than actually written — item A3.
+function makeOversizedTranscript(dir, headEntries, tailEntries, totalSize) {
+  const p = path.join(dir, 'oversized-transcript.jsonl');
+  const fd = fs.openSync(p, 'w');
+  try {
+    const headContent = headEntries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+    const headBuf = Buffer.from(headContent, 'utf8');
+    fs.writeSync(fd, headBuf, 0, headBuf.length, 0);
+    fs.ftruncateSync(fd, totalSize);
+    const tailContent = tailEntries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+    const tailBuf = Buffer.from(tailContent, 'utf8');
+    fs.writeSync(fd, tailBuf, 0, tailBuf.length, totalSize - tailBuf.length);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return p;
+}
+
+// Busy-wait — used ONLY by item A4's birthtime-vs-mtime pin, which needs
+// real wall-clock separation past the guard's CORRUPT_GRACE_MS (10s), since
+// Node cannot set a file's birthtime directly. Fine here: a synchronous
+// test script blocking on itself.
+function sleepSync(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    /* busy wait */
+  }
+}
+
 // Sets up a project whose manifest is pinned and TRUSTED (pin.manifestSha256
 // matches the manifest bytes on disk). Returns { proj, pinDirPath }.
 function setupPinnedProject(rosterValue, manifestExtra) {
@@ -844,11 +901,46 @@ function case14_manifestPin() {
   const badPin = tmpdir('orchestra-guard-');
   const badPinDir = tmpdir('orchestra-guard-pindir-');
   setManifest(badPin, { roster: 'new' });
-  writePin(badPinDir, badPin, { roster: 'not-a-real-value' });
+  // Otherwise schema-complete (item 2's strict-schema check must not be
+  // what trips this one — the ROSTER value itself is the defect here).
+  writePin(badPinDir, badPin, {
+    projectDir: fs.realpathSync(badPin),
+    manifestSha256: 'a'.repeat(64),
+    roster: 'not-a-real-value',
+    rosterGeneration: 1,
+    writtenAt: new Date().toISOString(),
+    by: 'install.js',
+  });
   const rBadPin = runGuard(badPin, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' } }, { ORCHESTRA_PIN_DIR: badPinDir });
   const dBadPin = decisionOf(rBadPin);
   check('(d) a malformed pin (invalid roster value) is UNTRUSTED-NEW, not "no pin" -> DENIES', dBadPin.decision === 'deny', JSON.stringify(dBadPin));
-  check('(d) malformed-pin denial names "corrupt pin"', /corrupt pin/.test(dBadPin.reason), dBadPin.reason);
+  check('(d) malformed-pin denial names "invalid pin"', /invalid pin \(roster\)/.test(dBadPin.reason), dBadPin.reason);
+
+  // (d) item 2, leg-3 fix round 3A: strict pin schema. A pin that parses,
+  // sits at the correct path key, and even carries a recognized `roster`
+  // value is STILL invalid if it's missing required fields — this is the
+  // round-3 REVISE finding at guard:734: {"projectDir":<correct>,
+  // "roster":"legacy"} used to be accepted as a legacy mismatched pin and
+  // allow an undetermined-model Bash call.
+  const incompletePin = tmpdir('orchestra-guard-');
+  const incompletePinDir = tmpdir('orchestra-guard-pindir-');
+  setManifest(incompletePin, { roster: 'new' });
+  writePin(incompletePinDir, incompletePin, {
+    projectDir: fs.realpathSync(incompletePin),
+    roster: 'legacy',
+  });
+  const rIncomplete = runGuard(incompletePin, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: incompletePinDir });
+  const dIncomplete = decisionOf(rIncomplete);
+  check(
+    '(item 2) a structurally incomplete pin (no manifestSha256/rosterGeneration/writtenAt/by) is INVALID -> UNTRUSTED-NEW, Bash denied (undetermined model)',
+    dIncomplete.decision === 'deny',
+    JSON.stringify(dIncomplete)
+  );
+  check(
+    '(item 2) the denial names the invalid pin',
+    /invalid pin \(manifestSha256\)/.test(dIncomplete.reason),
+    dIncomplete.reason
+  );
 
   // (d) item 5d: a nonexistent ORCHESTRA_PIN_DIR combined with a manifest
   // claiming roster:new also denies (no pin dir == no pin, and a manifest
@@ -1040,6 +1132,355 @@ function case16_agentSeam() {
   }
 }
 
+function case16_gitRootPinKey() {
+  section('16. Third pin key: git-root commit (item 3, fix round 3A) — path -> id -> git-root lookup order; moved project + manifest replaced denies via the git-root pin alone');
+
+  const noGitProj = tmpdir('orchestra-guard-nogit-');
+  setManifest(noGitProj, { roster: 'legacy', directorAllowedTools: ['Grep'] });
+  const rNoGit = runGuard(noGitProj, { tool_name: 'Grep', tool_input: {} });
+  check(
+    'no git repo: git-root lookup skipped, falls through to unpinned-legacy rules (loosening honoured)',
+    decisionOf(rNoGit).decision === 'allow',
+    JSON.stringify(decisionOf(rNoGit))
+  );
+
+  const gitProj = tmpdir('orchestra-guard-git-');
+  const rootCommit = initGitRepoWithRootCommit(gitProj);
+  if (!rootCommit) {
+    check('git-root pin key (moved + replaced manifest)', true, 'SKIPPED — could not create a git repo / read its root commit in this environment');
+    return;
+  }
+  const gitPinDir = tmpdir('orchestra-guard-gitpindir-');
+  const goodManifestBytes = Buffer.from(JSON.stringify({ roster: 'new' }), 'utf8');
+  writePinByGitRoot(gitPinDir, rootCommit, {
+    projectDir: 'C:/some/old/location/before/the/move',
+    manifestSha256: crypto.createHash('sha256').update(goodManifestBytes).digest('hex'),
+    roster: 'new',
+    rosterGeneration: 1,
+    seats: {},
+    writtenAt: new Date().toISOString(),
+    by: 'install.js',
+  });
+  // Manifest at the CURRENT location has been replaced — a minimal legacy
+  // claim with no matching hash and no projectId, so the id key can't find
+  // it either. Only the git-root key resolves this pin.
+  setManifest(gitProj, { roster: 'legacy' });
+  const rGitMoved = runGuard(gitProj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: gitPinDir });
+  const dGitMoved = decisionOf(rGitMoved);
+  check('moved project + manifest replaced, resolved ONLY via the git-root pin key: DENY', dGitMoved.decision === 'deny', JSON.stringify(dGitMoved));
+  check('and the denial names "manifest untrusted"', /manifest untrusted/.test(dGitMoved.reason), dGitMoved.reason);
+  check('and carries the moved-project note (the git-root pin\u2019s own projectDir differs from here)', /project moved since pinning/.test(dGitMoved.reason), dGitMoved.reason);
+
+  // Control: the path key takes priority over a contradicting git-root pin
+  // when both exist for the same project.
+  const priorityProj = tmpdir('orchestra-guard-gitprio-');
+  const priorityRoot = initGitRepoWithRootCommit(priorityProj);
+  const priorityPinDir = tmpdir('orchestra-guard-gitpriopindir-');
+  const pathManifestObj = { roster: 'legacy', directorAllowedTools: ['Grep'] };
+  const pathManifestBytes = Buffer.from(JSON.stringify(pathManifestObj), 'utf8');
+  setManifest(priorityProj, pathManifestObj);
+  writePin(priorityPinDir, priorityProj, {
+    projectDir: fs.realpathSync(priorityProj),
+    manifestSha256: crypto.createHash('sha256').update(pathManifestBytes).digest('hex'),
+    roster: 'legacy',
+    rosterGeneration: 1,
+    seats: {},
+    writtenAt: new Date().toISOString(),
+    by: 'install.js',
+  });
+  if (priorityRoot) {
+    writePinByGitRoot(priorityPinDir, priorityRoot, {
+      projectDir: 'C:/elsewhere',
+      manifestSha256: 'f'.repeat(64),
+      roster: 'new',
+      rosterGeneration: 1,
+      seats: {},
+      writtenAt: new Date().toISOString(),
+      by: 'install.js',
+    });
+  }
+  const rPriority = runGuard(priorityProj, { tool_name: 'Grep', tool_input: {} }, { ORCHESTRA_PIN_DIR: priorityPinDir });
+  check('the path-keyed pin is found before the git-root key (loosening honoured, not roster:new)', decisionOf(rPriority).decision === 'allow', JSON.stringify(decisionOf(rPriority)));
+}
+
+function case17_pauseOrderingHardlinkAndDirectory() {
+  section('17. Pause ordering (item 1) + hardlinked/directory pause path ignored as a signal (items 1b / A1)');
+
+  // Item 1: hardlinked pause file (mklink /H to settings.json) — a Write
+  // to the pause path is DENIED, even though "a pause file" exists there.
+  const hardlinkProj = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(hardlinkProj, '.claude'), { recursive: true });
+  const settingsPath = path.join(hardlinkProj, '.claude', 'settings.json');
+  fs.writeFileSync(settingsPath, JSON.stringify({ permissions: { allow: [] } }), 'utf8');
+  const pausePath = path.join(hardlinkProj, '.claude', 'orchestra.pause');
+  const link = tryHardlink(settingsPath, pausePath);
+  if (!link.ok) {
+    check('hardlinked pause file: Write to the pause path denied', true, 'SKIPPED — could not create a hardlink on this OS/permission level (' + link.reason + ')');
+  } else {
+    const rWriteHardlinked = runGuard(hardlinkProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: 'x' } });
+    check(
+      'a Write to a HARDLINKED pause path is DENIED (self-pause deny now runs before the pause-exists short-circuit)',
+      decisionOf(rWriteHardlinked).decision === 'deny',
+      JSON.stringify(decisionOf(rWriteHardlinked))
+    );
+
+    const transcript = writeTranscript(hardlinkProj, [assistantTurn('claude-opus-4-8')]);
+    const rOtherTool = runGuard(hardlinkProj, opusEdit('src/index.js', transcript));
+    const dOtherTool = decisionOf(rOtherTool);
+    check('a hardlinked pause file does NOT stand the guard down for other tool calls', dOtherTool.decision === 'deny', JSON.stringify(dOtherTool));
+    check('the denial names the ignored pause file', /hardlinked/.test(dOtherTool.reason), dOtherTool.reason);
+  }
+
+  // Control: a genuine pre-existing pause file (regular file, nlink 1)
+  // still stands the guard down for other tools, unchanged.
+  const genuineProj = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(genuineProj, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(genuineProj, '.claude', 'orchestra.pause'), '', 'utf8');
+  const genuineTranscript = writeTranscript(genuineProj, [assistantTurn('claude-opus-4-8')]);
+  check(
+    'a genuine pause file (nlink 1) still stands the guard down for other tools',
+    decisionOf(runGuard(genuineProj, opusEdit('src/index.js', genuineTranscript))).decision === 'allow',
+    ''
+  );
+
+  // Item A1: Write .claude/orchestra.pause/CLAUDE.md — the memory carve-out
+  // would otherwise match this (basename CLAUDE.md), and creating it would
+  // put a DIRECTORY at the exact pause path. Denied outright.
+  const dirProj = tmpdir('orchestra-guard-');
+  const rDirWrite = runGuard(dirProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause/CLAUDE.md', content: 'x' } });
+  check('Write .claude/orchestra.pause/CLAUDE.md (nested under the pause path) is DENIED', decisionOf(rDirWrite).decision === 'deny', JSON.stringify(decisionOf(rDirWrite)));
+
+  const rDotDotWrite = runGuard(dirProj, { tool_name: 'Write', tool_input: { file_path: '.claude/plans/../orchestra.pause/CLAUDE.md', content: 'x' } });
+  check(
+    'Write .claude/plans/../orchestra.pause/CLAUDE.md (normalizes to the same nested path) is DENIED',
+    decisionOf(rDotDotWrite).decision === 'deny',
+    JSON.stringify(decisionOf(rDotDotWrite))
+  );
+
+  // A pre-created DIRECTORY at the pause path is not honoured as a pause
+  // signal either — the guard keeps enforcing.
+  const preDirProj = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(preDirProj, '.claude', 'orchestra.pause'), { recursive: true });
+  const preDirTranscript = writeTranscript(preDirProj, [assistantTurn('claude-opus-4-8')]);
+  check(
+    'a pre-created DIRECTORY at the pause path is NOT honoured as a pause signal — guard still enforces',
+    decisionOf(runGuard(preDirProj, opusEdit('src/index.js', preDirTranscript))).decision === 'deny',
+    ''
+  );
+}
+
+function case18_rosterNewFingerprintFailsClosed() {
+  section('18. Case (a) roster:new fingerprint (item A2): deleting the pin AND dropping/omitting roster still fails closed when install artifacts remain');
+
+  const pinned = setupPinnedProject('new', { directorAllowedTools: ['Bash', 'Write', 'Grep'] });
+  fs.mkdirSync(path.join(pinned.proj, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(pinned.proj, '.claude', 'agents', 'architect.md'), '# architect', 'utf8');
+  fs.mkdirSync(path.join(pinned.proj, '.claude', 'orchestra'), { recursive: true });
+  fs.writeFileSync(path.join(pinned.proj, '.claude', 'ORCHESTRA-CONDUCTOR.md'), '# conductor', 'utf8');
+
+  fs.rmSync(pinned.pinDirPath, { recursive: true, force: true });
+  setManifest(pinned.proj, { directorAllowedTools: ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'PowerShell', 'Grep', 'Glob'] });
+
+  const rBash = runGuard(pinned.proj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+  const dBash = decisionOf(rBash);
+  check('(A2) fingerprinted roster:new project, pin deleted + roster key dropped: Bash still DENIED', dBash.decision === 'deny', JSON.stringify(dBash));
+  check('(A2) the denial names the fingerprint reason', /installed roster:new project without a pin/.test(dBash.reason), dBash.reason);
+
+  const rWrite = runGuard(pinned.proj, { tool_name: 'Write', tool_input: { file_path: 'x.js', content: 'x' } }, { ORCHESTRA_PIN_DIR: pinned.pinDirPath });
+  check('(A2) Write is also still DENIED', decisionOf(rWrite).decision === 'deny', JSON.stringify(decisionOf(rWrite)));
+
+  const legacyOnly = tmpdir('orchestra-guard-');
+  setManifest(legacyOnly, { directorAllowedTools: ['Grep'] });
+  check(
+    '(A2 control) a genuinely legacy-only project (no fingerprints) still honours loosening',
+    decisionOf(runGuard(legacyOnly, { tool_name: 'Grep', tool_input: {} })).decision === 'allow',
+    ''
+  );
+}
+
+function case19_oversizedTranscriptHeadWindow() {
+  section('19. Oversized transcript (item A3): a bounded HEAD window closes the tail-only latch gap');
+
+  const proj = tmpdir('orchestra-guard-');
+  const totalSize = 70 * 1024 * 1024; // > MAX_TRANSCRIPT_BYTES (64 MiB)
+  let tp;
+  try {
+    tp = makeOversizedTranscript(
+      proj,
+      [assistantTurn('claude-opus-4-8')],
+      [assistantTurn('claude-haiku-4-5'), assistantTurn('claude-haiku-4-5')],
+      totalSize
+    );
+  } catch (e) {
+    check('oversized-transcript head-window latch', true, 'SKIPPED — could not create a 70 MiB test file here (' + (e && e.message) + ')');
+    return;
+  }
+  const d = decisionOf(runGuard(proj, opusEdit('src/index.js', tp)));
+  check(
+    '(A3) a director entry beyond the tail window but within the HEAD window still enforces (DENY), not stood down by forged tail filler',
+    d.decision === 'deny',
+    JSON.stringify(d)
+  );
+}
+
+function case20_truncationBirthtimeGate() {
+  section('20. Truncation-bypass gated on birthtime, not just mtime (item A4)');
+
+  const proj = tmpdir('orchestra-guard-');
+  const tp = path.join(proj, 'transcript.jsonl');
+  fs.writeFileSync(tp, JSON.stringify(assistantTurn('claude-haiku-4-5')) + '\n', 'utf8');
+  sleepSync(10500); // past the guard's CORRUPT_GRACE_MS (10s) so birthtime ages out
+  fs.writeFileSync(tp, 'x', 'utf8'); // truncate to garbage — fresh mtime, OLD birthtime
+  const d = decisionOf(runGuard(proj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' }, transcript_path: tp }));
+  check(
+    '(A4) an EXISTING transcript truncated to garbage (old birthtime, fresh mtime) DENIES',
+    d.decision === 'deny',
+    JSON.stringify(d)
+  );
+
+  const freshProj = tmpdir('orchestra-guard-');
+  const freshTp = path.join(freshProj, 'transcript.jsonl');
+  fs.writeFileSync(freshTp, 'x', 'utf8');
+  check(
+    '(A4 control) a genuinely fresh (birth+mtime both recent) small garbage file still gets the mid-first-write grace (allow)',
+    decisionOf(runGuard(freshProj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' }, transcript_path: freshTp })).decision === 'allow',
+    ''
+  );
+}
+
+function case21_rootClaudeMdSelfEditNotFlaggedAsHardlink() {
+  section('21. Root CLAUDE.md self-edit is not a false-positive "hardlinked target" (item A5)');
+
+  const proj = tmpdir('orchestra-guard-');
+  const transcript = writeTranscript(proj, [assistantTurn('claude-opus-4-8')]);
+  fs.writeFileSync(path.join(proj, 'CLAUDE.md'), '# hello\n', 'utf8');
+
+  const dWrite = decisionOf(runGuard(proj, { tool_name: 'Write', tool_input: { file_path: 'CLAUDE.md', content: '# hello\nnew line\n' }, transcript_path: transcript }));
+  check('(A5) Write to the project\u2019s own EXISTING root CLAUDE.md (nlink 1) is ALLOWED, not denied as hardlinked', dWrite.decision === 'allow', JSON.stringify(dWrite));
+
+  const dEdit = decisionOf(runGuard(proj, { tool_name: 'Edit', tool_input: { file_path: 'CLAUDE.md', old_string: 'hello', new_string: 'hi' }, transcript_path: transcript }));
+  check('(A5) Edit to the same file is also ALLOWED', dEdit.decision === 'allow', JSON.stringify(dEdit));
+
+  const hardlinkProj = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(hardlinkProj, '.claude'), { recursive: true });
+  const settingsPath = path.join(hardlinkProj, '.claude', 'settings.json');
+  fs.writeFileSync(settingsPath, '{}', 'utf8');
+  const claudeMdPath = path.join(hardlinkProj, 'CLAUDE.md');
+  const link = tryHardlink(settingsPath, claudeMdPath);
+  if (!link.ok) {
+    check('(A5 control) hardlinked root CLAUDE.md still denied', true, 'SKIPPED — could not create a hardlink on this OS/permission level (' + link.reason + ')');
+    return;
+  }
+  const hardlinkTranscript = writeTranscript(hardlinkProj, [assistantTurn('claude-opus-4-8')]);
+  const dHardlink = decisionOf(runGuard(hardlinkProj, { tool_name: 'Write', tool_input: { file_path: 'CLAUDE.md', content: 'x' }, transcript_path: hardlinkTranscript }));
+  check('(A5 control) root CLAUDE.md hardlinked to settings.json is STILL denied (nlink > 1 catches the real alias)', dHardlink.decision === 'deny', JSON.stringify(dHardlink));
+  check('(A5 control) denial names "hardlinked target"', /hardlinked target/.test(dHardlink.reason), dHardlink.reason);
+}
+
+function case22_patternArrayCap() {
+  section('22. Pattern-key array length cap (item A6): an oversized array is rejected fast, without compiling any glob');
+
+  const loosenProj = tmpdir('orchestra-guard-');
+  const transcript = writeTranscript(loosenProj, [assistantTurn('claude-opus-4-8')]);
+  const hugeArray = new Array(100000).fill('docs/plans/*.md');
+  setManifest(loosenProj, { directorPlanPatterns: hugeArray });
+  fs.mkdirSync(path.join(loosenProj, 'docs', 'plans'), { recursive: true });
+  const start = Date.now();
+  const d = decisionOf(runGuard(loosenProj, opusEdit('docs/plans/foo.md', transcript)));
+  const elapsedMs = Date.now() - start;
+  check('(A6) a 100k-entry directorPlanPatterns array is rejected (no longer grants the plan-file exception)', d.decision === 'deny', JSON.stringify(d));
+  check('(A6) rejecting it returns fast (< 5s, well under compiling 100k globs)', elapsedMs < 5000, elapsedMs + 'ms');
+
+  const tightenProj = tmpdir('orchestra-guard-');
+  const tightenTranscript = writeTranscript(tightenProj, [assistantTurn('claude-opus-4-8')]);
+  setManifest(tightenProj, { directorBlockedPatterns: hugeArray });
+  check(
+    '(A6) Read is unaffected by a fail-closed directorBlockedPatterns (not in BLOCKED)',
+    decisionOf(runGuard(tightenProj, { tool_name: 'Read', tool_input: { file_path: 'x.js' }, transcript_path: tightenTranscript })).decision === 'allow',
+    ''
+  );
+  check(
+    '(A6) a 100k-entry directorBlockedPatterns array fails the guard CLOSED for writes',
+    decisionOf(runGuard(tightenProj, { tool_name: 'Write', tool_input: { file_path: 'x.js', content: 'x' }, transcript_path: tightenTranscript })).decision === 'deny',
+    ''
+  );
+}
+
+function case23_copiedProjectLoosenBlocked() {
+  section('23. A verbatim copy of a pinned project does not inherit loosening keys via the id-pin trust transfer (item A7)');
+
+  const projectId = 'orchestra-guard-copy-test-id';
+  const manifestObj = { roster: 'new', projectId, directorPlanPatterns: ['docs/plans/*.md'] };
+  const manifestBytes = Buffer.from(JSON.stringify(manifestObj), 'utf8');
+  const pinDirPath = tmpdir('orchestra-guard-pindir-');
+
+  const originalProj = tmpdir('orchestra-guard-a7-orig-');
+  writePinById(pinDirPath, projectId, {
+    projectDir: fs.realpathSync(originalProj),
+    manifestSha256: crypto.createHash('sha256').update(manifestBytes).digest('hex'),
+    roster: 'new',
+    rosterGeneration: 1,
+    seats: {},
+    writtenAt: new Date().toISOString(),
+    by: 'install.js',
+  });
+
+  // The "copy": a DIFFERENT directory carrying a byte-for-byte identical
+  // manifest (same projectId) — exactly what copying `.claude/` verbatim
+  // produces. Its projectDir disagrees with the pin's (moved-shaped).
+  const copyProj = tmpdir('orchestra-guard-a7-copy-');
+  fs.mkdirSync(path.join(copyProj, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(copyProj, '.claude', 'orchestra.json'), manifestBytes);
+  fs.mkdirSync(path.join(copyProj, 'docs', 'plans'), { recursive: true });
+
+  check(
+    '(A7) the copy still enforces roster:new (Bash denied)',
+    decisionOf(runGuard(copyProj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinDirPath })).decision === 'deny',
+    ''
+  );
+
+  const copyTranscript = writeTranscript(copyProj, [assistantTurn('claude-opus-4-8')]);
+  const dCopyPlan = decisionOf(runGuard(copyProj, opusEdit('docs/plans/foo.md', copyTranscript), { ORCHESTRA_PIN_DIR: pinDirPath }));
+  check(
+    '(A7) the copy does NOT inherit the plan-pattern loosening via the id-pin trust transfer — plan write is DENIED',
+    dCopyPlan.decision === 'deny',
+    JSON.stringify(dCopyPlan)
+  );
+
+  // Control: the SAME manifest, honoured normally at a project pinned by
+  // PATH (not moved) — confirming the denial above is the moved/copy
+  // restriction specifically, not a general regression.
+  const pathPinned = setupPinnedProject('new', { directorPlanPatterns: ['docs/plans/*.md'] });
+  fs.mkdirSync(path.join(pathPinned.proj, 'docs', 'plans'), { recursive: true });
+  const pathTranscript = writeTranscript(pathPinned.proj, [assistantTurn('claude-opus-4-8')]);
+  check(
+    '(A7 control) a genuinely path-pinned project (not moved) still honours the same loosening key',
+    decisionOf(runGuard(pathPinned.proj, opusEdit('docs/plans/foo.md', pathTranscript), { ORCHESTRA_PIN_DIR: pathPinned.pinDirPath })).decision === 'allow',
+    ''
+  );
+}
+
+function case24_notebookEditPauseAndSidechainTruthy() {
+  section('24. NotebookEdit in the pause-write deny set; truthy isSidechain treated as sidechain (item A8)');
+
+  const proj = tmpdir('orchestra-guard-');
+  check(
+    '(A8) a NotebookEdit targeting the exact pause path is DENIED',
+    decisionOf(runGuard(proj, { tool_name: 'NotebookEdit', tool_input: { notebook_path: '.claude/orchestra.pause', new_source: 'x' } })).decision === 'deny',
+    ''
+  );
+
+  const sidechainProj = tmpdir('orchestra-guard-');
+  const transcript = writeTranscript(sidechainProj, [
+    { type: 'assistant', isSidechain: 'true', message: { model: 'claude-opus-4-8' } },
+  ]);
+  check(
+    '(A8) isSidechain: "true" (string, JS-truthy) is treated as a sidechain and excluded — undetermined, legacy stands down',
+    decisionOf(runGuard(sidechainProj, opusEdit('x.js', transcript))).decision === 'allow',
+    ''
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1071,6 +1512,15 @@ try {
   case14_manifestPin();
   case15_movedProject();
   case16_agentSeam();
+  case16_gitRootPinKey();
+  case17_pauseOrderingHardlinkAndDirectory();
+  case18_rosterNewFingerprintFailsClosed();
+  case19_oversizedTranscriptHeadWindow();
+  case20_truncationBirthtimeGate();
+  case21_rootClaudeMdSelfEditNotFlaggedAsHardlink();
+  case22_patternArrayCap();
+  case23_copiedProjectLoosenBlocked();
+  case24_notebookEditPauseAndSidechainTruthy();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

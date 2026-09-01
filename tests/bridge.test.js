@@ -1024,4 +1024,118 @@ section('33. WO-14b leg 4 fix round item 13: parent_ticket from the request is r
     child.ok && child.tickets.implementation.parent_ticket);
 }
 
+// ============ 34. WO-14b repair A item 1: ticket-gate.js — missing runtime.js fails closed
+
+section('34. WO-14b repair A item 1: ticket-gate.js — missing/unloadable runtime.js fails closed (deny/block, exit 0, never a bare crash)');
+
+{
+  const projDir = tmpProject('bridge-gate-norun-proj-');
+  writeManifest(projDir); // a real roster:new install
+
+  // Mirrors the review's own probe: "a copied roster:new hook with
+  // runtime.js absent" — an isolated hooks/ dir carrying ONLY ticket-gate.js,
+  // so require(path.join(__dirname,'..','runtime.js')) throws MODULE_NOT_FOUND.
+  const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-gate-norun-'));
+  cleanups.push(() => fs.rmSync(isolated, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(isolated, 'hooks'));
+  const copiedScript = path.join(isolated, 'hooks', 'ticket-gate.js');
+  fs.copyFileSync(path.join(MASTER, 'bridge', 'hooks', 'ticket-gate.js'), copiedScript);
+  const envWithProj = Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: projDir });
+
+  const pre = spawnSync(process.execPath, [copiedScript, 'PreToolUse'],
+    { input: JSON.stringify(preEvent('TICKET=tkt-aa11bb22cc33dd44', 'builder', 'tu1')), encoding: 'utf8', env: envWithProj });
+  check('missing runtime.js under PreToolUse: exit 0 (never a bare crash with no decision JSON)', pre.status === 0, 'exit ' + pre.status + ' stderr: ' + pre.stderr);
+  let preJson = null;
+  try { preJson = JSON.parse(pre.stdout); } catch (_) { /* leave null */ }
+  check('missing runtime.js under PreToolUse: a deny decision (fail closed, never inert/allow)',
+    !!(preJson && preJson.hookSpecificOutput && preJson.hookSpecificOutput.permissionDecision === 'deny'), pre.stdout);
+
+  const stop = spawnSync(process.execPath, [copiedScript, 'Stop'],
+    { input: JSON.stringify(stopEvent(false, [])), encoding: 'utf8', env: envWithProj });
+  check('missing runtime.js under Stop: exit 0 (never a bare crash)', stop.status === 0, 'exit ' + stop.status + ' stderr: ' + stop.stderr);
+  let stopJson = null;
+  try { stopJson = JSON.parse(stop.stdout); } catch (_) { /* leave null */ }
+  check('missing runtime.js under Stop: a block decision (fail closed)',
+    !!(stopJson && stopJson.decision === 'block'), stop.stdout);
+}
+
+// ============ 35. WO-14b repair A items 5/6/7: enginePass — expiry, casting binding, honest identity bookkeeping
+
+section('35. WO-14b repair A items 5/6/7: requireTicket()/enginePass() — expiry refuses typed, model/effort bound to the ticket\'s own casting, run_nonce never invented');
+
+{
+  const dir = tmpProject('bridge-enginepass-');
+  writeManifest(dir);
+  seedReadings(dir, GREEN);
+  const runtime = createRuntime({ projectDir: dir });
+  const store = { dir: path.join(dir, '.claude', 'orchestra', 'tickets') };
+
+  // Drive a Green E1 dispatch (deterministically Luna/openai — see baseRequest()'s
+  // own comment) all the way to LAUNCHED via the Agent tool's own Pre/PostToolUse
+  // hooks, exactly like section 2's happy path.
+  function driveToLaunched(taskId) {
+    const result = runtime.dispatch(baseRequest({ task_id: taskId }));
+    const ticketId = result.tickets.implementation.id;
+    const role = result.spawn.subagent_type;
+    const toolUseId = 'toolu-enginepass-' + taskId;
+    const pre = runtime.gate(preEvent('TICKET=' + ticketId, role, toolUseId));
+    if (!(pre.hookSpecificOutput && pre.hookSpecificOutput.permissionDecision === 'allow')) {
+      throw new Error('driveToLaunched(): PreToolUse did not allow: ' + JSON.stringify(pre));
+    }
+    runtime.gate(postEvent(toolUseId, 'agent-' + taskId, 'claude-haiku-4-5-20251001'));
+    return { ticketId, role, casting: result.casting.casting };
+  }
+
+  // --- item 5: LAUNCHED, then expired before enginePass() -> typed
+  //     TICKET_EXPIRED, the ticket actually transitions to EXPIRED (the same
+  //     lawful edge launch()/resolve() already make), never silently accepted.
+  {
+    const { ticketId, role } = driveToLaunched('exp-enginepass');
+    const t = T.get(store, ticketId);
+    t.expires_at = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(path.join(store.dir, 'tickets.json'),
+      fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8').replace(
+        new RegExp(JSON.stringify(T.get(store, ticketId).expires_at)), JSON.stringify(t.expires_at)));
+
+    let threw = null;
+    try { runtime.requireTicket({ id: ticketId, role, phase: 'exec' }); } catch (e) { threw = e; }
+    check('item 5: an expired LAUNCHED ticket refuses enginePass typed TICKET_EXPIRED', !!threw && threw.code === 'TICKET_EXPIRED', threw && (threw.code + ': ' + threw.message));
+    check('item 5: the ticket actually transitioned to EXPIRED on disk', T.get(store, ticketId).status === 'EXPIRED', T.get(store, ticketId).status);
+  }
+
+  // --- item 6: a caller-declared model/effort that DISAGREES with the
+  //     ticket's own casting -> typed CASTING_MISMATCH, zero commit (the
+  //     ticket stays LAUNCHED with engine_pass still null); the SAME value
+  //     (or none at all) proceeds normally and engine_pass DOES commit.
+  {
+    const { ticketId, role, casting } = driveToLaunched('mismatch-enginepass');
+    let threw = null;
+    try {
+      runtime.requireTicket({ id: ticketId, role, phase: 'exec', casting: { model: 'gpt-5.6-sol', effort: 'xhigh' } });
+    } catch (e) { threw = e; }
+    check('item 6: a caller-declared casting that disagrees with the ticket\'s own -> typed CASTING_MISMATCH',
+      !!threw && threw.code === 'CASTING_MISMATCH', threw && (threw.code + ': ' + threw.message));
+    check('item 6: the mismatch never committed enginePass (ticket stays LAUNCHED, engine_pass null)',
+      T.get(store, ticketId).status === 'LAUNCHED' && T.get(store, ticketId).engine_pass === null,
+      JSON.stringify([T.get(store, ticketId).status, T.get(store, ticketId).engine_pass]));
+
+    const passed = runtime.requireTicket({ id: ticketId, role, phase: 'exec', casting: { model: casting.model, effort: casting.effort } });
+    check('item 6: a caller-declared casting matching the ticket\'s own proceeds (enginePass commits)',
+      passed && passed.engine_pass && passed.status === 'LAUNCHED',
+      passed && JSON.stringify(passed.engine_pass));
+  }
+
+  // --- item 7: enginePass() never invents a plausible-looking identity —
+  //     run_nonce is honestly 'UNKNOWN' at commit time (codex has not run
+  //     yet), never a fabricated random value that could be mistaken for a
+  //     verified one.
+  {
+    const { ticketId, role } = driveToLaunched('nonce-enginepass');
+    const passed = runtime.requireTicket({ id: ticketId, role, phase: 'exec' });
+    check('item 7: engine_pass.run_nonce is the honest \'UNKNOWN\' placeholder, never an invented value',
+      passed && passed.engine_pass && passed.engine_pass.run_nonce === 'UNKNOWN',
+      passed && JSON.stringify(passed.engine_pass));
+  }
+}
+
 console.log('\n' + passes + ' passed, ' + failures + ' failed.');

@@ -1341,13 +1341,19 @@ function guardHookEntry(roster) {
 // wrongly removes it on install/legacy-flip/uninstall.
 const GATE_HOOK_MARK = '.claude/orchestra/bridge/hooks/ticket-gate.js';
 const GATE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop'];
+// WO-14b repair A item 8: the exact command string this installer writes
+// for a given event — the ONLY thing isOurGateHookEntry() below is allowed
+// to recognize as "ours" (see that function's own comment).
+function gateHookCommand(eventName) {
+  return 'node "$CLAUDE_PROJECT_DIR/' + GATE_HOOK_MARK + '" ' + eventName;
+}
+
 function gateHookEntry(eventName) {
   const entry = {
     hooks: [
       {
         type: 'command',
-        command:
-          'node "$CLAUDE_PROJECT_DIR/.claude/orchestra/bridge/hooks/ticket-gate.js" ' + eventName,
+        command: gateHookCommand(eventName),
       },
     ],
   };
@@ -1587,12 +1593,21 @@ function isOurHookEntry(entry) {
   );
 }
 
+// WO-14b repair A item 8: matches only an entry carrying the EXACT command
+// this installer writes for one of the four gate hook events — never a
+// substring test. The old `command.includes(GATE_HOOK_MARK)` misclassified
+// any user hook that merely CONTAINED our managed path as an argument (or
+// as a longer backup-path prefix, e.g. a user's own backup/restore command
+// operating on a copy of ticket-gate.js) as one of Orchestra's own entries,
+// so an install/legacy-flip/uninstall transition would remove a user's own
+// hook it never installed.
 function isOurGateHookEntry(entry) {
   return (
     entry &&
     Array.isArray(entry.hooks) &&
     entry.hooks.some(
-      (h) => h && typeof h.command === 'string' && h.command.includes(GATE_HOOK_MARK)
+      (h) => h && typeof h.command === 'string' &&
+        GATE_HOOK_EVENTS.some((ev) => h.command === gateHookCommand(ev))
     )
   );
 }

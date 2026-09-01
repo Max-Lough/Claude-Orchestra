@@ -455,21 +455,91 @@ function withManifestNote(msg, policy) {
 // install.js under --roster new) are what enforce ticketing in the common
 // case, but nothing stops those entries being stripped from settings.json
 // (by hand, or by a compromised Director) while this guard keeps running.
-// So under roster:new (trusted OR untrusted-but-new — i.e. whenever
-// loadPolicy() resolves roster:'new', cases (a)/(b)/(c)/(d) alike), a
-// PreToolUse for tool Agent is delegated here to the SAME bridge runtime the
-// installed hook uses, and its decision is returned VERBATIM: this makes the
-// guard alone sufficient to enforce ticketing even with the settings entries
-// gone. If the runtime cannot be loaded (missing bridge/runtime.js, or it
-// throws) that is fail-closed — DENY, never allow an ungated spawn. This
-// seam is independent of model dormancy: the ticket gate decides on ticket
-// possession, not on which model is directing — a Sonnet/Haiku session that
-// spawns an Agent is gated exactly the same as an Opus/Fable one. Under
-// roster:legacy, unchanged: this guard has never blocked Agent.
+// So under roster:new, a PreToolUse for tool Agent is delegated here to the
+// SAME bridge runtime the installed hook uses, and its decision is returned
+// VERBATIM: this makes the guard alone sufficient to enforce ticketing even
+// with the settings entries gone.
+//
+// Item 6 (WO-14b leg-3 fix round 4, CRITICAL, red-team pass #3): this seam
+// executes project-supplied code (`require(runtime.js)`, then calls into
+// it) — a `require()` of that path runs the module's TOP-LEVEL code
+// unconditionally, before gate() is even called. That is only ever safe to
+// do when a TRUSTED pin (loadPolicy() case (b): a valid pin whose hash
+// matches the manifest on disk right now) vouches for this project, so the
+// caller in main() gates this function to case (b) alone — see the
+// `!policy.manifestUntrusted` check there. Every other roster:new state
+// (a'/c/d, or a fingerprint without a pin) used to reach this function too
+// and delegate to whatever sat on disk at .claude/orchestra/bridge/
+// runtime.js; that state is, by definition, one this guard cannot vouch
+// for, so those states now deny at the call site WITHOUT ever reaching this
+// function — 'bridge runtime not trusted', never a require().
+//
+// Even inside the trusted case, a trusted MANIFEST is not a trusted
+// RUNTIME FILE: .claude/orchestra/bridge/runtime.js is ordinary project-tree
+// content the pin's manifestSha256 says nothing about, and a compromised
+// Director/subagent (or a hand-edit) could have overwritten it any time
+// after install. So before require()-ing it at all, its on-disk bytes are
+// hashed and checked against pin.runtimeSha256['bridge/runtime.js'] — the
+// hash the INSTALLER itself recorded for the copy it just wrote (see
+// install.js's writePin()/computeRuntimeSha256()). A missing pin entry or a
+// hash mismatch denies before require() ever runs; only a match proceeds.
+//
+// If the runtime cannot be loaded at all (missing file, or require()/gate()
+// itself throws) that is fail-closed — DENY, never allow an ungated spawn.
+// gate()'s own return value is validated too: a thenable (this seam is
+// synchronous end to end — an async decision here would mean process.exit()
+// fires before it resolves, silently discarding it) or anything that is not
+// a plain object (a string/number/array cannot be a decision this seam
+// understands) is treated as deny, never guessed at.
+//
+// No synchronous wall-clock time bound wraps the runtime.gate() call itself:
+// Node has no way to preempt a running synchronous call in the same thread
+// (no signal/interrupt reaches JS mid-execution), and the only mechanisms
+// that impose a real deadline on synchronous work — a Worker thread paired
+// with Atomics.wait(), or a subprocess — require serializing this call's
+// entire input/output across a thread or process boundary, which the ticket
+// bridge's dispatch()/gate() API (in-process function calls, per
+// bridge/runtime.js and tests/bridge.test.js) is not shaped for and this fix
+// round's budget does not cover re-architecting. Documented limitation, not
+// silently assumed away: a pathological gate() implementation that spins
+// forever still hangs this hook.
+//
+// This seam is independent of model dormancy: the ticket gate decides on
+// ticket possession, not on which model is directing — a Sonnet/Haiku
+// session that spawns an Agent is gated exactly the same as an Opus/Fable
+// one. Under roster:legacy, unchanged: this guard has never blocked Agent.
 function delegateAgentGate(input, policy) {
+  const runtimePath = path.join(projectDir(), '.claude', 'orchestra', 'bridge', 'runtime.js');
+  let runtimeBytes;
+  try {
+    runtimeBytes = fs.readFileSync(runtimePath);
+  } catch (e) {
+    return deny(
+      withManifestNote(
+        'Orchestra: this project runs roster:new — Agent (subagent spawn) is enforced by the ' +
+          'ticket bridge, but its runtime (.claude/orchestra/bridge/runtime.js) could not be ' +
+          'loaded (' + (e && e.message ? e.message : String(e)) + '). Fail closed rather than ' +
+          'allow an ungated spawn.',
+        policy
+      )
+    );
+  }
+  const expectedHash = policy.runtimeSha256 && policy.runtimeSha256['bridge/runtime.js'];
+  const actualHash = crypto.createHash('sha256').update(runtimeBytes).digest('hex');
+  if (typeof expectedHash !== 'string' || expectedHash === '' || expectedHash !== actualHash) {
+    return deny(
+      withManifestNote(
+        'Orchestra: this project runs roster:new — the ticket bridge runtime ' +
+          '(.claude/orchestra/bridge/runtime.js) does not match the hash the trusted pin recorded ' +
+          'for it at install time (bridge runtime not trusted). Fail closed rather than execute ' +
+          'code nothing vouches for.',
+        policy
+      )
+    );
+  }
+
   let result;
   try {
-    const runtimePath = path.join(projectDir(), '.claude', 'orchestra', 'bridge', 'runtime.js');
     const bridgeMod = require(runtimePath);
     const runtime = bridgeMod.createRuntime({ projectDir: projectDir() });
     const event = Object.assign({}, input, { hook_event_name: input.hook_event_name || 'PreToolUse' });
@@ -481,6 +551,18 @@ function delegateAgentGate(input, policy) {
           'ticket bridge, but its runtime (.claude/orchestra/bridge/runtime.js) could not be ' +
           'loaded (' + (e && e.message ? e.message : String(e)) + '). Fail closed rather than ' +
           'allow an ungated spawn.',
+        policy
+      )
+    );
+  }
+  const isThenable = result !== null && typeof result === 'object' && typeof result.then === 'function';
+  const isPlainObject = result === null || result === undefined || (typeof result === 'object' && !Array.isArray(result) && !isThenable);
+  if (isThenable || !isPlainObject) {
+    return deny(
+      withManifestNote(
+        'Orchestra: this project runs roster:new — the ticket bridge runtime returned a value ' +
+          'from gate() that is not a plain synchronous decision object (bridge runtime not ' +
+          'trusted). Fail closed rather than guess at what it meant.',
         policy
       )
     );
@@ -825,10 +907,21 @@ const ROSTER_NEW_AGENT_FILES = [
   'test-designer-vs-anthropic.md',
   'test-designer-vs-openai.md',
 ];
+// WO-14b leg-3 fix round 4, MAJOR (cross-vendor review #4): installedPermissions
+// (and its deny counterpart, installedDeny) are NOT roster:new-only — a plain
+// `--roster legacy --grant-push` install writes installedPermissions too (see
+// install.js's trackingActive: roster === 'new' || grantPushFlag || ...), and
+// that legacy install's pin can later disappear (deleted, or simply never
+// --repin'd after a move) same as any other pin. Treating either key as a
+// roster:new fingerprint meant a legacy --grant-push project, once unpinned,
+// was misread as an installed-but-unpinned roster:new project and forced into
+// UNTRUSTED-NEW (fail closed) instead of the legacy stand-down its manifest
+// actually calls for. Neither key is ever written ONLY by roster:new, so
+// neither belongs in this set — only keys/files that a roster:new install (and
+// nothing else) ever produces stay here.
 const ROSTER_NEW_MANIFEST_KEYS = [
   'projectId',
   'installedFiles',
-  'installedPermissions',
   'installedHooks',
   'rosterGeneration',
 ];
@@ -1004,6 +1097,12 @@ function loadPin(real, cfg) {
     seats: objOrNull(obj.seats),
     rosterGeneration: obj.rosterGeneration,
     manifestSha256: obj.manifestSha256,
+    // Item 6 (WO-14b leg-3 fix round 4, CRITICAL): the installer-recorded
+    // bridge runtime hashes — not part of pinSchemaProblem()'s required
+    // schema (a pin predating item 6 simply has none), passed through only
+    // when it is shaped like the object writePin()/computeRuntimeSha256()
+    // actually writes.
+    runtimeSha256: obj.runtimeSha256 && typeof obj.runtimeSha256 === 'object' && !Array.isArray(obj.runtimeSha256) ? obj.runtimeSha256 : null,
   };
   // Forged-pin check (red team: a hand-written pin with a projectDir naming
   // a completely different path was accepted). When found by the PATH key,
@@ -1037,6 +1136,7 @@ function loadPolicy() {
     manifestUntrusted: false,
     manifestUntrustedReason: '',
     pinMoved: false,
+    runtimeSha256: null,
   };
   try {
     const root = projectDir();
@@ -1175,6 +1275,13 @@ function loadPolicy() {
         rosterGeneration: typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : pin.rosterGeneration,
         seats: objOrNull(cfg.seats) || pin.seats,
         pinMoved: moved,
+        // Item 6 (WO-14b leg-3 fix round 4, CRITICAL): the trusted pin's own
+        // record of the installed bridge runtime's hashes — the ONLY thing
+        // delegateAgentGate() is allowed to trust before require()-ing
+        // runtime.js. Only case (b), the fully-trusted state, carries this
+        // through; every other case never reaches the seam's require() at
+        // all (see main()'s Agent branch), so they have no need of it.
+        runtimeSha256: pin.runtimeSha256 && typeof pin.runtimeSha256 === 'object' ? pin.runtimeSha256 : null,
       });
     }
 
@@ -1291,11 +1398,19 @@ function latestMainModel(input) {
         continue; // partial/corrupt line (e.g. a tail read's truncated first line) — keep scanning
       }
       sawValidEntry = true;
-      // item A8: any TRUTHY isSidechain counts as a sidechain, not only the
-      // literal boolean `true` — a forged/hand-appended entry carrying the
-      // string "true" (JS truthy, but `!== true` under strict equality)
-      // used to be read as a non-sidechain assistant entry.
-      if (entry && entry.type === 'assistant' && !entry.isSidechain) {
+      // Item 7 (WO-14b leg-3 fix round 4, HIGH, red-team pass #3): an entry
+      // is discounted as a sidechain ONLY when isSidechain is the STRICT
+      // boolean `true` — item A8's "any truthy value counts" reading of
+      // this was itself the bug, not the fix: it let a hand-appended/forged
+      // entry carrying isSidechain: "false" (a STRING — truthy in JS, so
+      // item A8's check discounted it) hide a genuine director-model
+      // main-session entry from the latch, letting legacy wrongly stand
+      // down for it. Only the real boolean `true` — which is all Claude
+      // Code itself ever writes for a genuine sidechain — excludes an
+      // entry; every other value (false, "true", "false", 1, [], {}, or
+      // anything else) counts as a main-session entry, same as if the key
+      // were absent.
+      if (entry && entry.type === 'assistant' && entry.isSidechain !== true) {
         const model = entry.message && entry.message.model;
         if (typeof model === 'string' && model !== '' && model !== '<synthetic>') {
           if (DIRECTOR_MODEL.test(model)) {
@@ -1467,21 +1582,45 @@ function pauseWriteTargetPath(toolName, toolInput) {
 // no more "allow" outcome on this route to protect, so calling it would be
 // the same dead code the red team flagged against the old allow-carve-out.
 // Returns 'none' | 'deny'.
+// Item 8 (WO-14b leg-3 fix round 4, HIGH, red-team pass #3): Windows offers
+// several ways to SPELL the same on-disk name that a plain path-string
+// comparison does not treat as equal — the filesystem is case-insensitive
+// by default (ORCHESTRA.PAUSE opens the same entry as orchestra.pause), a
+// trailing `:<stream>` on a component names an NTFS Alternate Data Stream
+// ON that same file/directory (`orchestra.pause:note.md` is a stream
+// attached to `orchestra.pause`, not a sibling name — Write creates it as
+// such), and Win32 silently strips trailing dots and spaces off a
+// component before it ever reaches the filesystem (`orchestra.pause.` and
+// `orchestra.pause ` both resolve to `orchestra.pause`). Normalises the
+// FIRST path component after `.claude/` the same way Windows itself would
+// before comparing it to PAUSE_BASENAME.
+function normalizePauseComponent(name) {
+  let s = name;
+  const colon = s.indexOf(':');
+  if (colon !== -1) s = s.slice(0, colon); // strip an NTFS ADS suffix
+  s = s.replace(/[. ]+$/, ''); // Win32 strips trailing dots/spaces off a component
+  if (process.platform === 'win32') s = s.toLowerCase(); // case-insensitive filesystem
+  return s;
+}
+
 function classifyPauseWrite(toolName, toolInput) {
   if (!PAUSE_WRITE_TOOLS.has(toolName)) return 'none';
   const targetPath = pauseWriteTargetPath(toolName, toolInput);
   if (targetPath === null) return 'none';
   const root = projectDir();
   const resolved = path.resolve(root, targetPath);
-  const wantPath = path.join(root, '.claude', PAUSE_BASENAME);
+  const dotClaude = path.join(root, '.claude');
   const realResolved = realish(resolved);
-  const realWant = realish(wantPath);
-  if (realResolved === realWant) return 'deny';
-  // Nested under the pause path, treating it as a directory: containment
-  // check on the REAL (symlink/junction-resolved) paths, same discipline
-  // as the plan/memory carve-outs use.
-  const rel = path.relative(realWant, realResolved);
-  if (rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)) return 'deny';
+  const realDotClaude = realish(dotClaude);
+  const rel = path.relative(realDotClaude, realResolved);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return 'none'; // not under .claude/ at all
+  // The pause write itself (exact path) and anything NESTED under it
+  // (treating it as a directory — item A1) are the same check now: both
+  // share the same first component past .claude/.
+  const firstComponent = rel.split(/[\\/]/)[0];
+  const normalized = normalizePauseComponent(firstComponent);
+  const wantNormalized = normalizePauseComponent(PAUSE_BASENAME);
+  if (normalized === wantNormalized) return 'deny';
   return 'none';
 }
 
@@ -1730,6 +1869,42 @@ function main(raw) {
   }
 
   const toolName = input.tool_name;
+  const policy = loadPolicy();
+
+  // Self-pause (item 1, MAJOR fix round 3A): absolute — checked before
+  // EVERY other carve-out and exemption, before model dormancy. Item 9
+  // (WO-14b leg-3 fix round 4, MEDIUM, red-team pass #3) moves this ahead
+  // of the subagent exemption below too: a subagent-tagged call must not be
+  // able to create the pause file either — the pause switch's whole value
+  // is that no tool call can flip it, main session or subagent, not even
+  // when a file already sits at that path (genuine pause file or not).
+  // classifyPauseWrite() tolerates a non-string toolName (Set.has() on
+  // anything just returns false), so this is safe to run before the
+  // `typeof toolName !== 'string'` check further down too.
+  if (classifyPauseWrite(toolName, input.tool_input) === 'deny') {
+    return denySelfPause(toolName, policy);
+  }
+
+  // The pause-exists short-circuit itself, next: only a GENUINE pause file
+  // (item 1b — regular file, exactly one hard link, not a symlink/junction;
+  // see pauseFileStatus()) stands the guard down. Item 9 moves this ahead
+  // of BOTH the subagent exemption and the Agent seam below: a subagent
+  // call is unconditionally allowed by the exemption regardless of pause
+  // state anyway, but Agent is exempted from THAT exemption specifically so
+  // the seam can deny nested spawns — meaning, before this reordering, a
+  // genuine user-created pause file did not release Agent calls even though
+  // every OTHER denial message documents it as the universal way out. A
+  // hardlinked/linked file at the path is IGNORED as a pause signal — the
+  // reason rides along on `policy` so whatever denial follows can name it
+  // (see withManifestNote()).
+  let pauseStatus;
+  try {
+    pauseStatus = pauseFileStatus(projectDir());
+  } catch (_) {
+    pauseStatus = { state: 'absent' };
+  }
+  if (pauseStatus.state === 'active') return allow();
+  if (pauseStatus.state === 'ignored') policy.pauseIgnoredReason = pauseStatus.reason;
 
   // Subagent calls are never restricted for Director-law purposes. Project-
   // settings PreToolUse hooks only fire for the main session in current
@@ -1743,40 +1918,32 @@ function main(raw) {
 
   if (typeof toolName !== 'string') return allow();
 
-  const policy = loadPolicy();
-
   // Agent seam (leg 4c): see delegateAgentGate()'s own comment. Checked
-  // before Director law (self-pause, tightening, plan/memory, BLOCKED) —
-  // Agent is not a Director-law tool and this seam does not participate in
-  // model dormancy at all, so nothing below it applies.
+  // before Director law (tightening, plan/memory, BLOCKED) — Agent is not a
+  // Director-law tool and this seam does not participate in model dormancy
+  // at all, so nothing below it applies. Item 6 (WO-14b leg-3 fix round 4,
+  // CRITICAL, red-team pass #3): delegateAgentGate() — which require()s
+  // project-supplied code — is reached ONLY for the fully-trusted policy
+  // state (a valid pin whose hash matches the manifest, `!manifestUntrusted`
+  // — loadPolicy() case (b)). Every other roster:new state that reaches
+  // this branch (a'/c/d, or a fingerprint without a pin — all set
+  // manifestUntrusted:true) denies right here, by name, without ever
+  // reaching the seam's require().
   if (toolName === 'Agent') {
-    if (policy.roster === 'new') return delegateAgentGate(input, policy);
+    if (policy.roster === 'new' && !policy.manifestUntrusted) return delegateAgentGate(input, policy);
+    if (policy.roster === 'new') {
+      return deny(
+        withManifestNote(
+          'Orchestra: this project runs roster:new, but the manifest/pin state here is not fully ' +
+            'trusted (bridge runtime not trusted) — Agent (subagent spawn) is denied outright ' +
+            'rather than delegated to a runtime this guard has no trusted hash for. Fail closed ' +
+            'rather than allow an ungated spawn.',
+          policy
+        )
+      );
+    }
     return allow(); // legacy: unchanged — this guard has never blocked Agent
   }
-
-  // Self-pause (item 1, MAJOR fix round 3A): absolute — checked before
-  // every other carve-out, before model dormancy, and now (item 1a) before
-  // the pause-exists short-circuit too, since the pause switch's whole
-  // value is that it cannot be flipped by a tool call at all — not even
-  // when a file already sits at that path (genuine pause file or not).
-  if (classifyPauseWrite(toolName, input.tool_input) === 'deny') {
-    return denySelfPause(toolName, policy);
-  }
-
-  // The pause-exists short-circuit itself, now second: only a GENUINE
-  // pause file (item 1b — regular file, exactly one hard link, not a
-  // symlink/junction; see pauseFileStatus()) stands the guard down for
-  // every OTHER tool call. A hardlinked/linked file at the path is IGNORED
-  // as a pause signal — the reason rides along on `policy` so whatever
-  // denial follows can name it (see withManifestNote()).
-  let pauseStatus;
-  try {
-    pauseStatus = pauseFileStatus(projectDir());
-  } catch (_) {
-    pauseStatus = { state: 'absent' };
-  }
-  if (pauseStatus.state === 'active') return allow();
-  if (pauseStatus.state === 'ignored') policy.pauseIgnoredReason = pauseStatus.reason;
 
   // Tightening-key fail-closed (item 4): a malformed directorBlockedPatterns
   // entry means the guard cannot trust what it was told to add to the

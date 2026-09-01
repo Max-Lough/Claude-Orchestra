@@ -118,6 +118,15 @@ jobs:
         # documented casting set, and Q0 spawn on every trigger.
         run: node tests/router.test.js
 
+      - name: Ticket state machine suite
+        # WO-14b leg 2a: the activation bridge's ticket lifecycle
+        # (OPEN → CONSUMED → LAUNCHED → RESOLVED → CLOSED/NOT_CLOSED, plus
+        # EXPIRED/INVALIDATED). Proves one-use consumption, wrong-role and
+        # replay refusal, Q0-before-implementation ordering, generation-bump
+        # invalidation (the rollback hook), atomic locked writes with no lost
+        # update across two processes, and fail-closed on a corrupted store.
+        run: node tests/tickets.test.js
+
       - name: Quartermaster suite
         # WO-11: the P0 allowance substrate — recorded readings in, the
         # router's bucket_state out. Proves it fails CLOSED on absent, stale,

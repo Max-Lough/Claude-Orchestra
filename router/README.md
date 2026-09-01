@@ -12,6 +12,7 @@ run before any dispatch.
 |---|---|
 | `castings.json` | The Part-2 casting tables (58 rungs across 23 roles, with the hard never-rules), the §3.4 computed R0 review matrix and mandatory set, the §5.5 pool-state ladder and exhaustion behavior, the seat-19 Q0 automatic triggers, and WO-2's measured liveness/reserve numbers |
 | `router.js` | `route(class) → role` · `cast(role, bucket_state) → (vendor, model, effort)` · `reviewer(author_families, risk) → casting` · the pool-state machine · the pre-dispatch AU-O gate (P15) · automatic Q0 creation · the assembled `dispatch()` pipeline |
+| `tickets.js` | WO-14b leg 2a — the ticket state machine + JSON-file store that is the only way work is reached under `roster:new` (`registry/schemas/ticket.schema.json`) |
 
 `node router/router.js` loads and cross-checks everything (exit 0/1);
 `node tests/router.test.js` is the proof suite — run it for the live check
@@ -85,6 +86,29 @@ of its rungs (e.g. Red Team must carry never-Fable). A missing bucket in a
   the pre-dispatch gate outcome lives at `target.cast.ok` / `target.gate` —
   there is no top-level `ok` on a seat resolution. `dispatch()` surfaces
   gates at the top level; seat resolution intentionally does not.
+
+## `tickets.js`: the lifecycle a dispatch actually spawns under
+
+`dispatch()` computes a casting; `tickets.js` is the separate, later-consumed
+record of the spawn itself, built from leg-1's measured host facts (the Agent
+tool is async — `PostToolUse(Agent)` binds `agentId`/`resolvedModel` before
+the subagent has run, the result arrives later at `SubagentStop`). States:
+`OPEN → CONSUMED (PreToolUse) → LAUNCHED (PostToolUse) → RESOLVED
+(SubagentStop) → CLOSED | NOT_CLOSED`, plus `EXPIRED` (past `expires_at`, e.g.
+a killed subagent that never reached `SubagentStop`) and `INVALIDATED`
+(`bumpGeneration()` — the `roster:new → legacy` rollback hook, which moves
+every non-terminal ticket off the board at once). Every refused transition
+throws a typed `TicketTransitionError` and is still logged to the ticket's
+`attempts` (or the store's `unknown_attempts` for a forged id); the module
+enforces one-use, role match, store-generation match, and — for an
+implementation ticket carrying a `q0_ticket` — that Q0 has at least
+`LAUNCHED` before the implementation may spawn. The store
+(`createTicketStore({ dir })`) is a single `tickets.json` (materialised state)
+plus an append-only `tickets.events.jsonl`; writes are atomic
+(temp-file-then-rename) and a cross-process advisory lock (`tickets.lock`,
+stale after 10s) serialises the real callers — separate
+`PreToolUse`/`PostToolUse`/`SubagentStop`/`Stop` hook processes. Pure state
+machine and store only: no hook or MCP wiring here (a later leg's job).
 
 ## WO-6 defaults where the plan is silent
 

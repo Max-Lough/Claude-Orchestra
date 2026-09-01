@@ -8,6 +8,7 @@
  *   node bridge/cli.js dispatch <request.json>
  *   node bridge/cli.js gate <event> < payload.json
  *   node bridge/cli.js doctor
+ *   node bridge/cli.js close <ticket-id>   (WO-14b leg 5)
  *
  * CLAUDE_PROJECT_DIR (or cwd) selects the project whose .claude/orchestra.json
  * and ticket store this runs against, exactly like the hook and MCP adapters.
@@ -73,7 +74,22 @@ function main() {
     return;
   }
 
-  fail('usage: node bridge/cli.js <dispatch <request.json> | gate <event> | doctor>');
+  if (cmd === 'close') {
+    const ticketId = rest[0];
+    if (!ticketId) fail('usage: node bridge/cli.js close <ticket-id>');
+    let result;
+    try {
+      result = runtime.close(ticketId);
+    } catch (e) {
+      fail('close(' + ticketId + ') failed: ' + (e && e.message ? e.message : String(e)));
+      return;
+    }
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.exitCode = result.ok ? 0 : 1;
+    return;
+  }
+
+  fail('usage: node bridge/cli.js <dispatch <request.json> | gate <event> | doctor | close <ticket-id>>');
 }
 
 main();

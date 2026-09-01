@@ -859,7 +859,44 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-09-02 ~00:40Z — WO-14b SHAKEDOWN in progress)
+## Fresh-session quick start (as of 2026-09-02 ~05:30Z — WO-14b SHAKEDOWN, order #5 IN FLIGHT)
+
+**READ THIS FIRST — you are receiving the results of live order #5.** The owner restarted a
+Fable helm in `E:\Godot Projects\PiratePartyPals` and issued: *adopt-and-verify commit
+`33a03539` on `feat/nameplate-range-200`* (the nameplate-range +25% change, already implemented
+and green — 41 targeted tests; unreviewed, unmerged). This is the FIRST order that can reach
+CLOSED: every prior close blocker is fixed (PL-12…PL-19 — grants, typed R0, bind-under-
+failClosed, stop-spam, tolerant Band-C parsing + claim normalization, NONCE= header + host-bound
+substitution, COVERAGE_GAP proceeds to review, lint-only `verifier.manifest` committed+pinned).
+Expected shape: builder ticket DONE naming `33a03539` → `orchestra_close` #1 → verifier
+COVERAGE_GAP/PASS → Sol (openai) reviewer ticket → `orchestra_close` #2 → **CLOSED**, writing
+`casting-record.json` + `verdict-audit.json` under `<target>/.claude/orchestra/ledger/<task_id>/`.
+
+**Your job when the owner pastes the transcript / says it finished:**
+1. Read the ledger dir for the order's task_id (`ls` the newest `rt-*`): `envelope.json`,
+   `verifier.json`, `casting-record*.json`, `verdict-audit*.json`. That's the telemetry the
+   whole work order exists for — read it critically and summarize for the owner.
+2. Cross-check the helm's claims against ground truth — NEVER trust a helm's "harness bug"
+   claim (twice it recalled stale bugs from old session memory): the ticket store is
+   `<target>/.claude/orchestra/tickets/tickets.json` (+ `tickets.events.jsonl` WAL,
+   `routing.events.jsonl`), and `tools/shakedown/ppp-call.js "<target>" <tool> '<json>'`
+   replays any tool (incl. `orchestra_close`) against the INSTALLED server from any session.
+3. New gaps → fix same-day if small (the owner has approved log-and-fix each time), punch-list
+   row + progress-log line + this section + session memory, commit master AND ship to the
+   target (copy or reinstall — then ALWAYS verify: `gate hooks: 4` in target settings.json,
+   `ppp-doctor` → `roster=new` gen 3, `--verify-pin` MATCH). A live helm session caches the
+   old bridge in its MCP process — bridge changes need a helm restart to take effect.
+4. If CLOSED landed: the shakedown's primary goal is met. Remaining post-shakedown fixes, in
+   order: PL-9 (guard must require the gate script to exist), PL-11/PL-9 installer
+   `.gitignore` for runtime state, PL-10 recon close path. Then the owner decides whether to
+   merge `feat/nameplate-range-200` (review verdict permitting) and close WO-14b out.
+
+State pins: target `origin/main` = `54f0c3c9` (harness current there; readings recorded
+2026-09-01 15:14Z expire ~15:14Z 2026-09-02 — re-record before any NEW order:
+`node quartermaster/quartermaster.js --file "<target>/.claude/orchestra-pool-readings.jsonl" --record <bucket> <0..1> --source "..."`,
+buckets AU-all/AU-fable/AU-opus/OU). Master repo branch `claude/wo14b-bridge` @ `843b03a`+.
+History of orders #1–#4 and every PL detail: below, plus `roster/wo14b-shakedown-punch-list.md`
+and the last lines of `roster/wo14b-activation-bridge-progress.md`.
 
 **OWNER RULING 2026-09-01 ~21:00Z — SHIP TO SHAKEDOWN.** "Keep your goals VERY bounded… KISS,
 YAGNI, DRY and get this project closed out. The only important aspects are telemetry for

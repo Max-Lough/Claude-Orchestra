@@ -503,11 +503,15 @@ section('4. close #2 — the happy path (APPROVE, cross-family)');
   if (fs.existsSync(implRecordPath)) {
     const rec = JSON.parse(fs.readFileSync(implRecordPath, 'utf8'));
     check('implementation casting-record is schema-valid', validate(CASTING_RECORD_SCHEMA, rec).length === 0, JSON.stringify(validate(CASTING_RECORD_SCHEMA, rec)));
+    check('PL-23: the runtime id claude-sonnet-5-… served for "Sonnet 5" is NOT a P15 mismatch', rec.served_model_mismatch === false, JSON.stringify(rec));
+    check('PL-24: implementation bucket follows the casting (Anthropic, non-Opus/Fable -> AU-all)', rec.bucket === 'AU-all', JSON.stringify(rec));
+    check('PL-24: context_shape is the envelope\'s declaration, a real enum value', ['packet', 'scoped', 'subsystem', 'repo', 'haystack'].includes(rec.context_shape), JSON.stringify(rec));
   }
   if (fs.existsSync(revRecordPath)) {
     const rec = JSON.parse(fs.readFileSync(revRecordPath, 'utf8'));
     check('reviewer casting-record is schema-valid', validate(CASTING_RECORD_SCHEMA, rec).length === 0, JSON.stringify(validate(CASTING_RECORD_SCHEMA, rec)));
     check('served_model UNKNOWN -> served_model_mismatch null', rec.served_model === 'UNKNOWN' && rec.served_model_mismatch === null, JSON.stringify(rec));
+    check('PL-24: reviewer bucket follows the casting (openai -> OU)', rec.bucket === 'OU', JSON.stringify(rec));
   }
   if (fs.existsSync(auditPath)) {
     const audit = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
@@ -615,6 +619,24 @@ section('6. close #2 — item 6: citation divergence excused only by a matching-
   driveToResolved(store, reviewerTicket.id, 'reviewer-openai', 'REVIEW RUN NONCE: n4\n' + verdictBlock(Object.assign({}, excusedCitation, { run_nonce: 'n4' })));
   const r = close.close({ ticket: T.get(store, reviewerTicket.id), projectDir: dir, repoDir: dir, store });
   check('item 6: DIVERGES citation excused by a MATCHING-path reproduced finding -> CLOSED', r.ok === true && r.outcome === 'CLOSED', JSON.stringify(r));
+}
+{
+  // Shakedown order #5 (PL-20): Sol cited `rg` (present in its sandbox, absent
+  // on the closing host) and honestly listed the gdUnit run it could not
+  // replay. Neither is a refuted claim — UNREPLAYABLE is a coverage gap, and
+  // only a DIVERGES replay needs a matching-path reproduced finding.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  const { store, reviewerTicket } = freshPending(dir);
+  const honest = approveVerdict({
+    citation_replay: [
+      { citation: 'feature.js:1', command: 'node -e "process.exit(0)"', result: 'MATCH' },
+      { citation: 'sandbox-only probe', command: 'definitely-not-a-command-orchestra-xyz -c x', result: 'MATCH' },
+    ],
+  });
+  driveToResolved(store, reviewerTicket.id, 'reviewer-openai', 'REVIEW RUN NONCE: n5\n' + verdictBlock(Object.assign({}, honest, { run_nonce: 'n5' })));
+  const r = close.close({ ticket: T.get(store, reviewerTicket.id), projectDir: dir, repoDir: dir, store });
+  check('item 6 (PL-20): a citation whose command the closing host cannot find is UNREPLAYABLE, not a mismatch -> CLOSED', r.ok === true && r.outcome === 'CLOSED', JSON.stringify(r));
+  check('item 6 (PL-20): the audit still records it as UNREPLAYABLE / replayed:false', !!(r.audit && r.audit.citation_replay.some((c) => c.citation === 'sandbox-only probe' && c.result === 'UNREPLAYABLE' && c.replayed === false)), JSON.stringify(r.audit));
 }
 
 section('7. close #2 — item 4: codex-lane closure trusts engine_result.report, never the launcher relay');

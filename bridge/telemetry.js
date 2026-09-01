@@ -28,6 +28,7 @@ const path = require('path');
 
 const SUBSTRATE_ROOT = path.join(__dirname, '..');
 const { validate } = require(path.join(SUBSTRATE_ROOT, 'verifier', 'schema-check.js'));
+const { modelNamesMatch } = require(path.join(SUBSTRATE_ROOT, 'verifier', 'verifier.js'));
 
 const CASTING_RECORD_SCHEMA = JSON.parse(
   fs.readFileSync(path.join(SUBSTRATE_ROOT, 'registry', 'schemas', 'casting-record.schema.json'), 'utf8')
@@ -62,7 +63,9 @@ function computedMismatch(record) {
   if (record.served_model === 'UNKNOWN') return null;
   const requested = record.requested_casting && record.requested_casting.model;
   if (typeof requested !== 'string') return null;
-  return record.served_model !== requested;
+  // Roster display name vs runtime model id — one canonical comparison,
+  // shared with verifier.js so the writer and the validator cannot disagree.
+  return !modelNamesMatch(requested, record.served_model);
 }
 
 function writeCastingRecord(projectDir, ticketId, record) {

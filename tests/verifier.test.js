@@ -378,10 +378,22 @@ section('8. Citation replay (items conform to the verdict-audit schema)');
   ]);
   check('an unreplayable citation forces COVERAGE_GAP, never PASS', gap.outcome === 'COVERAGE_GAP', JSON.stringify(gap.items));
 
+  // Shakedown order #5 (PL-20): a reviewer's sandbox may carry tools the
+  // replaying host does not (Sol cited `rg`). A command the shell cannot even
+  // find was not replayed — a coverage gap — never a refutation.
+  const missing = verifier.citationReplay(co.dir, [
+    { citation: 'lib.js:2', expect_substring: 'sum' },
+    { command: 'definitely-not-a-command-orchestra-xyz --version', citation: 'sandbox-only tool' },
+  ]);
+  check('a command the host cannot find is UNREPLAYABLE (replayed:false), never DIVERGES',
+    missing.outcome === 'COVERAGE_GAP' && missing.items[1].result === 'UNREPLAYABLE' && missing.items[1].replayed === false, JSON.stringify(missing.items));
+  const refuted = verifier.citationReplay(co.dir, [{ command: 'node -e "process.exit(3)"', citation: 'ran and failed' }]);
+  check('a command that runs and exits non-zero still DIVERGES', refuted.outcome === 'FAIL' && refuted.items[0].result === 'DIVERGES', JSON.stringify(refuted.items));
+
   const { schemas } = registry.load();
   const itemSchema = schemas['verdict-audit.schema.json'].properties.citation_replay.items;
   const schemaCheck = require(path.join(MASTER, 'verifier', 'schema-check.js'));
-  const allItems = [...out.items, ...bad.items, ...gap.items];
+  const allItems = [...out.items, ...bad.items, ...gap.items, ...missing.items, ...refuted.items];
   check('every replay item validates against the verdict-audit schema',
     allItems.every((i) => schemaCheck.validate(itemSchema, i).length === 0),
     allItems.map((i) => schemaCheck.validate(itemSchema, i).join('; ')).filter(Boolean).join(' | '));
@@ -777,6 +789,14 @@ section('14. Ruling 4: schema semantic gates (verdict-audit in-schema; casting-r
     (() => { const r = verifier.validateArtifact('casting-record', record({ served_model: 'GPT-5.6 Luna' })); return r.outcome === 'FAIL' && r.violations.some((v) => /contradicts the computed detector/.test(v)); })());
   check('served≠requested with the flag omitted is refused (a masked P15 incident)',
     (() => { const rec = record({ served_model: 'GPT-5.6 Luna' }); delete rec.served_model_mismatch; const r = verifier.validateArtifact('casting-record', rec); return r.outcome === 'FAIL' && r.violations.some((v) => /omitted/.test(v)); })());
+  check('PL-23: a runtime id for the SAME model is not a mismatch (claude-sonnet-5 ↔ "Sonnet 5")',
+    verifier.validateArtifact('casting-record', record({ served_model: 'claude-sonnet-5', served_model_mismatch: false })).outcome === 'PASS');
+  check('PL-23: a runtime id for a DIFFERENT model is still a P15 mismatch (claude-haiku-4-5-20251001 vs "Sonnet 5")',
+    verifier.validateArtifact('casting-record', record({ served_model: 'claude-haiku-4-5-20251001', served_model_mismatch: false })).outcome === 'FAIL');
+  check('PL-23: modelNamesMatch — roster display names vs served runtime ids',
+    ['Sonnet 5|claude-sonnet-5', 'GPT-5.6 Sol|gpt-5.6-sol', 'Opus 5|claude-opus-5[1m]', 'Haiku 4.5|claude-haiku-4-5-20251001', 'Fable 5|claude-fable-5-1']
+      .every((p) => { const [a, b] = p.split('|'); return verifier.modelNamesMatch(a, b); }) &&
+    !verifier.modelNamesMatch('Sonnet 5', 'GPT-5.6 Luna') && !verifier.modelNamesMatch('GPT-5.6 Sol', 'gpt-5.6-terra') && !verifier.modelNamesMatch('Opus 5', 'claude-sonnet-5'));
   check('served≠requested honestly flagged validates; UNKNOWN served stays out of the detector',
     verifier.validateArtifact('casting-record', record({ served_model: 'GPT-5.6 Luna', served_model_mismatch: true })).outcome === 'PASS' &&
     (() => { const rec = record({ served_model: 'UNKNOWN' }); delete rec.served_model_mismatch; return verifier.validateArtifact('casting-record', rec).outcome === 'PASS'; })());

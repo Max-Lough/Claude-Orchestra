@@ -1086,7 +1086,10 @@ function case16() {
 
   // (a) Engine churn — the Godot first-import case: 180+ generated sidecars.
   const fx = makeDirtyRepo();
-  const churn = ['.godot/imported/icon.png-abc.ctex', 'art/icon.png.import', 'build/out.o'];
+  // 'art/Pirate 1.ogg.import' carries a space, so git C-quotes it in porcelain
+  // output — shakedown order #5 (PL-21): quoted paths never matched the
+  // allowlist and eight such sidecars raised a false alarm.
+  const churn = ['.godot/imported/icon.png-abc.ctex', 'art/icon.png.import', 'build/out.o', 'art/Pirate 1.ogg.import'];
   const engine = runReview(fx, ['--head-ref', fx.head], { STUB_CODEX_TOUCH: churn.join(',') });
   const eout = engine.stdout || '';
   check(
@@ -1096,7 +1099,7 @@ function case16() {
   );
   check(
     'but it is still reported, so suppression is visible rather than silent',
-    /INTEGRITY NOTE: 3 path\(s\) changed/.test(eout),
+    /INTEGRITY NOTE: 4 path\(s\) changed/.test(eout),
     eout.slice(-900)
   );
 

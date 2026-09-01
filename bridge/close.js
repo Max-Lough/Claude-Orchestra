@@ -572,15 +572,21 @@ function closeReview(ctx, ticket) {
   const findings = Array.isArray(verdictObj.findings) ? verdictObj.findings : [];
   const refutationDutyPresent = !!(verdictObj.refutation_duty && verdictObj.refutation_duty.present === true);
 
-  // Item 6: a non-MATCHES citation is excused ONLY by a reproduced finding
-  // whose OWN path matches that citation's path — never by any unrelated
-  // reproduced finding elsewhere in the same verdict.
+  // Item 6 (repair-B order §6): a DIVERGES replay — the closer re-ran the
+  // reviewer's command and it refuted the claim — is excused ONLY by a
+  // reproduced finding whose OWN path matches that citation's path, never by
+  // any unrelated reproduced finding elsewhere in the same verdict.
+  // UNREPLAYABLE is recorded in the audit as a coverage gap (the Verifier's
+  // own vocabulary) and does not block: an honest "I could not run this
+  // here" is a disclosure, not a refuted claim. Shakedown order #5 (PL-20):
+  // counting it as a mismatch meant the Sol lane could never close while the
+  // reviewer truthfully listed the gdUnit run it could not replay.
   function citationPath(citation) {
     const s = String(citation || '');
     const m = /^([^:]+):\d+$/.exec(s);
     return m ? m[1] : s;
   }
-  const badCitations = citationReplayItems.filter((c) => c.result !== 'MATCHES');
+  const badCitations = citationReplayItems.filter((c) => c.result === 'DIVERGES');
   const citationsOk = badCitations.every((c) => {
     const cp = citationPath(c.citation);
     return findings.some((f) => f.reproduced === true && f.path === cp);
@@ -668,6 +674,21 @@ function closeReview(ctx, ticket) {
     /* best effort — keep the DONE default (this branch is only reachable via a prior PASS close #1) */
   }
   const riskForTelemetry = (envelope && envelope.risk) || 'T1';
+  // Telemetry fidelity (shakedown order #5, PL-24): the bucket a casting
+  // draws from follows the casting itself, in the Quartermaster's own bucket
+  // names (OpenAI → OU; Opus → AU-opus; Fable → AU-fable; every other
+  // Anthropic model → AU-all), and context_shape is the envelope's own
+  // declaration — never a constant.
+  function bucketFor(casting) {
+    const vendor = String((casting && casting.vendor) || '').toLowerCase();
+    const model = String((casting && casting.model) || '');
+    if (vendor === 'openai') return 'OU';
+    if (/^opus/i.test(model)) return 'AU-opus';
+    if (/^fable/i.test(model)) return 'AU-fable';
+    return 'AU-all';
+  }
+  const CONTEXT_SHAPES = ['packet', 'scoped', 'subsystem', 'repo', 'haystack'];
+  const contextShape = envOrder && CONTEXT_SHAPES.includes(envOrder.context_shape) ? envOrder.context_shape : 'repo';
 
   telemetry.writeCastingRecord(ctx.projectDir, implTicket.id, {
     task_id: implTicket.task_id,
@@ -676,8 +697,8 @@ function closeReview(ctx, ticket) {
     role: implTicket.role,
     requested_casting: implTicket.casting,
     served_model: implServed,
-    bucket: 'OU',
-    context_shape: 'repo',
+    bucket: bucketFor(implTicket.casting),
+    context_shape: contextShape,
     status: implStatus,
     review_cross_family: crossFamily,
   });
@@ -688,8 +709,8 @@ function closeReview(ctx, ticket) {
     role: ticket.role,
     requested_casting: ticket.casting,
     served_model: reviewerServed,
-    bucket: 'OU',
-    context_shape: 'repo',
+    bucket: bucketFor(ticket.casting),
+    context_shape: contextShape,
     status: 'DONE',
     verdict: verdictObj.verdict === 'APPROVE' ? 'APPROVE' : 'REVISE', // casting-record's own verdict enum has no REJECT (out of this leg's FILES)
     review_cross_family: crossFamily,

@@ -859,18 +859,36 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-09-02 ~05:30Z — WO-14b SHAKEDOWN, order #5 IN FLIGHT)
+## Fresh-session quick start (as of 2026-09-01 22:20Z — WO-14b SHAKEDOWN, order #5 **CLOSED**)
 
-**READ THIS FIRST — you are receiving the results of live order #5.** The owner restarted a
-Fable helm in `E:\Godot Projects\PiratePartyPals` and issued: *adopt-and-verify commit
-`33a03539` on `feat/nameplate-range-200`* (the nameplate-range +25% change, already implemented
-and green — 41 targeted tests; unreviewed, unmerged). This is the FIRST order that can reach
-CLOSED: every prior close blocker is fixed (PL-12…PL-19 — grants, typed R0, bind-under-
-failClosed, stop-spam, tolerant Band-C parsing + claim normalization, NONCE= header + host-bound
-substitution, COVERAGE_GAP proceeds to review, lint-only `verifier.manifest` committed+pinned).
-Expected shape: builder ticket DONE naming `33a03539` → `orchestra_close` #1 → verifier
-COVERAGE_GAP/PASS → Sol (openai) reviewer ticket → `orchestra_close` #2 → **CLOSED**, writing
-`casting-record.json` + `verdict-audit.json` under `<target>/.claude/orchestra/ledger/<task_id>/`.
+**READ THIS FIRST — the shakedown's primary goal is met.** Live order #5 (adopt-and-verify
+`33a03539` on `feat/nameplate-range-200`, Fable helm) reached **CLOSED at 22:15:40Z** — the
+first order ever to do so — and wrote the first honest telemetry: under
+`<target>/.claude/orchestra/ledger/` (per-TICKET dirs, not per-task): `tkt-9a0eaadf126a4d01/`
+(builder: `verifier.json` COVERAGE_GAP lint-only + 6/6 claims MATCH; `casting-record.json`
+Sonnet 5 ↔ `claude-sonnet-5`, mismatch:false, AU-all, scoped) and `tkt-964f21751a8aced3/`
+(reviewer: `casting-record.json` GPT-5.6 Sol ↔ `gpt-5.6-sol`, mismatch:false, OU, APPROVE;
+`verdict-audit.json` PASS, 4 citations MATCHES + the gdUnit run UNREPLAYABLE). Two independent
+Sol rounds both said APPROVE / no findings for the nameplate change. The close needed five
+same-day fixes (PL-20…PL-24: DIVERGES-only citation rule + not-found → UNREPLAYABLE; quoted
+porcelain paths in the tree audit; `filter.lfs.*` carried into the runner's scratch gitconfig;
+canonical model-name comparison for `served_model_mismatch`; bucket/context_shape from the
+casting/envelope), shipped to the target as `b23782ef` and proven by replaying close #2 with
+`ppp-call` — the helm itself never saw CLOSED (it had stopped after the second refusal; its
+live MCP server still caches the old bridge until restart). Design note the owner asked about:
+the Haiku `reviewer-openai` launcher is by design — the ticket spine binds every role turn to
+an Agent launch (consume → launch → resolve, served model captured), the launcher runs the
+10–30 min synchronous codex runner off the helm's clock, holds exactly one tool, and keeps the
+verdict out of the Conductor's context; the engine server records `engine_result` on the ticket
+itself, so closure never reads the launcher's relay.
+
+**Next, in order:** (1) owner decides whether to merge `feat/nameplate-range-200` (APPROVE ×2,
+verified 41/41 by the builder; the reviewer could not run gdUnit — PL-22, fixed but unproven
+live); (2) PL-9 (guard must require the gate script to exist), PL-11 (installer `.gitignore`
+for runtime state), PL-10 (recon close path), PL-25 (one Conductor line: never restate the
+builder's report template — it cost four builder rounds); (3) the next codex-lane review on the
+target proves PL-22 (expect Sol's gdUnit claim CONFIRMED, far less `--import` churn). The
+previous "job" list still applies to every future order read-back:
 
 **Your job when the owner pastes the transcript / says it finished:**
 1. Read the ledger dir for the order's task_id (`ls` the newest `rt-*`): `envelope.json`,
@@ -891,10 +909,10 @@ COVERAGE_GAP/PASS → Sol (openai) reviewer ticket → `orchestra_close` #2 → 
    `.gitignore` for runtime state, PL-10 recon close path. Then the owner decides whether to
    merge `feat/nameplate-range-200` (review verdict permitting) and close WO-14b out.
 
-State pins: target `origin/main` = `54f0c3c9` (harness current there; readings recorded
+State pins: target local `main` = `b23782ef` (harness shipped for PL-20…24, NOT pushed; `origin/main` = `54f0c3c9`; readings recorded
 2026-09-01 15:14Z expire ~15:14Z 2026-09-02 — re-record before any NEW order:
 `node quartermaster/quartermaster.js --file "<target>/.claude/orchestra-pool-readings.jsonl" --record <bucket> <0..1> --source "..."`,
-buckets AU-all/AU-fable/AU-opus/OU). Master repo branch `claude/wo14b-bridge` @ `843b03a`+.
+buckets AU-all/AU-fable/AU-opus/OU). Master repo branch `claude/wo14b-bridge` @ the PL-20…24 commit (after `69acd9d`).
 History of orders #1–#4 and every PL detail: below, plus `roster/wo14b-shakedown-punch-list.md`
 and the last lines of `roster/wo14b-activation-bridge-progress.md`.
 

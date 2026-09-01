@@ -710,6 +710,33 @@ function setupGitIsolation() {
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
   try {
     fs.writeFileSync(empty, '', 'utf8');
+    // Git LFS registers its clean/smudge filters in the user's GLOBAL config
+    // (`git lfs install`). Replacing that config silently dropped them, so
+    // every pinned worktree materialised LFS pointers instead of assets and
+    // the project's own test command could not even load (shakedown order
+    // #5: a .glb and a DLL were pointers; the reviewer's gdUnit replay was
+    // UNREPLAYABLE). Carry the filter.lfs.* entries — and only those — across.
+    // Read BEFORE SCRATCH.gitConfigFile is set, so this sees the real global.
+    let lfsSection = '';
+    const lfs = spawnSync('git', ['config', '--global', '--get-regexp', '^filter\\.lfs\\.'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (lfs.status === 0 && lfs.stdout) {
+      const entries = lfs.stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => {
+          const sp = l.indexOf(' ');
+          const key = sp === -1 ? l : l.slice(0, sp);
+          const val = sp === -1 ? '' : l.slice(sp + 1);
+          const m = /^filter\.lfs\.([A-Za-z]+)$/.exec(key);
+          return m ? '\t' + m[1] + ' = ' + val + '\n' : '';
+        })
+        .join('');
+      if (entries) lfsSection = '[filter "lfs"]\n' + entries;
+    }
     fs.writeFileSync(
       cfg,
       '# Written by orchestra-review.js for this review only.\n' +
@@ -717,7 +744,8 @@ function setupGitIsolation() {
         '\texcludesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '[safe]\n' +
-        '\tdirectory = *\n',
+        '\tdirectory = *\n' +
+        lfsSection,
       'utf8'
     );
     SCRATCH.gitConfigFile = cfg;
@@ -1605,16 +1633,41 @@ function inspectCodexInstall() {
   };
 }
 
+// Git C-quotes a path that carries spaces, non-ASCII or control characters
+// ('M "assets/Pirate 1.ogg.import"'). Left quoted, such a path never matched
+// the `*.import` churn allowlist and raised a false integrity alarm (shakedown
+// order #5: eight "Pirate N.ogg.import" sidecars). Unquote per git's rules:
+// backslash escapes (\" \\ \n \t …) and octal byte escapes (\303\251).
+function unquoteGitPath(p) {
+  if (!(p.length >= 2 && p.startsWith('"') && p.endsWith('"'))) return p;
+  const inner = p.slice(1, -1);
+  const bytes = [];
+  const simple = { n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11, '\\': 92, '"': 34 };
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch !== '\\') {
+      for (const b of Buffer.from(ch, 'utf8')) bytes.push(b);
+      continue;
+    }
+    const n = inner[++i];
+    if (n === undefined) break;
+    if (/[0-7]/.test(n)) {
+      let oct = n;
+      while (oct.length < 3 && /[0-7]/.test(inner[i + 1] || '')) oct += inner[++i];
+      bytes.push(parseInt(oct, 8));
+    } else {
+      bytes.push(simple[n] !== undefined ? simple[n] : n.charCodeAt(0));
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
 // Pull the path out of a porcelain v1 line ("XY path", or "R  old -> new").
-// Quoted paths (non-ASCII / spaces with core.quotePath on) are left as-is;
-// they simply won't stat, and the line alone still contributes to the
-// fingerprint.
 function porcelainPath(line) {
   let p = line.slice(3);
   const arrow = p.indexOf(' -> ');
   if (arrow !== -1) p = p.slice(arrow + 4);
-  if (p.startsWith('"') && p.endsWith('"')) return '';
-  return p;
+  return unquoteGitPath(p);
 }
 
 // Working-tree fingerprint, so we can tell whether the reviewer (which is
@@ -1835,7 +1888,11 @@ function verdictJsonInstructionLines() {
     'appears as a findings[] entry with the same severity/path:line/claim, and',
     'each CLAIMS CHECKED line as a claims_checked[] entry — never contradict the',
     'prose. citation_replay is your OWN self-report of what you re-ran (a',
-    'separate mechanical replay happens later; this is not that). Copy',
+    'separate mechanical replay happens later; this is not that). That replay',
+    're-runs each command on the CLOSING HOST with the project\'s own toolchain,',
+    'not in your sandbox — cite only git, the declared verification commands,',
+    'and tools the manifest itself uses; never sandbox-only tools such as rg.',
+    'Copy',
     '"served_model" and "run_nonce" VERBATIM as printed above — do not alter,',
     'omit, or invent either value. "review.cross_family" is always literally',
     'null — it is dispatcher-computed, never yours to assert.',

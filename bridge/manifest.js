@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * WO-14b leg 4b/4c — owner-pinned manifest trust.
+ * WO-14b leg 4b/4c/5 (Rider 2, "round-3" pin rules) — owner-pinned manifest
+ * trust.
  *
  * bridge/runtime.js (and the engine server's readOrchestraManifest()) must
  * never take `.claude/orchestra.json`'s word for its own roster/generation/
@@ -10,20 +11,11 @@
  * tampered with (or simply corrupted) to change a project's activation
  * state with nothing to detect it. install.js writes a PIN — a file OUTSIDE
  * the project tree, named by a hash of the project's own real path (or, for
- * a project that has moved since it was pinned, its stable projectId),
- * recording the manifest bytes' own hash plus the values the installer
- * wrote — the moment it sets roster:new; the guard (hooks/orchestra-
- * guard.js's loadPin()/loadPolicy()) and this runtime verify the live
- * manifest against it before trusting anything the manifest says. This
- * module is the one place that reconciles the two for bridge/runtime.js and
- * the engine server; hooks/orchestra-guard.js implements the identical
- * rules independently (it cannot require() a project file before it knows
- * one exists) — the two are pinned to agree by tests/guard.test.js and
- * tests/bridge.test.js alike. WO-14b leg 4c aligns this module to the
- * guard's fix-2A pin rules exactly (see below); the two MUST never diverge
- * again — a manifest a request the guard denies but the bridge would honour
- * (or vice versa) reopens exactly the tampering hole the pin exists to
- * close.
+ * a project that has moved since it was pinned, its stable projectId, or —
+ * leg 5 — its git history root), recording the manifest bytes' own hash
+ * plus the values the installer wrote — the moment it sets roster:new; this
+ * runtime verifies the live manifest against it before trusting anything
+ * the manifest says.
  *
  * Pin file, by resolved project path:
  *   <PIN_DIR>/<sha256(realpath(projectDir)), lowercase hex>.json
@@ -31,6 +23,11 @@
  *   <PIN_DIR>/id-<sha256(manifest.projectId), lowercase hex>.json — tried
  *   only when the path-keyed file is absent and the manifest carries a
  *   projectId.
+ * Pin file, by git history root (leg 5 item iii) — tried only when neither
+ *   of the above resolves: <PIN_DIR>/git-<sha256(first line of
+ *   `git rev-list --max-parents=0 HEAD` run inside the project), lowercase
+ *   hex>.json. Never throws: a non-git project, a missing git binary, or
+ *   any other failure just means "no file at this key".
  * PIN_DIR: process.env.ORCHESTRA_PIN_DIR, honoured ONLY if that directory
  *   actually exists — an env var pointing at a nonexistent directory is "no
  *   pin dir", same as none configured — else
@@ -40,45 +37,59 @@
  *              (manifestSha256 is the sha256, lowercase hex, of the
  *              manifest FILE'S BYTES at the moment the pin was written.)
  *
- * Trust rules (readTrustedManifest()) — mirrors hooks/orchestra-guard.js's
- * loadPin()/loadPolicy() cases (a)/(b)/(c)/(d) exactly:
- *   (a) no pin resolves by either key (including "no pin dir"):
- *       - manifest present and claims roster:"new" -> UNTRUSTED-NEW, fail
- *         closed: trusted:false, roster:'new' (never a silent legacy
- *         downgrade — that used to be the "delete the pin" bypass),
- *         reason:'manifest claims new without a pin'.
- *       - otherwise (no manifest, or manifest claims legacy) ->
- *         trusted:false, roster:'legacy', reason:'unpinned' — inert, not
- *         fail-closed (an unpinned "legacy" install is the default-on-
- *         request posture, not an enforcement boundary).
- *   (b) pin resolves, is well-formed, and (if found by the PATH key) its own
- *       projectDir agrees with the resolved project path, and the
- *       manifest's bytes hash to pin.manifestSha256 -> trusted:true;
- *       roster/rosterGeneration/seats come from the manifest (rosterGeneration/
- *       seats fall back to the pin's own copy if the manifest omits them);
- *       roster always the PIN's roster (matches by construction once
- *       trusted, since the hash-match means the manifest is byte-identical
- *       to what was pinned). A pin found by the ID key needs no projectDir
- *       agreement (that disagreement IS the moved-project case) but still
- *       needs the hash match for trust; reason carries
- *       'project moved since pinning' when moved (informational, not an
- *       error).
- *   (c) pin resolves and is well-formed, but the manifest is missing/
- *       unreadable/hash-mismatched -> UNTRUSTED: trusted:false,
- *       roster/rosterGeneration/seats come from the PIN instead (the
- *       manifest is not trusted enough to read even its own roster field
- *       from), reason:'manifest untrusted (hash mismatch)'.
- *   (d) a pin FILE resolves (by either key) but is corrupt/unparseable, has
- *       an invalid roster value, or — found by the PATH key — its own
- *       projectDir disagrees with the resolved project path (a forged pin)
- *       -> UNTRUSTED, roster forced to 'new' (fail closed — a pin file's
- *       mere existence signals this project was pinned at some point, so
- *       failing toward enforcement is the safe direction), reason names the
- *       specific defect ('corrupt pin' / 'pin projectDir does not match
- *       this project') and is NEVER 'unpinned' — a corrupt/forged pin is
- *       never silently treated as "no pin" (that collapse used to make
- *       deleting the pin strictly better, for an attacker, than editing the
- *       manifest).
+ * Trust rules (readTrustedManifest()), leg 5 (Rider 2) tightening:
+ *   (i) roster:new FINGERPRINT — see hasRosterNewFingerprint() below: a
+ *       project carries one when it has `.claude/orchestra/` populated with
+ *       anything beyond the runtime's own `tickets/` subdirectory,
+ *       `.claude/ORCHESTRA-CONDUCTOR.md`, any of the eleven roster role
+ *       files under `.claude/agents/` (ROSTER_ROLE_FILES), a manifest whose
+ *       `roster` field is itself `"new"`, or a manifest carrying any of
+ *       projectId / installedFiles / installedHooks / rosterGeneration
+ *       (MANIFEST_FINGERPRINT_KEYS — deliberately NOT
+ *       installedPermissions/installedDeny, which a plain legacy install
+ *       also writes). A fingerprinted project with no pin resolving by ANY
+ *       of the three keys -> UNTRUSTED-NEW, fail closed: trusted:false,
+ *       roster:'new', reason:'installed roster:new project without a pin'
+ *       — used for every fingerprint-triggered untrusted-new outcome, NEVER
+ *       'unpinned'. A project with no fingerprint and no pin is the
+ *       original inert case: trusted:false, roster:'legacy',
+ *       reason:'unpinned'.
+ *   (ii) STRICT PIN SCHEMA — see isValidPinShape() below: a pin object
+ *       found by any key must have projectDir a string; manifestSha256
+ *       exactly 64 lowercase hex characters (case-SENSITIVE); roster
+ *       exactly 'new' or 'legacy'; rosterGeneration a non-negative integer;
+ *       writtenAt a valid date (Date.parse()); by a string. Anything short
+ *       of the full shape is an INVALID pin: trusted:false, roster forced
+ *       'new', reason:'corrupt pin' (grouped with the JSON-parse-failure
+ *       case — see loadPin()) — NEVER 'unpinned'.
+ *   (iii) THIRD LOOKUP KEY — the git-root key (see "Pin file, by git
+ *       history root" above), tried only when neither the path key nor the
+ *       id key resolves a file.
+ *   (iv) MOVED — a pin found by the id OR git-root key whose own projectDir
+ *       differs from the resolved project directory is NOT forged (that
+ *       disagreement IS the moved-project case) — it still enforces its
+ *       recorded roster, and is trusted iff the manifest hash matches,
+ *       exactly like a same-directory pin. The returned state additionally
+ *       carries `moved:true` in that case (this runtime has no loosening
+ *       keys of its own to withhold — `moved` is carried purely for
+ *       visibility, e.g. via doctor()). Every other return path sets
+ *       `moved:false` explicitly.
+ *
+ * Case (b) (pin resolves, well-formed, and — if found by the PATH key — its
+ *   own projectDir agrees with the resolved project path, and the
+ *   manifest's bytes hash to pin.manifestSha256) -> trusted:true; roster
+ *   always the PIN's roster; rosterGeneration/seats fall back to the pin's
+ *   own copy if the manifest omits them; reason carries
+ *   'project moved since pinning' when moved (informational).
+ * Case (c) (pin resolves and is well-formed, but the manifest is missing/
+ *   unreadable/hash-mismatched) -> UNTRUSTED: trusted:false,
+ *   roster/rosterGeneration/seats come from the PIN instead,
+ *   reason:'manifest untrusted (hash mismatch)' (+ the moved note).
+ * Case (d) (a pin FILE resolves by any key but is corrupt/unparseable, or —
+ *   found by the PATH key — its own projectDir disagrees with the resolved
+ *   project path (a forged pin)) -> UNTRUSTED, roster forced 'new' (fail
+ *   closed), reason names the specific defect ('corrupt pin' /
+ *   'pin projectDir does not match this project') and is NEVER 'unpinned'.
  *
  * This module only READS the pin and the manifest. Writing the pin is
  * install.js's job (writePin()/writeManifestAndPin()).
@@ -89,8 +100,107 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { spawnSync } = require('child_process');
 
 const MANIFEST_REL = ['.claude', 'orchestra.json'];
+
+// WO-14b leg 5 Rider 2 (round-3 pin rules, mirroring the guard's tightened
+// fix): a "roster:new fingerprint" is evidence a project was installed with
+// the new roster that does NOT depend on the manifest's own (contested)
+// `roster` field alone — files/dirs install.js writes independent of that
+// field, or manifest KEYS that are install-only byproducts. `roster:'new'`
+// itself is kept as a trigger too (the pre-existing leg-4c rule) — this is a
+// strict widening, never a narrowing, of what counts as "this project claims
+// roster:new". installedPermissions/installedDeny are deliberately EXCLUDED:
+// legacy (non-roster) installs write those two keys as well, so their mere
+// presence must never be read as roster:new evidence.
+const MANIFEST_FINGERPRINT_KEYS = ['projectId', 'installedFiles', 'installedHooks', 'rosterGeneration'];
+
+// The eleven roster/*.md role files (mirrors install.js's rosterRoleFiles()
+// output as of this writing — duplicated rather than required-in:
+// install.js has no exported classifier and has execution side effects on
+// require(), and this module runs inside an INSTALLED project, which never
+// carries the source roster/ directory to read from dynamically in the
+// first place. Same convention install.js itself uses for roster/lint.js's
+// isRoleFile — the lists are kept in sync by hand across the
+// source/installed boundary.
+const ROSTER_ROLE_FILES = new Set([
+  'architect.md',
+  'builder.md',
+  'conductor.md',
+  'data-engineer.md',
+  'investigator.md',
+  'red-team.md',
+  'reviewer-anthropic.md',
+  'reviewer-openai.md',
+  'sweeper.md',
+  'test-designer-vs-anthropic.md',
+  'test-designer-vs-openai.md',
+]);
+
+function hasRosterNewFingerprint(projectDir, cfg) {
+  if (cfg && cfg.roster === 'new') return true;
+  // .claude/orchestra/ as an INSTALL marker: install.js populates it with
+  // substrate directories (router/, registry/, verifier/, quartermaster/,
+  // bridge/). The ticket bridge runtime itself lazily creates only its own
+  // `tickets/` subdirectory there as an operational side effect (doctor()/
+  // dispatch() calling getStore()) — that side effect must never itself
+  // BECOME the fingerprint, or a plain LEGACY project whose doctor()/gate()
+  // merely got called once would flip to roster:new, untrusted, on its very
+  // next read (self-poisoning). So this counts only when the directory
+  // holds something OTHER than `tickets`.
+  try {
+    const entries = fs.readdirSync(path.join(projectDir, '.claude', 'orchestra'));
+    if (entries.some((e) => e !== 'tickets')) return true;
+  } catch (_) { /* absent */ }
+  try {
+    if (fs.statSync(path.join(projectDir, '.claude', 'ORCHESTRA-CONDUCTOR.md')).isFile()) return true;
+  } catch (_) { /* absent */ }
+  for (const roleFile of ROSTER_ROLE_FILES) {
+    try {
+      if (fs.statSync(path.join(projectDir, '.claude', 'agents', roleFile)).isFile()) return true;
+    } catch (_) { /* absent */ }
+  }
+  if (cfg && typeof cfg === 'object') {
+    for (const k of MANIFEST_FINGERPRINT_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(cfg, k)) return true;
+    }
+  }
+  return false;
+}
+
+// The strict pin schema (round-3): anything short of this exact shape is an
+// INVALID pin — never partially trusted, never silently coerced (the old
+// behaviour defaulted a malformed rosterGeneration/writtenAt/by to null/
+// skipped fields rather than refusing the pin outright).
+function isValidPinShape(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+  if (typeof obj.projectDir !== 'string') return false;
+  if (typeof obj.manifestSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(obj.manifestSha256)) return false;
+  if (obj.roster !== 'new' && obj.roster !== 'legacy') return false;
+  if (!Number.isInteger(obj.rosterGeneration) || obj.rosterGeneration < 0) return false;
+  if (typeof obj.writtenAt !== 'string' || Number.isNaN(Date.parse(obj.writtenAt))) return false;
+  if (typeof obj.by !== 'string') return false;
+  return true;
+}
+
+// Third pin lookup key (round-3), tried only after the path and id keys both
+// miss: the project's own git root commit. Covers a project that has moved
+// AND carries no projectId (or whose id-keyed pin was lost) but is still the
+// same git history. `real` is already the resolved project directory.
+function gitRootPinFileFor(real, dir) {
+  let r;
+  try {
+    r = spawnSync('git', ['-C', real, 'rev-list', '--max-parents=0', 'HEAD'], { encoding: 'utf8' });
+  } catch (_) {
+    return null;
+  }
+  if (!r || r.error || r.status !== 0) return null;
+  const firstLine = String(r.stdout || '').split('\n')[0].trim();
+  if (!/^[0-9a-f]{7,40}$/i.test(firstLine)) return null;
+  const hash = crypto.createHash('sha256').update(firstLine, 'utf8').digest('hex');
+  return path.join(dir, 'git-' + hash + '.json');
+}
 
 // Candidate pin directory — env var verbatim if set, else the default.
 // Existence is checked separately (loadPin()), never here: a nonexistent
@@ -168,6 +278,14 @@ function loadPin(real, cfg) {
       foundBy = 'id';
     }
   }
+  if (pinFilePath === null) {
+    // Third lookup key (round-3), tried only once path and id both miss.
+    const gitPinPath = gitRootPinFileFor(real, dir);
+    if (gitPinPath && fs.existsSync(gitPinPath)) {
+      pinFilePath = gitPinPath;
+      foundBy = 'git';
+    }
+  }
   if (pinFilePath === null) return { found: false };
 
   let obj;
@@ -176,24 +294,24 @@ function loadPin(real, cfg) {
   } catch (_) {
     return { found: true, valid: false, reason: 'corrupt pin' };
   }
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-    return { found: true, valid: false, reason: 'corrupt pin' };
-  }
-  if (obj.roster !== 'new' && obj.roster !== 'legacy') {
+  // Strict schema (round-3): anything short of the full shape is an invalid
+  // pin — never partially trusted via defaulted/coerced fields.
+  if (!isValidPinShape(obj)) {
     return { found: true, valid: false, reason: 'corrupt pin' };
   }
   const pin = {
-    projectDir: typeof obj.projectDir === 'string' ? obj.projectDir : null,
+    projectDir: obj.projectDir,
     roster: obj.roster,
     seats: objOrNull(obj.seats),
-    rosterGeneration: typeof obj.rosterGeneration === 'number' ? obj.rosterGeneration : null,
-    manifestSha256: typeof obj.manifestSha256 === 'string' ? obj.manifestSha256 : null,
+    rosterGeneration: obj.rosterGeneration,
+    manifestSha256: obj.manifestSha256,
   };
   // Forged-pin check: when found by the PATH key, the pin's own projectDir
   // must agree with the path that produced the hash — a mismatch means the
   // pin file's *contents* were tampered with independent of its filename.
-  // Found-by-ID pins are exempt (that disagreement IS the moved-project
-  // case) but still require the manifest hash to match for trust.
+  // Found-by-ID or found-by-GIT-ROOT pins are exempt (that disagreement IS
+  // the moved-project case) but still require the manifest hash to match
+  // for trust.
   if (foundBy === 'path' && pin.projectDir !== real) {
     return { found: true, valid: false, reason: 'pin projectDir does not match this project' };
   }
@@ -201,7 +319,7 @@ function loadPin(real, cfg) {
 }
 
 function readTrustedManifest({ projectDir } = {}) {
-  const empty = () => ({ manifest: {}, trusted: false, roster: 'legacy', rosterGeneration: null, seats: {}, reason: 'unpinned' });
+  const empty = () => ({ manifest: {}, trusted: false, roster: 'legacy', rosterGeneration: null, seats: {}, reason: 'unpinned', moved: false });
   if (!projectDir || typeof projectDir !== 'string') return empty();
 
   const real = realDir(projectDir);
@@ -225,19 +343,20 @@ function readTrustedManifest({ projectDir } = {}) {
   const pinResult = loadPin(real, cfg);
 
   if (!pinResult.found) {
-    // (a) No pin resolves by either key.
-    if (cfg && cfg.roster === 'new') {
-      // Fail-closed sub-case: the manifest itself claims roster:new but
-      // nothing outside the project backs that claim. Forcing this to
-      // LEGACY would be exactly the "delete the pin" bypass the guard's
-      // fix-2A closes — force NEW instead, untrusted.
+    // (a) No pin resolves by any key. Round-3: the trigger for "this project
+    // claims roster:new" is the fingerprint (hasRosterNewFingerprint), not
+    // just the manifest's own contested `roster` field — see that function's
+    // doc comment. Forcing this to LEGACY would be exactly the "delete the
+    // pin" bypass the guard's fix-2A closes — force NEW instead, untrusted.
+    if (hasRosterNewFingerprint(projectDir, cfg)) {
       return {
-        manifest: cfg,
+        manifest: cfg || {},
         trusted: false,
         roster: 'new',
-        rosterGeneration: typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : null,
-        seats: objOrNull(cfg.seats) || {},
-        reason: 'manifest claims new without a pin',
+        rosterGeneration: cfg && typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : null,
+        seats: (cfg && objOrNull(cfg.seats)) || {},
+        reason: 'installed roster:new project without a pin',
+        moved: false,
       };
     }
     if (!cfg) return empty();
@@ -248,12 +367,18 @@ function readTrustedManifest({ projectDir } = {}) {
       rosterGeneration: typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : null,
       seats: objOrNull(cfg.seats) || {},
       reason: 'unpinned',
+      moved: false,
     };
   }
 
   if (!pinResult.valid) {
-    // (d) A pin file exists but is corrupt, unparseable, or forged. Never
-    // collapses to (a) — see loadPin()'s doc comment. NEVER reason:'unpinned'.
+    // (d) A pin file exists but is corrupt, unparseable, forged, or fails the
+    // round-3 strict schema. Never collapses to (a) — see loadPin()'s doc
+    // comment. NEVER reason:'unpinned'. Unconditionally fail-closed
+    // (roster:'new') regardless of fingerprint: a pin file's mere existence
+    // signals this project was pinned at some point, so failing toward
+    // enforcement is the safe direction (round-3 rule (ii): an invalid pin
+    // is always untrusted-new).
     return {
       manifest: cfg || {},
       trusted: false,
@@ -261,11 +386,12 @@ function readTrustedManifest({ projectDir } = {}) {
       rosterGeneration: null,
       seats: {},
       reason: pinResult.reason,
+      moved: false,
     };
   }
 
   const pin = pinResult.pin;
-  const moved = pinResult.foundBy === 'id' && pin.projectDir !== real;
+  const moved = (pinResult.foundBy === 'id' || pinResult.foundBy === 'git') && pin.projectDir !== real;
 
   const manifestSha256 = manifestBytes ? crypto.createHash('sha256').update(manifestBytes).digest('hex') : null;
   const hashMatches =
@@ -282,6 +408,7 @@ function readTrustedManifest({ projectDir } = {}) {
       rosterGeneration: typeof cfg.rosterGeneration === 'number' ? cfg.rosterGeneration : pin.rosterGeneration,
       seats: objOrNull(cfg.seats) || pin.seats || {},
       reason: moved ? 'project moved since pinning' : null,
+      moved,
     };
   }
 
@@ -295,6 +422,7 @@ function readTrustedManifest({ projectDir } = {}) {
     rosterGeneration: pin.rosterGeneration,
     seats: pin.seats || {},
     reason: 'manifest untrusted (hash mismatch)' + (moved ? ' [project moved since pinning]' : ''),
+    moved,
   };
 }
 

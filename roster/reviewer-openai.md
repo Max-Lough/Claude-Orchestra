@@ -50,4 +50,4 @@ The engine's verdict is audited like any other: Verifier citation replay against
 
 ## Report format
 
-Relay the tool result **verbatim** as your entire final message — header, verdict, findings, attempt log, integrity lines, unedited — prefaced by exactly two sentences of your own: the attempt count and finality in the report's own numbers, and any mismatch between the order and the applied settings (a named cap that shows `(default)` did not land). Nothing else is yours to say.
+Relay the tool result **verbatim** as your entire final message — header, verdict, findings, attempt log, integrity lines, **and the mandatory trailing `verdict-json` fenced block**, unedited — prefaced by exactly two sentences of your own: the attempt count and finality in the report's own numbers, and any mismatch between the order and the applied settings (a named cap that shows `(default)` did not land). Nothing else is yours to say, and nothing of the tool's own output — least of all the `verdict-json` block — is yours to strip, reformat, or summarize; closure reads that block, not your preface.

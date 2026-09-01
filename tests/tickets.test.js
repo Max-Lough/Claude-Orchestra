@@ -21,6 +21,12 @@ const MASTER = path.resolve(__dirname, '..');
 const T = require(path.join(MASTER, 'router', 'tickets.js'));
 const { validate } = require(path.join(MASTER, 'verifier', 'schema-check.js'));
 
+// Rider from leg-2 review #6: createTicketStore() now refuses a caller-
+// supplied `_fs` test-hook override unless this env var is set — this whole
+// file relies on `_fs` throughout, so opt in once, up front, for every test
+// below. Section 21c (below) explicitly unsets it to pin the refusal itself.
+process.env.ORCHESTRA_TICKETS_TEST_HOOKS = '1';
+
 const DISPATCH_REQUEST_SCHEMA = JSON.parse(fs.readFileSync(path.join(MASTER, 'registry', 'schemas', 'dispatch-request.schema.json'), 'utf8'));
 const TICKET_SCHEMA = JSON.parse(fs.readFileSync(path.join(MASTER, 'registry', 'schemas', 'ticket.schema.json'), 'utf8'));
 const ORDER_SCHEMA = JSON.parse(fs.readFileSync(path.join(MASTER, 'registry', 'schemas', 'order.schema.json'), 'utf8'));
@@ -1307,6 +1313,71 @@ section('21b. Fix round 5 (review #5, MINOR, tickets.js:769) — the anomaly sid
       const sidecarNowEmpty = !fs.existsSync(sidecarPath) || fs.readFileSync(sidecarPath, 'utf8').trim() === '';
       return !!anomalyLine && !!issueLine && lines.indexOf(anomalyLine) < lines.indexOf(issueLine) && sidecarNowEmpty;
     })());
+}
+
+// ==================================================== 21c. _fs test hooks are gated behind ORCHESTRA_TICKETS_TEST_HOOKS
+
+section('21c. Rider from leg-2 review #6 (tickets.js) — `_fs` is refused unless ORCHESTRA_TICKETS_TEST_HOOKS=1');
+
+{
+  const dir = tmpDir('tkt-fsgate-');
+  const saved = process.env.ORCHESTRA_TICKETS_TEST_HOOKS;
+  delete process.env.ORCHESTRA_TICKETS_TEST_HOOKS;
+  let threw = null;
+  try {
+    T.createTicketStore({ dir, init: true, _fs: { appendFileSync: () => {} } });
+  } catch (e) {
+    threw = e;
+  }
+  process.env.ORCHESTRA_TICKETS_TEST_HOOKS = saved;
+  check('21c: pin — _fs without the env var throws a typed TicketStoreError',
+    !!threw && threw.name === 'TicketStoreError', threw && (threw.name + ': ' + threw.message));
+  check('21c: pin — the error names the requirement', !!threw && /ORCHESTRA_TICKETS_TEST_HOOKS/.test(threw.message), threw && threw.message);
+
+  // Sanity: no _fs at all is unaffected by the gate either way.
+  let threw2 = null;
+  try { T.createTicketStore({ dir: tmpDir('tkt-fsgate-nofs-'), init: true }); } catch (e) { threw2 = e; }
+  check('21c: sanity — createTicketStore with no _fs at all never throws regardless of the gate', threw2 === null, threw2 && threw2.message);
+}
+
+// ==================================================== 21d. the anomaly-sidecar drain never loses an unparseable record
+
+section('21d. Rider from leg-2 review #6 (tickets.js) — a torn/unparseable sidecar line is named (lock_anomaly, data.torn:true) and written back, never dropped');
+
+{
+  const dir = tmpDir('tkt-anomaly-torn-');
+  const store = T.createTicketStore({ dir, init: true });
+  const sidecarPath = path.join(dir, 'tickets.anomalies.jsonl');
+  const goodAnomaly = { at: new Date().toISOString(), detail: 'lock ownership lost after commit', expectedToken: 'tok-1', foundOwner: { token: 'foreign-tok', at: Date.now(), host: 'h' } };
+  const tornLine = '{not valid json at all';
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(sidecarPath, JSON.stringify(goodAnomaly) + '\n' + tornLine + '\n');
+
+  const t1 = T.issue(store, baseFields());
+
+  const eventsAfter = fs.readFileSync(path.join(dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const anomalyLines = eventsAfter.filter((l) => l.event === 'lock_anomaly');
+  const goodLine = anomalyLines.find((l) => l.data && l.data.foundOwner && l.data.foundOwner.token === 'foreign-tok');
+  const tornEventLine = anomalyLines.find((l) => l.data && l.data.torn === true);
+
+  check('21d: pin — the well-formed anomaly still produces a normal lock_anomaly event', !!goodLine, JSON.stringify(anomalyLines));
+  check('21d: pin — a SECOND lock_anomaly event names the torn line (data.torn:true) and carries its raw content',
+    !!tornEventLine && tornEventLine.data.raw === tornLine, JSON.stringify(tornEventLine));
+  check('21d: pin — the torn event lands before this write\'s own issue event',
+    !!tornEventLine && eventsAfter.indexOf(tornEventLine) < eventsAfter.findIndex((l) => l.event === 'issue' && l.id === t1.id));
+
+  const sidecarNow = fs.existsSync(sidecarPath) ? fs.readFileSync(sidecarPath, 'utf8') : '';
+  check('21d: pin — the sidecar is REWRITTEN to contain ONLY the torn line (not truncated to empty, not left unchanged)',
+    sidecarNow.trim() === tornLine, JSON.stringify(sidecarNow));
+
+  // A subsequent write keeps re-flagging the surviving torn line (harmless,
+  // intentional duplicate — matches this file's established "duplicate
+  // lock_anomaly audit lines are never a correctness problem" philosophy);
+  // it must never disappear on its own.
+  T.issue(store, baseFields());
+  const sidecarStill = fs.existsSync(sidecarPath) ? fs.readFileSync(sidecarPath, 'utf8') : '';
+  check('21d: pin — the torn line survives a second locked write untouched (never silently dropped)',
+    sidecarStill.trim() === tornLine, JSON.stringify(sidecarStill));
 }
 
 // ==================================================== 22. tombstone sweep

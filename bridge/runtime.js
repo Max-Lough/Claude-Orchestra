@@ -636,6 +636,7 @@ function createRuntime({ projectDir, repoDir } = {}) {
         reason: state.reason,
         file: pinFileFor(projectDir),
         failClosed: state.failClosed,
+        moved: state.moved === true, // WO-14b leg 5 Rider 2 (round-3 rule iv)
       },
     };
     try {

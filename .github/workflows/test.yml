@@ -142,6 +142,21 @@ jobs:
         # finding).
         run: node tests/bridge.test.js
 
+      - name: Bridge closure suite (two-stage close)
+        # WO-14b leg 5: bridge/close.js's two-stage ticket closure. Proves
+        # close #1 (RESOLVED implementation ticket -> bound Band C report ->
+        # verifier.runVerification with manifestRef pinned OUTSIDE the audited
+        # commit -> a computed opposite-family reviewer ticket on PASS, and no
+        # reviewer ticket at all on any other outcome) and close #2 (RESOLVED
+        # reviewer ticket -> strict single-block verdict-json parse ->
+        # citation replay re-run through the Verifier, never trusted from the
+        # block -> a deterministically constructed verdict audit -> CLOSED
+        # only for APPROVE + cross-family + audit-valid + no CRITICAL/MAJOR
+        # finding), that a malformed verdict (none/two/bad-JSON/schema-fail)
+        # and a codex-lane run_nonce mismatch both refuse closure, and that
+        # `'CLOSED'` as a close code is written nowhere else in the tree.
+        run: node tests/bridge-close.test.js
+
       - name: Quartermaster suite
         # WO-11: the P0 allowance substrate — recorded readings in, the
         # router's bucket_state out. Proves it fails CLOSED on absent, stale,

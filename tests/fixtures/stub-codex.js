@@ -205,6 +205,47 @@ const claimedChanges = (process.env.STUB_CODEX_CLAIM_CHANGES || '')
   .map((s) => s.trim())
   .filter(Boolean);
 
+// WO-14b leg 5: the review runner's OUTPUT template dictates literal
+// run_nonce/served_model values into the brief (inside its worked example of
+// the mandatory trailing ```verdict-json block) rather than asking the engine
+// to invent them — pull them back out of the brief the same way nonceMatch
+// (above) pulls the exec-lane's REPORT INTEGRITY token, so the stub echoes
+// exactly what a compliant engine would. Review-lane tests only: the exec
+// lane's reports (STUB_CODEX_FIRST_LINE='STATUS: DONE') never carry a
+// verdict-json block.
+const firstLine = process.env.STUB_CODEX_FIRST_LINE || 'VERDICT: APPROVE';
+const isReviewReport = /^VERDICT:/.test(firstLine);
+const verdictWord = (/VERDICT:\s*(APPROVE|REVISE)/.exec(firstLine) || [, 'APPROVE'])[1];
+const dictatedNonce = /"run_nonce":\s*"([0-9a-f]+)"/.exec(brief);
+const dictatedServedModel = /"served_model":\s*"([^"]*)"/.exec(brief);
+const verdictJsonBlock =
+  isReviewReport && !process.env.STUB_CODEX_OMIT_VERDICT_BLOCK
+    ? [
+        '',
+        '```verdict-json',
+        JSON.stringify(
+          {
+            verdict: verdictWord,
+            findings: [],
+            claims_checked: [{ claim: 'stub ran', result: 'CONFIRMED', how: 'it wrote this' }],
+            refutation_duty: { present: true, what_was_tried: 'stub self-test — no real engine to refute' },
+            citation_replay: [],
+            served_model: dictatedServedModel ? dictatedServedModel[1] : 'UNKNOWN',
+            run_nonce:
+              process.env.STUB_CODEX_VERDICT_NONCE !== undefined
+                ? process.env.STUB_CODEX_VERDICT_NONCE || null
+                : dictatedNonce
+                ? dictatedNonce[1]
+                : null,
+            review: { cross_family: null },
+          },
+          null,
+          2
+        ),
+        '```',
+      ]
+    : [];
+
 const report = [
   process.env.STUB_CODEX_FIRST_LINE || 'VERDICT: APPROVE',
   '',
@@ -254,6 +295,7 @@ const report = [
       ? ['', process.env.STUB_CODEX_EXTRA_LINES.replace(/\\n/g, '\n')]
       : []
   )
+  .concat(verdictJsonBlock)
   .join('\n');
 
 if (outFile) {

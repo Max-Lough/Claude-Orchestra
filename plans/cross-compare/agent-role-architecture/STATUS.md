@@ -859,9 +859,43 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-09-01 22:20Z — WO-14b SHAKEDOWN, order #5 **CLOSED**)
+## Fresh-session quick start (as of 2026-09-01 22:30Z — WO-14b SHAKEDOWN, order #5 **CLOSED**, everything merged)
 
-**READ THIS FIRST — the shakedown's primary goal is met.** Live order #5 (adopt-and-verify
+**START HERE — you are the punch-list session.** Everything is merged and pushed: master `main`
+= `4178079` (PR #30), you work on branch `claude/wo14b-punchlist` (off main); target
+`E:\Godot Projects\PiratePartyPals` `main` = `origin/main` = `5f8a7353` (harness current at
+b23782ef, the nameplate change merged, working tree clean, gate hooks 4, doctor
+`roster=new rosterGeneration=3`, pin MATCH). No order is in flight; no helm is running (if
+one is, it must be RESTARTED before any new order — its MCP server caches the bridge it
+loaded). The shakedown's goal is met; WO-14b close-out is now the remaining punch list, in
+this order, each one small, tested, shipped to the target, verified (gate hooks 4 / doctor gen
+3 / `--verify-pin` MATCH), committed in BOTH repos:
+
+1. **PL-9** — the guard must REQUIRE the registered gate script to exist (today a missing
+   script is a non-blocking hook error and Agent launches proceed unticketed — fail-open).
+2. **PL-11** — installer writes the runtime-state `.gitignore` (`.claude/orchestra/tickets/`,
+   `ledger/`, `scratch/`, readings) so a builder's branch checkout cannot sweep it.
+3. **PL-10** — recon-only orders (investigator RESOLVED, no builder) have no close path and
+   leave no telemetry; give `orchestra_close` a typed recon close that writes the casting
+   record.
+4. **PL-25** — one line in `ORCHESTRA-CONDUCTOR.md`: never restate the builder's report
+   format (the Band-C template lives in `agents/builder.md`; overriding it cost four builder
+   rounds in order #5).
+5. **PL-22 live proof** — the next codex-lane review on the target should show Sol's gdUnit
+   claim CONFIRMED and far less `--import` churn (the runner now carries `filter.lfs.*` into
+   its scratch gitconfig). If it does not, the fix is wrong; read the run log the ticket's
+   `engine_result.run_log` names.
+
+Then a NEW live order (owner present; re-record Quartermaster readings first — the
+2026-09-01 15:14Z readings expire ~15:14Z 2026-09-02) to confirm CLOSED lands first time
+with the helm itself, and WO-14b closes out. Rows PL-9/10/11/22/25 in
+`roster/wo14b-shakedown-punch-list.md` carry the evidence; the last lines of
+`roster/wo14b-activation-bridge-progress.md` carry the sequence. Rules that still bind: 80
+tool calls per builder is a hard ceiling; no new trust layers / telemetry schemas / seats;
+security-flavoured review orders trip the OpenAI classifier (spec-conformance framing);
+`CODEX_BIN` pinned to codex-cli 0.151.0; never dispatch class R0 from the helm.
+
+**What order #5 established (context, not tasks).** Live order #5 (adopt-and-verify
 `33a03539` on `feat/nameplate-range-200`, Fable helm) reached **CLOSED at 22:15:40Z** — the
 first order ever to do so — and wrote the first honest telemetry: under
 `<target>/.claude/orchestra/ledger/` (per-TICKET dirs, not per-task): `tkt-9a0eaadf126a4d01/`
@@ -909,10 +943,10 @@ previous "job" list still applies to every future order read-back:
    `.gitignore` for runtime state, PL-10 recon close path. Then the owner decides whether to
    merge `feat/nameplate-range-200` (review verdict permitting) and close WO-14b out.
 
-State pins: target local `main` = `b23782ef` (harness shipped for PL-20…24, NOT pushed; `origin/main` = `54f0c3c9`; readings recorded
+State pins: target `main` = `origin/main` = `5f8a7353` (nameplate change merged; harness b23782ef included; readings recorded
 2026-09-01 15:14Z expire ~15:14Z 2026-09-02 — re-record before any NEW order:
 `node quartermaster/quartermaster.js --file "<target>/.claude/orchestra-pool-readings.jsonl" --record <bucket> <0..1> --source "..."`,
-buckets AU-all/AU-fable/AU-opus/OU). Master repo branch `claude/wo14b-bridge` @ the PL-20…24 commit (after `69acd9d`).
+buckets AU-all/AU-fable/AU-opus/OU). Master repo: `main` @ `4178079` (PR #30 merged everything through the order #5 read-back); work on `claude/wo14b-punchlist`.
 History of orders #1–#4 and every PL detail: below, plus `roster/wo14b-shakedown-punch-list.md`
 and the last lines of `roster/wo14b-activation-bridge-progress.md`.
 

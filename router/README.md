@@ -76,7 +76,11 @@ carries `fallback: 'conductor-self-plan'`, both disclosed.
   N0 handed `haystack`, …) is rejected at dispatch, not truncated. A merged
   class may also carry a declared capability boundary the merge would
   otherwise silently drop: M0's raw video/audio `unavailable` reason
-  (`castOpts.medium === 'videoAudio'`), inherited from the retired
+  (`order.medium === 'videoAudio'` OR `castOpts.medium === 'videoAudio'` —
+  either triggers; WO-14b leg 2 fix round 2 finding 3 added the
+  schema-validated `order.medium`/dispatch-request `medium` field after
+  review #2 found the guard unreachable through the public contract with
+  only the internal `castOpts.medium` path live), inherited from the retired
   Archivist's `noMirrorFor.videoAudio`.
 - **Every rung yields its documented casting set:** the test suite carries an
   independent transcription of Part 2 and diffs `cast()` against it, both
@@ -138,12 +142,42 @@ throws a typed `TicketTransitionError` and is still logged to the ticket's
 enforces one-use, role match, store-generation match, and — for an
 implementation ticket carrying a `q0_ticket` — that Q0 has at least
 `LAUNCHED` before the implementation may spawn. The store
-(`createTicketStore({ dir })`) is a single `tickets.json` (materialised state)
-plus an append-only `tickets.events.jsonl`; writes are atomic
-(temp-file-then-rename) and a cross-process advisory lock (`tickets.lock`,
-stale after 10s) serialises the real callers — separate
+(`createTicketStore({ dir })`) is a single `tickets.json` (materialised state,
+carrying an integer `seq` incremented once per committed write) plus an
+append-only `tickets.events.jsonl`, and a cross-process advisory lock
+(`tickets.lock`, `{pid, token, at, host}`, stale after 30s — configurable
+per store via `lockStaleMs`) serialises the real callers — separate
 `PreToolUse`/`PostToolUse`/`SubagentStop`/`Stop` hook processes. Pure state
 machine and store only: no hook or MCP wiring here (a later leg's job).
+
+**Lock takeover is liveness-gated (WO-14b leg 2 fix round 2, finding 1).** A
+stale lock is takeable ONLY when its recorded pid is provably dead
+(`process.kill(pid, 0)` throws `ESRCH`, or the pid isn't even a number) AND
+the lock is older than `lockStaleMs`; the CAS mechanics (atomic rename to a
+tombstone before a fresh `O_EXCL` create) are unchanged from fix round 1, but
+a live holder — however slow — is now NEVER displaced. A waiter just polls
+until its own `lockBudgetMs` and then fails closed with a typed
+`TicketStoreError` naming the live pid, rather than ever racing a
+still-running holder. Because a live holder can never be preempted, the old
+check-to-write race (a taker writing between a live holder's read and its
+own write) cannot recur — only a dead holder could ever be displaced, and a
+dead holder cannot write. The pre-write lock-token re-check and the
+pre-commit `seq` re-check exist only as belt-and-braces assertions now, not
+the primary defense.
+
+**Writes are write-ahead with reconciliation (finding 2).** Every mutation
+appends its event line(s) to `tickets.events.jsonl` FIRST (fsync'd, each
+line carrying the write's new `seq`), then commits `tickets.json`
+(temp-file-then-rename). If the append itself fails, nothing changes and the
+caller sees a typed `TicketStoreError`. If the process dies between the
+append and the commit, the log is left with a seq ahead of the committed
+state; the next load reconciles it — appends one `reconcile` line naming the
+dropped seq(s) and moves on, never throwing for this case (only a corrupted
+state file still fails a load closed). Typed refusals are logged the same
+way as successful transitions, including a `denied` event alongside the
+`expire` transition for a launch/resolve that arrives after `expires_at`
+(finding 3) — `events [issue, consume, expire, denied]` with
+`attempts [launch]`, not just the bare `expire`.
 
 ## WO-6 defaults where the plan is silent
 

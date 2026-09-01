@@ -47,6 +47,10 @@
     "under_specified": {
       "type": "boolean",
       "description": "The Conductor's own admission that the request is under-specified; feeds the Luna guardrail (never under-specified work to a bounded-tier Luna casting)."
+    },
+    "medium": {
+      "enum": ["documents", "images", "videoAudio"],
+      "description": "WO-14b leg 2 fix round 2 (finding 3): carries the M0 intake modality read by router.js dispatch()'s M0 UNAVAILABLE guard (mergedClasses.M0.unavailable); otherwise ignored by validation. Additive — absent on every other class."
     }
   },
   "additionalProperties": false

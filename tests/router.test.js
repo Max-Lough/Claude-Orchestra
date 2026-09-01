@@ -1176,6 +1176,32 @@ check('finding 6: M0 + castOpts.medium:"documents" (or no medium at all) dispatc
     const withNone = router.dispatch(order('M0', 'T1'), G);
     return withDocs.ok === true && withDocs.role === 'Investigator' && withNone.ok === true && withNone.role === 'Investigator';
   })());
+
+// WO-14b leg 2 fix round 2 (finding 3, MAJOR, fixed): review #2 found the M0
+// UNAVAILABLE guard unreachable through the public contract — only an
+// internal castOpts.medium injection could reach it, since
+// dispatch-request.schema.json rejected `medium` as an additional property.
+// order.schema.json now carries an optional `medium` field; dispatch() must
+// read order.medium too — either order.medium OR castOpts.medium names the
+// unavailable medium refuses.
+check('finding 3: M0 order carrying order.medium:"videoAudio" (the public-contract path, no castOpts) → typed UNAVAILABLE',
+  (() => {
+    const d = router.dispatch(order('M0', 'T1', { medium: 'videoAudio' }), G);
+    return d.ok === false && d.outcome === 'UNAVAILABLE' && d.class === 'M0' && d.role === 'Investigator' &&
+      /raw video and audio go below the model layer/.test(d.reason);
+  })());
+check('finding 3: M0 order carrying order.medium:"documents" dispatches ok through Investigator',
+  (() => {
+    const d = router.dispatch(order('M0', 'T1', { medium: 'documents' }), G);
+    return d.ok === true && d.role === 'Investigator';
+  })());
+check('finding 3: order.medium and castOpts.medium are both live triggers — a mismatched pair where EITHER names the unavailable medium still refuses',
+  (() => {
+    const viaOrderOnly = router.dispatch(order('M0', 'T1', { medium: 'videoAudio' }), G, { castOpts: { medium: 'documents' } });
+    const viaCastOptsOnly = router.dispatch(order('M0', 'T1', { medium: 'documents' }), G, { castOpts: { medium: 'videoAudio' } });
+    return viaOrderOnly.ok === false && viaOrderOnly.outcome === 'UNAVAILABLE' &&
+      viaCastOptsOnly.ok === false && viaCastOptsOnly.outcome === 'UNAVAILABLE';
+  })());
 check('A1 dispatch returns typed RETIRED_WORKFLOW, never a casting',
   (() => {
     const d = router.dispatch(order('A1', 'T1'), G);

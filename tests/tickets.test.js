@@ -23,6 +23,7 @@ const { validate } = require(path.join(MASTER, 'verifier', 'schema-check.js'));
 
 const DISPATCH_REQUEST_SCHEMA = JSON.parse(fs.readFileSync(path.join(MASTER, 'registry', 'schemas', 'dispatch-request.schema.json'), 'utf8'));
 const TICKET_SCHEMA = JSON.parse(fs.readFileSync(path.join(MASTER, 'registry', 'schemas', 'ticket.schema.json'), 'utf8'));
+const ORDER_SCHEMA = JSON.parse(fs.readFileSync(path.join(MASTER, 'registry', 'schemas', 'order.schema.json'), 'utf8'));
 
 let failures = 0;
 let passes = 0;
@@ -95,6 +96,30 @@ check('a fully-populated optional-field request is accepted', validate(DISPATCH_
   constraints: ['no new deps'], context_packet: 'packet text', verification_commands: ['node x.js'],
   verification_tier: 'full', tool_budget: 40, destructive_actions: [], human_authored: true, under_specified: false,
 }).length === 0);
+
+// WO-14b leg 2 fix round 2 (finding 3, MAJOR, fixed): review #2 found the
+// restored M0 video/audio UNAVAILABLE guard unreachable through the public
+// request contract — dispatch-request.schema.json rejected `medium` as an
+// additional property, so a Conductor submitting medium:"videoAudio" could
+// never trigger it. Both dispatch-request.schema.json and order.schema.json
+// now carry an optional `medium` enum (documents/images/videoAudio),
+// additive, otherwise ignored.
+check('finding 3: a dispatch-request carrying medium:"documents" is accepted', validate(DISPATCH_REQUEST_SCHEMA, { class: 'M0', risk: 'T1', goal: 'g', acceptance_criteria: ['a'], medium: 'documents' }).length === 0);
+check('finding 3: a dispatch-request carrying medium:"videoAudio" is accepted (the schema-validated M0 intake modality)', validate(DISPATCH_REQUEST_SCHEMA, { class: 'M0', risk: 'T1', goal: 'g', acceptance_criteria: ['a'], medium: 'videoAudio' }).length === 0);
+check('finding 3: a dispatch-request carrying an unrecognized medium value is rejected', validate(DISPATCH_REQUEST_SCHEMA, { class: 'M0', risk: 'T1', goal: 'g', acceptance_criteria: ['a'], medium: 'audio-only' }).length > 0);
+
+function baseOrder(overrides) {
+  return Object.assign({
+    task_id: 't-1', class: 'M0', risk: 'T1',
+    requested_casting: { vendor: 'anthropic', model: 'Sonnet 5', effort: 'med' },
+    author_family: 'anthropic', co_author_families: [],
+    goal: 'g', acceptance_criteria: ['a'],
+    review_policy: 'mandatory', integrity_nonce: 'deadbeefdeadbeef',
+  }, overrides || {});
+}
+check('finding 3: a routed order carrying medium:"videoAudio" is accepted by order.schema.json', validate(ORDER_SCHEMA, baseOrder({ medium: 'videoAudio' })).length === 0);
+check('finding 3: a routed order carrying an unrecognized medium value is rejected by order.schema.json', validate(ORDER_SCHEMA, baseOrder({ medium: 'audio-only' })).length > 0);
+check('finding 3: a routed order with no medium at all is still accepted (additive, optional)', validate(ORDER_SCHEMA, baseOrder()).length === 0);
 
 section('2. ticket.schema.json — accept/reject');
 
@@ -536,9 +561,15 @@ check('a store missing the generation field fails closed', (() => {
 })());
 
 check('a store whose ticket fails the ticket schema fails closed', (() => {
-  const dir = corruptedStoreDir(JSON.stringify({ generation: 1, tickets: { 'tkt-aaaaaaaaaaaaaaaa': { id: 'tkt-aaaaaaaaaaaaaaaa', status: 'OPEN' } }, unknown_attempts: [] }));
+  const dir = corruptedStoreDir(JSON.stringify({ generation: 1, seq: 1, tickets: { 'tkt-aaaaaaaaaaaaaaaa': { id: 'tkt-aaaaaaaaaaaaaaaa', status: 'OPEN' } }, unknown_attempts: [] }));
   const store = { dir };
   try { T.list(store, {}); return false; } catch (e) { return e instanceof T.TicketStoreError && /schema/.test(e.message); }
+})());
+
+check('a store missing the seq field fails closed', (() => {
+  const dir = corruptedStoreDir(JSON.stringify({ generation: 1, tickets: {}, unknown_attempts: [] }));
+  const store = { dir };
+  try { T.get(store, 'tkt-0000000000000000'); return false; } catch (e) { return e instanceof T.TicketStoreError && /seq/.test(e.message); }
 })());
 
 check('a store that is valid JSON but not an object fails closed', (() => {
@@ -599,100 +630,96 @@ section('13. Two concurrent writer processes — no lost update');
   }
 }
 
-// ============================================ 14. stale-lock CAS takeover
+// ============================================ 14. liveness-gated lock
 
-section('14. Finding 1 — stale-lock takeover is a compare-and-swap; no lost update, no silent overwrite');
+section('14. Fix round 2, finding 1 — lock takeover is liveness-gated: a live holder is NEVER taken over; a provably dead one IS');
 
-check('the stale-lock threshold defaults to 30s (raised from 10s) and is configurable per store',
+check('the stale-lock threshold defaults to 30s (raised from 10s in fix round 1) and is configurable per store',
   T._internal.DEFAULT_LOCK_STALE_MS === 30000 && typeof T._internal.LOCK_BUDGET_PAD_MS === 'number');
+check('isPidAlive: this process\'s own pid reads alive',
+  T._internal.isPidAlive(process.pid) === true);
+check('isPidAlive: a non-numeric or missing pid is treated as dead outright (never a throw)',
+  T._internal.isPidAlive('not-a-pid') === false && T._internal.isPidAlive(undefined) === false && T._internal.isPidAlive(null) === false && T._internal.isPidAlive(NaN) === false);
 
+// 14a. Review #2's exact reproducer, this time fixed at the design level
+// rather than merely patched: a holder is genuinely ALIVE and merely slow
+// (its critical section runs past lockStaleMs). A second writer arriving
+// must WAIT, observe staleness, but — because the holder is alive — never
+// take over; when its OWN budget (deliberately shorter than the holder's
+// critical section) expires it fails closed with a typed TicketStoreError
+// naming the live pid. The holder, never preempted, completes normally and
+// its write lands. No lost update, no silent overwrite, no takeover of a
+// live process at all.
 {
-  // The reviewer's exact reproducer, fixed: one process's critical section
-  // (fn() itself, deliberately slow) runs LONGER than the configured stale
-  // threshold while a second process is trying to write. Before the fix, a
-  // bare unlink-and-recreate let both processes believe they held the only
-  // lock, and the loser's write silently vanished (the reviewer's probe:
-  // generation 2 instead of 3). After the fix: the CAS takeover means at
-  // most one of the two ever writes past the other's work — the "loser"
-  // either never gets to write (genuinely serializes, no takeover needed)
-  // or, if it holds long enough to look stale, is rejected with a typed
-  // TicketStoreError when it tries to write past a takeover — never a
-  // silent, undetected overwrite. Either way: generation === 1 + (number of
-  // writers whose increment actually landed), and nothing is double-counted
-  // or lost.
-  const dir = tmpDir('tkt-cas-');
+  const dir = tmpDir('tkt-live-');
   T.createTicketStore({ dir, init: true });
   const STALE_MS = 300;
-  const BUDGET_MS = 5000;
-  const SLOW_DELAY_MS = 1500; // the "slow holder"'s critical section
-  const FAST_STARTUP_DELAY_MS = 700; // > STALE_MS: by the time B looks, A's lock already reads stale
+  const HOLDER_BUDGET_MS = 10000; // the holder isn't waiting on anyone
+  const WAITER_BUDGET_MS = 700;   // > STALE_MS (observes staleness) but well under the holder's critical section — forces a genuine timeout against a still-alive holder
+  const HOLDER_CRITICAL_SECTION_MS = 2200;
 
-  const slowScript = path.join(dir, 'slow.js');
-  fs.writeFileSync(slowScript, `
+  const holderScript = path.join(dir, 'holder.js');
+  fs.writeFileSync(holderScript, `
     'use strict';
     const T = require(${JSON.stringify(path.join(MASTER, 'router', 'tickets.js'))});
     const fs = require('fs');
     const path = require('path');
     const dir = ${JSON.stringify(dir)};
     function sleepSync(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
-    const store = { dir, lockStaleMs: ${STALE_MS}, lockBudgetMs: ${BUDGET_MS} };
+    const store = { dir, lockStaleMs: ${STALE_MS}, lockBudgetMs: ${HOLDER_BUDGET_MS} };
     let outcome;
     try {
       T._internal.withStore(store, (data) => {
-        sleepSync(${SLOW_DELAY_MS}); // simulate a writer whose critical section runs past the stale threshold
+        sleepSync(${HOLDER_CRITICAL_SECTION_MS}); // alive and busy for well past STALE_MS
         data.generation += 1;
         const at = new Date().toISOString();
-        return { data, result: null, events: [{ at, id: null, from: null, to: null, event: 'bumpGeneration', data: { generation: data.generation, reason: 'cas-slow-holder' } }] };
+        return { data, result: null, events: [{ at, id: null, from: null, to: null, event: 'bumpGeneration', data: { generation: data.generation, reason: 'live-holder' } }] };
       });
       outcome = { ok: true };
     } catch (e) {
       outcome = { ok: false, name: e && e.name, message: e && e.message };
     }
-    fs.writeFileSync(path.join(dir, 'slow.done'), JSON.stringify(outcome));
+    fs.writeFileSync(path.join(dir, 'holder.done'), JSON.stringify(outcome));
   `);
-  const fastScript = path.join(dir, 'fast.js');
-  fs.writeFileSync(fastScript, `
+  const waiterScript = path.join(dir, 'waiter.js');
+  fs.writeFileSync(waiterScript, `
     'use strict';
     const T = require(${JSON.stringify(path.join(MASTER, 'router', 'tickets.js'))});
     const fs = require('fs');
     const path = require('path');
     const dir = ${JSON.stringify(dir)};
     function sleepSync(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
-    sleepSync(${FAST_STARTUP_DELAY_MS});
-    const store = { dir, lockStaleMs: ${STALE_MS}, lockBudgetMs: ${BUDGET_MS} };
+    sleepSync(400); // let the holder acquire and start its critical section first
+    const store = { dir, lockStaleMs: ${STALE_MS}, lockBudgetMs: ${WAITER_BUDGET_MS} };
     let outcome;
     try {
-      T.bumpGeneration(store, 'cas-fast-writer');
+      T.bumpGeneration(store, 'waiter-must-never-take-over-a-live-holder');
       outcome = { ok: true };
     } catch (e) {
       outcome = { ok: false, name: e && e.name, message: e && e.message };
     }
-    fs.writeFileSync(path.join(dir, 'fast.done'), JSON.stringify(outcome));
+    fs.writeFileSync(path.join(dir, 'waiter.done'), JSON.stringify(outcome));
   `);
 
-  const children = [spawn(process.execPath, [slowScript], { stdio: 'ignore' }), spawn(process.execPath, [fastScript], { stdio: 'ignore' })];
-
+  const children = [spawn(process.execPath, [holderScript], { stdio: 'ignore' }), spawn(process.execPath, [waiterScript], { stdio: 'ignore' })];
   const deadline = Date.now() + 20000;
-  while (Date.now() < deadline && !(fs.existsSync(path.join(dir, 'slow.done')) && fs.existsSync(path.join(dir, 'fast.done')))) {
+  while (Date.now() < deadline && !(fs.existsSync(path.join(dir, 'holder.done')) && fs.existsSync(path.join(dir, 'waiter.done')))) {
     realSleepMs(50);
   }
-  const bothDone = fs.existsSync(path.join(dir, 'slow.done')) && fs.existsSync(path.join(dir, 'fast.done'));
-  check('both the slow holder and the fast (takeover) writer finish within the deadline', bothDone);
+  const bothDone = fs.existsSync(path.join(dir, 'holder.done')) && fs.existsSync(path.join(dir, 'waiter.done'));
+  check('14a: both the live holder and the waiter finish within the deadline', bothDone);
 
-  const slowOutcome = bothDone ? JSON.parse(fs.readFileSync(path.join(dir, 'slow.done'), 'utf8')) : null;
-  const fastOutcome = bothDone ? JSON.parse(fs.readFileSync(path.join(dir, 'fast.done'), 'utf8')) : null;
+  const holderOutcome = bothDone ? JSON.parse(fs.readFileSync(path.join(dir, 'holder.done'), 'utf8')) : null;
+  const waiterOutcome = bothDone ? JSON.parse(fs.readFileSync(path.join(dir, 'waiter.done'), 'utf8')) : null;
+  check('14a: the live (slow) holder completes successfully — never preempted', !!(holderOutcome && holderOutcome.ok === true), JSON.stringify(holderOutcome));
+  check('14a: the waiter never takes over a live holder — it fails closed with a typed TicketStoreError naming the live pid',
+    !!(waiterOutcome && waiterOutcome.ok === false && waiterOutcome.name === 'TicketStoreError' && /lock held by live pid \d+ for > budget/.test(waiterOutcome.message)),
+    JSON.stringify(waiterOutcome));
+
   const final = JSON.parse(fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8'));
-  const successCount = [slowOutcome, fastOutcome].filter((o) => o && o.ok === true).length;
-
-  check('the fast (takeover) writer completed successfully', !!(fastOutcome && fastOutcome.ok === true), JSON.stringify(fastOutcome));
-  check('the slow holder either completed or failed with a TYPED TicketStoreError — never a silent bad outcome',
-    !!(slowOutcome && (slowOutcome.ok === true || (slowOutcome.ok === false && slowOutcome.name === 'TicketStoreError'))),
-    JSON.stringify(slowOutcome));
-  check('no lost update: generation = 1 + (number of writers whose increment actually landed), never fewer',
-    final.generation === 1 + successCount,
-    'got generation ' + final.generation + ', successCount ' + successCount);
-  check('no leftover tombstone files from the takeover rename', fs.readdirSync(dir).every((e) => !e.includes('.stale-')));
-  check('the lock file itself is released (not left held forever) once both processes finish', !fs.existsSync(path.join(dir, 'tickets.lock')));
+  check('14a: no lost update — generation = 1 + exactly the one successful call (the waiter never landed)', final.generation === 2, 'got generation ' + final.generation);
+  check('14a: no tombstone was ever created — the waiter never attempted a takeover of a live holder', fs.readdirSync(dir).every((e) => !e.includes('.stale-')));
+  check('14a: the lock file is released once the live holder finishes', !fs.existsSync(path.join(dir, 'tickets.lock')));
 
   realSleepMs(300);
   for (const c of children) {
@@ -701,3 +728,221 @@ check('the stale-lock threshold defaults to 30s (raised from 10s) and is configu
     if (alive) { try { c.kill(); } catch (e) { /* best effort */ } realSleepMs(300); }
   }
 }
+
+// 14b. A provably DEAD holder — its OS process actually killed (SIGKILL)
+// while it held the lock — IS taken over once the lock is also past
+// lockStaleMs, via the CAS tombstone rename, and the store remains
+// consistent afterward.
+{
+  const dir = tmpDir('tkt-dead-');
+  T.createTicketStore({ dir, init: true });
+  const STALE_MS = 300;
+
+  const doomedScript = path.join(dir, 'doomed.js');
+  fs.writeFileSync(doomedScript, `
+    'use strict';
+    const T = require(${JSON.stringify(path.join(MASTER, 'router', 'tickets.js'))});
+    function sleepSync(ms) { const sab = new SharedArrayBuffer(4); Atomics.wait(new Int32Array(sab), 0, 0, ms); }
+    const store = { dir: ${JSON.stringify(dir)}, lockStaleMs: ${STALE_MS}, lockBudgetMs: 30000 };
+    T._internal.withStore(store, (data) => {
+      sleepSync(60000); // never reached in practice — this process is killed from outside first
+      return { data, result: null, events: [] };
+    });
+  `);
+  const doomed = spawn(process.execPath, [doomedScript], { stdio: 'ignore' });
+
+  const lockPath = path.join(dir, 'tickets.lock');
+  const acquireDeadline = Date.now() + 10000;
+  while (Date.now() < acquireDeadline && !fs.existsSync(lockPath)) realSleepMs(25);
+  check('14b: the doomed holder actually acquired the lock before being killed', fs.existsSync(lockPath));
+
+  try { process.kill(doomed.pid, 'SIGKILL'); } catch (e) { /* already gone */ }
+  realSleepMs(400); // let the OS actually reap it
+  let doomedAlive = true;
+  try { process.kill(doomed.pid, 0); } catch (e) { doomedAlive = false; }
+  check('14b: the doomed holder\'s OS process is confirmed dead', !doomedAlive);
+
+  realSleepMs(STALE_MS + 200); // cross the staleness threshold with the holder already dead
+
+  const store = { dir, lockStaleMs: STALE_MS, lockBudgetMs: 5000 };
+  let takeoverOutcome;
+  try {
+    const r = T.bumpGeneration(store, 'takeover-of-a-dead-holder');
+    takeoverOutcome = { ok: true, generation: r.generation };
+  } catch (e) {
+    takeoverOutcome = { ok: false, name: e.name, message: e.message };
+  }
+  check('14b: a second writer takes over the dead holder\'s lock and its write lands', !!(takeoverOutcome && takeoverOutcome.ok === true), JSON.stringify(takeoverOutcome));
+
+  const final = JSON.parse(fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8'));
+  check('14b: the store is consistent after takeover — generation = 2 (genesis 1 + the taker\'s one increment)', final.generation === 2, 'got generation ' + final.generation);
+  check('14b: no leftover tombstone file after takeover', fs.readdirSync(dir).every((e) => !e.includes('.stale-')));
+  check('14b: the lock file is released (not left held) after the takeover completes', !fs.existsSync(lockPath));
+}
+
+// ==================================================== 15. seq
+
+section('15. Fix round 2, finding 1 — seq: every committed write increments it by exactly one; event lines carry the matching seq');
+
+{
+  const store = freshStore('tkt-seq-');
+  const before = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+  check('a freshly initialized store starts at seq 0', before.seq === 0);
+
+  const t = T.issue(store, baseFields());                                        // 0 -> 1
+  T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' });                // 1 -> 2
+  try { T.consume(store, t.id, { tool_use_id: 'tu2', role: 'Builder' }); } catch (e) { /* denied, still a committed write: 2 -> 3 */ }
+  T.launch(store, t.id, { agent_id: 'a', served_model: 'm' });                   // 3 -> 4
+  T.resolve(store, t.id, { agent_id: 'a', last_assistant_message: 'x', agent_transcript_path: 'p' }); // 4 -> 5
+  T.close(store, t.id, { code: 'CLOSED' });                                      // 5 -> 6
+
+  const after = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+  check('seq incremented by exactly one per committed write (6 writes -> seq 6)', after.seq === 6, 'got seq ' + after.seq);
+
+  const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const seqs = lines.map((l) => l.seq);
+  check('every event line carries a numeric seq', seqs.every((s) => typeof s === 'number'));
+  check('the highest event seq equals the final store seq', Math.max(...seqs) === after.seq);
+  check('seqs used are exactly 1..6, one per committed write (none skipped, none repeated across different writes)',
+    Array.from(new Set(seqs)).sort((a, b) => a - b).join(',') === '1,2,3,4,5,6', 'got seqs ' + seqs.join(','));
+}
+
+// ==================================================== 16. unwritable events log
+
+section('16. Fix round 2, finding 2 — an unwritable events log leaves the state UNCHANGED and throws TicketStoreError');
+
+check('events log path replaced by a directory: issue() throws TicketStoreError, tickets.json byte-identical after, no ticket created',
+  (() => {
+    const dir = tmpDir('tkt-unwritable-');
+    const store = T.createTicketStore({ dir, init: true });
+    const eventsPath = T._internal.eventsFile(dir);
+    fs.mkdirSync(eventsPath); // makes every append attempt fail closed, on every OS — unlike chmod, which Windows does not reliably enforce
+    const before = fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8');
+    let threw = null;
+    try { T.issue(store, baseFields()); } catch (e) { threw = e; }
+    const after = fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8');
+    const afterParsed = JSON.parse(after);
+    return threw instanceof T.TicketStoreError && before === after && Object.keys(afterParsed.tickets).length === 0 && afterParsed.seq === 0;
+  })());
+
+check('_fs hook: an injected failing appendFileSync leaves state unchanged and throws TicketStoreError, zero bytes appended to the log',
+  (() => {
+    const dir = tmpDir('tkt-fshook-');
+    const store = T.createTicketStore({ dir, init: true, _fs: { appendFileSync: () => { throw new Error('simulated append failure'); } } });
+    const before = fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8');
+    let threw = null;
+    try { T.issue(store, baseFields()); } catch (e) { threw = e; }
+    const after = fs.readFileSync(path.join(dir, 'tickets.json'), 'utf8');
+    const eventsRaw = fs.existsSync(path.join(dir, 'tickets.events.jsonl')) ? fs.readFileSync(path.join(dir, 'tickets.events.jsonl'), 'utf8') : '';
+    return threw instanceof T.TicketStoreError && /append failed/.test(threw.message) && before === after && eventsRaw.trim() === '';
+  })());
+
+// ==================================================== 17. crash between append and rename
+
+section('17. Fix round 2, finding 2 — a crash between the event append and the state rename reconciles on next load');
+
+check('an event line appended with seq = state.seq + 1 but the state never committed: next load leaves state unchanged, appends one reconcile line naming the dropped seq, never throws, and subsequent writes resume at the correct seq',
+  (() => {
+    const store = freshStore('tkt-crash-');
+    const t = T.issue(store, baseFields()); // seq 0 -> 1, committed normally
+    const before = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+
+    // Simulate exactly the crash window: append an event carrying seq+1
+    // directly (bypassing withStore) and do NOT write state — this is what
+    // a process death between the event append and the state rename leaves
+    // behind.
+    const crashedSeq = before.seq + 1;
+    fs.appendFileSync(path.join(store.dir, 'tickets.events.jsonl'), JSON.stringify({ at: new Date().toISOString(), id: t.id, from: 'OPEN', to: 'CONSUMED', event: 'consume', data: { simulated: 'crash' }, seq: crashedSeq }) + '\n');
+
+    const fetched = T.get(store, t.id); // any load reconciles
+    const stateAfterReconcile = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+    const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const reconcileLines = lines.filter((l) => l.event === 'reconcile');
+
+    const stateUnchanged = stateAfterReconcile.seq === before.seq && fetched.status === 'OPEN';
+    const reconciled = reconcileLines.length >= 1 && reconcileLines[0].data.dropped.includes(crashedSeq) && reconcileLines[0].seq === before.seq;
+
+    const consumed = T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' }); // a real write must land at the correct next seq (crashedSeq reused — it never actually committed)
+    const finalState = JSON.parse(fs.readFileSync(path.join(store.dir, 'tickets.json'), 'utf8'));
+
+    return stateUnchanged && reconciled && consumed.status === 'CONSUMED' && finalState.seq === before.seq + 1;
+  })());
+
+// ==================================================== 18. expiry denial events
+
+section('18. Fix round 2, finding 3 — expiry-triggered launch/resolve refusals carry BOTH the expire transition and a denied event');
+
+check('finding 3: a late launch produces events [issue, consume, expire, denied] with attempts [launch], not just [issue, consume, expire]',
+  (() => {
+    const store = freshStore('tkt-denyev-launch-');
+    const t = T.issue(store, baseFields({ ttlMs: 300 }));
+    T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' });
+    realSleepMs(400);
+    try { T.launch(store, t.id, { agent_id: 'a', served_model: 'm' }); } catch (e) { /* expected */ }
+    const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const names = lines.map((l) => l.event);
+    const deniedLine = lines.find((l) => l.event === 'denied');
+    const after = T.get(store, t.id);
+    return names.join(',') === 'issue,consume,expire,denied' &&
+      !!deniedLine && deniedLine.data.attempted === 'launch' &&
+      after.attempts.length === 1 && after.attempts[0].event === 'launch' &&
+      after.status === 'EXPIRED';
+  })());
+
+check('finding 3: a late resolve produces events [issue, consume, launch, expire, denied] with attempts [resolve]',
+  (() => {
+    const store = freshStore('tkt-denyev-resolve-');
+    const t = T.issue(store, baseFields({ ttlMs: 300 }));
+    T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' });
+    T.launch(store, t.id, { agent_id: 'a', served_model: 'm' });
+    realSleepMs(400);
+    try { T.resolve(store, t.id, { agent_id: 'a', last_assistant_message: 'x', agent_transcript_path: 'p' }); } catch (e) { /* expected */ }
+    const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const names = lines.map((l) => l.event);
+    const deniedLine = lines.find((l) => l.event === 'denied');
+    const after = T.get(store, t.id);
+    return names.join(',') === 'issue,consume,launch,expire,denied' &&
+      !!deniedLine && deniedLine.data.attempted === 'resolve' &&
+      after.attempts.length === 1 && after.attempts[0].event === 'resolve' &&
+      after.status === 'EXPIRED';
+  })());
+
+// ==================================================== 19. other typed refusals still land in the events log
+
+section('19. Refusal events for replay / wrong-role / wrong-kind land in the events log too (unchanged by the write-ahead redesign)');
+
+check('a replayed consume is refused AND recorded as an event line (event:"consume", from===to, carrying a seq)',
+  (() => {
+    const store = freshStore('tkt-refuse-replay-');
+    const t = T.issue(store, baseFields());
+    T.consume(store, t.id, { tool_use_id: 'tu1', role: 'Builder' });
+    try { T.consume(store, t.id, { tool_use_id: 'tu2', role: 'Builder' }); } catch (e) { /* expected */ }
+    const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const replayLine = lines[lines.length - 1];
+    return replayLine.event === 'consume' && replayLine.from === 'CONSUMED' && replayLine.to === 'CONSUMED' &&
+      /one-use/.test(replayLine.data.reason) && typeof replayLine.seq === 'number' && replayLine.seq === lines.length;
+  })());
+
+check('a wrong-role consume is refused AND recorded as an event line',
+  (() => {
+    const store = freshStore('tkt-refuse-role-');
+    const t = T.issue(store, baseFields({ role: 'Builder' }));
+    try { T.consume(store, t.id, { tool_use_id: 'tu', role: 'Scout' }); } catch (e) { /* expected */ }
+    const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const wrongRoleLine = lines[lines.length - 1];
+    return wrongRoleLine.event === 'consume' && wrongRoleLine.from === 'OPEN' && wrongRoleLine.to === 'OPEN' &&
+      /for role Builder, not Scout/.test(wrongRoleLine.data.reason);
+  })());
+
+check('a wrong-kind Q0 reference (finding 5) is refused AND recorded as an event line',
+  (() => {
+    const store = freshStore('tkt-refuse-kind-');
+    const reviewer = T.issue(store, baseFields({ kind: 'reviewer', role: 'Reviewer', rung: 'computed', reviewer_of: 'tkt-0000000000000000' }));
+    T.consume(store, reviewer.id, { tool_use_id: 'tu-rev', role: 'Reviewer' });
+    T.launch(store, reviewer.id, { agent_id: 'rev-agent', served_model: 'm' });
+    const impl = T.issue(store, baseFields({ q0_ticket: reviewer.id }));
+    try { T.consume(store, impl.id, { tool_use_id: 'tu-impl', role: 'Builder' }); } catch (e) { /* expected */ }
+    const lines = fs.readFileSync(path.join(store.dir, 'tickets.events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const wrongKindLine = lines.filter((l) => l.id === impl.id).pop();
+    return !!wrongKindLine && wrongKindLine.event === 'consume' && /to have kind 'q0'/.test(wrongKindLine.data.reason);
+  })());

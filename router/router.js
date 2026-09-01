@@ -1029,16 +1029,23 @@ function createRouter(opts) {
     // retired Archivist role declared (noMirrorFor.videoAudio) — restored
     // generically here: any mergedClasses entry may declare
     // `unavailable: { <medium>: reason }`; a request naming that medium is
-    // refused typed UNAVAILABLE before a role/rung is ever consulted. The
-    // medium is read ONLY from castOpts.medium — explicit caller intent,
-    // never inferred from context_packet or any other free-text field — so
-    // order.schema.json (out of this fix round's edit set) needs no change;
-    // a future leg that wants an order-level `medium` field can add it and
-    // fold it into this same read.
+    // refused typed UNAVAILABLE before a role/rung is ever consulted.
+    //
+    // Fix round 2 (finding 3, MAJOR): review #2 found this guard unreachable
+    // through the public contract — dispatch-request.schema.json rejected
+    // `medium` as an additional property, so only an internal castOpts
+    // injection could ever trigger it. order.schema.json and
+    // dispatch-request.schema.json now both carry an optional `medium` enum
+    // (documents/images/videoAudio); the guard reads BOTH order.medium (the
+    // schema-validated public path a Conductor actually reaches through
+    // orchestra_dispatch) and castOpts.medium (explicit caller/internal
+    // intent, unchanged) — either one naming the unavailable medium refuses.
+    // Never inferred from context_packet or any other free-text field.
     if (merge && merge.unavailable) {
-      const medium = o.castOpts && o.castOpts.medium;
-      if (medium !== undefined && hasOwn(merge.unavailable, medium)) {
-        return { ok: false, outcome: 'UNAVAILABLE', class: cls, role: roleName, order, reason: merge.unavailable[medium] };
+      for (const medium of [order.medium, o.castOpts && o.castOpts.medium]) {
+        if (medium !== undefined && hasOwn(merge.unavailable, medium)) {
+          return { ok: false, outcome: 'UNAVAILABLE', class: cls, role: roleName, order, reason: merge.unavailable[medium] };
+        }
       }
     }
 

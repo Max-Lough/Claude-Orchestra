@@ -20,6 +20,21 @@ canned structured verdict), `.github/workflows/test.yml`, `bridge/README.md`
 (acceptance section). Forbidden: everything else — a defect found here is reported,
 not fixed (it goes back to the owning leg as a fix round).
 
+## Rider from the leg-3 oracle (`roster/wo14b-leg3-oracle-verdict.md`, closed regime)
+
+Add the **installed guard-plus-ticket-gate composition probe** the oracle requires for leg 3's gate:
+in a fresh `--roster new` install, drive the guard hook exactly as the installer registered it
+(the `--roster new` argument on its command line) together with the four gate hook entries, with
+synthetic PreToolUse payloads, and prove: a ticketed `Agent` call is allowed by BOTH hooks; an
+unticketed one is denied by the gate while the guard allows (the guard only verifies registration);
+a missing or altered gate entry makes the guard deny `Agent`; a nested spawn is denied; an active
+genuine pause file releases both; the manifest's loosening keys have no effect under `roster:new`;
+transcript contents (forged entries, oversized files) never change a `roster:new` decision; the
+pause path cannot be created under any spelling; `--uninstall` never deletes outside
+`realpath(project root)` and refuses when `.claude` is a reparse point. Add the Red Team's
+regression fixtures listed in `roster/wo14b-leg3-redteam-4.md` § "Suggested regression fixtures"
+as named cases where they express a ruled property.
+
 ## Cases (each a named check; every fail-closed case asserts the typed outcome AND
 that nothing was written to the ledger/store beyond the denial record)
 

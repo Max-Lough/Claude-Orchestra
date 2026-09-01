@@ -32,6 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawnSync } = require('child_process');
 
 const SUBSTRATE_ROOT = path.join(__dirname, '..');
 
@@ -41,6 +42,7 @@ const quartermaster = require(path.join(SUBSTRATE_ROOT, 'quartermaster', 'quarte
 const { validate } = require(path.join(SUBSTRATE_ROOT, 'verifier', 'schema-check.js'));
 const { readTrustedManifest, pinFileFor } = require(path.join(__dirname, 'manifest.js'));
 const closeModule = require(path.join(__dirname, 'close.js'));
+const telemetry = require(path.join(__dirname, 'telemetry.js'));
 
 const CASTINGS_FILE = path.join(SUBSTRATE_ROOT, 'router', 'castings.json');
 const ALIASES_FILE = path.join(SUBSTRATE_ROOT, 'router', 'aliases.json');
@@ -51,6 +53,26 @@ const DISPATCH_REQUEST_SCHEMA = JSON.parse(
 const MANIFEST_REL = ['.claude', 'orchestra.json'];
 const TICKETS_DIR_REL = ['.claude', 'orchestra', 'tickets'];
 const TICKET_ID_RE = /TICKET=(tkt-[0-9a-f]{16})/;
+
+// WO-14b repair B item 1 (amended): the dispatch envelope — one record per
+// dispatched task, keyed by task_id (already a required field on every
+// ticket) so closure derives its path directly, never by searching
+// routing.events.jsonl. router/tickets.js mints ticket ids internally and
+// ticket.schema.json is closed (additionalProperties:false, not in this
+// leg's FILES) — an envelope containing ticket ids cannot exist before
+// issuance, and no `envelope` field is added to the ticket shape. Reuses
+// bridge/telemetry.js's ledgerDir() for the path (the same `ledger/<id>/`
+// layout, just keyed by task_id here instead of ticket id).
+function envelopeFile(projectDir, taskId) {
+  return path.join(telemetry.ledgerDir(projectDir, taskId), 'envelope.json');
+}
+// Exclusive-create (fs 'wx'): the envelope is written exactly once, before
+// any ticket for this task is issued — a second dispatch() for the same
+// task_id must not silently overwrite the first task's audit record.
+function writeEnvelopeExclusive(file, obj) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(obj, null, 2) + '\n', { flag: 'wx' });
+}
 
 function typedError(code, message, extra) {
   const e = new Error(message);
@@ -404,15 +426,17 @@ function createRuntime({ projectDir, repoDir } = {}) {
       return { ok: false, outcome: 'P0_UNAVAILABLE', reason: 'router.dispatch() threw: ' + (e && e.message ? e.message : String(e)) };
     }
 
-    // Item 10: the routing event is appended BEFORE any ticket is issued —
-    // an append failure is typed and fatal, nothing is routed.
-    try {
-      appendRoutingEvent(projectDir, { request, buckets_digest: digestBuckets(buckets), outcome: result });
-    } catch (e) {
-      return { ok: false, outcome: e.code || 'ROUTING_LOG_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
+    if (!result.ok) {
+      // Item 10 (unchanged): the routing event is still appended for a
+      // non-routing outcome — an append failure is typed and fatal. No
+      // envelope is written here: nothing is being issued.
+      try {
+        appendRoutingEvent(projectDir, { request, buckets_digest: digestBuckets(buckets), outcome: result });
+      } catch (e) {
+        return { ok: false, outcome: e.code || 'ROUTING_LOG_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
+      }
+      return result;
     }
-
-    if (!result.ok) return result;
 
     // Item 9: fail closed on a missing/unreadable store rather than
     // silently reinitialising one — checked here, right before any ticket
@@ -425,6 +449,54 @@ function createRuntime({ projectDir, repoDir } = {}) {
       return { ok: false, outcome: 'STORE_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
     }
     const hash = configHash(projectDir);
+
+    // Item 1: stamp the canonical order with the dispatcher-owned fields
+    // order.schema.json requires but a raw request cannot carry —
+    // dispatch-request.schema.json's own description names exactly these
+    // four (requested_casting, author_family, review_policy,
+    // integrity_nonce) as this runtime's to mint, never the caller's.
+    order.author_family = order.author_family === 'human' ? 'human' : result.casting.casting.vendor;
+    order.requested_casting = result.casting.casting;
+    order.review_policy = result.review_policy;
+    order.integrity_nonce = crypto.randomBytes(8).toString('hex');
+
+    // base: the repo HEAD at dispatch — the immutable audit base close #1
+    // reads instead of the reported commit's parent (repair A/B ruling).
+    let base = null;
+    try {
+      const r = spawnSync('git', ['-C', effectiveRepoDir, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
+      if (!r.error && r.status === 0) base = String(r.stdout || '').trim() || null;
+    } catch (_) { /* base stays null — e.g. a repo with no commits yet */ }
+
+    const envelopePath = envelopeFile(projectDir, order.task_id);
+    const envelope = {
+      request,
+      order,
+      base,
+      risk: request.risk,
+      requested_casting: (result.casting && result.casting.requested) || result.casting.casting,
+      served_casting: result.casting.casting,
+      routing_result: result,
+      at: new Date().toISOString(),
+    };
+    // Item 1 (amended): written exclusively, BEFORE any ticket is issued —
+    // a write failure (including a pre-existing envelope for this task_id)
+    // is typed ENVELOPE_UNAVAILABLE and nothing is issued. No ticket ids
+    // are recorded here — closure derives this same path from a ticket's
+    // own task_id.
+    try {
+      writeEnvelopeExclusive(envelopePath, envelope);
+    } catch (e) {
+      return { ok: false, outcome: 'ENVELOPE_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
+    }
+
+    // Item 10: the routing event stays the ticket census (request + routing
+    // outcome) — unchanged by the envelope.
+    try {
+      appendRoutingEvent(projectDir, { request, buckets_digest: digestBuckets(buckets), outcome: result });
+    } catch (e) {
+      return { ok: false, outcome: e.code || 'ROUTING_LOG_UNAVAILABLE', reason: e && e.message ? e.message : String(e) };
+    }
 
     // ticket.role is compared, verbatim, against the REAL Agent tool call's
     // tool_input.subagent_type by gate()'s PreToolUse consume() — that is

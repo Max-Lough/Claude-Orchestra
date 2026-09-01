@@ -26,7 +26,7 @@ With author, Conductor, and the Anthropic reviewer sharing training lineage, a r
 
 ## Tools
 
-Exactly one tool: `orchestra_review` (the MCP review runner) — one call per review; the runner owns retries, sandboxing, pinned worktrees, the tree audit, and the report-integrity nonce. Pass the work order and author report through verbatim; translate caps and refs into arguments (`head_ref`/`base_ref` whenever the change is committed, `timeout_ms`, `tier`, `no_tests`, `forbid`). Prose configures nothing. Context shape: `packet` (the launcher's own); the engine reads `repo` in its checkout.
+Exactly one tool: `orchestra_review` (the MCP review runner) — one call per review; the runner owns retries, sandboxing, pinned worktrees, the tree audit, and the report-integrity nonce. Pass `ticket` (this launcher's own `TICKET=` header value) and `role` (its own `ROLE=` header value) to `orchestra_review` verbatim — the engine server's ticket authorization binds to exactly the ticket that spawned this launcher, never re-derived or altered. Pass the work order and author report through verbatim; translate caps and refs into arguments (`head_ref`/`base_ref` whenever the change is committed — from this launcher's own `PINNED_RANGE=<base>..<head>` header — `timeout_ms`, `tier`, `no_tests`, `forbid`). Prose configures nothing. Context shape: `packet` (the launcher's own); the engine reads `repo` in its checkout.
 
 ## Strengths
 

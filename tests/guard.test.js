@@ -1337,12 +1337,18 @@ function case29_uppercaseManifestSha256Pin() {
     by: 'install.js',
   });
 
-  // (a) the guard itself: an uppercase (but otherwise byte-correct) hash is
-  // schema-invalid -> UNTRUSTED-NEW -> undetermined model denied.
-  const r = runGuard(proj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinDirPath });
-  const d = decisionOf(r);
-  check('an uppercase manifestSha256 pin (correct hash, wrong case) -> UNTRUSTED-NEW -> DENIES (undetermined model)', d.decision === 'deny', JSON.stringify(d));
-  check('the denial names "invalid pin (manifestSha256)" (the guard\'s own regex, not "hash mismatch")', /invalid pin \(manifestSha256\)/.test(d.reason), d.reason);
+  // (a) the guard itself, under the leg-3R closed regime: mode comes from the
+  // hook invocation argument, never from the pin. Under `--roster new` an
+  // undetermined model is denied regardless of the pin, and the
+  // case-insensitively-wrong hash surfaces as a tamper NOTE on the denial
+  // (the pin is evidence, not activation authority). Without the argument
+  // the legacy path stands down as before — the pin cannot select the mode.
+  const rNew = runGuardNew(proj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinDirPath });
+  const dNew = decisionOf(rNew);
+  check('--roster new + an uppercase manifestSha256 pin (correct hash, wrong case) -> DENIES (undetermined model; the pin never selects the mode)', dNew.decision === 'deny', JSON.stringify(dNew));
+  check('the denial carries a pin tamper note (case-sensitive hash check; the pin is evidence only)', /pin/i.test(String(dNew.reason)), dNew.reason);
+  const rLegacy = runGuard(proj, { tool_name: 'Bash', tool_input: { command: 'echo hi' } }, { ORCHESTRA_PIN_DIR: pinDirPath });
+  check('legacy invocation with the same pin -> stand-down allow (a pin cannot promote a project to roster:new)', decisionOf(rLegacy).decision === 'allow', JSON.stringify(decisionOf(rLegacy)));
 
   // (b) bridge/manifest.js's own readTrustedManifest(), driven directly
   // (never through the guard) against the SAME pin dir + project — proves

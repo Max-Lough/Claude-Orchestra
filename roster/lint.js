@@ -47,7 +47,7 @@ const charters = JSON.parse(fs.readFileSync(path.join(MASTER, 'router', 'charter
 // `woN-` or `rN-exN-` prefix by convention; dated campaign records
 // (readiness-*, roster-*) carry a `-YYYY-MM-DD.md` suffix.
 const NON_ROLE_NAMES = new Set(['README.md', 'EXERCISES.md']);
-const RECORD_DOC_RE = /^(wo\d+-|r\d+-ex\d+-|(readiness|roster)-.*-\d{4}-\d{2}-\d{2}\.md$)/;
+const RECORD_DOC_RE = /^(wo\d+[a-z]?-|r\d+-ex\d+-|(readiness|roster)-.*-\d{4}-\d{2}-\d{2}\.md$)/;
 const isRoleFile = (f) => f.endsWith('.md') && !NON_ROLE_NAMES.has(f) && !RECORD_DOC_RE.test(f);
 
 const NINE_FIELDS = [

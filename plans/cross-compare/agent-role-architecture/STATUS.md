@@ -825,6 +825,21 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   and draws down the review reserve — a deliberate choice, never a degradation target).
   The file retirements, both toggles, the stale-family MAJOR fix, and the ladder all land
   in the bridge tranche so `roster/lint.js` and `install.js --lint` move once.
+  **WO-14b activation bridge — DRAFTED, ORACLE-RULED, IN PROGRESS (2026-09-01):** v1
+  draft (`9bfc021`) refused by the third scope-oracle pass (Sol·xhigh,
+  `roster/wo14b-oracle-verdict.md`): right tranche and right basic mechanism (ticketed
+  dispatch), but an Agent-only gate leaves raw `orchestra_exec`/`orchestra_review`
+  bypasses, no ticket lifecycle, casting records cannot be truthfully written at dispatch,
+  the dispatch input contradicts `order.schema.json`, the review runner is prose-only
+  against structured verdict/audit schemas, and a synthetic canary could pass with a
+  harness that blocks every spawn. Reshaped into seven sequential bounded legs
+  (`roster/wo14b-activation-bridge-order.md` v2): 1 host lifecycle proof (can stop the
+  tranche) → 2 contracts + ruled migration → 3 installer/guard → 4 activation state
+  machine (tickets gate Agent AND raw engine tools; stop hook) → 5 two-stage closure with
+  structured verdict + audit → 6 deterministic installed acceptance → 7 live installed
+  canary in both vendor directions. Oracle-authored stopping rules and gate are in the
+  order; progress file `roster/wo14b-activation-bridge-progress.md`; 80-tool-call leg
+  ceiling; branch `claude/wo14b-bridge`.
 - Manual companions the probes cannot capture: vendor-UI allowance readings, Opus-bucket
   edge observation, served-model checks (listed in the RUNBOOK).
 

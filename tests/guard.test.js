@@ -45,9 +45,10 @@
  *      now a TAMPER RECEIPT ONLY (see case14): it never selects roster and
  *      never gates which policy keys apply. Legacy honours
  *      `directorAllowedTools`/`directorPlanPatterns`/`directorMemoryPatterns`
- *      directly off the manifest, pin or no pin. `--roster new` ignores all
- *      three unconditionally, trusted-looking pin or not — a warning names
- *      any that were set. `directorBlockedPatterns` (tightening) is
+ *      directly off the manifest, pin or no pin. `--roster new` ignores the
+ *      tool key (`directorAllowedTools`) unconditionally, trusted-looking
+ *      pin or not — a warning names it — but honours the two PATH keys
+ *      (owner ruling 2026-09-02, case14 b'). `directorBlockedPatterns` (tightening) is
  *      honoured unconditionally in BOTH rosters. A pin/manifest hash
  *      mismatch or a corrupt pin file appends a warning note to whatever
  *      denial follows, but is never itself the reason for one.
@@ -923,9 +924,36 @@ function case14_pinIsTamperReceiptOnly() {
   check('(b) --roster new: directorAllowedTools is IGNORED even with a hash-matching pin -> Grep still denied', dNewIgnoresLoosening.decision === 'deny', JSON.stringify(dNewIgnoresLoosening));
   check(
     '(b) the denial names the ignored loosening key',
-    /directorAllowedTools/.test(dNewIgnoresLoosening.reason) && /ignores every loosening key/.test(dNewIgnoresLoosening.reason),
+    /directorAllowedTools/.test(dNewIgnoresLoosening.reason) && /ignores the tool-loosening key/.test(dNewIgnoresLoosening.reason),
     dNewIgnoresLoosening.reason
   );
+
+  // (b') Owner ruling 2026-09-02 (shakedown): the PATH keys are honoured
+  // under roster:new. A project may name a status/plan file outside
+  // .claude/plans/ as Director-editable; a sibling markdown file that the
+  // pattern does not name stays denied, and the .md rule still binds.
+  const newPlanPattern = setupPinnedProject('new', { directorPlanPatterns: ['docs/current_status.md'] });
+  fs.mkdirSync(path.join(newPlanPattern.proj, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(newPlanPattern.proj, 'docs', 'current_status.md'), '# status\n');
+  fs.writeFileSync(path.join(newPlanPattern.proj, 'docs', 'other.md'), '# other\n');
+  const rStatusEdit = runGuardNew(
+    newPlanPattern.proj,
+    { tool_name: 'Edit', tool_input: { file_path: 'docs/current_status.md', old_string: 'status', new_string: 'status now' } },
+    { ORCHESTRA_PIN_DIR: newPlanPattern.pinDirPath }
+  );
+  check("(b') --roster new: directorPlanPatterns names docs/current_status.md -> Edit allowed", decisionOf(rStatusEdit).decision === 'allow', JSON.stringify(decisionOf(rStatusEdit)));
+  const rOtherEdit = runGuardNew(
+    newPlanPattern.proj,
+    { tool_name: 'Edit', tool_input: { file_path: 'docs/other.md', old_string: 'other', new_string: 'x' } },
+    { ORCHESTRA_PIN_DIR: newPlanPattern.pinDirPath }
+  );
+  check("(b') --roster new: a docs/*.md the pattern does not name -> still denied", decisionOf(rOtherEdit).decision === 'deny', JSON.stringify(decisionOf(rOtherEdit)));
+  const rStatusNoPattern = runGuardNew(
+    newPinned.proj,
+    { tool_name: 'Edit', tool_input: { file_path: 'docs/current_status.md', old_string: 'a', new_string: 'b' } },
+    { ORCHESTRA_PIN_DIR: newPinned.pinDirPath }
+  );
+  check("(b') --roster new without the pattern: docs/current_status.md stays denied", decisionOf(rStatusNoPattern).decision === 'deny', JSON.stringify(decisionOf(rStatusNoPattern)));
 
   // (b) The six previously-unloosenable tools are simply denied like every
   // other BLOCKED tool now — there is no manifest state that changes that

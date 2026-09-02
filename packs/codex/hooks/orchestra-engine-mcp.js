@@ -388,6 +388,27 @@ function extractReportedModel(text) {
   return m ? m[1].trim() : null;
 }
 
+// A ticket's casting carries the ROSTER display name ("GPT-5.6 Terra");
+// the Codex CLI wants the model id ("gpt-5.6-terra"). Shakedown 2026-09-02
+// (PL-18 root cause, corrected): forwarding the display name verbatim as
+// `--model` made Codex answer 400 "The 'GPT-5.6 Terra' model is not supported
+// when using Codex with a ChatGPT account" — an entitlement-shaped message
+// for what was a name-shape defect. Anything already id-shaped passes through
+// unchanged; unknown display names fall back to lower-case with spaces
+// hyphenated, which is the id convention for every OpenAI casting on the ladder.
+const CODEX_MODEL_IDS = {
+  'gpt-5.6 sol': 'gpt-5.6-sol',
+  'gpt-5.6 terra': 'gpt-5.6-terra',
+  'gpt-5.6 luna': 'gpt-5.6-luna',
+};
+function codexModelId(name) {
+  const s = String(name || '').trim();
+  if (!s) return null;
+  if (!/\s/.test(s)) return s;
+  const key = s.toLowerCase();
+  return CODEX_MODEL_IDS[key] || key.replace(/\s+/g, '-');
+}
+
 /* ------------------------------------------------- in-flight run registry -- */
 
 // JSON-RPC request id -> the run it started. Populated at spawn, cleared in the
@@ -968,7 +989,7 @@ const TOOLS = [
       // never supplied, falls through to here. Legacy/unticketed calls
       // (gated.skip) have no ticket to source from, so the caller's own
       // values (if any) are used exactly as before.
-      const effectiveModel = gated.consumed ? (gated.consumed.casting && gated.consumed.casting.model) || null : callerModel;
+      const effectiveModel = codexModelId(gated.consumed ? (gated.consumed.casting && gated.consumed.casting.model) || null : callerModel);
       const effectiveEffort = gated.consumed ? (gated.consumed.casting && gated.consumed.casting.effort) || null : callerEffort;
 
       const dir = makeRunDir('exec');

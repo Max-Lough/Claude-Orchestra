@@ -139,7 +139,8 @@ section('3. Every rung yields its documented casting set (Part 2, transcribed)')
 const EXPECTED_RUNGS = {
   'Conductor': { primary: 'anthropic|Fable 5|owner-set', mirror: 'openai|GPT-5.6 Sol|matched' },
   'Architect': { primary: 'openai|GPT-5.6 Sol|xhigh', nebulous: 'anthropic|Fable 5|high–xhigh', exhaustionFallback: 'anthropic|Opus 5|high', mirror: 'anthropic|Fable 5|high–xhigh', ceilingAnthropic: 'anthropic|Fable 5|xhigh', ceilingOpenai: 'openai|GPT-5.6 Sol|max' },
-  'Investigator': { primary: 'anthropic|Opus 5|high', mirror: 'openai|GPT-5.6 Sol|high', ceiling: 'anthropic|Fable 5|high' },
+  // `bounded` = the retired Scout's N0 casting, restored by owner ruling 2026-09-02 (PL-36).
+  'Investigator': { bounded: 'anthropic|Haiku 4.5|off', primary: 'anthropic|Opus 5|high', mirror: 'openai|GPT-5.6 Sol|high', ceiling: 'anthropic|Fable 5|high' },
   'Builder': {
     preferredBounded: 'openai|GPT-5.6 Luna|xhigh–max', primary: 'anthropic|Sonnet 5|med', dense: 'anthropic|Sonnet 5|high', mirror: 'openai|GPT-5.6 Terra|med',
     denseMirror: 'openai|GPT-5.6 Terra|high', denseOverrideSol: 'openai|GPT-5.6 Sol|med', deepPrimary: 'anthropic|Opus 5|high', deepOverrideSol: 'openai|GPT-5.6 Sol|high',
@@ -1151,7 +1152,10 @@ check('merged-class dispatch: E3 keeps its mandatory review row (class carries t
 check('merged-class dispatch: N0 routes to Investigator, mode N0, carrying the read-only pin',
   (() => {
     const d = router.dispatch(order('N0', 'T0'), G);
-    return d.ok && d.class === 'N0' && d.role === 'Investigator' && d.mode === 'N0' && d.pin === 'read-only' && d.casting.casting.model === 'Opus 5';
+    // PL-36 (owner ruling 2026-09-02): N0 runs at the Investigator's bounded
+    // Haiku rung — the retired Scout's casting — never the Opus primary.
+    return d.ok && d.class === 'N0' && d.role === 'Investigator' && d.mode === 'N0' && d.pin === 'read-only' &&
+      d.casting.rung === 'bounded' && d.casting.casting.model === 'Haiku 4.5' && d.casting.casting.effort === 'off';
   })());
 check('merged-class dispatch: N1/N2/M0 all route to Investigator with their own mode, no tier field (Investigator is not tiered)',
   ['N1', 'N2', 'M0'].every((cls) => {

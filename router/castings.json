@@ -141,6 +141,7 @@
       "defaultEnabled": true,
       "contextShapes": ["packet", "scoped", "subsystem", "repo"],
       "rungs": {
+        "bounded": { "vendor": "anthropic", "model": "Haiku 4.5", "effort": "off", "note": "N0 mode only — where/what/list lookups, the retired Scout's casting restored (PL-36, owner ruling 2026-09-02: the Haiku scout was never retired for poor results; both WO-9 inventories were correct, only its self-reported counts were off). Never causal why/how work; the dispatcher verifies any count claim mechanically" },
         "primary": { "vendor": "anthropic", "model": "Opus 5", "effort": "high" },
         "mirror": { "vendor": "openai", "model": "GPT-5.6 Sol", "effort": "high", "note": "preferred when the defect is environment- or tool-loop-shaped; wrong for race hunts — the concurrency blind spot" },
         "ceiling": { "vendor": "anthropic", "model": "Fable 5", "effort": "high", "ceiling": true, "note": "trail cold and blocking, or after two failed hunts with different hypotheses" }
@@ -251,7 +252,7 @@
   "mergedClasses": {
     "$comment": "WO-14b leg 2b (owner rulings 2026-09-01): every class stays a routing label in registry/classes.json even though its dedicated role/file is retired. A1 has no role at all — dispatch returns typed RETIRED_WORKFLOW naming the documented workflow. N0/N1/N2/M0 merge into Investigator (mode = the former class id; N0 keeps the read-only pin behavior). E0/E1/E3/E5/E6/E8/D0 merge into Builder at a default tier (mode = the former class id, overridable by an explicit order.tier); E8 additionally widens Builder's context shapes to include repo/haystack (the census-first work the old Refactorer needed). WO-14b leg 2 fix round (2026-09-01, findings 6/7): an entry may also carry `unavailable` (medium -> reason; M0 restores the retired Archivist's raw video/audio UNAVAILABLE boundary, checked against castOpts.medium) and `contextShapesOnly` (an exact replacement set, not additive — E1 restores the retired Runner's packet-only ceiling).",
     "A1": { "workflow": "A1 comparative-plan synthesis under Conductor + both Reviewer lanes + owner" },
-    "N0": { "role": "Investigator", "mode": "N0", "pin": "read-only" },
+    "N0": { "role": "Investigator", "rung": "bounded", "mode": "N0", "pin": "read-only" },
     "N1": { "role": "Investigator", "mode": "N1" },
     "N2": { "role": "Investigator", "mode": "N2" },
     "M0": { "role": "Investigator", "mode": "M0", "unavailable": { "videoAudio": "declared no-mirror exception: raw video and audio go below the model layer — deterministic frame extraction + local speech-to-text, else typed UNAVAILABLE; never a silent narrowing to stills" } },

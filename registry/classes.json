@@ -41,7 +41,7 @@
       "name": "Fetch / find / lookup",
       "recallSignals": ["\"where is\"", "\"list all\"", "history"],
       "primaryRole": "Scout",
-      "casting": "Haiku · off / Luna · low",
+      "casting": "Haiku · off (Investigator `bounded` rung, N0 mode — PL-36) / Luna · low",
       "reviewer": "Verifier citation replay",
       "escalation": "re-probe once → I0; truncation → N2/I0 auto"
     },

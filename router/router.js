@@ -219,6 +219,9 @@ function createRouter(opts) {
     if (classToRole.has(id)) fail('class ' + id + ' is both owned by a role and listed in mergedClasses');
     if (m.workflow !== undefined) continue;
     if (!m.role || !hasOwn(roles, m.role)) { fail('mergedClasses.' + id + ' targets unknown role ' + JSON.stringify(m.role)); continue; }
+    if (m.rung !== undefined && !hasOwn(roles[m.role].rungs || {}, m.rung)) {
+      fail('mergedClasses.' + id + ' names rung ' + JSON.stringify(m.rung) + ' that ' + m.role + ' does not have');
+    }
     if (m.tier !== undefined && !((roles[m.role].tiers || {})[m.tier])) {
       fail('mergedClasses.' + id + ' names tier ' + JSON.stringify(m.tier) + ' that ' + m.role + ' does not have');
     }
@@ -1100,6 +1103,12 @@ function createRouter(opts) {
       ? null
       : cast(roleName, buckets, Object.assign(
           { risk: order.risk, purpose: o.purpose || 'authoring', tier: order.tier || mergedDefaultTier },
+          // PL-36 (owner ruling 2026-09-02): a merged class may pin its own
+          // rung on the target role — N0 lookups run at the Investigator's
+          // `bounded` Haiku rung, not the Opus primary. An explicit caller
+          // castOpts.rung still wins (the alias path's forced rung, an
+          // owner override); the ladder/reserve gates below apply unchanged.
+          merge && merge.rung ? { rung: merge.rung } : {},
           o.castOpts,
           {
             securitySensitive,

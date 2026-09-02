@@ -40,7 +40,7 @@
       "deprecation": "reviewer-codex is retired as a role: it is the OpenAI lane of the computed Reviewer matrix"
     },
     "scout": {
-      "new": { "role": "Investigator", "rung": "primary", "pin": "read-only", "downgradeNote": "Scout is retired as a role (WO-14b readiness-repair tranche, owner ruling 2026-09-01): N0 merges into Investigator (mode N0), which keeps N0's read-only pin behavior; the cheap Haiku casting does not survive — N0 work now runs at the Investigator's Opus 5 · high primary casting" },
+      "new": { "role": "Investigator", "rung": "bounded", "pin": "read-only", "downgradeNote": "Scout is retired as a role (WO-14b readiness-repair tranche, owner ruling 2026-09-01): N0 merges into Investigator (mode N0), which keeps N0's read-only pin behavior. The cheap Haiku casting is restored as the Investigator's `bounded` rung (PL-36, owner ruling 2026-09-02) — N0 lookups run there, not at the Opus 5 · high primary" },
       "legacy": { "agent": "scout", "model": "Haiku 4.5" },
       "deprecation": "scout is retired as a role: N0 merges into the Investigator (mode N0), read-only pin carried; external research is N1, long-context reconciliation N2, media intake M0 — all now Investigator modes too"
     },

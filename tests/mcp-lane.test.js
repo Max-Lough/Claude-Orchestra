@@ -893,6 +893,13 @@ async function case10() {
     check('valid LAUNCHED exec ticket -> the stub was invoked exactly once', invocationCount(af) === 1, 'invocations=' + invocationCount(af));
     const nonceMatch = /RUN NONCE: ([0-9a-f]+)/.exec(text);
     check('the exec runner\'s own header carries a RUN NONCE', !!nonceMatch, text.slice(0, 500));
+    // Shakedown 2026-09-02 (PL-18 root cause): the ticket's casting is the
+    // roster DISPLAY name ("GPT-5.6 Terra"); the runner must receive the
+    // Codex model id. Forwarding the display name verbatim produced Codex
+    // 400 "The 'GPT-5.6 Terra' model is not supported when using Codex with
+    // a ChatGPT account" — an entitlement-shaped message for a name-shape bug.
+    check('the ticket casting display name reaches the runner as the Codex model id (--model gpt-5.6-terra)',
+      /model: gpt-5\.6-terra \(flag\)/.test(text) && !/GPT-5\.6 Terra/.test(text), text.slice(0, 500));
 
     const after = T.get(store, ticket.id);
     check('the ticket stays LAUNCHED (RESOLVED is the launcher\'s own SubagentStop\'s job, not the engine\'s)',

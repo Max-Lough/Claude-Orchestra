@@ -878,9 +878,40 @@ event `run_nonce: UNKNOWN`). No fix cycle opened (owner ruling). Target branch
 `feat/health-bar-below-hull` (db1ed4cf → c3194209) awaits the owner's merge. Full sequence:
 last row of `roster/wo14b-activation-bridge-progress.md`.
 
-## Previous quick start (as of 2026-09-01 22:20Z — WO-14b SHAKEDOWN, order #5 **CLOSED**)
+## Previous quick start (as of 2026-09-01 22:30Z — WO-14b SHAKEDOWN, order #5 **CLOSED**, everything merged)
 
-**READ THIS FIRST — the shakedown's primary goal is met.** Live order #5 (adopt-and-verify
+**START HERE — you are the live-order session.** The punch list is done and shipped:
+PL-9 (guard requires `ticket-gate.js` on disk, else DENY), PL-11 (installer writes
+`.claude/.gitignore` for `orchestra/tickets/`, `orchestra/ledger/`, `scratch/`,
+`orchestra-pool-readings.jsonl`), PL-10 (recon close: `orchestra_close` on a RESOLVED
+Investigator ticket reads its I0 `VERDICT:` line, writes the casting record, CLOSES with
+`stage: RECON_CLOSED` — no Verifier, no reviewer), PL-25 (Conductor: never restate a seat's
+report format). Master: branch `claude/wo14b-punchlist` (guard 127, install 377, close 88,
+bridge 144, mcp-lane 113, acceptance 90, tickets 160, frontmatter 37 — all green). Target
+`E:\Godot Projects\PiratePartyPals` main = `19028200` (harness reinstalled: gate hooks 4,
+doctor `roster=new rosterGeneration=3 store=ok openTickets=0`, `--verify-pin` MATCH, working
+tree clean). Two things remain, in order:
+
+1. **PL-22 live proof** — the next codex-lane review on the target should show Sol's gdUnit
+   claim CONFIRMED and far less `--import` churn (the runner now carries `filter.lfs.*` into
+   its scratch gitconfig). If it does not, the fix is wrong; read the run log the ticket's
+   `engine_result.run_log` names.
+2. **One NEW live order, owner present**, to confirm CLOSED lands first time with the helm
+   itself; then WO-14b closes out. Before it: (a) RESTART any running helm — its MCP server
+   caches the bridge it loaded, and the installed `close.js` changed today; (b) push target
+   `main` (`19028200` is local-only) so builders branch from a base that carries the harness
+   (PL-11 part 2); (c) re-record Quartermaster readings — the 2026-09-01 15:14Z readings
+   expire ~15:14Z 2026-09-02. A recon-only order (N0 investigator) now closes too: call
+   `orchestra_close` on the RESOLVED ticket and expect `RECON_CLOSED` + a casting record under
+   `.claude/orchestra/ledger/<ticket>/`.
+
+Rows PL-9/10/11/22/25 in `roster/wo14b-shakedown-punch-list.md` carry the evidence; the last
+lines of `roster/wo14b-activation-bridge-progress.md` carry the sequence. Rules that still
+bind: 80 tool calls per builder is a hard ceiling; no new trust layers / telemetry schemas /
+seats; security-flavoured review orders trip the OpenAI classifier (spec-conformance
+framing); `CODEX_BIN` pinned to codex-cli 0.151.0; never dispatch class R0 from the helm.
+
+**What order #5 established (context, not tasks).** Live order #5 (adopt-and-verify
 `33a03539` on `feat/nameplate-range-200`, Fable helm) reached **CLOSED at 22:15:40Z** — the
 first order ever to do so — and wrote the first honest telemetry: under
 `<target>/.claude/orchestra/ledger/` (per-TICKET dirs, not per-task): `tkt-9a0eaadf126a4d01/`
@@ -928,10 +959,10 @@ previous "job" list still applies to every future order read-back:
    `.gitignore` for runtime state, PL-10 recon close path. Then the owner decides whether to
    merge `feat/nameplate-range-200` (review verdict permitting) and close WO-14b out.
 
-State pins: target local `main` = `b23782ef` (harness shipped for PL-20…24, NOT pushed; `origin/main` = `54f0c3c9`; readings recorded
+State pins: target `main` = `origin/main` = `5f8a7353` (nameplate change merged; harness b23782ef included; readings recorded
 2026-09-01 15:14Z expire ~15:14Z 2026-09-02 — re-record before any NEW order:
 `node quartermaster/quartermaster.js --file "<target>/.claude/orchestra-pool-readings.jsonl" --record <bucket> <0..1> --source "..."`,
-buckets AU-all/AU-fable/AU-opus/OU). Master repo branch `claude/wo14b-bridge` @ the PL-20…24 commit (after `69acd9d`).
+buckets AU-all/AU-fable/AU-opus/OU). Master repo: `main` @ `4178079` (PR #30 merged everything through the order #5 read-back); work on `claude/wo14b-punchlist`.
 History of orders #1–#4 and every PL detail: below, plus `roster/wo14b-shakedown-punch-list.md`
 and the last lines of `roster/wo14b-activation-bridge-progress.md`.
 

@@ -5,8 +5,12 @@ name: tests
 # Every field failure the cross-vendor review lane has produced happened on
 # WINDOWS — and the suite that is supposed to catch them used to exit 0 there
 # even when cases failed, so a broken suite looked green through two rounds of
-# real failures. No session working on this repo has a Windows machine. A
-# windows-latest runner is the only thing that closes that gap.
+# real failures. Windows is also the only platform the owner installs into and
+# runs the helm on (2026-09-01), so windows-latest x node 20/22/24 is the
+# REQUIRED matrix. One ubuntu job runs ADVISORY (continue-on-error): POSIX
+# drift stays visible without gating a merge on a platform nobody here uses —
+# the WO-14b merge went red for a day on nothing but Windows-shaped fixtures
+# (zombie reaping, /var symlinks, E:\ literals) before that rule was set.
 #
 # Everything else is deliberately absent. There is no build, no bundle, and no
 # publish step: the harness is distributed by `git pull` + `node install.js`, so
@@ -30,16 +34,23 @@ concurrency:
 
 jobs:
   codex-lanes:
-    name: codex lanes · ${{ matrix.os }} · node ${{ matrix.node }}
+    name: codex lanes · ${{ matrix.os }} · node ${{ matrix.node }}${{ matrix.advisory && ' · advisory' || '' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    # Advisory jobs report but never fail the workflow or block a merge.
+    continue-on-error: ${{ matrix.advisory }}
     strategy:
-      # One platform's failure must never hide another's — the whole point of
-      # the matrix is to see WHICH platforms disagree.
+      # One node version's failure must never hide another's — the whole
+      # point of the matrix is to see WHICH runners disagree.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest]
         node: ['20', '22', '24']
+        advisory: [false]
+        include:
+          - os: ubuntu-latest
+            node: '22'
+            advisory: true
 
     steps:
       - uses: actions/checkout@v4

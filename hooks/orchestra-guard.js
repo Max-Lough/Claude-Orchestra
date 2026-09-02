@@ -1399,6 +1399,14 @@ function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
 // not cached, since a stripped or altered entry must be caught the very
 // next time Agent is called, not only at install time.
 const GATE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop'];
+// The one script every registered entry runs. PL-9 (shakedown finding #2,
+// 2026-09-01): registration alone is not enough — with the script file
+// swept away (a `git stash -u` took the untracked .claude/orchestra/), the
+// host reported each gate hook as a NON-BLOCKING error (node
+// MODULE_NOT_FOUND, exit 1) and the Agent launch proceeded unticketed. So
+// the guard also requires the script to exist on disk, and denies when it
+// does not: a registered-but-missing gate is the composition failing open.
+const GATE_SCRIPT_REL = ['.claude', 'orchestra', 'bridge', 'hooks', 'ticket-gate.js'];
 function expectedGateCommand(eventName) {
   return 'node "$CLAUDE_PROJECT_DIR/.claude/orchestra/bridge/hooks/ticket-gate.js" ' + eventName;
 }
@@ -1428,6 +1436,12 @@ function verifyGateHooksRegistered() {
     if (!found) {
       return { ok: false, reason: eventName + ' hook entry missing or altered (expected command: ' + expectedCmd + ')' };
     }
+  }
+  // PL-9: the registered script must exist — a missing file is a non-blocking
+  // hook error to the host (fail-open), so it is a deny here.
+  const gateScript = path.join(projectDir(), ...GATE_SCRIPT_REL);
+  if (!fs.existsSync(gateScript)) {
+    return { ok: false, reason: 'registered gate script missing on disk (' + GATE_SCRIPT_REL.join('/') + ') — a missing script is a non-blocking hook error to the host, so Agent would launch unticketed' };
   }
   return { ok: true };
 }

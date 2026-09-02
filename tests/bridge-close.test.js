@@ -481,6 +481,48 @@ let PASS_FIXTURE = null; // shared into section 4/5 for close #2 tests
   PASS_FIXTURE = { dir, base, head, store, impl: T.get(store, implId), reviewerTicket: r.ok ? r.reviewer_ticket : null };
 }
 
+section('2c. close #1 — reviewer ticket config_hash (shakedown 2026-09-02: reviewer ticket carries the config hash in force at close time)');
+{
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const head = commitFeature(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  // Simulate a stale implementation ticket config_hash — as if it were
+  // issued BEFORE an Orchestra reinstall changed the config, then resolved
+  // and closed AFTER. router/tickets.js exposes no API to override
+  // config_hash post-issuance, and issuance itself must run through
+  // dispatch() to get a real envelope/ledger for close #1 to read, so patch
+  // the on-disk ticket store directly.
+  const storeFile = path.join(dir, '.claude', 'orchestra', 'tickets', 'tickets.json');
+  const storeData = JSON.parse(fs.readFileSync(storeFile, 'utf8'));
+  storeData.tickets[implId].config_hash = '0'.repeat(64);
+  fs.writeFileSync(storeFile, JSON.stringify(storeData, null, 2));
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const rCurrent = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store, configHash: '1'.repeat(64) });
+  check('(shakedown 2026-09-02: reviewer ticket carries the config hash in force at close time) reaches REVIEW_PENDING despite the stale implementation ticket hash',
+    rCurrent.ok === true && rCurrent.stage === 'REVIEW_PENDING', JSON.stringify(rCurrent));
+  check('(shakedown 2026-09-02: reviewer ticket carries the config hash in force at close time) reviewer_ticket.config_hash is the CURRENT hash, not the stale implementation ticket hash',
+    rCurrent.ok === true && rCurrent.reviewer_ticket.config_hash === '1'.repeat(64), JSON.stringify(rCurrent.reviewer_ticket));
+}
+{
+  // Fallback: close() called WITHOUT configHash (as every other case in
+  // this suite does) still mints the reviewer ticket with the
+  // implementation ticket's own config_hash.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const head = commitFeature(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const impl = T.get(store, implId);
+  const rNoHash = close.close({ ticket: impl, projectDir: dir, repoDir: dir, store });
+  check('(shakedown 2026-09-02: reviewer ticket carries the config hash in force at close time) no configHash passed -> reviewer_ticket.config_hash falls back to the implementation ticket\'s own hash',
+    rNoHash.ok === true && rNoHash.reviewer_ticket.config_hash === impl.config_hash, JSON.stringify(rNoHash.reviewer_ticket));
+}
+
 section('3. close #1 — gated reviewer');
 {
   const { dir } = makeRepo(PASS_MANIFEST);

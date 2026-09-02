@@ -413,7 +413,7 @@ function closeImplementation(ctx, ticket) {
     casting: revResult.casting,
     author_family: reviewerFamily, // dispatcher-owned — never asserted by the reviewer
     reviewer_of: ticket.id,
-    config_hash: ticket.config_hash,
+    config_hash: ctx.configHash || ticket.config_hash,
   });
 
   // Item 9: close #1's spawn.prompt_header carries TICKET=, MODEL=,
@@ -830,7 +830,7 @@ function closeRecon(ctx, ticket) {
 
 // -------------------------------------------------------------------- close
 
-function close({ ticket, projectDir, repoDir, store } = {}) {
+function close({ ticket, projectDir, repoDir, store, configHash } = {}) {
   if (!ticket || typeof ticket !== 'object' || !ticket.id) {
     throw typedError('CLOSE_CONFIG', 'close() requires { ticket } — a real ticket object, not an id');
   }
@@ -838,7 +838,12 @@ function close({ ticket, projectDir, repoDir, store } = {}) {
     throw typedError('CLOSE_CONFIG', 'close() requires { projectDir, repoDir }');
   }
   const ticketsDir = path.join(projectDir, ...TICKETS_DIR_REL);
-  const ctx = { projectDir, repoDir, store: store || tickets.createTicketStore({ dir: ticketsDir, init: true }) };
+  // configHash: the configuration in force at close time (runtime.js passes
+  // its own canonical computation). A reviewer ticket minted here is issued
+  // NOW and must carry it; falling back to the implementation ticket's hash
+  // is only for callers that pass none (tests/fixtures), and reproduces the
+  // 2026-09-02 shakedown failure whenever the config changed in between.
+  const ctx = { projectDir, repoDir, store: store || tickets.createTicketStore({ dir: ticketsDir, init: true }), configHash: typeof configHash === 'string' ? configHash : null };
   if (ticket.kind === 'reviewer') return closeReview(ctx, ticket);
   if (isReconTicket(ticket)) return closeRecon(ctx, ticket); // PL-10
   return closeImplementation(ctx, ticket);

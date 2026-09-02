@@ -971,7 +971,11 @@ function createRuntime({ projectDir, repoDir } = {}) {
     const store = getStore();
     const t = tickets.get(store, ticketId);
     if (!t) throw typedError('CLOSE_CONFIG', 'unknown ticket ' + ticketId);
-    return closeModule.close({ ticket: t, projectDir, repoDir: effectiveRepoDir, store });
+    // Shakedown 2026-09-02 (v2.5.0 reinstall mid-run): a reviewer ticket is
+    // ISSUED at close time, so it carries the configuration in force NOW —
+    // never the implementation ticket's own (possibly pre-reinstall) hash,
+    // which the gate would invalidate on first consume (CONFIG_CHANGED).
+    return closeModule.close({ ticket: t, projectDir, repoDir: effectiveRepoDir, store, configHash: configHash(projectDir) });
   }
 
   return {

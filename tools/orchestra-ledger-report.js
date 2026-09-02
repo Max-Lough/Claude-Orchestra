@@ -75,6 +75,102 @@ function fmtK(n) {
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return String(n);
 }
+function pct(n, d) {
+  return d ? Math.round((n / d) * 100) + '%' : '-';
+}
+
+// ---- reviewer verdict parsing --------------------------------------------
+//
+// The reviewer's report (t.resolved.last_assistant_message) is required to
+// carry exactly one trailing JSON object with a "verdict" field
+// (registry/schemas/verdict.schema.json: verdict enum is APPROVE/REVISE/
+// REJECT), normally fenced as ```verdict-json ... ``` but real transcripts
+// also show a bare ```json ... ``` fence, and — when the engine's own output
+// is dumped verbatim into an unlabeled ``` block — no distinguishing fence
+// at all. Every observed shape puts "verdict" as (at or near) the object's
+// first key, so anchor on that literal text and balance braces forward
+// rather than trusting fences. Never throws: an unparseable message counts
+// as UNPARSED, never crashes the report.
+function findBalancedJson(text, startIdx) {
+  let depth = 0, inStr = false, esc = false;
+  for (let j = startIdx; j < text.length; j++) {
+    const c = text[j];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return text.slice(startIdx, j + 1);
+    }
+  }
+  return null;
+}
+function extractVerdictBlock(msg) {
+  const out = { matched: false, verdict: null, findings: null, served_model: null, run_nonce: null, source: 'none' };
+  if (typeof msg !== 'string' || !msg) return out;
+  try {
+    const anchorRe = /\{\s*"verdict"\s*:/g;
+    let m, lastObj = null;
+    while ((m = anchorRe.exec(msg))) {
+      const candidate = findBalancedJson(msg, m.index);
+      if (!candidate) continue;
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed && typeof parsed.verdict === 'string') lastObj = parsed; // take the LAST valid one — the mandatory trailing block wins over any earlier attempt's log
+      } catch (_) { /* torn/partial candidate — keep scanning */ }
+    }
+    if (lastObj) {
+      out.matched = true;
+      out.source = 'json';
+      out.verdict = lastObj.verdict;
+      out.findings = Array.isArray(lastObj.findings) ? lastObj.findings : null;
+      out.served_model = typeof lastObj.served_model === 'string' ? lastObj.served_model : null;
+      out.run_nonce = lastObj.run_nonce != null ? lastObj.run_nonce : null;
+      return out;
+    }
+  } catch (_) { /* fall through to the line-based fallback below */ }
+  // Fallback: a bare "VERDICT: X" line with no parseable JSON alongside it.
+  try {
+    const lm = /^\s*VERDICT:\s*([A-Za-z_]+)/m.exec(msg);
+    if (lm) { out.matched = true; out.source = 'verdict-line'; out.verdict = lm[1]; }
+  } catch (_) { /* give up — stays UNPARSED */ }
+  return out;
+}
+function canonicalVerdict(raw) {
+  if (!raw) return 'UNPARSED';
+  const v = String(raw).toUpperCase();
+  return (v === 'APPROVE' || v === 'REVISE' || v === 'REJECT') ? v : 'OTHER';
+}
+const SEVERITIES = ['CRITICAL', 'MAJOR', 'MINOR', 'NIT'];
+function severityCounts(findings) {
+  const c = { CRITICAL: 0, MAJOR: 0, MINOR: 0, NIT: 0 };
+  if (Array.isArray(findings)) {
+    for (const f of findings) {
+      const s = f && String(f.severity || '').toUpperCase();
+      if (s && Object.prototype.hasOwnProperty.call(c, s)) c[s]++;
+    }
+  }
+  return c;
+}
+const CITATION_RESULTS = ['MATCHES', 'DIVERGES', 'UNREPLAYABLE'];
+function citationCounts(citationReplay) {
+  const c = { MATCHES: 0, DIVERGES: 0, UNREPLAYABLE: 0 };
+  if (Array.isArray(citationReplay)) {
+    for (const cit of citationReplay) {
+      const r = cit && String(cit.result || '').toUpperCase();
+      if (r && Object.prototype.hasOwnProperty.call(c, r)) c[r]++;
+    }
+  }
+  return c;
+}
+function newVerdictBucket() {
+  return { APPROVE: 0, REVISE: 0, REJECT: 0, OTHER: 0, UNPARSED: 0 };
+}
 
 function transcriptUsage(p) {
   if (!p || !fs.existsSync(p)) return null;
@@ -158,6 +254,17 @@ function main() {
 
   const rows = [];
   const totals = { byRole: {}, byModel: {}, usd: 0, active_ms: 0, n: 0 };
+  const verdictTotals = {
+    reviewer_tickets: 0,
+    parsed: 0,
+    by_verdict: newVerdictBucket(),
+    findings_by_severity: { CRITICAL: 0, MAJOR: 0, MINOR: 0, NIT: 0 },
+    findings_total: 0,
+    reviews_with_findings_data: 0,
+    audit: { audited: 0, pass: 0, fail: 0, citation: { MATCHES: 0, DIVERGES: 0, UNREPLAYABLE: 0 } },
+    revise_not_evidence_backed: 0,
+    byRole: {},
+  };
   const errors = [];
   for (const t of tickets) {
     const cr = readJson(path.join(ledgerDir, t.id, 'casting-record.json'), null);
@@ -168,6 +275,51 @@ function main() {
     const closedAt = t.outcome && t.outcome.at;
     const engine = !!(t.engine_pass || t.engine_result);
     const usage = transcriptUsage(t.resolved && t.resolved.agent_transcript_path);
+
+    // ---- reviewer verdict vs mechanical audit (REVIEW VERDICTS section)
+    let review = null;
+    if (t.kind === 'reviewer') {
+      const vb = extractVerdictBlock(t.resolved && t.resolved.last_assistant_message);
+      const verdictCanon = canonicalVerdict(vb.verdict);
+      const findingsBySeverity = severityCounts(vb.findings);
+      const findingsTotal = Array.isArray(vb.findings) ? vb.findings.length : null;
+      const auditOutcome = va && typeof va.outcome === 'string' ? va.outcome : null;
+      const auditCitation = citationCounts(va && va.citation_replay);
+      const citationN = auditCitation.MATCHES + auditCitation.DIVERGES + auditCitation.UNREPLAYABLE;
+      // Pedantry signal: a REVISE whose own audited citations never once
+      // replayed as MATCHES — the audit could not confirm anything the
+      // reviewer's evidence rested on.
+      const reviseNotEvidenceBacked = verdictCanon === 'REVISE' && citationN > 0 && auditCitation.MATCHES === 0;
+      review = {
+        verdict_raw: vb.verdict,
+        verdict: verdictCanon,
+        verdict_source: vb.source,
+        findings_total: findingsTotal,
+        findings_by_severity: findingsBySeverity,
+        audit_outcome: auditOutcome,
+        audit_citation_counts: auditCitation,
+        revise_not_evidence_backed: reviseNotEvidenceBacked,
+      };
+
+      verdictTotals.reviewer_tickets++;
+      const roleAgg = verdictTotals.byRole[t.role] = verdictTotals.byRole[t.role] || { n: 0, parsed: 0, by_verdict: newVerdictBucket() };
+      roleAgg.n++;
+      if (verdictCanon !== 'UNPARSED') { verdictTotals.parsed++; roleAgg.parsed++; }
+      verdictTotals.by_verdict[verdictCanon]++;
+      roleAgg.by_verdict[verdictCanon]++;
+      if (findingsTotal != null) {
+        verdictTotals.reviews_with_findings_data++;
+        verdictTotals.findings_total += findingsTotal;
+        for (const s of SEVERITIES) verdictTotals.findings_by_severity[s] += findingsBySeverity[s];
+      }
+      if (auditOutcome) {
+        verdictTotals.audit.audited++;
+        if (auditOutcome === 'PASS') verdictTotals.audit.pass++; else verdictTotals.audit.fail++;
+      }
+      for (const r of CITATION_RESULTS) verdictTotals.audit.citation[r] += auditCitation[r];
+      if (reviseNotEvidenceBacked) verdictTotals.revise_not_evidence_backed++;
+    }
+
     const row = {
       id: t.id,
       issued_at: t.issued_at,
@@ -191,6 +343,7 @@ function main() {
       served_model_mismatch: cr ? !!cr.served_model_mismatch : null,
       verifier: vf ? (vf.result || vf.status || vf.verdict || 'present') : null,
       verdict_audit: va ? (va.result || va.status || va.stage || 'present') : null,
+      review,
       refused: refusedByTicket.get(t.id) || [],
       attempts: Array.isArray(t.attempts) ? t.attempts.length : 0,
       goal: String(
@@ -240,7 +393,7 @@ function main() {
   }
 
   if (asJson) {
-    console.log(JSON.stringify({ since: sinceArg, rows, totals, errors, pool }, null, 2));
+    console.log(JSON.stringify({ since: sinceArg, rows, totals, errors, pool, reviewVerdicts: verdictTotals }, null, 2));
     return;
   }
 
@@ -255,6 +408,15 @@ function main() {
       : (r.engine ? 'engine usage n/a (launcher only)' : 'no transcript');
     console.log(`- ${r.id}  ${r.issued_at.slice(5, 16)}Z  ${r.class}/${r.role}${r.tier ? ' [' + r.tier + ']' : ''}  ${r.requested} → ${r.served}`);
     console.log(`    ${r.status}${r.outcome ? ' · ' + r.outcome : ''}   wait ${fmtDur(r.wait_ms)}  active ${fmtDur(r.active_ms)}  close ${fmtDur(r.close_ms)}   ${u}`);
+    if (r.review) {
+      const rv = r.review;
+      const fBits = SEVERITIES.map((s) => `${s[0]}${rv.findings_by_severity[s]}`).join(' ');
+      const vLabel = rv.verdict_raw && rv.verdict_raw !== rv.verdict ? `${rv.verdict} (raw: ${rv.verdict_raw})` : rv.verdict;
+      console.log(
+        `    verdict ${vLabel}  findings ${rv.findings_total == null ? '-' : rv.findings_total} [${fBits}]  audit ${rv.audit_outcome || '-'}` +
+          (rv.revise_not_evidence_backed ? '  ** REVISE not evidence-backed **' : '')
+      );
+    }
     if (r.goal) console.log(`    ${r.goal}`);
   }
 
@@ -265,6 +427,39 @@ function main() {
   console.log('\nBY MODEL (from subagent transcripts; Codex engines not captured)');
   for (const [model, v] of Object.entries(totals.byModel)) {
     console.log(`- ${model.padEnd(26)} n=${String(v.n).padStart(2)}  out ${fmtK(v.output).padStart(7)}  cache-read ${fmtK(v.cache_read).padStart(8)}  cache-write ${fmtK(v.cache_write).padStart(8)}  ~$${v.usd.toFixed(2)}`);
+  }
+
+  console.log('\nREVIEW VERDICTS (reviewer approve/revise/reject rates vs the mechanical audit — is the reviewer pedantic, or right?)');
+  {
+    const vt = verdictTotals;
+    if (!vt.reviewer_tickets) {
+      console.log('- none');
+    } else {
+      console.log(`- reviewer tickets: ${vt.reviewer_tickets}   parsed verdict: ${vt.parsed} (${pct(vt.parsed, vt.reviewer_tickets)})`);
+      for (const k of ['APPROVE', 'REVISE', 'REJECT', 'OTHER', 'UNPARSED']) {
+        const n = vt.by_verdict[k];
+        if (!n && (k === 'OTHER' || k === 'UNPARSED')) continue; // skip zero rows for the rarer buckets
+        console.log(`  - ${k.padEnd(9)} n=${String(n).padStart(2)}  ${pct(n, vt.reviewer_tickets)}`);
+      }
+      console.log(
+        `- findings: ${vt.findings_total} total across ${vt.reviews_with_findings_data} review(s) with a parsed findings array` +
+          `   mean ${vt.reviews_with_findings_data ? (vt.findings_total / vt.reviews_with_findings_data).toFixed(1) : '-'}/review`
+      );
+      console.log(`  by severity: ` + SEVERITIES.map((s) => `${s}=${vt.findings_by_severity[s]}`).join('  '));
+      console.log(`- mechanical audit (close #2, verdict-audit.json): audited ${vt.audit.audited}  PASS ${vt.audit.pass}  FAIL ${vt.audit.fail}`);
+      console.log(
+        `  citation replay: MATCHES ${vt.audit.citation.MATCHES}  DIVERGES ${vt.audit.citation.DIVERGES}  UNREPLAYABLE ${vt.audit.citation.UNREPLAYABLE}`
+      );
+      console.log(`- REVISE not evidence-backed (REVISE + audited + zero MATCHES in citation replay): ${vt.revise_not_evidence_backed}`);
+      console.log('- by reviewer role:');
+      for (const [role, v] of Object.entries(vt.byRole)) {
+        const bits = ['APPROVE', 'REVISE', 'REJECT', 'OTHER', 'UNPARSED']
+          .filter((k) => v.by_verdict[k])
+          .map((k) => `${k}=${v.by_verdict[k]}`)
+          .join(' ');
+        console.log(`  - ${role.padEnd(20)} n=${String(v.n).padStart(2)}  parsed=${v.parsed}  ${bits}`);
+      }
+    }
   }
 
   console.log('\nPOOL READINGS (owner-recorded; draw = first → last in window)');

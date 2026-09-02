@@ -386,11 +386,11 @@ check('finding 2: resolve() on a ticket launched before expiry but resolved afte
 })());
 check('finding 2 report note: close() does NOT expire a RESOLVED ticket — RESOLVED is post-work; close(CLOSED) still succeeds even when called long after expires_at', (() => {
   const store = freshStore('tkt-exp7-');
-  const t = T.issue(store, baseFields({ ttlMs: 300 })); // generous margin over the consume()+launch()+resolve() fs round-trips
+  const t = T.issue(store, baseFields({ ttlMs: 3000 })); // seconds, not ms: the windows node-20 CI runner blew a 300 ms margin (PL-34)
   T.consume(store, t.id, { tool_use_id: 'tu', role: 'Builder' });
   T.launch(store, t.id, { agent_id: 'a', served_model: 'm' });
   T.resolve(store, t.id, { agent_id: 'a', last_assistant_message: 'x', agent_transcript_path: 'p' }); // all before expiry
-  realSleepMs(400); // well past expires_at — but the ticket is already RESOLVED
+  realSleepMs(3200); // well past expires_at — but the ticket is already RESOLVED
   const closed = T.close(store, t.id, { code: 'CLOSED' });
   return closed.ok === true && closed.ticket.status === 'CLOSED';
 })());

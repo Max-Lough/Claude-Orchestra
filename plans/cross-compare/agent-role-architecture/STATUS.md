@@ -859,7 +859,41 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-09-01 22:30Z — WO-14b SHAKEDOWN, order #5 **CLOSED**, everything merged)
+## Fresh-session quick start (as of 2026-09-02 15:06Z — WO-14b SHAKEDOWN, order #6 final delta REVIEWED, both PRs mergeable, harness FREEZE next)
+
+**START HERE.** Order #6 is done end to end: the owner eye-checked the bar, the constants commit was redone
+in-harness at 1dc965b3 (builder CLOSED with casting record; cross-family Codex review APPROVE, verdict audit
+PASS 6/6). Target PR #400 (feat/health-bar-below-hull @ 1dc965b3 → main) is MERGEABLE, not merged. Master
+PR #32 is MERGEABLE, CI 4/4 green. Environment: Steam closed → Godot exits normally (PL-30 resolved); the
+Codex lane is repaired (PL-33; pre-flight: the three runner paths hash `f0cbcc339587…`). **Owner sequence:**
+(1) merge target PR #400, delete `backup/health-bar-367f87ad`; (2) merge master PR #32; (3) **FREEZE the
+harness** and run ten real orders, counting: orders reaching CLOSED without a harness edit, verdict audits
+that caught something the reviewer missed, helm prompt corrections (PL-25/31/35 kind), Godot orphans, and
+recurrences of the checkout-reverts-harness class (PL-9/11/15/17). Pre-committed rule: one recurrence of
+that class → do the gate-reads-the-pin-copy fix; zero → YAGNI. Still unproven: PL-22 — the next Codex
+review that allows gdUnit must be dispatched with NO `forbid: ["godot"]` (PL-35). Rows PL-31..35 are
+guidance only. Full rows: last two lines of `roster/wo14b-activation-bridge-progress.md`.
+
+## Previous quick start (as of 2026-09-02 01:40Z — WO-14b SHAKEDOWN, order #6 **CLOSED first call, owner present**)
+
+**START HERE — WO-14b's confirming live order is done.** Order #6 ("health bars beneath ships",
+PiratePartyPals, Fable helm restarted after the PL-10 install, target main 19028200 pushed,
+readings re-recorded 23:30Z) reached **CLOSED at 01:40:19Z on the first close call of its fix
+round**: builder casting record (Sonnet 5 ↔ `claude-sonnet-5`, AU-all, mismatch:false),
+reviewer casting record (GPT-5.6 Sol ↔ `gpt-5.6-sol`, OU, cross_family:true) and a
+verdict-audit PASS under `<target>/.claude/orchestra/ledger/tkt-64e6421982382447/` and
+`tkt-346b8fe2edc0ed95/`. **PL-10 proven live** (recon ticket tkt-ed7a95c806cb4a63 CLOSED on
+its VERDICT line with a casting record). **PL-22 still unproven** — both review work orders
+prohibited gdUnit by owner instruction; prove it on the next codex-lane review that allows
+gdUnit, after the box is clear of orphaned headless Godot runners (11 were found alive during
+order #6, 3 of them from order #5). New guidance-only rows PL-26 (builder must not background
+its test run), PL-27 (helm must `orchestra_close` every resolved reviewer ticket, REVISE
+included — review #1 of order #6 has no verdict audit because it skipped this), PL-28 (enginePass
+event `run_nonce: UNKNOWN`). No fix cycle opened (owner ruling). Target branch
+`feat/health-bar-below-hull` (db1ed4cf → c3194209) awaits the owner's merge. Full sequence:
+last row of `roster/wo14b-activation-bridge-progress.md`.
+
+## Previous quick start (as of 2026-09-01 22:30Z — WO-14b SHAKEDOWN, order #5 **CLOSED**, everything merged)
 
 **START HERE — you are the live-order session.** The punch list is done and shipped:
 PL-9 (guard requires `ticket-gate.js` on disk, else DENY), PL-11 (installer writes

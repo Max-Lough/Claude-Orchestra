@@ -859,6 +859,36 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
+## OWNER RULING 2026-09-02 (evening) — Orchestra 2.0 is on its last chance
+
+**Read this before the quick start.** The owner's assessment after the 2026-09-02 live Tug of War
+run in PiratePartyPals: Orchestra 2.0 "has created many more issues than it has solved and the
+legacy harness (1.0) is looking better and better by the minute."
+
+**The ruling:**
+
+1. The current live test and its revision attempts are Orchestra 2.0's last chance of success.
+2. **The next revision attempt is the last one.** It goes ahead only if the live evidence shows a
+   massive improvement in performance. Anything short of that ends 2.0 as a harness.
+3. If 2.0 fails that bar, the few advantages it has are pulled out and **ported back to 1.0**
+   (the legacy harness). No further 2.0 revisions after that.
+
+**What "performance" is judged on** (the ledger report is the instrument —
+`node tools/orchestra-ledger-report.js "E:/Godot Projects/PiratePartyPals" --since <ISO>`):
+tickets that reach CLOSED with a casting record on the first close call; served model matching the
+cast model (no `served_model_mismatch` rows); reviewer verdicts parsed and evidence-backed rather
+than UNPARSED / REVIEW_UNAVAILABLE; wall-clock and pool draw per delivered change versus what 1.0
+spends on the same kind of order. Evidence from 2026-09-02 13:00Z–21:09Z for the record: 66 tickets
+since midnight, 14 reviewer tickets with 43% UNPARSED, 3 bounded-Investigator tickets served by Opus
+instead of Haiku, 64 anomaly rows (most: RESOLVED-but-never-CLOSED builders).
+
+**How to apply:** no speculative features, no new review→fix cycles, no harness reinvention. Every
+change between now and the decision must be traceable to a ledger anomaly it removes. When the
+decision comes, the candidate list of "advantages worth porting to 1.0" starts with: the ticket
+ledger + casting records + `orchestra-ledger-report.js` telemetry, the config-hash pin, and the
+cross-family reviewer lane. Extends the 2026-09-01 close-out mandate (KISS/YAGNI/DRY, telemetry is
+the only important aspect).
+
 ## Fresh-session quick start (as of 2026-09-02 15:06Z — WO-14b SHAKEDOWN, order #6 final delta REVIEWED, both PRs mergeable, harness FREEZE next)
 
 **START HERE (2026-09-02).** (1) Master PR #32 is **merged**. PR #33 (`claude/v2.5.0-shakedown-fixes`)

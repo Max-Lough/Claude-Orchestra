@@ -171,6 +171,49 @@ function reportIntegrityLine(dir, taskId) {
   return '\nREPORT INTEGRITY: ' + env.order.integrity_nonce + '\n';
 }
 
+function envelopePathFixture(dir, taskId) {
+  return path.join(dir, '.claude', 'orchestra', 'ledger', taskId, 'envelope.json');
+}
+
+// close #1's Verifier-only exemption keys on the DISPATCHER's review_policy.
+// router.js computes that at dispatch (this suite's E1/T1 base request
+// computes 'preferred') and the dispatch API exposes no knob for it, so it
+// is pinned on the on-disk envelope — the same patch §2c uses for a stale
+// config_hash.
+function setEnvelopeReviewPolicy(dir, taskId, policy) {
+  const p = envelopePathFixture(dir, taskId);
+  const env = JSON.parse(fs.readFileSync(p, 'utf8'));
+  env.order.review_policy = policy;
+  fs.writeFileSync(p, JSON.stringify(env, null, 2));
+  return env;
+}
+
+// dispatch() writes the envelope, the ticket store and the pool readings
+// INSIDE the fixture repo, so commitFeature()'s `git add -A` sweeps all of
+// that into the feature commit and the pinned base..head range is several
+// files wide. The exemption ceiling measures that range, so these cases
+// commit the bookkeeping first and re-pin the envelope's base onto it —
+// leaving base..head as exactly the change under test.
+function repinBaseAfterBookkeeping(dir, taskId) {
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-m', 'orchestra bookkeeping']);
+  const base = git(dir, ['rev-parse', 'HEAD']);
+  const p = envelopePathFixture(dir, taskId);
+  const env = JSON.parse(fs.readFileSync(p, 'utf8'));
+  env.base = base;
+  fs.writeFileSync(p, JSON.stringify(env, null, 2));
+  return base;
+}
+
+// Commit ONLY the named files, so the envelope edits repinBaseAfterBookkeeping
+// leaves in the working tree stay out of the pinned range.
+function commitPaths(dir, files) {
+  for (const [name, content] of files) fs.writeFileSync(path.join(dir, name), content);
+  git(dir, ['add'].concat(files.map(([name]) => name)));
+  git(dir, ['commit', '-m', 'change under test']);
+  return git(dir, ['rev-parse', 'HEAD']);
+}
+
 function bandCReport(status, commit, extra) {
   return [
     'STATUS: ' + status,
@@ -530,9 +573,35 @@ section('3. close #1 — gated reviewer');
   const { dres, store } = dispatch(dir);
   const head = commitFeature(dir);
   const implId = dres.tickets.implementation.id;
-  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, T.get(store, implId).task_id)));
+  const taskId = T.get(store, implId).task_id;
+  // Until 2026-09-02 close #1 passed NO policy to reviewer(), so every close
+  // was mandatory and this case reached the mandatory gate by default. Now
+  // the dispatcher's own policy is honoured, and E1/T1 computes 'preferred'
+  // — so the mandatory band this case exists to test is pinned explicitly on
+  // the envelope (same on-disk patch as §2c).
+  setEnvelopeReviewPolicy(dir, taskId, 'mandatory');
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
   const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
   check('gated reviewer -> NOT_CLOSED naming lawful responses', r.outcome === 'NOT_CLOSED' && /review unavailable/.test(r.reason), JSON.stringify(r));
+}
+{
+  // The same exhausted lane under the PREFERRED band: §3.4's degraded path
+  // applies, so close #1 mints a disclosed same-family reviewer instead of
+  // refusing. Recorded here because close #1 could not reach this path at
+  // all before the policy was wired through — see this suite's section 11
+  // note on what close #2 then does with it.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, RED_REVIEW_ONLY);
+  const { dres, store } = dispatch(dir);
+  const head = commitFeature(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  setEnvelopeReviewPolicy(dir, taskId, 'preferred');
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('preferred band on a gated lane -> §3.4 degraded same-family reviewer, not a refusal',
+    r.ok === true && r.stage === 'REVIEW_PENDING' && r.review_policy === 'preferred' &&
+    r.reviewer_ticket.casting.vendor === 'anthropic', JSON.stringify(r));
 }
 
 // ------------------------------------------------------------------ section 4
@@ -851,6 +920,151 @@ function dispatchRecon(dir) {
   const { dres, store } = dispatch(dir);
   const t0 = T.get(store, dres.tickets.implementation.id);
   check('an E1 Builder ticket is NOT a recon ticket (close #1 path unchanged)', close.isReconTicket(t0) === false, JSON.stringify(t0));
+}
+
+section('11. close #1 — the Verifier-only exemption (2026-09-02 oracle §ALTERNATIVE "Exemption rule")');
+
+// Every ticket in the on-disk store, so "no reviewer was minted" can be
+// asserted against the store itself rather than against the return value.
+function allTickets(dir) {
+  const storeFile = path.join(dir, '.claude', 'orchestra', 'tickets', 'tickets.json');
+  return Object.values(JSON.parse(fs.readFileSync(storeFile, 'utf8')).tickets || {});
+}
+
+{
+  // (a) The dispatcher recorded `none`, the Verifier returned PASS with
+  // deterministic_only_closure, and the pinned range is one file / one line:
+  // the ticket closes on the Verifier alone and NO reviewer is ever cast.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  setEnvelopeReviewPolicy(dir, taskId, 'none');
+  repinBaseAfterBookkeeping(dir, taskId);
+  const head = commitPaths(dir, [['feature.js', 'module.exports = { feature: true };\n']]);
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+
+  check('(a) review_policy none + PASS + deterministic_only_closure + 1 file/1 line -> stage VERIFIER_CLOSED',
+    r.ok === true && r.stage === 'VERIFIER_CLOSED' && r.outcome === 'CLOSED', JSON.stringify(r));
+  check('(a) the implementation ticket is CLOSED in the store',
+    T.get(store, implId).status === 'CLOSED', T.get(store, implId).status);
+  const recFile = path.join(dir, '.claude', 'orchestra', 'ledger', implId, 'casting-record.json');
+  check('(a) a casting record was written', fs.existsSync(recFile), recFile);
+  const rec = fs.existsSync(recFile) ? JSON.parse(fs.readFileSync(recFile, 'utf8')) : {};
+  check('(a) casting record validates against casting-record.schema.json',
+    validate(CASTING_RECORD_SCHEMA, rec).length === 0, validate(CASTING_RECORD_SCHEMA, rec).join('; '));
+  check('(a) casting record carries close_mode verifier-only, review_policy none, cross_family false',
+    rec.close_mode === 'verifier-only' && rec.review_policy === 'none' && rec.review_cross_family === false, JSON.stringify(rec));
+  check('(a) casting record carries the measured diff (1 file, 1 line)',
+    rec.diff_files === 1 && rec.diff_lines === 1, JSON.stringify({ diff_files: rec.diff_files, diff_lines: rec.diff_lines }));
+  check('(a) NO reviewer ticket exists in the store',
+    allTickets(dir).filter((t) => t.kind === 'reviewer').length === 0,
+    JSON.stringify(allTickets(dir).map((t) => t.kind)));
+}
+{
+  // (b) Same policy and the same green Verifier, but the pinned range is
+  // three files: the exemption is refused and the ordinary reviewed path
+  // takes over, naming the ceiling that refused it.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  setEnvelopeReviewPolicy(dir, taskId, 'none');
+  repinBaseAfterBookkeeping(dir, taskId);
+  const head = commitPaths(dir, [
+    ['feature.js', 'module.exports = { feature: true };\n'],
+    ['second.js', 'module.exports = 2;\n'],
+    ['third.js', 'module.exports = 3;\n'],
+  ]);
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+
+  check('(b) 3 files -> the exemption is refused and close #1 falls through to REVIEW_PENDING',
+    r.ok === true && r.stage === 'REVIEW_PENDING', JSON.stringify(r));
+  check('(b) close_mode_reason names the diff ceiling',
+    /diff ceiling/.test(r.close_mode_reason || '') && /3 files/.test(r.close_mode_reason || ''), JSON.stringify(r.close_mode_reason));
+  check('(b) a reviewer ticket WAS minted', !!r.reviewer_ticket && r.reviewer_ticket.kind === 'reviewer', JSON.stringify(r.reviewer_ticket));
+  check('(b) the fall-through re-cast at preferred, so the reviewer sits on the T1 row (GPT-5.6 Sol · high), not a T2 promotion',
+    r.reviewer_ticket.casting.vendor === 'openai', JSON.stringify(r.reviewer_ticket.casting));
+  check('(b) the implementation ticket is NOT closed — it awaits the reviewer',
+    T.get(store, implId).status === 'RESOLVED', T.get(store, implId).status);
+  check('(b) no casting record was written by close #1 (that is close #2\'s job)',
+    !fs.existsSync(path.join(dir, '.claude', 'orchestra', 'ledger', implId, 'casting-record.json')), '');
+}
+{
+  // (b2) The line ceiling, isolated: one file, 21 changed lines.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  setEnvelopeReviewPolicy(dir, taskId, 'none');
+  repinBaseAfterBookkeeping(dir, taskId);
+  const twentyOne = Array.from({ length: 21 }, (_, i) => '// line ' + i).join('\n') + '\n';
+  const head = commitPaths(dir, [['feature.js', twentyOne]]);
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('(b2) 1 file but 21 changed lines -> refused, close_mode_reason names the line ceiling',
+    r.ok === true && r.stage === 'REVIEW_PENDING' && /21 changed lines/.test(r.close_mode_reason || ''), JSON.stringify(r.close_mode_reason));
+}
+{
+  // (c) Today's behaviour is untouched when the dispatcher did NOT record an
+  // exemption: a mandatory policy mints the reviewer on the promoted T2 row,
+  // exactly as before the policy was wired through.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const head = commitFeature(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  setEnvelopeReviewPolicy(dir, taskId, 'mandatory');
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('(c) mandatory policy -> REVIEW_PENDING with a reviewer minted, no exemption attempted',
+    r.ok === true && r.stage === 'REVIEW_PENDING' && !!r.reviewer_ticket && r.close_mode_reason === undefined, JSON.stringify(r));
+  check('(c) close #1 reports the band it closed under', r.review_policy === 'mandatory' && r.close_mode === 'reviewed', JSON.stringify(r));
+}
+{
+  // (c2) An envelope with NO review_policy at all cannot even reach the
+  // policy read: order.schema.json REQUIRES the field, so close #1 refuses
+  // the envelope outright. An absent policy can therefore never be mistaken
+  // for an exemption — the fail-closed default in close.js is the second
+  // line of that defence, not the first.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const head = commitFeature(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  const p = envelopePathFixture(dir, taskId);
+  const env = JSON.parse(fs.readFileSync(p, 'utf8'));
+  delete env.order.review_policy;
+  fs.writeFileSync(p, JSON.stringify(env, null, 2));
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('(c2) an envelope order missing review_policy is refused as schema-invalid, never exempted',
+    r.ok === false && r.outcome === 'NOT_CLOSED' && /envelope invalid/.test(r.reason) && /review_policy/.test(r.reason), JSON.stringify(r));
+}
+{
+  // The exemption is the DISPATCHER's to grant: a Verifier-green, one-line
+  // change whose recorded policy is `preferred` still gets a reviewer. This
+  // is the case that would break if close #1 ever started reading the
+  // executor's report for an exemption signal.
+  const { dir } = makeRepo(PASS_MANIFEST);
+  seedReadings(dir, GREEN);
+  const { dres, store } = dispatch(dir);
+  const implId = dres.tickets.implementation.id;
+  const taskId = T.get(store, implId).task_id;
+  setEnvelopeReviewPolicy(dir, taskId, 'preferred');
+  repinBaseAfterBookkeeping(dir, taskId);
+  const head = commitPaths(dir, [['feature.js', 'module.exports = { feature: true };\n']]);
+  driveToResolved(store, implId, dres.tickets.implementation.role, bandCReport('DONE', head, reportIntegrityLine(dir, taskId)));
+  const r = close.close({ ticket: T.get(store, implId), projectDir: dir, repoDir: dir, store });
+  check('preferred + a 1-file/1-line green diff still mints a reviewer — only `none` exempts',
+    r.ok === true && r.stage === 'REVIEW_PENDING' && !!r.reviewer_ticket, JSON.stringify(r));
 }
 
 section('10. the grep-pin — "CLOSED" as a close code appears only in bridge/close.js');

@@ -267,6 +267,30 @@ Quartermaster snapshot and issues a `kind:'reviewer'` ticket in the computed
 opposite family — a `closes:false` reviewer is `NOT_CLOSED: review
 unavailable (<reason>)`, never guessed around.
 
+The reviewer is computed with `policy: order.review_policy` — the band the
+**dispatcher** recorded on the envelope (`router.reviewPolicy()`), not a
+constant. Until 2026-09-02 close #1 passed no policy at all, so `reviewer()`
+defaulted to `mandatory` and promoted every T1 to the T2 frontier row; an
+absent or unrecognized value still falls back to `mandatory` (fail closed),
+and `order.schema.json` requires the field, so an envelope missing it is
+refused outright rather than treated as exempt. When the recorded policy is
+`none` — which `reviewPolicy()` grants only to provably-inert T0/T1 work
+outside every mandatory class, flag and security trigger — close #1 attempts a
+**Verifier-only close**: it re-proves, from its own evidence and never from
+the executor's report, that the Verifier returned `PASS` with
+`deterministic_only_closure: true` and that the pinned `base..head` range
+(measured with `git diff --numstat`) touches at most 2 files and 20 changed
+lines. All of that holding, it writes the casting record with
+`close_mode:'verifier-only'` plus the measured `diff_files`/`diff_lines`,
+closes the ticket `CLOSED`, returns `stage:'VERIFIER_CLOSED'` and mints no
+reviewer at all. Any condition failing, the exemption is refused and the
+ordinary reviewed path takes over — re-cast at `preferred`, with
+`close_mode_reason` naming the condition that refused it, carried to close #2
+in `.claude/orchestra/ledger/<ticket>/close-mode.json` so the refusal lands in
+the casting record. Every casting record on every close path now carries
+`review_policy` and `close_mode` ∈ {`verifier-only`, `reviewed`, `recon`}, so
+the ledger can say which band actually closed a ticket.
+
 **The structured verdict artifact** — `packs/codex/hooks/orchestra-review.js`
 and both Reviewer role files (`roster/reviewer-anthropic.md`,
 `roster/reviewer-openai.md`) require a mandatory trailing fenced

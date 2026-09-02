@@ -782,6 +782,10 @@ section('14. Ruling 4: schema semantic gates (verdict-audit in-schema; casting-r
     requested_casting: { vendor: 'anthropic', model: 'Sonnet 5', effort: 'med' },
     served_model: 'Sonnet 5', served_model_mismatch: false,
     bucket: 'AU-all', context_shape: 'packet', status: 'DONE', review_cross_family: true,
+    // review_policy/close_mode joined casting-record's required set on
+    // 2026-09-02 (Verifier-only close); an honest record now carries the
+    // band it closed under.
+    review_policy: 'mandatory', close_mode: 'reviewed',
   }, extra || {});
   check('an honest casting record validates', verifier.validateArtifact('casting-record', record()).outcome === 'PASS',
     JSON.stringify(verifier.validateArtifact('casting-record', record()).violations));

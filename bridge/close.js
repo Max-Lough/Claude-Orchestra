@@ -253,9 +253,59 @@ function resolveParentRef(repoDir, commit) {
   return String(r.stdout || '').trim() || null;
 }
 
+// The pinned-range diff, measured with git's own --numstat over the SAME
+// base..head close #1 already pins for the Verifier — never parsed out of
+// the executor's report, which the executor controls. Returns
+// { files, lines, binary } or null when the range cannot be measured; a null
+// is never read as "small enough" (see the exemption ladder below).
+function pinnedRangeDiffStat(repoDir, baseRef, headRef) {
+  if (!baseRef || !headRef) return null;
+  const r = spawnSync('git', ['-C', repoDir, 'diff', '--numstat', String(baseRef) + '..' + String(headRef)], { encoding: 'utf8' });
+  if (r.error || r.status !== 0) return null;
+  let files = 0;
+  let lines = 0;
+  for (const raw of String(r.stdout || '').split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (!line.trim()) continue;
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    files++;
+    // git writes '-' for both counts on a binary file: its changed-line
+    // count is not measurable, so it can never satisfy a line ceiling.
+    if (parts[0] === '-' || parts[1] === '-') return { files: files, lines: Infinity, binary: true };
+    lines += (parseInt(parts[0], 10) || 0) + (parseInt(parts[1], 10) || 0);
+  }
+  return { files: files, lines: lines, binary: false };
+}
+
+// The three policies reviewPolicy() can compute. close #1 fails CLOSED to
+// 'mandatory' for anything else — an absent or unrecognized policy must
+// never read as an exemption.
+const REVIEW_POLICIES = ['mandatory', 'preferred', 'none'];
+// The Verifier-only exemption ceiling (2026-09-02 oracle, §ALTERNATIVE
+// "Exemption rule"). Deliberately small: this is the band where the
+// Verifier's deterministic proof is the whole of the assurance.
+const EXEMPTION_MAX_FILES = 2;
+const EXEMPTION_MAX_LINES = 20;
+
 // DRY (repair B amendment): ledgerDir()/atomicWriteJson() are bridge/
 // telemetry.js's own — no duplicate definitions here.
 const { ledgerDir, atomicWriteJson } = telemetry;
+
+// A refused exemption must stay auditable across the two close calls: close
+// #1 decides it, close #2 (a separate invocation) writes the casting record
+// that has to carry close_mode_reason. This one small ledger note is the
+// carrier — the reviewer ticket's own schema has no field for it.
+function closeModeNoteFile(projectDir, ticketId) {
+  return path.join(ledgerDir(projectDir, ticketId), 'close-mode.json');
+}
+function readCloseModeNote(projectDir, ticketId) {
+  try {
+    return JSON.parse(fs.readFileSync(closeModeNoteFile(projectDir, ticketId), 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------- close #1
 
@@ -391,17 +441,121 @@ function closeImplementation(ctx, ticket) {
   const rt = createRouter({ seats: manifestState.seats });
 
   const authorFamilies = [ticket.author_family].concat(order && Array.isArray(order.co_author_families) ? order.co_author_families : []);
+
+  // The dispatcher's recorded policy is the ONLY exemption input (oracle
+  // §ALTERNATIVE: "when the dispatcher — not the executor — records
+  // review_policy:none"). It is read off the envelope order that was
+  // validated against order.schema.json a few lines above, so the executor's
+  // report cannot reach it. Anything absent or unrecognized fails closed to
+  // 'mandatory' — the pre-2026-09-02 behaviour, which is also what
+  // order.schema.json's own `required` list already guarantees.
+  const reviewPolicy = REVIEW_POLICIES.includes(order.review_policy) ? order.review_policy : 'mandatory';
+
   let revResult;
   try {
-    revResult = rt.reviewer(authorFamilies, risk, { buckets });
+    revResult = rt.reviewer(authorFamilies, risk, { buckets, policy: reviewPolicy });
   } catch (e) {
     return notClosed('reviewer computation failed: ' + (e && e.message ? e.message : String(e)));
   }
+
+  // ---- the Verifier-only exemption (2026-09-02 oracle §ALTERNATIVE) ------
+  // Reached only when the DISPATCHER recorded `none`, which reviewPolicy()
+  // grants only to provably-inert T0/T1 work outside every mandatory class,
+  // flag and security trigger. Every remaining condition is re-proved HERE,
+  // from the Verifier's own result and git's own diff — nothing is taken on
+  // the executor's word. This runs before any reviewer ticket is minted.
+  let closeModeReason = null;
+  if (revResult.review === 'none') {
+    const stat = pinnedRangeDiffStat(ctx.repoDir, baseRef, parsed.commit);
+    // First failing condition wins, and each names itself in the record.
+    const failed =
+      vResult.outcome !== 'PASS'
+        ? 'verifier outcome ' + vResult.outcome + ' (PASS required; COVERAGE_GAP is exactly the "force model review" signal)'
+        : vResult.deterministic_only_closure !== true
+          ? 'deterministic_only_closure false (the Verifier did not certify a model-free closure)'
+          : !stat
+            ? 'pinned-range diff unmeasurable (' + (baseRef || 'no base') + '..' + parsed.commit + ')'
+            : stat.binary
+              ? 'diff ceiling: the pinned range contains a binary file, whose changed lines are unmeasurable'
+              : stat.files > EXEMPTION_MAX_FILES
+                ? 'diff ceiling: ' + stat.files + ' files exceeds the ' + EXEMPTION_MAX_FILES + '-file limit'
+                : stat.lines > EXEMPTION_MAX_LINES
+                  ? 'diff ceiling: ' + stat.lines + ' changed lines exceeds the ' + EXEMPTION_MAX_LINES + '-line limit'
+                  : null;
+
+    if (!failed) {
+      let record;
+      try {
+        record = telemetry.writeCastingRecord(ctx.projectDir, ticket.id, {
+          task_id: ticket.task_id,
+          class: ticket.class,
+          risk: risk,
+          role: ticket.role,
+          requested_casting: ticket.casting,
+          served_model: (ticket.launched && ticket.launched.served_model) || 'UNKNOWN',
+          bucket: bucketFor(ticket.casting),
+          context_shape: contextShapeOf(order),
+          status: parsed.status,
+          review_cross_family: false, // no reviewer was cast — by policy, not by degradation
+          review_policy: 'none',
+          close_mode: 'verifier-only',
+          diff_files: stat.files,
+          diff_lines: stat.lines,
+        });
+      } catch (e) {
+        return notClosed('casting record refused: ' + (e && e.message ? e.message : String(e)));
+      }
+      const closed = tickets.close(ctx.store, ticket.id, {
+        code: 'CLOSED',
+        reason: 'verifier-only close: dispatcher review_policy none, Verifier PASS with deterministic_only_closure, diff ' +
+          stat.files + ' file(s)/' + stat.lines + ' line(s) within the ' + EXEMPTION_MAX_FILES + '/' + EXEMPTION_MAX_LINES + ' ceiling',
+      });
+      return {
+        ok: true,
+        outcome: 'CLOSED',
+        stage: 'VERIFIER_CLOSED',
+        close_mode: 'verifier-only',
+        review_policy: 'none',
+        diff_files: stat.files,
+        diff_lines: stat.lines,
+        implementation: closed,
+        casting_record: record,
+      };
+    }
+
+    // The exemption was refused. Falling through to the ordinary reviewed
+    // path is the ONLY way out — there is no third outcome, and in
+    // particular no "close anyway with a note". Re-cast at 'preferred':
+    // the dispatcher's own finding that this work is inert is evidence
+    // against the frontier row, but it has stopped being evidence for
+    // skipping review altogether.
+    closeModeReason = failed;
+    try {
+      revResult = rt.reviewer(authorFamilies, risk, { buckets, policy: 'preferred' });
+    } catch (e) {
+      return notClosed('reviewer computation failed after a refused exemption (' + failed + '): ' + (e && e.message ? e.message : String(e)));
+    }
+    atomicWriteJson(closeModeNoteFile(ctx.projectDir, ticket.id), {
+      ticket: ticket.id,
+      review_policy: reviewPolicy,
+      close_mode: 'reviewed',
+      close_mode_reason: failed,
+      at: new Date().toISOString(),
+    });
+  }
+
   if (!revResult.closes) {
     const lawful = (revResult.options || []).join(', ');
     return notClosed('review unavailable (' + revResult.reason + ')' + (lawful ? ' — lawful responses: ' + lawful : ''));
   }
 
+  // revResult.casting is non-null here by construction: the ONLY branch that
+  // returns a null casting is review === 'none', which either closed the
+  // ticket above or was re-cast at 'preferred'. Asserted rather than assumed
+  // — a null deref here would be an exemption failing OPEN.
+  if (!revResult.casting) {
+    return notClosed('internal: reviewer returned no casting on a closing result (policy ' + reviewPolicy + ')');
+  }
   const reviewerFamily = revResult.casting.vendor;
   const reviewerTicket = tickets.issue(ctx.store, {
     kind: 'reviewer',
@@ -433,6 +587,11 @@ function closeImplementation(ctx, ticket) {
   return {
     ok: true,
     stage: 'REVIEW_PENDING',
+    review_policy: reviewPolicy,
+    close_mode: 'reviewed',
+    // Present only when an exemption was attempted and refused, naming the
+    // condition that refused it.
+    close_mode_reason: closeModeReason === null ? undefined : closeModeReason,
     reviewer_ticket: reviewerTicket,
     spawn: {
       subagent_type: reviewerSubagentType,
@@ -680,7 +839,22 @@ function closeReview(ctx, ticket) {
   const riskForTelemetry = (envelope && envelope.risk) || 'T1';
   const contextShape = contextShapeOf(envOrder);
 
-  telemetry.writeCastingRecord(ctx.projectDir, implTicket.id, {
+  // §4: every close path records the band it closed under. Reaching close #2
+  // at all means a reviewer was cast and audited, so close_mode is
+  // 'reviewed'; close_mode_reason appears only when close #1 tried the
+  // Verifier-only exemption and refused it (the note it left behind).
+  const closeModeNote = readCloseModeNote(ctx.projectDir, implTicket.id);
+  const closeModeFields = Object.assign(
+    {
+      review_policy: REVIEW_POLICIES.includes(envOrder && envOrder.review_policy) ? envOrder.review_policy : 'mandatory',
+      close_mode: 'reviewed',
+    },
+    closeModeNote && typeof closeModeNote.close_mode_reason === 'string' && closeModeNote.close_mode_reason
+      ? { close_mode_reason: closeModeNote.close_mode_reason }
+      : null
+  );
+
+  telemetry.writeCastingRecord(ctx.projectDir, implTicket.id, Object.assign({
     task_id: implTicket.task_id,
     class: implTicket.class,
     risk: riskForTelemetry,
@@ -691,8 +865,8 @@ function closeReview(ctx, ticket) {
     context_shape: contextShape,
     status: implStatus,
     review_cross_family: crossFamily,
-  });
-  telemetry.writeCastingRecord(ctx.projectDir, ticket.id, {
+  }, closeModeFields));
+  telemetry.writeCastingRecord(ctx.projectDir, ticket.id, Object.assign({
     task_id: ticket.task_id,
     class: ticket.class,
     risk: riskForTelemetry,
@@ -704,7 +878,7 @@ function closeReview(ctx, ticket) {
     status: 'DONE',
     verdict: verdictObj.verdict === 'APPROVE' ? 'APPROVE' : 'REVISE', // casting-record's own verdict enum has no REJECT (out of this leg's FILES)
     review_cross_family: crossFamily,
-  });
+  }, closeModeFields));
   telemetry.writeVerdictAudit(ctx.projectDir, ticket.id, audit);
 
   if (closeReason) {
@@ -813,6 +987,8 @@ function closeRecon(ctx, ticket) {
       context_shape: contextShapeOf(envelope.order),
       status: 'DONE',
       review_cross_family: false, // recon is never reviewed — by design, not an incident
+      review_policy: REVIEW_POLICIES.includes(envelope.order && envelope.order.review_policy) ? envelope.order.review_policy : 'mandatory',
+      close_mode: 'recon', // §4: the read-only close is its own band, never confusable with an exemption
     });
   } catch (e) {
     return notClosed('casting record refused: ' + (e && e.message ? e.message : String(e)));

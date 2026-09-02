@@ -45,6 +45,29 @@ Also new, not yet installed anywhere: `tools/orchestra-ledger-report.js`, a
 read-only ledger roll-up — per-ticket durations, token usage drawn from subagent
 transcripts with an API-price equivalent, pool-reading draw, and anomalies.
 
+`bridge/close.js` close #1 now honours the review policy the dispatcher already
+computed. `router/router.js` has always returned `mandatory`/`preferred`/`none`
+and dispatch has always recorded it on the envelope, but close #1 called
+`reviewer()` with no `policy` at all — so the default won, every T1 was promoted
+to the T2 frontier row, and a cross-family reviewer was minted for *every*
+implementation, including no-change and verification-only work (a 2026-09-02
+oracle measured reviewers at ~35% of recorded active time with 5 of 17 reviewer
+tickets ever reaching `CLOSED`). The policy is now passed through; `reviewer()`
+gained a `none` branch that casts nobody (and *throws* at T2/T3 rather than
+silently downgrading a mandatory review) plus a `rowTier` field so the selected
+row is assertable — the T1 and T2 anthropic rows both serve GPT-5.6 Sol · high,
+so the model name alone could not tell the bands apart. On a dispatcher-recorded
+`none`, close #1 closes on the Verifier alone — but only after re-proving
+`PASS`, `deterministic_only_closure`, and a `git diff --numstat` range of at
+most 2 files / 20 lines from its own evidence; anything short of that falls
+through to the ordinary reviewed path with `close_mode_reason` naming the
+condition that refused it. `registry/schemas/casting-record.schema.json` gained
+required `review_policy` and `close_mode` (plus optional `close_mode_reason`,
+`diff_files`, `diff_lines`), keeping `additionalProperties:false`, so the ledger
+can finally answer which review band closed a ticket — the question the oracle
+could not. Covered by `tests/router.test.js` §6b, `tests/bridge-close.test.js`
+§11, and five new `tests/registry.test.js` tamper cases.
+
 ## 2.4.1 — WO-12 pre-trial work closed under an oracle-authored bound; 12f withdrawn
 
 What prompted this release is a postmortem, not a finding. Rounds 4–8 of the

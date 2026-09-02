@@ -859,7 +859,26 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-09-01 22:20Z — WO-14b SHAKEDOWN, order #5 **CLOSED**)
+## Fresh-session quick start (as of 2026-09-02 01:40Z — WO-14b SHAKEDOWN, order #6 **CLOSED first call, owner present**)
+
+**START HERE — WO-14b's confirming live order is done.** Order #6 ("health bars beneath ships",
+PiratePartyPals, Fable helm restarted after the PL-10 install, target main 19028200 pushed,
+readings re-recorded 23:30Z) reached **CLOSED at 01:40:19Z on the first close call of its fix
+round**: builder casting record (Sonnet 5 ↔ `claude-sonnet-5`, AU-all, mismatch:false),
+reviewer casting record (GPT-5.6 Sol ↔ `gpt-5.6-sol`, OU, cross_family:true) and a
+verdict-audit PASS under `<target>/.claude/orchestra/ledger/tkt-64e6421982382447/` and
+`tkt-346b8fe2edc0ed95/`. **PL-10 proven live** (recon ticket tkt-ed7a95c806cb4a63 CLOSED on
+its VERDICT line with a casting record). **PL-22 still unproven** — both review work orders
+prohibited gdUnit by owner instruction; prove it on the next codex-lane review that allows
+gdUnit, after the box is clear of orphaned headless Godot runners (11 were found alive during
+order #6, 3 of them from order #5). New guidance-only rows PL-26 (builder must not background
+its test run), PL-27 (helm must `orchestra_close` every resolved reviewer ticket, REVISE
+included — review #1 of order #6 has no verdict audit because it skipped this), PL-28 (enginePass
+event `run_nonce: UNKNOWN`). No fix cycle opened (owner ruling). Target branch
+`feat/health-bar-below-hull` (db1ed4cf → c3194209) awaits the owner's merge. Full sequence:
+last row of `roster/wo14b-activation-bridge-progress.md`.
+
+## Previous quick start (as of 2026-09-01 22:20Z — WO-14b SHAKEDOWN, order #5 **CLOSED**)
 
 **READ THIS FIRST — the shakedown's primary goal is met.** Live order #5 (adopt-and-verify
 `33a03539` on `feat/nameplate-range-200`, Fable helm) reached **CLOSED at 22:15:40Z** — the

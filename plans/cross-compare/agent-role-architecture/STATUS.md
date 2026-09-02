@@ -859,7 +859,25 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
-## Fresh-session quick start (as of 2026-09-02 01:40Z — WO-14b SHAKEDOWN, order #6 **CLOSED first call, owner present**)
+## Fresh-session quick start (as of 2026-09-02 06:55Z — WO-14b SHAKEDOWN, post-reboot: gate GREEN, review lane REPAIRED, harness FREEZE next)
+
+**START HERE.** Order #6 is CLOSED (below). Post-reboot the box is clean (Steam quit → Godot exits
+normally; PL-30 resolved). The target helm holds feat/health-bar-below-hull @ 367f87ad with the
+owner's placement tweak and a green full `scripts/ci.sh` gate (gdUnit 3200/3200, smokes green, zero
+orphans), waiting for the owner's sloop + fourth-rate eyeball before opening the target PR. The
+cross-vendor review lane was down (codex self-update re-planted the stale 0.151.0 runner) and is
+repaired (PL-33; pre-flight: the three runner paths must hash `f0cbcc339587…`). Master PR #32 is
+mergeable, CI 4/4 green. **Owner sequence:** (1) eyeball → tell the helm to open the target PR;
+(2) the helm must `orchestra_close` reviewer tkt-ee831169f072004f (gdUnit-allowed → the PL-22
+proof) and close, not launch, the empty-range reviewer tkt-73f75d86b5bc5241 (PL-32), minting the
+review over ed5dcdad..367f87ad instead; (3) merge target PR + master PR #32; (4) **FREEZE the
+harness** and run ten real orders, counting: orders reaching CLOSED without a harness edit, verdict
+audits that caught something the reviewer missed, helm prompt corrections (PL-25 kind), Godot
+orphans, and recurrences of the checkout-reverts-harness class (PL-9/11/15/17). Pre-committed
+rule: one recurrence of that class → do the gate-reads-the-pin-copy fix; zero → YAGNI. Rows
+PL-31/32/33 are guidance only. Full row: last line of `roster/wo14b-activation-bridge-progress.md`.
+
+## Previous quick start (as of 2026-09-02 01:40Z — WO-14b SHAKEDOWN, order #6 **CLOSED first call, owner present**)
 
 **START HERE — WO-14b's confirming live order is done.** Order #6 ("health bars beneath ships",
 PiratePartyPals, Fable helm restarted after the PL-10 install, target main 19028200 pushed,

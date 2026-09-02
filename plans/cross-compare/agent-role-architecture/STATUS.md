@@ -861,18 +861,20 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
 
 ## Fresh-session quick start (as of 2026-09-02 15:06Z — WO-14b SHAKEDOWN, order #6 final delta REVIEWED, both PRs mergeable, harness FREEZE next)
 
-**START HERE.** Order #6 is done end to end: the owner eye-checked the bar, the constants commit was redone
-in-harness at 1dc965b3 (builder CLOSED with casting record; cross-family Codex review APPROVE, verdict audit
-PASS 6/6). Target PR #400 (feat/health-bar-below-hull @ 1dc965b3 → main) is MERGEABLE, not merged. Master
-PR #32 is MERGEABLE, CI 4/4 green. Environment: Steam closed → Godot exits normally (PL-30 resolved); the
-Codex lane is repaired (PL-33; pre-flight: the three runner paths hash `f0cbcc339587…`). **Owner sequence:**
-(1) merge target PR #400, delete `backup/health-bar-367f87ad`; (2) merge master PR #32; (3) **FREEZE the
-harness** and run ten real orders, counting: orders reaching CLOSED without a harness edit, verdict audits
-that caught something the reviewer missed, helm prompt corrections (PL-25/31/35 kind), Godot orphans, and
-recurrences of the checkout-reverts-harness class (PL-9/11/15/17). Pre-committed rule: one recurrence of
-that class → do the gate-reads-the-pin-copy fix; zero → YAGNI. Still unproven: PL-22 — the next Codex
-review that allows gdUnit must be dispatched with NO `forbid: ["godot"]` (PL-35). Rows PL-31..35 are
-guidance only. Full rows: last two lines of `roster/wo14b-activation-bridge-progress.md`.
+**START HERE (2026-09-02).** (1) Master PR #32 is **merged**. PR #33 (`claude/v2.5.0-shakedown-fixes`)
+is open with six commits — merge it. (2) PiratePartyPals already runs the same bytes: the harness has
+been reinstalled into the project after every commit on PR #33, config hash unchanged throughout; live
+Tug of War tests are in progress there. (3) How to read the live tests: `node
+tools/orchestra-ledger-report.js "E:/Godot Projects/PiratePartyPals" --since <ISO>` (durations, usage,
+anomalies, REVIEW VERDICTS) and record pool readings with `node quartermaster/quartermaster.js --file
+<project>/.claude/orchestra-pool-readings.jsonl --record <bucket> <fraction> --source "..."`. (4) Open
+items, in priority order: helm must close every resolved builder ticket (unclosed = no casting record);
+PL-40 degraded-path dead-end (only if the OU bucket goes Red); PL-39 batching pilot (decide after 20–30
+close-outs under the new policy wiring); PL-37 item 1 effort re-sweep (needs a measured Architect
+exercise); Codex engine token usage not captured (OU draw only visible via pool readings). (5) Reinstall
+rule: stop the project session first, or accept that its MCP server holds old engine/close code until
+restart; never hand-edit the manifest while a ticket is LAUNCHED, and any manifest edit needs an
+immediate `node install.js <project>` to re-pin.
 
 ## Previous quick start (as of 2026-09-02 01:40Z — WO-14b SHAKEDOWN, order #6 **CLOSED first call, owner present**)
 

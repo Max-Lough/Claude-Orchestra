@@ -408,6 +408,17 @@ function codexModelId(name) {
   const key = s.toLowerCase();
   return CODEX_MODEL_IDS[key] || key.replace(/\s+/g, '-');
 }
+// Same shape defect for EFFORT (shakedown 2026-09-02, Tug of War A2): the
+// roster ladder spells the middle rung `med` (router/castings.json
+// effortLadders.openai), Codex's model_reasoning_effort accepts only
+// `medium`, so every Terra · med casting died at preflight. Everything else
+// on the ladder (none/low/high/xhigh/max) is already Codex's own spelling.
+const CODEX_EFFORTS = { med: 'medium' };
+function codexEffort(level) {
+  const s = String(level || '').trim().toLowerCase();
+  if (!s) return null;
+  return CODEX_EFFORTS[s] || s;
+}
 
 /* ------------------------------------------------- in-flight run registry -- */
 
@@ -990,7 +1001,7 @@ const TOOLS = [
       // (gated.skip) have no ticket to source from, so the caller's own
       // values (if any) are used exactly as before.
       const effectiveModel = codexModelId(gated.consumed ? (gated.consumed.casting && gated.consumed.casting.model) || null : callerModel);
-      const effectiveEffort = gated.consumed ? (gated.consumed.casting && gated.consumed.casting.effort) || null : callerEffort;
+      const effectiveEffort = codexEffort(gated.consumed ? (gated.consumed.casting && gated.consumed.casting.effort) || null : callerEffort);
 
       const dir = makeRunDir('exec');
       const args = ['--work-order', writeInput(dir, 'work-order.txt', workOrder)];
@@ -1056,7 +1067,7 @@ const TOOLS = [
           args.push(flag, p);
         }
       }
-      if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', a.effort);
+      if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', codexEffort(a.effort));
       if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       runRunner(id, 'crossplan', args, progressToken);

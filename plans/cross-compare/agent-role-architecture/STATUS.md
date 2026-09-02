@@ -882,6 +882,13 @@ spends on the same kind of order. Evidence from 2026-09-02 13:00Z–21:09Z for t
 since midnight, 14 reviewer tickets with 43% UNPARSED, 3 bounded-Investigator tickets served by Opus
 instead of Haiku, 64 anomaly rows (most: RESOLVED-but-never-CLOSED builders).
 
+**Oracle verdict (Sol·max, same evening):** `roster/harness-value-oracle-2026-09-02.md` — PARTIAL at the
+component level, **NO for 2.0 as a whole; no-go for another architecture revision.** Keep the legacy
+loop; port only the cross-vendor exec/review runners, the Verifier as an explicit `verify` command,
+passive telemetry + ledger report, and a small install receipt; delete the ticket gate, Router,
+class registry, close protocol and Quartermaster. Its "one last test" is allowed only frozen, against
+a measured legacy control, with hard thresholds (§ WHAT 2.0 SUCCESS WOULD REQUIRE) and a stopping rule.
+
 **How to apply:** no speculative features, no new review→fix cycles, no harness reinvention. Every
 change between now and the decision must be traceable to a ledger anomaly it removes. When the
 decision comes, the candidate list of "advantages worth porting to 1.0" starts with: the ticket

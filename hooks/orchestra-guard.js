@@ -43,22 +43,27 @@
  * -------------------------------------------------------------------- pause
  *
  * The pause switch (.claude/orchestra.pause / ORCHESTRA_PAUSE=1) is
- * OUT-OF-BAND ONLY. There is no tool-call carve-out that creates or edits
- * the pause file. Any Write/Edit/MultiEdit/NotebookEdit whose target
- * resolves to (or nests beneath, treating it as a directory) exactly
- * `<project>/.claude/orchestra.pause` is DENIED (classifyPauseWrite() /
- * denySelfPause()), checked before every other carve-out and exemption,
- * including the subagent exemption and Agent handling. Windows spelling
- * aliases (case, NTFS ADS suffix, trailing dots/spaces) are normalised
- * before comparison so none of them dodge the deny.
+ * OUT-OF-BAND ONLY for an identified Director session. There is no tool-call
+ * carve-out that creates or edits the pause file. Any
+ * Write/Edit/MultiEdit/NotebookEdit whose target resolves to (or nests
+ * beneath, treating it as a directory) exactly
+ * `<project>/.claude/orchestra.pause` is checked (classifyPauseWrite()) before
+ * every other carve-out and exemption, including the subagent exemption and
+ * Agent handling — but the DENY itself (denySelfPause()) fires only once the
+ * model is positively identified as Fable/Opus, same as every other denial
+ * in this guard: nothing is enforced against a Sonnet/Haiku session, or one
+ * whose model cannot yet be determined. Windows spelling aliases (case, NTFS
+ * ADS suffix, trailing dots/spaces) are normalised before comparison so none
+ * of them dodge the deny once it applies.
  *
  * The pause-exists short-circuit itself only honours a GENUINE pause file: a
  * regular file with exactly one hard link, not a symlink/junction (see
  * pauseFileStatus()). A hardlinked or linked file at the pause path is
- * IGNORED as a pause signal — it neither stands the guard down nor (since
- * the deny above always wins) can any tool call ever create it. When an
- * ignored pause file is the reason the guard did NOT stand down, whatever
- * denial follows names that reason.
+ * IGNORED as a pause signal — it does not stand the guard down, and (for an
+ * identified Director session) the deny above still wins, so no tool call
+ * can create a genuine one over it either. When an ignored pause file is the
+ * reason the guard did NOT stand down, whatever denial follows names that
+ * reason.
  *
  * ---------------------------------------------------------------- carve-outs
  *
@@ -994,13 +999,23 @@ function main(raw) {
   const toolName = input.tool_name;
   const policy = loadPolicy();
 
-  // Self-pause: absolute — checked before EVERY other carve-out and
-  // exemption, before the subagent exemption, before Agent handling, before
-  // model dormancy. classifyPauseWrite() tolerates a non-string toolName
+  // Self-pause: checked before EVERY other carve-out and exemption — before
+  // the subagent exemption, before Agent handling, before the pause-exists
+  // short-circuit — but the actual denial fires only once the model is
+  // positively identified as the Director (Fable/Opus), same as every other
+  // denial in this guard: under 3.0 the guard enforces NOTHING until it has
+  // that positive identification, so a Sonnet/Haiku session (or one whose
+  // model cannot yet be determined — no transcript, corrupt, empty) writing
+  // the pause file is unrestricted, exactly like any other tool call from
+  // that session. classifyPauseWrite() tolerates a non-string toolName
   // (Set.has() on anything just returns false), so this is safe to run
   // before the `typeof toolName !== 'string'` check further down too.
   if (classifyPauseWrite(toolName, input.tool_input) === 'deny') {
-    return denySelfPause(toolName, policy);
+    const pauseModel = latestMainModel(input);
+    if (pauseModel.model && DIRECTOR_MODEL.test(pauseModel.model)) {
+      return denySelfPause(toolName, policy);
+    }
+    return allow();
   }
 
   // The pause-exists short-circuit itself, next: only a GENUINE pause file

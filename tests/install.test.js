@@ -541,6 +541,56 @@ function case14_noRosterKeyInInstallState() {
   check('install state over a scrubbed legacy target has no roster key', !('roster' in stateScrubbed), JSON.stringify(stateScrubbed));
 }
 
+function case15_uninstallIgnoreManifest() {
+  section('15. --uninstall refuses on a malformed orchestra.json; --uninstall --ignore-manifest completes anyway');
+
+  const target = tmpdir('orchestra-install-');
+  const r0 = install(target, ['--packs', 'codex', '--specialists', 'modeler']);
+  check('(setup) install succeeds', ok(r0), out(r0));
+
+  const manifestPath = path.join(target, '.claude', 'orchestra.json');
+  fs.writeFileSync(manifestPath, '{ this is not json', 'utf8');
+  const before = census(target);
+
+  const rPlain = install(target, ['--uninstall']);
+  check('plain --uninstall refuses on a malformed manifest', rPlain.status !== 0, out(rPlain));
+  check('plain --uninstall names the file', /orchestra\.json/.test(out(rPlain)), out(rPlain));
+  const afterPlain = census(target);
+  check(
+    'plain --uninstall touched nothing (census unchanged)',
+    JSON.stringify(before) === JSON.stringify(afterPlain),
+    'before=' + before.join(',') + ' after=' + afterPlain.join(',')
+  );
+  check(
+    'the malformed manifest itself is untouched by the refusal',
+    fs.readFileSync(manifestPath, 'utf8') === '{ this is not json',
+    fs.readFileSync(manifestPath, 'utf8')
+  );
+
+  const rIgnore = install(target, ['--uninstall', '--ignore-manifest']);
+  check('--uninstall --ignore-manifest completes', ok(rIgnore), out(rIgnore));
+  check(
+    '--uninstall --ignore-manifest actually removed the harness files',
+    !fs.existsSync(path.join(target, '.claude', 'agents', 'detective.md')) &&
+      !fs.existsSync(path.join(target, '.claude', 'hooks', 'orchestra-guard.js')),
+    census(target).join(',')
+  );
+  check(
+    '--uninstall --ignore-manifest leaves orchestra.json in place, still malformed',
+    fs.existsSync(manifestPath) && fs.readFileSync(manifestPath, 'utf8') === '{ this is not json',
+    fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, 'utf8') : '(missing)'
+  );
+
+  // The flag only means something with --uninstall.
+  const target2 = tmpdir('orchestra-install-');
+  const rBad = install(target2, ['--ignore-manifest']);
+  check(
+    '--ignore-manifest without --uninstall is refused',
+    rBad.status !== 0 && /--ignore-manifest only means something with --uninstall/.test(out(rBad)),
+    out(rBad)
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -570,6 +620,7 @@ try {
   case12_scrubDeprecatedKeys();
   case13_orphanedRuntimeDirWarns();
   case14_noRosterKeyInInstallState();
+  case15_uninstallIgnoreManifest();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

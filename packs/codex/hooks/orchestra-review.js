@@ -1417,20 +1417,27 @@ function siblingPresent(dir, name) {
 // "Actually there" means BESIDE the binary and of the right kind — the two
 // weaker questions (does the name exist anywhere in the install, does anything
 // by that name exist here) each have a false-positive that reads as healthy.
-function verifyHelperSiblings(installDir, layout) {
+//
+// dryRun=true mirrors restoreHelpers()'s --no-repair contract: a known-good
+// source may be found, but nothing is copied — it is reported as still
+// missing (in `notRestored`, with where it was found) so `--doctor
+// --no-repair` can name the exact fix without writing outside its own
+// scratch.
+function verifyHelperSiblings(installDir, layout, dryRun) {
   const wanted = CONFIG.helperSiblings;
   if (!wanted.length || !installDir) {
-    return { checked: false, missing: [], restored: [], searched: [] };
+    return { checked: false, missing: [], restored: [], searched: [], notRestored: [] };
   }
   const missing = wanted.filter((name) => !siblingPresent(installDir, name));
   if (!missing.length) {
-    return { checked: true, missing: [], restored: [], searched: [] };
+    return { checked: true, missing: [], restored: [], searched: [], notRestored: [] };
   }
 
   const searched = helperSourceCandidates(installDir, layout);
   const restored = [];
   const problems = [];
   const stillMissing = [];
+  const notRestored = [];
   const under = (parent, child) => {
     try {
       const rel = path.relative(path.resolve(parent), path.resolve(child));
@@ -1452,6 +1459,11 @@ function verifyHelperSiblings(installDir, layout) {
       stillMissing.push(name);
       continue;
     }
+    if (dryRun) {
+      stillMissing.push(name);
+      notRestored.push(name + ' (found at ' + srcDir + ')');
+      continue;
+    }
     const src = path.join(srcDir, name);
     try {
       copyInto(src, dest);
@@ -1471,7 +1483,7 @@ function verifyHelperSiblings(installDir, layout) {
       problems.push(name + ': ' + ((e && e.message) || e));
     }
   }
-  return { checked: true, missing: stillMissing, restored, searched, problems };
+  return { checked: true, missing: stillMissing, restored, searched, problems, notRestored };
 }
 
 // FIX: a Codex self-update can silently remove files a working install needs.
@@ -1622,10 +1634,17 @@ function inspectCodexInstall() {
 
   // Helper siblings: the files a self-update strips — or a hand repair files in
   // the wrong place — verified next to the RESOLVED binary rather than assumed.
-  const siblings = verifyHelperSiblings(installDir, layout);
+  const siblings = verifyHelperSiblings(installDir, layout, CONFIG.noRepair);
   if (siblings.restored.length) {
     lines.push(
       'helper siblings repaired next to the resolved binary: ' + siblings.restored.join(', ')
+    );
+  }
+  if (CONFIG.noRepair && siblings.notRestored && siblings.notRestored.length) {
+    lines.push(
+      'NOT restored (--no-repair): ' + siblings.notRestored.length + ' helper sibling(s) found ' +
+        'but not copied: ' + siblings.notRestored.join(', ') +
+        '. Repair with `node .claude/hooks/orchestra-review.js --doctor` (without --no-repair).'
     );
   }
   for (const p of siblings.problems || []) lines.push('helper repair problem — ' + p);

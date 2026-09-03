@@ -1427,6 +1427,7 @@ let depthArg = null;
 let lintFlag = false;
 let grantPushFlag = false;
 let grantsLocalFlag = false;
+let ignoreManifestFlag = false;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--uninstall') uninstall = true;
@@ -1444,12 +1445,13 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--lint') lintFlag = true;
   else if (a === '--grant-push') grantPushFlag = true;
   else if (a === '--grants-local') grantsLocalFlag = true;
+  else if (a === '--ignore-manifest') ignoreManifestFlag = true;
   else if (a.startsWith('--')) {
     fail(
       'Unknown flag: ' + a +
         ' (expected --uninstall, --packs <names>, --no-packs, --specialists <names>,' +
         ' --no-specialists, --scan <dir>, --update, --depth <n>, --lint [dir],' +
-        ' --grant-push, or --grants-local)'
+        ' --grant-push, --grants-local, or --uninstall --ignore-manifest)'
     );
   } else if (!dirArg) dirArg = a;
   else fail('Unexpected extra argument: ' + a);
@@ -1459,6 +1461,15 @@ if (grantPushFlag && uninstall) {
 }
 if (grantsLocalFlag && uninstall) {
   fail('--grants-local does nothing with --uninstall — grants are removed from wherever they were written.');
+}
+// --ignore-manifest: the escape hatch for a malformed .claude/orchestra.json
+// that would otherwise lock --uninstall out entirely (refuseIfTargetMalformed
+// refuses the WHOLE run, uninstall included, on a file the owner cannot fix
+// without hand-editing it first). Only means something paired with
+// --uninstall — restoring the harness with a manifest you have declared
+// unreadable is not a thing this flag does.
+if (ignoreManifestFlag && !uninstall) {
+  fail('--ignore-manifest only means something with --uninstall: node install.js [targetDir] --uninstall --ignore-manifest');
 }
 
 // --- lint mode: the frontmatter check on its own, for CI and contributors.
@@ -1570,10 +1581,20 @@ const orchestraRuntimeDir = path.join(dotClaude, ORCHESTRA_RUNTIME_DIRNAME);
 // present), .mcp.json, orchestra.json. Runs for both install and uninstall,
 // before any fs mutation below (including the frontmatter lint's own file
 // reads, which touch nothing in the target either way).
-const manifestMalformedCheck = [
+//
+// --uninstall --ignore-manifest skips this check for orchestra.json
+// specifically — a malformed manifest must never lock the owner out of
+// removing the harness, and the whole point of --ignore-manifest is running
+// the uninstall's untracked path WITHOUT reading this file at all (not even
+// to validate it).
+const manifestMalformedCheck = uninstall && ignoreManifestFlag ? [] : [
   {
     file: orchestraJsonFile,
-    hint: '.claude/orchestra.json may simply be deleted to proceed, if you do not need its contents preserved.',
+    hint: uninstall
+      ? '.claude/orchestra.json may simply be deleted to proceed, if you do not need its contents ' +
+        'preserved — or re-run with --uninstall --ignore-manifest to remove Orchestra without ' +
+        'ever reading this file.'
+      : '.claude/orchestra.json may simply be deleted to proceed, if you do not need its contents preserved.',
   },
 ];
 refuseIfTargetMalformed([
@@ -2226,12 +2247,14 @@ if (!uninstall) {
   // left to stand between the Director and the repo. refuseIfTargetMalformed()
   // above already refused on bad JSON before any of this runs.
 
-  // 0. Read the manifest, if any. Its installedPermissions/installedDeny
+  // 0. Read the manifest, if any (unless --ignore-manifest, which never even
+  // reads this file — it is treated as {} for permission-tracking purposes,
+  // same as a project with none). Its installedPermissions/installedDeny
   // ledger is the source of truth for exactly what this installer added; a
-  // project with no manifest at all (a byte-for-byte legacy install, or one
-  // Orchestra never configured for grants) falls back to the exact-string
-  // removal below instead.
-  const manifestFileExistsNow = fs.existsSync(orchestraJsonFile);
+  // project with no manifest at all (a byte-for-byte legacy install, one
+  // Orchestra never configured for grants, or --ignore-manifest) falls back
+  // to the exact-string removal below instead.
+  const manifestFileExistsNow = !ignoreManifestFlag && fs.existsSync(orchestraJsonFile);
   const priorManifest = manifestFileExistsNow ? readJson(orchestraJsonFile) : {};
   const useUntrackedFallback = !manifestFileExistsNow;
 

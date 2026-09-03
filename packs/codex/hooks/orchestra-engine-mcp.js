@@ -577,7 +577,7 @@ const TOOLS = [
         base_ref: { type: 'string', description: 'Commit the change is measured FROM (with head_ref).' },
         head_ref: { type: 'string', description: 'Commit under review. Always pass when the change is committed — pins the review to a clean checkout.' },
         tier: { type: 'string', enum: ['inert'], description: 'Pass "inert" ONLY when the Director\'s order explicitly declares TIER: inert. Full depth is the default.' },
-        timeout_ms: { type: 'number', description: 'Wall-clock cap per attempt, only when the order names one. Default/inert floor is 600000.' },
+        timeout_ms: { type: 'number', description: 'Wall-clock cap per attempt, only when the order names one. Default/inert floor is 1800000.' },
         no_tests: { type: 'boolean', description: 'Hard-forbid running the suite/build/app (order says so). Affected claims come back UNVERIFIED (prohibited).' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the reviewer must not execute.' },
         warmup_cmd: { type: 'string', description: 'Command run unsandboxed in the fresh pinned checkout before the integrity baseline (e.g. "pnpm install"). Pinned reviews only.' },

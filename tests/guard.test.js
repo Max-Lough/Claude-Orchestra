@@ -21,12 +21,15 @@
  *      (Opus/Fable) at the helm. Sonnet, Haiku, or an undetermined model
  *      (no transcript, no assistant turn yet) all stand the guard down —
  *      no denial, no warning.
- *   4. The pause-file carve-out is GONE: no tool call — Write, Edit,
+ *   4. The pause-file carve-out is GONE for an identified Director session:
+ *      once the model is positively Fable/Opus, no tool call — Write, Edit,
  *      MultiEdit, or NotebookEdit — may create or edit
- *      `.claude/orchestra.pause`. The pause switch is out-of-band only:
+ *      `.claude/orchestra.pause`; the pause switch is out-of-band only:
  *      `ORCHESTRA_PAUSE=1`, or the file pre-existing before the tool call
  *      (created by the user outside the tool loop) — and a genuine pause
- *      releases Agent too.
+ *      releases Agent too. This is Director law, not an absolute rule
+ *      independent of it: a Sonnet/Haiku session, or one whose model cannot
+ *      yet be determined, is unrestricted, same as every other denial here.
  *   5. Both remaining carve-outs (plan/memory) refuse a resolved target
  *      that already exists as a hardlink (nlink > 1) or shares {dev, ino}
  *      with a protected harness/config file — "hardlinked target".
@@ -448,7 +451,7 @@ function case6_fixedShapeUnchanged() {
 }
 
 function case7_pauseHardening() {
-  section('7. Pause-file carve-out REMOVED entirely: out-of-band only, every tool write to the path denies');
+  section('7. Pause-file carve-out REMOVED entirely: out-of-band only, every tool write to the path denies (once a Director session is identified)');
 
   const proj = tmpdir('orchestra-guard-');
   const transcript = writeTranscript(proj, [assistantTurn('claude-opus-4-8')]);
@@ -495,15 +498,59 @@ function case7_pauseHardening() {
   const rMultiEditExact = runGuard(proj, { tool_name: 'MultiEdit', tool_input: { file_path: '.claude/orchestra.pause', edits: [{ old_string: '', new_string: 'x' }] }, transcript_path: transcript });
   check('MultiEdit to the exact pause path is also denied', decisionOf(rMultiEditExact).decision === 'deny', JSON.stringify(decisionOf(rMultiEditExact)));
 
-  // Denying the self-pause write is unconditional — it applies even when
-  // the session model isn't a director at all (Sonnet), because it isn't
-  // part of Director law; it's an absolute rule about the file.
+  // Denying the self-pause write is gated by model dormancy like every other
+  // denial in this guard (3.0: the guard enforces NOTHING until it has
+  // positively identified Fable/Opus at the helm) — it is NOT an absolute
+  // rule independent of Director law. Sonnet, Haiku, and an undetermined
+  // model (no transcript, corrupt transcript) all stand down for a pause-file
+  // write, exactly like any other tool call from that session.
   const sonnetTranscript = writeTranscript(proj, [assistantTurn('claude-sonnet-4-8')]);
   const rSonnetSelfPause = runGuard(proj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: '' }, transcript_path: sonnetTranscript });
   check(
-    'self-pause write denial is unconditional — even a non-director (Sonnet) session cannot create the pause file via a tool call',
-    decisionOf(rSonnetSelfPause).decision === 'deny',
+    'a Sonnet session CAN write the pause file via a tool call — self-pause is Director law too, not an absolute rule',
+    decisionOf(rSonnetSelfPause).decision === 'allow',
     JSON.stringify(decisionOf(rSonnetSelfPause))
+  );
+
+  // Fresh project dirs from here on (never `proj` again) — writeTranscript()
+  // always writes to a fixed `transcript.jsonl` name within its directory,
+  // and `proj`'s copy of that file is still relied on below (by `transcript`,
+  // for rEnvPause/rPreExisting) to hold the ORIGINAL opus content.
+  const haikuProj = tmpdir('orchestra-guard-');
+  const haikuTranscript = writeTranscript(haikuProj, [assistantTurn('claude-haiku-4-5')]);
+  const rHaikuSelfPause = runGuard(haikuProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: '' }, transcript_path: haikuTranscript });
+  check(
+    'a Haiku session can also write the pause file — stands down',
+    decisionOf(rHaikuSelfPause).decision === 'allow',
+    JSON.stringify(decisionOf(rHaikuSelfPause))
+  );
+
+  const emptyProj = tmpdir('orchestra-guard-');
+  const rEmptySelfPause = runGuard(emptyProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: '' } });
+  check(
+    'an undetermined model (no transcript_path at all) can also write the pause file — stands down',
+    decisionOf(rEmptySelfPause).decision === 'allow',
+    JSON.stringify(decisionOf(rEmptySelfPause))
+  );
+
+  const corruptTranscript = path.join(proj, 'corrupt.jsonl');
+  fs.writeFileSync(corruptTranscript, 'not json at all\n', 'utf8');
+  const rCorruptSelfPause = runGuard(proj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: '' }, transcript_path: corruptTranscript });
+  check(
+    'a corrupt transcript (no positive model evidence) can also write the pause file — stands down',
+    decisionOf(rCorruptSelfPause).decision === 'allow',
+    JSON.stringify(decisionOf(rCorruptSelfPause))
+  );
+
+  // Fable, the other director model, is still denied — the enforcement is
+  // Fable/Opus, not Opus-only.
+  const fableProj = tmpdir('orchestra-guard-');
+  const fableTranscript = writeTranscript(fableProj, [assistantTurn('claude-fable-5-1')]);
+  const rFableSelfPause = runGuard(fableProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: '' }, transcript_path: fableTranscript });
+  check(
+    'a Fable session is still DENIED writing the pause file',
+    decisionOf(rFableSelfPause).decision === 'deny',
+    JSON.stringify(decisionOf(rFableSelfPause))
   );
 
   // The genuine out-of-band mechanisms still work: env var, and a
@@ -798,14 +845,16 @@ function case17_pauseOrderingHardlinkAndDirectory() {
   if (!link.ok) {
     check('hardlinked pause file: Write to the pause path denied', true, 'SKIPPED — could not create a hardlink on this OS/permission level (' + link.reason + ')');
   } else {
-    const rWriteHardlinked = runGuard(hardlinkProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: 'x' } });
+    // Self-pause denial is Director law: an identified Fable/Opus session is
+    // required for these ordering checks to mean anything.
+    const transcript = writeTranscript(hardlinkProj, [assistantTurn('claude-opus-4-8')]);
+    const rWriteHardlinked = runGuard(hardlinkProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: 'x' }, transcript_path: transcript });
     check(
-      'a Write to a HARDLINKED pause path is DENIED (self-pause deny now runs before the pause-exists short-circuit)',
+      'a Write to a HARDLINKED pause path is DENIED for a Director session (self-pause deny now runs before the pause-exists short-circuit)',
       decisionOf(rWriteHardlinked).decision === 'deny',
       JSON.stringify(decisionOf(rWriteHardlinked))
     );
 
-    const transcript = writeTranscript(hardlinkProj, [assistantTurn('claude-opus-4-8')]);
     const rOtherTool = runGuard(hardlinkProj, opusEdit('src/index.js', transcript));
     const dOtherTool = decisionOf(rOtherTool);
     check('a hardlinked pause file does NOT stand the guard down for other tool calls', dOtherTool.decision === 'deny', JSON.stringify(dOtherTool));
@@ -828,10 +877,11 @@ function case17_pauseOrderingHardlinkAndDirectory() {
   // otherwise match this (basename CLAUDE.md), and creating it would put a
   // DIRECTORY at the exact pause path. Denied outright.
   const dirProj = tmpdir('orchestra-guard-');
-  const rDirWrite = runGuard(dirProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause/CLAUDE.md', content: 'x' } });
-  check('Write .claude/orchestra.pause/CLAUDE.md (nested under the pause path) is DENIED', decisionOf(rDirWrite).decision === 'deny', JSON.stringify(decisionOf(rDirWrite)));
+  const dirTranscript = writeTranscript(dirProj, [assistantTurn('claude-opus-4-8')]);
+  const rDirWrite = runGuard(dirProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause/CLAUDE.md', content: 'x' }, transcript_path: dirTranscript });
+  check('Write .claude/orchestra.pause/CLAUDE.md (nested under the pause path) is DENIED for a Director session', decisionOf(rDirWrite).decision === 'deny', JSON.stringify(decisionOf(rDirWrite)));
 
-  const rDotDotWrite = runGuard(dirProj, { tool_name: 'Write', tool_input: { file_path: '.claude/plans/../orchestra.pause/CLAUDE.md', content: 'x' } });
+  const rDotDotWrite = runGuard(dirProj, { tool_name: 'Write', tool_input: { file_path: '.claude/plans/../orchestra.pause/CLAUDE.md', content: 'x' }, transcript_path: dirTranscript });
   check(
     'Write .claude/plans/../orchestra.pause/CLAUDE.md (normalizes to the same nested path) is DENIED',
     decisionOf(rDotDotWrite).decision === 'deny',
@@ -962,9 +1012,10 @@ function case24_notebookEditPauseAndSidechainTruthy() {
   section('24. NotebookEdit in the pause-write deny set');
 
   const proj = tmpdir('orchestra-guard-');
+  const transcript = writeTranscript(proj, [assistantTurn('claude-opus-4-8')]);
   check(
-    'a NotebookEdit targeting the exact pause path is DENIED',
-    decisionOf(runGuard(proj, { tool_name: 'NotebookEdit', tool_input: { notebook_path: '.claude/orchestra.pause', new_source: 'x' } })).decision === 'deny',
+    'a NotebookEdit targeting the exact pause path is DENIED for a Director session',
+    decisionOf(runGuard(proj, { tool_name: 'NotebookEdit', tool_input: { notebook_path: '.claude/orchestra.pause', new_source: 'x' }, transcript_path: transcript })).decision === 'deny',
     ''
   );
 }
@@ -1002,19 +1053,24 @@ function case25_isSidechainStrictBoolean() {
 function case26_pauseNameNormalization() {
   section('26. Pause-name normalisation: ADS suffix, trailing dots/spaces, case-folding on win32');
 
+  // Self-pause denial is Director law: these name-normalisation checks need
+  // an identified Fable/Opus session to mean anything.
   const adsProj = tmpdir('orchestra-guard-');
-  const dAds = decisionOf(runGuard(adsProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause:note.md', content: 'x' } }));
-  check('Write .claude/orchestra.pause:note.md (NTFS ADS on the pause path) is DENIED', dAds.decision === 'deny', JSON.stringify(dAds));
+  const adsTranscript = writeTranscript(adsProj, [assistantTurn('claude-opus-4-8')]);
+  const dAds = decisionOf(runGuard(adsProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause:note.md', content: 'x' }, transcript_path: adsTranscript }));
+  check('Write .claude/orchestra.pause:note.md (NTFS ADS on the pause path) is DENIED for a Director session', dAds.decision === 'deny', JSON.stringify(dAds));
 
   if (process.platform === 'win32') {
     const caseProj = tmpdir('orchestra-guard-');
-    const dCase = decisionOf(runGuard(caseProj, { tool_name: 'Write', tool_input: { file_path: '.claude/ORCHESTRA.PAUSE', content: 'x' } }));
-    check('Write .claude/ORCHESTRA.PAUSE (case-folded on win32) is DENIED', dCase.decision === 'deny', JSON.stringify(dCase));
+    const caseTranscript = writeTranscript(caseProj, [assistantTurn('claude-opus-4-8')]);
+    const dCase = decisionOf(runGuard(caseProj, { tool_name: 'Write', tool_input: { file_path: '.claude/ORCHESTRA.PAUSE', content: 'x' }, transcript_path: caseTranscript }));
+    check('Write .claude/ORCHESTRA.PAUSE (case-folded on win32) is DENIED for a Director session', dCase.decision === 'deny', JSON.stringify(dCase));
   }
 
   const dotProj = tmpdir('orchestra-guard-');
-  const dDot = decisionOf(runGuard(dotProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause.', content: 'x' } }));
-  check('Write .claude/orchestra.pause. (trailing dot Win32 strips) is DENIED', dDot.decision === 'deny', JSON.stringify(dDot));
+  const dotTranscript = writeTranscript(dotProj, [assistantTurn('claude-opus-4-8')]);
+  const dDot = decisionOf(runGuard(dotProj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause.', content: 'x' }, transcript_path: dotTranscript }));
+  check('Write .claude/orchestra.pause. (trailing dot Win32 strips) is DENIED for a Director session', dDot.decision === 'deny', JSON.stringify(dDot));
 
   // Control: a name that merely starts with the same prefix is a DIFFERENT
   // component after normalisation and must not be denied by this rule — a
@@ -1025,21 +1081,42 @@ function case26_pauseNameNormalization() {
 }
 
 function case27_pauseOrderingSubagentException() {
-  section('27. Self-pause runs before the subagent exemption');
+  section('27. Self-pause runs before the subagent exemption, for an identified Director session');
 
-  // A subagent-tagged Write targeting the pause path must still be DENIED
-  // — the subagent exemption must not return allow() before
-  // classifyPauseWrite() ever runs, which would let a subagent create the
-  // pause file.
+  // A subagent-tagged Write targeting the pause path, in a session
+  // positively identified as Fable/Opus, must still be DENIED — the
+  // subagent exemption must not return allow() before classifyPauseWrite()
+  // ever runs, which would let a subagent create the pause file.
   const subagentProj = tmpdir('orchestra-guard-');
+  const subagentTranscript = writeTranscript(subagentProj, [assistantTurn('claude-opus-4-8')]);
   const dSubagent = decisionOf(
     runGuard(subagentProj, {
       tool_name: 'Write',
       agent_id: 'some-subagent',
       tool_input: { file_path: '.claude/orchestra.pause', content: 'x' },
+      transcript_path: subagentTranscript,
     })
   );
-  check('a subagent-tagged Write to the pause path is still DENIED (self-pause beats the subagent exemption)', dSubagent.decision === 'deny', JSON.stringify(dSubagent));
+  check('a subagent-tagged Write to the pause path is still DENIED for a Director session (self-pause beats the subagent exemption)', dSubagent.decision === 'deny', JSON.stringify(dSubagent));
+
+  // Unaffected as before: a subagent-tagged pause-file write in a session
+  // that is NOT identified as Director stands down, same as any other tool
+  // call from a subagent.
+  const subagentSonnetProj = tmpdir('orchestra-guard-');
+  const subagentSonnetTranscript = writeTranscript(subagentSonnetProj, [assistantTurn('claude-sonnet-4-8')]);
+  const dSubagentSonnet = decisionOf(
+    runGuard(subagentSonnetProj, {
+      tool_name: 'Write',
+      agent_id: 'some-subagent',
+      tool_input: { file_path: '.claude/orchestra.pause', content: 'x' },
+      transcript_path: subagentSonnetTranscript,
+    })
+  );
+  check(
+    'a subagent-tagged Write to the pause path is unaffected (allow) for a non-Director session',
+    dSubagentSonnet.decision === 'allow',
+    JSON.stringify(dSubagentSonnet)
+  );
 }
 
 // ------------------------------------------------------------------ driver

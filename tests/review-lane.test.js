@@ -1598,6 +1598,44 @@ function case22() {
     /restored 1 file\(s\) into the Codex install from/.test(rOut) && /known-good-helper\.txt/.test(rOut),
     rOut.slice(0, 1400)
   );
+
+  // Sol's fixture: a configured helper SIBLING (not a helpersDir file) missing
+  // beside the binary but present one directory deeper inside the same
+  // install — the "misplaced" case verifyHelperSiblings() repairs by default.
+  // Under --no-repair it must be detected and named, never copied.
+  const fx3 = makeDirtyRepo();
+  const installDir3 = path.join(fx3.root, 'OpenAI', 'Codex', 'bin', 'ffffaaaa');
+  const bin3 = makeStubBin(installDir3, 'codex-stub');
+  const nested3 = path.join(installDir3, 'nested');
+  fs.mkdirSync(nested3, { recursive: true });
+  fs.writeFileSync(path.join(nested3, 'codex-command-runner.exe'), 'MZ fake nested\n');
+  // Isolate the repair search from the real machine (see case 15's `iso`).
+  const iso3 = { HOME: fx3.root, USERPROFILE: fx3.root, CODEX_HOME: path.join(fx3.root, '.codex') };
+  const siblingEnv = Object.assign(
+    { CODEX_BIN: bin3, ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe' },
+    iso3
+  );
+
+  const siblingNoRepair = runDoctor(fx3, siblingEnv, ['--no-repair']);
+  const snrOut = siblingNoRepair.stdout || '';
+  check(
+    '--no-repair does not copy a helper sibling found one directory deeper',
+    !fs.existsSync(path.join(installDir3, 'codex-command-runner.exe')),
+    fs.readdirSync(installDir3).join(', ')
+  );
+  check(
+    '--no-repair names the missing sibling, where it was found, and the repair command',
+    /NOT restored \(--no-repair\)/.test(snrOut) &&
+      /codex-command-runner\.exe \(found at/.test(snrOut) &&
+      /nested/.test(snrOut) &&
+      /--doctor` \(without --no-repair\)/.test(snrOut),
+    snrOut.slice(0, 1600)
+  );
+  check(
+    '--no-repair never prints the "helper siblings repaired" line for it',
+    !/helper siblings repaired next to the resolved binary/.test(snrOut),
+    snrOut.slice(0, 1600)
+  );
 }
 
 // ------------------------------------------------------------------ driver

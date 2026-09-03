@@ -125,8 +125,8 @@ const BLOCKED = new Set([
   'Glob',
 ]);
 
-// Models allowed to direct (MODE A / MODE B). Anything else — Sonnet, Haiku,
-// or unknown — means the Orchestra is dormant (ORCHESTRA.md §1) and the guard
+// Models allowed to direct (ORCHESTRA.md §1: Fable or Opus). Anything else —
+// Sonnet, Haiku, or unknown — puts the session in NORMAL mode, and the guard
 // stands down so the session behaves like plain Claude Code. Matches bare ids
 // ("claude-opus-4-8"), suffixed ("claude-opus-4-8[1m]"), and provider-prefixed
 // ("us.anthropic.claude-opus-...") forms.
@@ -348,9 +348,9 @@ function denyBlockedPatternsInvalid(toolName, policy) {
 
 // ------------------------------------------------------------- glob engine
 //
-// Non-backtracking glob matcher, copied from verifier/checkout.js's
-// classification-pattern matcher: `**` crosses path separators, `*` does
-// not; text is matched in full (implicitly anchored both ends). Patterns
+// Non-backtracking glob matcher (originally shared with the now-deleted
+// verifier's classification-pattern matcher): `**` crosses path separators,
+// `*` does not; text is matched in full (implicitly anchored both ends). Patterns
 // are token-compiled once (cached) and matched with a linear dynamic
 // program over tokens × characters — no backtracking to detonate, whatever
 // an agent-editable pattern source feeds it.

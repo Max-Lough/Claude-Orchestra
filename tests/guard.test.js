@@ -34,8 +34,9 @@
  *      assistant entry anywhere in the transcript names a director model,
  *      the session is enforced regardless of what appears after it in the
  *      file. A transcript with content but zero parseable entries
- *      ("corrupt") denies unless it is small and was just modified
- *      (mid-first-write grace).
+ *      ("corrupt") is no positive evidence of a director model either —
+ *      same as "undetermined" — so it stands down (allow), same as the
+ *      mid-first-write grace case.
  *   7. Malformed PreToolUse stdin fails open (no fixed policy to fall back
  *      to).
  *   8. `directorAllowedTools`/`directorPlanPatterns`/`directorMemoryPatterns`
@@ -339,10 +340,11 @@ function case4_modelDormancy() {
 }
 
 function case5_transcriptStates() {
-  section('5. Transcript states: "corrupt" (no complete entry) denies unless small+fresh (grace); "no assistant yet" stands down');
+  section('5. Transcript states: "corrupt" (no complete entry) and "no assistant yet" both stand down (no positive evidence of Fable/Opus)');
 
   // Genuine garbage: no valid JSON line anywhere, and OLD (past the
-  // mid-first-write grace window) -> 'corrupt' -> denies.
+  // mid-first-write grace window) -> 'corrupt' -> no model identified ->
+  // allow, same as the Bash-tool case below.
   const garbageProj = tmpdir('orchestra-guard-');
   const garbageTranscript = path.join(garbageProj, 't.jsonl');
   fs.writeFileSync(garbageTranscript, 'not json at all\n{"broken\n', 'utf8');
@@ -351,11 +353,51 @@ function case5_transcriptStates() {
   const rGarbage = runGuard(garbageProj, opusEdit('x.js', garbageTranscript));
   const dGarbage = decisionOf(rGarbage);
   check(
-    'OLD transcript with NO complete/parseable entry -> deny ("corrupt", not "stand down")',
-    dGarbage.decision === 'deny',
+    'OLD transcript with NO complete/parseable entry -> allow ("corrupt" is no evidence of Fable/Opus)',
+    dGarbage.decision === 'allow',
     JSON.stringify(dGarbage)
   );
-  check('corrupt-transcript denial explains why it does not stand down', /rather than standing down/.test(dGarbage.reason), dGarbage.reason);
+
+  // Same corrupt-transcript shape, but against a default-BLOCKED tool
+  // (Bash) rather than Edit -> still allow, since no model was identified.
+  const garbageBashProj = tmpdir('orchestra-guard-');
+  const garbageBashTranscript = path.join(garbageBashProj, 't.jsonl');
+  fs.writeFileSync(garbageBashTranscript, 'not json at all\n{"broken\n', 'utf8');
+  fs.utimesSync(garbageBashTranscript, oldTime, oldTime);
+  const rGarbageBash = runGuard(garbageBashProj, {
+    tool_name: 'Bash',
+    tool_input: { command: 'echo hi' },
+    transcript_path: garbageBashTranscript,
+  });
+  check(
+    'OLD corrupt transcript + Bash (default-blocked tool) -> allow (no model identified)',
+    decisionOf(rGarbageBash).decision === 'allow',
+    JSON.stringify(decisionOf(rGarbageBash))
+  );
+
+  // Same corrupt-transcript shape, but the edit would also damage a memory
+  // file's managed marker block -> still allow: with no model identified,
+  // the marker carve-out's deny path is never reached.
+  const garbageMarkerProj = tmpdir('orchestra-guard-');
+  const garbageMarkerTranscript = path.join(garbageMarkerProj, 't.jsonl');
+  fs.writeFileSync(garbageMarkerTranscript, 'not json at all\n{"broken\n', 'utf8');
+  fs.utimesSync(garbageMarkerTranscript, oldTime, oldTime);
+  const claudeMdPath = path.join(garbageMarkerProj, 'CLAUDE.md');
+  fs.writeFileSync(
+    claudeMdPath,
+    '# notes\n<!-- ORCHESTRA:BEGIN v1 -->\nmanaged content\n<!-- ORCHESTRA:END -->\n',
+    'utf8'
+  );
+  const rGarbageMarker = runGuard(garbageMarkerProj, {
+    tool_name: 'Edit',
+    tool_input: { file_path: 'CLAUDE.md', old_string: 'managed content', new_string: 'DAMAGED' },
+    transcript_path: garbageMarkerTranscript,
+  });
+  check(
+    'OLD corrupt transcript + edit that would damage the managed marker block -> allow (no model identified)',
+    decisionOf(rGarbageMarker).decision === 'allow',
+    JSON.stringify(decisionOf(rGarbageMarker))
+  );
 
   // The SAME shape of garbage, but small and JUST written (mtime within the
   // grace window) -> treated as 'empty' (mid-first-write), not 'corrupt' ->
@@ -834,7 +876,7 @@ function case19_oversizedTranscriptHeadWindow() {
 }
 
 function case20_truncationBirthtimeGate() {
-  section('20. Truncation-bypass gated on birthtime, not just mtime');
+  section('20. Truncation-bypass gated on birthtime, not just mtime (state classification only — both "corrupt" and grace-window "empty" now allow)');
 
   const proj = tmpdir('orchestra-guard-');
   const tp = path.join(proj, 'transcript.jsonl');
@@ -843,8 +885,8 @@ function case20_truncationBirthtimeGate() {
   fs.writeFileSync(tp, 'x', 'utf8'); // truncate to garbage — fresh mtime, OLD birthtime
   const d = decisionOf(runGuard(proj, { tool_name: 'Edit', tool_input: { file_path: 'x.js', old_string: 'a', new_string: 'b' }, transcript_path: tp }));
   check(
-    'an EXISTING transcript truncated to garbage (old birthtime, fresh mtime) DENIES',
-    d.decision === 'deny',
+    'an EXISTING transcript truncated to garbage (old birthtime, fresh mtime) -> allow ("corrupt" is no evidence of Fable/Opus)',
+    d.decision === 'allow',
     JSON.stringify(d)
   );
 

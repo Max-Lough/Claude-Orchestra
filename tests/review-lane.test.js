@@ -1545,6 +1545,61 @@ function case21() {
   );
 }
 
+function case22() {
+  section('22. `--doctor --no-repair` reports a missing helpersDir file without copying it');
+
+  // A configured helpersDir holding a "known-good" helper file the install is
+  // missing — the same shape as the restoreHelpers() repair kit, but here we
+  // assert the read-only path names it instead of copying it in.
+  const fx = makeDirtyRepo();
+  const installDir = path.join(fx.root, 'OpenAI', 'Codex', 'bin', 'dddd4444');
+  const bin = makeStubBin(installDir, 'codex-stub');
+  const helpersDir = path.join(fx.root, 'helpers-kit');
+  fs.mkdirSync(helpersDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersDir, 'known-good-helper.txt'), 'known good contents\n');
+  writeProjectConfig(fx, { helpersDir });
+
+  const noRepair = runDoctor(fx, { CODEX_BIN: bin }, ['--no-repair']);
+  const nrOut = noRepair.stdout || '';
+  check(
+    '--no-repair does not copy the helper into the install',
+    !fs.existsSync(path.join(installDir, 'known-good-helper.txt')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    '--no-repair names the missing helper and points at the repair command',
+    /NOT restored \(--no-repair\)/.test(nrOut) &&
+      /known-good-helper\.txt/.test(nrOut) &&
+      /--doctor` \(without --no-repair\)/.test(nrOut),
+    nrOut.slice(0, 1400)
+  );
+  check(
+    '--no-repair never prints the "restored N file(s)" line',
+    !/restored \d+ file\(s\) into the Codex install/.test(nrOut),
+    nrOut.slice(0, 1400)
+  );
+
+  // Control: the same fixture, without --no-repair, still repairs by default
+  // (unchanged runner behaviour — only the MCP orchestra_doctor tool defaults
+  // to read-only, by passing --no-repair itself).
+  const fx2 = makeDirtyRepo();
+  const installDir2 = path.join(fx2.root, 'OpenAI', 'Codex', 'bin', 'eeee5555');
+  const bin2 = makeStubBin(installDir2, 'codex-stub');
+  writeProjectConfig(fx2, { helpersDir });
+  const repaired = runDoctor(fx2, { CODEX_BIN: bin2 });
+  const rOut = repaired.stdout || '';
+  check(
+    'without --no-repair, the doctor still copies the helper in by default',
+    fs.existsSync(path.join(installDir2, 'known-good-helper.txt')),
+    fs.readdirSync(installDir2).join(', ')
+  );
+  check(
+    'and reports it as restored',
+    /restored 1 file\(s\) into the Codex install from/.test(rOut) && /known-good-helper\.txt/.test(rOut),
+    rOut.slice(0, 1400)
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1581,6 +1636,7 @@ async function main() {
   case19();
   case20();
   case21();
+  case22();
 }
 
 main().then(finish, (e) => {

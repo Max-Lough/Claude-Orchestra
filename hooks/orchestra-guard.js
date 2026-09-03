@@ -31,9 +31,12 @@
  * both windows is not seen by this read — documented, not papered over.
  *
  * A transcript (or read window) that has content but not one complete/
- * parseable JSONL entry is never "stand down": it denies (unless it also
- * qualifies for the small-and-fresh grace window — genuinely mid-first-
- * write, not garbage — gated on both mtime and birthtime).
+ * parseable JSONL entry ("corrupt") is treated the same as "undetermined":
+ * a transcript that cannot be read is not positive evidence of a director
+ * model either, so the guard stands down. (It is also folded into the
+ * small-and-fresh grace window check — genuinely mid-first-write, not
+ * garbage — gated on both mtime and birthtime — but the outcome is the same
+ * either way: allow.)
  *
  * Malformed PreToolUse input (stdin that isn't parseable JSON) fails open.
  *
@@ -243,23 +246,6 @@ function denyDefault(toolName, policy) {
         'or a domain specialist agent; verification -> reviewer agent. ' + planHint +
         '(User-only pause switch, out-of-band only: set ORCHESTRA_PAUSE=1, or have the user ' +
         'create .claude/' + PAUSE_BASENAME + ' themselves — no tool call can create it.)',
-      policy
-    )
-  );
-}
-
-// A transcript (or the tail window read of one) that has content but not one
-// complete/parseable JSONL entry (see latestMainModel()) is never treated as
-// "stand down" unless it also qualifies for the small-and-fresh grace
-// window.
-function denyCorruptTranscript(toolName, policy) {
-  deny(
-    withNote(
-      'Orchestra: the session transcript exists but contains no complete, parseable entry — ' +
-        'distinct from simply having no assistant turn yet. That state denies ' + toolName +
-        ' rather than standing down, since a transcript that cannot be read is not positive ' +
-        'evidence of anything. (User-only pause switch, out-of-band only: ' +
-        '.claude/' + PAUSE_BASENAME + ' or ORCHESTRA_PAUSE=1.)',
       policy
     )
   );
@@ -1056,8 +1042,7 @@ function main(raw) {
       if (!DIRECTOR_MODEL.test(t.model)) return allow();
       return denyBlockedPatternsInvalid(toolName, policy);
     }
-    if (t.state === 'corrupt') return denyCorruptTranscript(toolName, policy);
-    return allow(); // t.state === 'empty': stands down
+    return allow(); // t.state === 'corrupt' or 'empty': no positive evidence, stands down
   }
 
   // Exempt mutations: plan-file authorship (§4 PLAN — .claude/plans/*.md
@@ -1091,14 +1076,12 @@ function main(raw) {
     return deniedByDefault ? denyDefault(toolName, policy) : denyByPolicy(toolName, policy);
   }
 
-  if (t.state === 'corrupt') {
-    if (memory === 'marker') return denyMarkerBlock(toolName, policy);
-    return denyCorruptTranscript(toolName, policy);
-  }
-
-  // t.state === 'empty': the classic undetermined-model staleness window
-  // (no transcript, unreadable, no assistant turn flushed yet, or a
-  // small/fresh corrupt-looking file — see latestMainModel()). Stands down.
+  // t.state === 'corrupt' or 'empty': no positive evidence of a director
+  // model. 'empty' is the classic undetermined-model staleness window (no
+  // transcript, unreadable, no assistant turn flushed yet, or a small/fresh
+  // corrupt-looking file — see latestMainModel()); 'corrupt' is a transcript
+  // that has content but no complete/parseable entry. Neither identifies
+  // Fable/Opus, so both stand down.
   return allow();
 }
 

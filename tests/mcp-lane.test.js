@@ -440,6 +440,105 @@ async function case5() {
   s.close();
 }
 
+// 5b. The MCP backstop's effective review cap must track the runner's own
+//     default (orchestra-review.js: 1800000ms, set in WO-4) rather than a
+//     stale fallback baked into this file — a mismatch here is invisible
+//     until a real review runs long enough to hit the OLD, tighter backstop
+//     first. No --timeout-ms/env/config override, so effectiveCapMs('review')
+//     falls all the way to its own default; the progress notification is the
+//     one place that value is externally observable.
+async function case5b() {
+  section('5b. review lane default effective cap (no flag/env/config) is 1800000ms — matches the runner\'s own default');
+  const fx = makeRepo();
+  const s = mcpSession({
+    fx,
+    env: { STUB_CODEX_SLEEP_MS: '1200', ORCHESTRA_MCP_PROGRESS_MS: '300' },
+  });
+  await s.start();
+  const res = await s.rpc('tools/call', {
+    name: 'orchestra_review',
+    arguments: { work_order: WORK_ORDER, executor_report: EXEC_REPORT },
+    _meta: { progressToken: 'cap-tok' },
+  }, 180000);
+  check('the call still completed', /VERDICT: APPROVE/.test(resultText(res)), resultText(res).slice(0, 300));
+  const progress = s.notifications.filter(
+    (n) => n.method === 'notifications/progress' && n.params && n.params.progressToken === 'cap-tok'
+  );
+  check('at least one progress notification fired', progress.length >= 1, JSON.stringify(s.notifications.slice(0, 3)));
+  check(
+    'with no --timeout-ms/env/config, the reported runner cap is 1800000ms',
+    progress.some((n) => /runner cap 1800000ms/.test((n.params && n.params.message) || '')),
+    JSON.stringify(progress.map((n) => n.params && n.params.message))
+  );
+  s.close();
+}
+
+// 5c. orchestra_doctor's argument translation: read-only by default
+//     (--no-repair passed unless repair === true). A Director-invoked
+//     doctor check at INTAKE must not mutate the Codex install as a side
+//     effect of a read — see WO-fix-3.
+async function case5c() {
+  section('5c. orchestra_doctor is read-only by default (--no-repair), and only omits it when repair === true');
+  const fx = makeRepo();
+
+  const helpersDir = path.join(fx.root, 'helpers-kit');
+  fs.mkdirSync(helpersDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersDir, 'known-good-helper.txt'), 'known good contents\n');
+  fs.mkdirSync(path.join(fx.repo, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(fx.repo, '.claude', 'orchestra.json'),
+    JSON.stringify({ codex: { helpersDir } }, null, 2)
+  );
+
+  const installDir = path.join(fx.root, 'OpenAI', 'Codex', 'bin', 'ffff6666');
+  const bin = makeStubBin(installDir, 'codex-stub');
+
+  // Default: no `repair` input at all -> --no-repair -> nothing copied.
+  const s1 = mcpSession({ fx, env: { CODEX_BIN: bin } });
+  await s1.start();
+  const defaultRes = await s1.rpc('tools/call', { name: 'orchestra_doctor', arguments: {} }, 240000);
+  const defaultText = resultText(defaultRes);
+  check(
+    'default call (no repair input) does not copy the helper into the install',
+    !fs.existsSync(path.join(installDir, 'known-good-helper.txt')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    'default call reports the helper as NOT restored, with the repair hint',
+    /NOT restored \(--no-repair\)/.test(defaultText) && /known-good-helper\.txt/.test(defaultText),
+    defaultText.slice(0, 1200)
+  );
+  s1.close();
+
+  // repair: false -> same as default, --no-repair still passed.
+  const s2 = mcpSession({ fx, env: { CODEX_BIN: bin } });
+  await s2.start();
+  await s2.rpc('tools/call', { name: 'orchestra_doctor', arguments: { repair: false } }, 240000);
+  check(
+    'repair: false also does not copy the helper',
+    !fs.existsSync(path.join(installDir, 'known-good-helper.txt')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  s2.close();
+
+  // repair: true -> --no-repair omitted -> the helper is actually restored.
+  const s3 = mcpSession({ fx, env: { CODEX_BIN: bin } });
+  await s3.start();
+  const repairRes = await s3.rpc('tools/call', { name: 'orchestra_doctor', arguments: { repair: true } }, 240000);
+  const repairText = resultText(repairRes);
+  check(
+    'repair: true copies the helper into the install',
+    fs.existsSync(path.join(installDir, 'known-good-helper.txt')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    'repair: true reports it as restored',
+    /restored 1 file\(s\) into the Codex install from/.test(repairText) && /known-good-helper\.txt/.test(repairText),
+    repairText.slice(0, 1200)
+  );
+  s3.close();
+}
+
 // 6. The server's own voice. Bad arguments, a missing runner, an abnormal
 //    exit, an empty stdout, a wedged process — every one is MCP TRANSPORT +
 //    isError, includes the evidence, and never wears an engine's header.
@@ -826,6 +925,8 @@ async function main() {
   await case3();
   await case4();
   await case5();
+  await case5b();
+  await case5c();
   await case6();
   await case7();
   await case8();

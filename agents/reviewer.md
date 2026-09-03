@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Orchestra adversarial reviewer (Opus, fresh context). MUST BE USED to review every substantive change before it is reported complete. Independently reads the diff, re-runs the tests, and hunts for concrete failure scenarios. Never fixes anything itself. For an optional cross-vendor second opinion, the Director routes to reviewer-codex.
+description: "Orchestra fresh-context adversarial reviewer (Opus). Primary review of Codex-authored work and the fallback when the Sol lane is unavailable; independently re-reads the diff and re-runs the tests. Review runs at least once per campaign (ORCHESTRA.md §5)."
 tools: Bash, Glob, Grep, Read
 model: opus
 color: red

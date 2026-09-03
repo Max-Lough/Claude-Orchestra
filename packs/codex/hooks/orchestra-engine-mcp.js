@@ -91,7 +91,8 @@ function effectiveCapMs(lane, timeoutMsArg) {
   if (num(timeoutMsArg)) return num(timeoutMsArg);
   const cfg = readCodexConfig();
   if (lane === 'review') {
-    return num(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS) || num(cfg.reviewTimeoutMs) || 600000;
+    // Default matches orchestra-review.js's own runner default (1800000ms).
+    return num(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS) || num(cfg.reviewTimeoutMs) || 1800000;
   }
   if (lane === 'exec') {
     return num(process.env.ORCHESTRA_EXEC_TIMEOUT_MS) || num(cfg.execTimeoutMs) || 1800000;
@@ -707,19 +708,21 @@ const TOOLS = [
     name: 'orchestra_doctor',
     description:
       'Check the Codex install without spending a review: resolves the real codex binary, names the install ' +
-      'layout, verifies the helper files that must sit directly beside it, repairs what it can (NOTE: repair ' +
-      'copies files into the install on the user\'s machine — run this only on the Director\'s or user\'s say-so), ' +
-      'and prints the exact copy command for anything it cannot. The result starts with DOCTOR EXIT CODE: 0 ' +
-      '(a review would find a complete install) or 1 (it would not, and the output says why). Pass live=true to ' +
-      'also prove the exec-lane round-trip with a real no-op engine run.',
+      'layout, verifies the helper files that must sit directly beside it, and prints the exact copy command ' +
+      'for anything missing. Read-only by default; pass repair=true to let it restore helper files from ' +
+      'codex.helpersDir. The result starts with DOCTOR EXIT CODE: 0 (a review would find a complete install) ' +
+      'or 1 (it would not, and the output says why). Pass live=true to also prove the exec-lane round-trip ' +
+      'with a real no-op engine run.',
     inputSchema: {
       type: 'object',
       properties: {
         live: { type: 'boolean', description: 'Also run the live no-op engine probe (--doctor --live). Slower; spends a real engine call.' },
+        repair: { type: 'boolean', description: 'Let the doctor copy missing/changed helper files in from codex.helpersDir. Default false (read-only) — this mutates the Codex install on the user\'s machine, so only pass true on the Director\'s or user\'s say-so.' },
       },
     },
     handler(id, a, progressToken) {
       const args = ['--doctor'];
+      if (!(a && a.repair === true)) args.push('--no-repair');
       if (a && a.live) args.push('--live');
       runRunner(id, 'doctor', args, progressToken);
     },

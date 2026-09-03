@@ -210,6 +210,15 @@
  *   launch. Same code path as the review preflight, so it cannot drift from what
  *   a review actually verifies; exit 1 means a review would not find a complete
  *   install. The installer runs it when the codex pack is selected.
+ *
+ *   --no-repair (with --doctor): report without repairing. By default
+ *   --doctor mirrors missing/changed helper files in from a configured
+ *   "codex": { "helpersDir": <dir> } — a real write to the Codex install.
+ *   --no-repair skips that copy and instead names what is missing and the
+ *   exact command to fix it. The MCP orchestra_doctor tool passes this by
+ *   default (read-only unless its `repair` input is explicitly true) since
+ *   a Director-invoked doctor check must not mutate the install as a side
+ *   effect of a read.
  */
 'use strict';
 
@@ -294,6 +303,9 @@ const CONFIG = {
   timeoutSource: process.env.ORCHESTRA_REVIEW_TIMEOUT_MS ? 'env' : 'default',
   idleMs: intOr(process.env.ORCHESTRA_REVIEW_IDLE_MS, 1500),
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
+  // --no-repair (CLI only, no env/config equivalent): when true, --doctor
+  // reports missing helpers instead of copying them in from helpersDir.
+  noRepair: false,
   extraArgs: (process.env.ORCHESTRA_REVIEW_ARGS || '').trim(),
   bin: (process.env.CODEX_BIN || 'codex').trim(),
   resolvedBin: '',
@@ -360,6 +372,7 @@ function parseArgs(argv) {
     else if (a === '--no-probe') out.noProbe = true;
     else if (a === '--warmup-cmd') out.warmupCmd = argv[++i];
     else if (a === '--doctor') out.doctor = true;
+    else if (a === '--no-repair') out.noRepair = true;
     else if (a === '--live') out.live = true;
     else if (a === '--help' || a === '-h') out.help = true;
   }
@@ -1466,21 +1479,28 @@ function verifyHelperSiblings(installDir, layout) {
 // size) from the Codex install directory. No filenames are hardcoded — the
 // directory the user populates IS the repair kit. Never fatal: a failed
 // restore is reported and the review proceeds.
-function restoreHelpers(helpersDir, installDir) {
-  if (!helpersDir) return { restored: [], note: '' };
+//
+// dryRun=true performs the same walk and comparison but never touches the
+// install: differences land in `missing` instead of being copied and
+// reported as `restored`. Used by `--doctor --no-repair`, which must be
+// able to name what it would fix without fixing it.
+function restoreHelpers(helpersDir, installDir, dryRun) {
+  if (!helpersDir) return { restored: [], missing: [], note: '' };
   try {
     if (!fs.statSync(helpersDir).isDirectory()) {
-      return { restored: [], note: 'helpers path is not a directory: ' + helpersDir };
+      return { restored: [], missing: [], note: 'helpers path is not a directory: ' + helpersDir };
     }
   } catch (e) {
     return {
       restored: [],
+      missing: [],
       note: 'helpers directory unreadable (' + helpersDir + '): ' + ((e && e.message) || e),
     };
   }
   if (!installDir) {
     return {
       restored: [],
+      missing: [],
       note:
         'helpers configured but the Codex install directory is unknown — set CODEX_BIN ' +
         'to the executable\'s path so its install directory can be resolved',
@@ -1488,6 +1508,7 @@ function restoreHelpers(helpersDir, installDir) {
   }
 
   const restored = [];
+  const missing = [];
   const problems = [];
   const walk = (srcDir, destDir, rel) => {
     let list;
@@ -1515,6 +1536,10 @@ function restoreHelpers(helpersDir, installDir) {
           needs = true; // missing entirely — the self-update case
         }
         if (!needs) continue;
+        if (dryRun) {
+          missing.push(relName);
+          continue;
+        }
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(src, dest);
         try {
@@ -1532,6 +1557,7 @@ function restoreHelpers(helpersDir, installDir) {
 
   return {
     restored,
+    missing,
     note: problems.length ? 'helper restore had problems — ' + problems.join('; ') : '',
   };
 }
@@ -1574,8 +1600,18 @@ function inspectCodexInstall() {
   }
 
   if (CONFIG.helpersDir) {
-    const restore = restoreHelpers(CONFIG.helpersDir, installDir);
-    if (restore.restored.length) {
+    const restore = restoreHelpers(CONFIG.helpersDir, installDir, CONFIG.noRepair);
+    if (CONFIG.noRepair) {
+      if (restore.missing && restore.missing.length) {
+        lines.push(
+          'NOT restored (--no-repair): ' + restore.missing.length + ' file(s) differ from ' +
+            CONFIG.helpersDir + ': ' + restore.missing.join(', ') +
+            '. Repair with `node .claude/hooks/orchestra-review.js --doctor` (without ' +
+            '--no-repair), which copies them in from "codex": { "helpersDir": "' +
+            CONFIG.helpersDir + '" }.'
+        );
+      }
+    } else if (restore.restored.length) {
       lines.push(
         'restored ' + restore.restored.length + ' file(s) into the Codex install from ' +
           CONFIG.helpersDir + ': ' + restore.restored.join(', ')
@@ -2490,7 +2526,7 @@ function main() {
         '         [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]...\n' +
         '         [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
         '         [--retries <n>|--no-retry] [--no-probe] [--warmup-cmd <cmd>]\n' +
-        '       node orchestra-review.js --doctor [--live]\n' +
+        '       node orchestra-review.js --doctor [--no-repair] [--live]\n' +
         '\n' +
         '  --doctor checks the local Codex install the way a review does — real\n' +
         '  binary, install layout, the helper files that must sit BESIDE it —\n' +
@@ -2500,6 +2536,10 @@ function main() {
         '  the Codex config, and leftover session artifacts. Exit 0 means a\n' +
         '  review would find a complete, hazard-free install. It reviews\n' +
         '  nothing and needs no work order.\n' +
+        '\n' +
+        '  --no-repair (with --doctor): read-only. Skips copying files in from\n' +
+        '  a configured helpersDir and instead names what is missing and the\n' +
+        '  exact repair command.\n' +
         '\n' +
         '  --live (with --doctor) additionally runs a real no-op order through\n' +
         '  the sibling exec runner in a scratch directory (read-only sandbox)\n' +
@@ -2550,6 +2590,7 @@ function main() {
   if (!process.env.ORCHESTRA_CODEX_HELPERS && typeof codexCfg.helpersDir === 'string') {
     CONFIG.helpersDir = codexCfg.helpersDir.trim();
   }
+  CONFIG.noRepair = !!args.noRepair;
   if (!process.env.ORCHESTRA_REVIEW_WORKTREE_ROOT && typeof codexCfg.worktreeRoot === 'string') {
     if (codexCfg.worktreeRoot.trim()) {
       CONFIG.worktreeRoot = codexCfg.worktreeRoot.trim();

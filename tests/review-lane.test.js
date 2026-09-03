@@ -578,9 +578,45 @@ function case6() {
 
   const dflt = runReview(fx, ['--tier', 'inert']);
   check(
-    'the default already clears the floor',
-    /timeout: 600000ms \(default\)/.test(dflt.stdout || ''),
+    'the default (1800000ms) already clears the 600000ms inert floor',
+    /timeout: 1800000ms \(default\)/.test(dflt.stdout || ''),
     (dflt.stdout || '').split('\n')[0]
+  );
+}
+
+function case6b() {
+  section('6b. Zero overrides: the Sol reviewer and the 1800000ms timeout are hard defaults');
+  // runReview() always forces ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol so every other
+  // case exercises a real cross-vendor model name; this case proves the SAME
+  // value is what the runner falls back to on its own, with no flag, no env,
+  // and no orchestra.json entry at all — "gpt-5.6-sol" is a hard default, not
+  // "whatever Codex's own default happens to be".
+  const fx = makeDirtyRepo();
+  const env = Object.assign({}, process.env, {
+    CLAUDE_PROJECT_DIR: fx.repo,
+    CODEX_BIN: STUB_BIN,
+    ORCHESTRA_REVIEW_IDLE_MS: '0',
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
+    STUB_CODEX_PROBE_PATH: '.claude/plans/toon-conversion-campaign.md',
+    ORCHESTRA_ALLOW_STUB_ENGINE: '1',
+  });
+  delete env.ORCHESTRA_REVIEW_MODEL;
+  delete env.ORCHESTRA_REVIEW_TIMEOUT_MS;
+  const r = spawnSync(
+    process.execPath,
+    [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er],
+    { cwd: fx.repo, encoding: 'utf8', timeout: 120000, env }
+  );
+  const out = r.stdout || '';
+  check(
+    'the default model is gpt-5.6-sol with no flag, env, or config',
+    field(out, 'MODEL') === 'gpt-5.6-sol',
+    'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
+  );
+  check(
+    'the default timeout is 1800000ms with no flag, env, or config',
+    /timeout: 1800000ms \(default\)/.test(out),
+    out.split('\n')[0]
   );
 }
 
@@ -1529,6 +1565,7 @@ async function main() {
   await case4();
   case5();
   case6();
+  case6b();
   case7();
   case8();
   case9();

@@ -164,15 +164,12 @@ function transportError(id, lines) {
 // A caller may pass a ROSTER display name ("GPT-5.6 Sol"); the Codex CLI
 // wants the model id ("gpt-5.6-sol"). Shakedown 2026-09-02 (PL-18 root
 // cause, corrected): forwarding a display name verbatim as `--model` made
-// Codex answer 400 "The 'GPT-5.6 Terra' model is not supported when using
-// Codex with a ChatGPT account" — an entitlement-shaped message for what was
+// Codex answer 400 with an entitlement-shaped message for what was actually
 // a name-shape defect. Anything already id-shaped passes through unchanged;
 // unknown display names fall back to lower-case with spaces hyphenated,
 // which is the id convention for every OpenAI model name.
 const CODEX_MODEL_IDS = {
   'gpt-5.6 sol': 'gpt-5.6-sol',
-  'gpt-5.6 terra': 'gpt-5.6-terra',
-  'gpt-5.6 luna': 'gpt-5.6-luna',
 };
 function codexModelId(name) {
   const s = String(name || '').trim();
@@ -617,13 +614,13 @@ const TOOLS = [
       'working tree, runs verification, and reports in the Orchestra executor format). Blocks until done and ' +
       'returns the full report verbatim — header, STATUS line, report body, TREE AUDIT, REPORT INTEGRITY. ' +
       'Execution is deliberately NEVER auto-retried (a half-dead engine may have half-edited the tree): call ' +
-      'this ONCE per work order and relay a STATUS: EXEC_UNAVAILABLE as-is. tier "heavy" selects the flagship ' +
-      'model at high reasoning effort — a Director routing decision, never a launcher\'s.',
+      'this ONCE per work order and relay a STATUS: EXEC_UNAVAILABLE as-is. Default model gpt-5.6-sol at high ' +
+      'reasoning effort — this is the exceptional-order executor, never routine work; model/effort overrides ' +
+      'are for an explicit exceptional order, never a launcher\'s own judgment.',
     inputSchema: {
       type: 'object',
       properties: {
         work_order: { type: 'string', description: 'The FULL execution work order — goal, scope, constraints, context, verification expectations — verbatim.' },
-        tier: { type: 'string', enum: ['standard', 'heavy'], description: 'Execution tier. Default standard. "heavy" only when the Director routed the order to the heavy executor.' },
         timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one. Default 1800000 — budget a build plus a suite.' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the executor must not run.' },
         cd: { type: 'string', description: 'Isolated worktree directory to execute in, only when the order names one.' },
@@ -647,7 +644,6 @@ const TOOLS = [
 
       const dir = makeRunDir('exec');
       const args = ['--work-order', writeInput(dir, 'work-order.txt', workOrder)];
-      if (a.tier === 'heavy') args.push('--tier', 'heavy');
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       pushForbids(args, a.forbid);
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);

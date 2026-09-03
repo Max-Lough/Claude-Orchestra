@@ -108,13 +108,15 @@
  *                          "codex-windows-sandbox-setup.exe"]
  *   } }
  *
- *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin (e.g. gpt-5-codex). Unset →
- *                               Codex uses its own configured default.
+ *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin. Default gpt-5.6-sol — a
+ *                               hard default, not "Codex's own configured
+ *                               default"; the Sol reviewer is the cross-family
+ *                               reviewer for Claude-authored work.
  *   ORCHESTRA_REVIEW_SANDBOX    Codex sandbox: workspace-write (default — lets
  *                               the reviewer actually run the test suite) or
  *                               read-only (hard no-write guarantee, but many
  *                               test runners can't run under it).
- *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for the review (default 600000).
+ *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for the review (default 1800000).
  *                               This engine explores before it concludes, so
  *                               even a nine-line docs diff is MINUTES, not
  *                               seconds — an inert tier narrows what gets
@@ -288,7 +290,7 @@ const HELPER_CONSEQUENCE = {
 const CONFIG = {
   model: (process.env.ORCHESTRA_REVIEW_MODEL || '').trim(),
   sandbox: (process.env.ORCHESTRA_REVIEW_SANDBOX || 'workspace-write').trim(),
-  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || 600000,
+  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || 1800000,
   timeoutSource: process.env.ORCHESTRA_REVIEW_TIMEOUT_MS ? 'env' : 'default',
   idleMs: intOr(process.env.ORCHESTRA_REVIEW_IDLE_MS, 1500),
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
@@ -2524,8 +2526,13 @@ function main() {
       ? projectCfg.codex
       : {};
 
-  if (!process.env.ORCHESTRA_REVIEW_MODEL && typeof codexCfg.reviewModel === 'string') {
+  if (!process.env.ORCHESTRA_REVIEW_MODEL && typeof codexCfg.reviewModel === 'string' && codexCfg.reviewModel.trim()) {
     CONFIG.model = codexCfg.reviewModel.trim();
+  }
+  // Flag → env → config are all absent: the Sol reviewer is a hard default,
+  // not "Codex's own configured default" — never leave the model unpinned.
+  if (!CONFIG.model) {
+    CONFIG.model = 'gpt-5.6-sol';
   }
   if (!process.env.ORCHESTRA_REVIEW_SANDBOX && typeof codexCfg.reviewSandbox === 'string') {
     CONFIG.sandbox = codexCfg.reviewSandbox.trim();

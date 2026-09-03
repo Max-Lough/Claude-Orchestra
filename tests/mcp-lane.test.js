@@ -346,6 +346,9 @@ async function case1() {
   check('orchestra_exec no longer accepts ticket/role',
     exec && !('ticket' in exec.inputSchema.properties) && !('role' in exec.inputSchema.properties),
     exec && JSON.stringify(Object.keys(exec.inputSchema.properties)));
+  check('orchestra_exec has no selectable tier: no "tier" in its schema or description',
+    exec && !('tier' in exec.inputSchema.properties) && !/\btier\b/i.test(exec.description || ''),
+    exec && JSON.stringify(Object.keys(exec.inputSchema.properties)) + ' — ' + (exec.description || ''));
   const unknown = await s.rpc('tools/call', { name: 'orchestra_bogus', arguments: {} });
   check('unknown tool is a JSON-RPC error, not a fake report',
     unknown.error && unknown.error.code === -32602, JSON.stringify(unknown));

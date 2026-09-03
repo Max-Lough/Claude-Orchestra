@@ -162,7 +162,7 @@ const STUB_BIN = (() => {
 // ---------------------------------------------------------------- the tests
 
 function case1() {
-  section('1. Standard tier: defaults, attribution, and the relayed report');
+  section('1. Default Sol/high path: defaults, attribution, and the relayed report');
   const fx = makeRepo();
   const r = runExec(fx, []);
   const out = r.stdout || '';
@@ -175,21 +175,26 @@ function case1() {
     path.resolve(field(out, 'CWD')) === path.resolve(fx.repo),
     'CWD: ' + field(out, 'CWD'));
   check(
-    'standard tier defaults to the Terra model',
-    field(out, 'MODEL') === 'gpt-5.6-terra' && /model: gpt-5\.6-terra \(default\)/.test(out),
+    'the default model is Sol',
+    field(out, 'MODEL') === 'gpt-5.6-sol' && /model: gpt-5\.6-sol \(default\)/.test(out),
     'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
   );
   check(
-    'standard tier passes no reasoning-effort override',
-    field(out, 'CONFIG_OVERRIDES') === '(none)',
-    'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
+    'the default effort is high, pinned as a config value, not prose',
+    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high' &&
+      /effort: high/.test(out.split('\n')[0]),
+    'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES') + ' — ' + out.split('\n')[0]
   );
   check(
     'the sandbox is workspace-write (an executor must write)',
     field(out, 'SANDBOX') === 'workspace-write',
     'SANDBOX: ' + field(out, 'SANDBOX')
   );
-  check('the header names the tier', /tier: standard/.test(out.split('\n')[0]), out.split('\n')[0]);
+  check(
+    'there is no selectable tier: the header names no tier at all',
+    !/\btier:/.test(out.split('\n')[0]),
+    out.split('\n')[0]
+  );
   check(
     'the header states execution is never auto-retried',
     /attempts: 1 \(execution is never auto-retried\)/.test(out),
@@ -207,43 +212,16 @@ function case1() {
 }
 
 function case2() {
-  section('2. Heavy tier: Sol, high effort, declared in the header');
-  const fx = makeRepo();
-  const r = runExec(fx, ['--tier', 'heavy']);
-  const out = r.stdout || '';
-  check(
-    'heavy tier defaults to the Sol model',
-    field(out, 'MODEL') === 'gpt-5.6-sol' && /model: gpt-5\.6-sol \(default\)/.test(out),
-    'MODEL: ' + field(out, 'MODEL')
-  );
-  check(
-    'heavy tier pins high reasoning effort as a config value, not prose',
-    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high',
-    'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
-  );
-  check('the header names the tier', /tier: heavy/.test(out.split('\n')[0]) &&
-    /effort: high/.test(out.split('\n')[0]), out.split('\n')[0]);
-
-  // A typo'd tier value must fall to the SAFE tier, not the expensive one.
-  const typo = runExec(fx, ['--tier', 'heayv']);
-  check(
-    'an unrecognised tier value runs standard, not heavy',
-    /tier: standard/.test((typo.stdout || '').split('\n')[0]),
-    (typo.stdout || '').split('\n')[0]
-  );
-}
-
-function case3() {
-  section('3. Settings resolve flag > env > orchestra.json > default, and say so');
+  section('2. Explicit override precedence for model and effort: flag > env > config > default');
   const fx = makeRepo();
   writeProjectConfig(fx, {
-    codex: { execModel: 'gpt-5.6-luna', execTimeoutMs: 1234567 },
+    codex: { execHeavyModel: 'gpt-5.6-sol-pinned', execTimeoutMs: 1234567 },
   });
   const cfg = runExec(fx, []);
   check(
-    'orchestra.json supplies the model and is credited',
-    field(cfg.stdout || '', 'MODEL') === 'gpt-5.6-luna' &&
-      /model: gpt-5\.6-luna \(orchestra\.json\)/.test(cfg.stdout || ''),
+    'orchestra.json (codex.execHeavyModel) supplies the model and is credited',
+    field(cfg.stdout || '', 'MODEL') === 'gpt-5.6-sol-pinned' &&
+      /model: gpt-5\.6-sol-pinned \(orchestra\.json\)/.test(cfg.stdout || ''),
     (cfg.stdout || '').split('\n')[0]
   );
   check(
@@ -252,7 +230,7 @@ function case3() {
     (cfg.stdout || '').split('\n')[0]
   );
 
-  const env = runExec(fx, [], { ORCHESTRA_EXEC_MODEL: 'gpt-5.6-env' });
+  const env = runExec(fx, [], { ORCHESTRA_EXEC_HEAVY_MODEL: 'gpt-5.6-env' });
   check(
     'the environment outranks orchestra.json',
     field(env.stdout || '', 'MODEL') === 'gpt-5.6-env' &&
@@ -260,7 +238,7 @@ function case3() {
     (env.stdout || '').split('\n')[0]
   );
 
-  const flag = runExec(fx, ['--model', 'gpt-5.6-flag'], { ORCHESTRA_EXEC_MODEL: 'gpt-5.6-env' });
+  const flag = runExec(fx, ['--model', 'gpt-5.6-flag'], { ORCHESTRA_EXEC_HEAVY_MODEL: 'gpt-5.6-env' });
   check(
     'a flag outranks everything',
     field(flag.stdout || '', 'MODEL') === 'gpt-5.6-flag' &&
@@ -268,14 +246,44 @@ function case3() {
     (flag.stdout || '').split('\n')[0]
   );
 
-  // The heavy tier reads its OWN keys, not the standard tier's.
+  // Same chain for effort (the header prints the value only, no source tag).
   const fx2 = makeRepo();
-  writeProjectConfig(fx2, { codex: { execModel: 'gpt-5.6-luna', execHeavyModel: 'gpt-5.6-sol-pinned' } });
-  const heavy = runExec(fx2, ['--tier', 'heavy']);
+  writeProjectConfig(fx2, { codex: { execHeavyEffort: 'medium' } });
+  const effortCfg = runExec(fx2, []);
   check(
-    'heavy tier resolves execHeavyModel, not execModel',
-    field(heavy.stdout || '', 'MODEL') === 'gpt-5.6-sol-pinned',
-    'MODEL: ' + field(heavy.stdout || '', 'MODEL')
+    'orchestra.json (codex.execHeavyEffort) supplies the effort',
+    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium' &&
+      /effort: medium/.test((effortCfg.stdout || '').split('\n')[0]),
+    (effortCfg.stdout || '').split('\n')[0]
+  );
+  const effortEnv = runExec(fx2, [], { ORCHESTRA_EXEC_HEAVY_EFFORT: 'low' });
+  check(
+    'the environment outranks orchestra.json for effort',
+    /effort: low/.test((effortEnv.stdout || '').split('\n')[0]),
+    (effortEnv.stdout || '').split('\n')[0]
+  );
+  const effortFlag = runExec(fx2, ['--effort', 'xhigh'], { ORCHESTRA_EXEC_HEAVY_EFFORT: 'low' });
+  check(
+    'a flag outranks everything for effort',
+    /effort: xhigh/.test((effortFlag.stdout || '').split('\n')[0]),
+    (effortFlag.stdout || '').split('\n')[0]
+  );
+
+  // --tier is not a recognised flag any more: there is no selectable tier. A
+  // stray "--tier heavy" is silently ignored (unrecognised flags are), so
+  // settings already resolved from orchestra.json above (fx) are unaffected.
+  const tiered = runExec(fx, ['--tier', 'heavy']);
+  const tout = tiered.stdout || '';
+  check(
+    '--tier is rejected as an unknown flag: does not select a model of its own',
+    field(tout, 'MODEL') === 'gpt-5.6-sol-pinned' &&
+      /model: gpt-5\.6-sol-pinned \(orchestra\.json\)/.test(tout.split('\n')[0]),
+    'MODEL: ' + field(tout, 'MODEL') + ' — ' + tout.split('\n')[0]
+  );
+  check(
+    '--tier leaves no tier line in the header',
+    !/\btier:/.test(tout.split('\n')[0]),
+    tout.split('\n')[0]
   );
 }
 
@@ -768,7 +776,6 @@ function case17() {
   // profile, and the tools frontmatter must make shelling out structurally
   // impossible rather than merely discouraged.
   const launchers = [
-    ['packs/codex/agents/executor-codex.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/executor-codex-heavy.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/reviewer-codex.md', 'mcp__orchestra-engine__orchestra_review'],
   ];
@@ -815,7 +822,6 @@ function finish() {
 async function main() {
   case1();
   case2();
-  case3();
   case4();
   case5();
   case6();

@@ -5,19 +5,17 @@
  * Drives an OpenAI model through the Codex CLI to CARRY OUT a work order —
  * edits, commands, builds, tests — in the project working tree. The default
  * Orchestra executors are the Claude `executor` (Sonnet) and `executor-heavy`
- * (Opus); this engine offloads workhorse execution to a different vendor when
- * a project asks for it. Two tiers, mirroring the Claude split:
+ * (Opus); this engine is the exceptional-case cross-vendor executor for a
+ * problem with concrete prior evidence that Anthropic models struggled on it
+ * — never routine work. One model: gpt-5.6-sol, high reasoning effort by
+ * default.
  *
- *   --tier standard   the everyday workhorse (default model: gpt-5.6-terra)
- *   --tier heavy      the hard-order tier   (default model: gpt-5.6-sol,
- *                     reasoning effort high)
- *
- * The `executor-codex` / `executor-codex-heavy` subagents (thin Claude
- * launchers) invoke this. The Director itself cannot — the guard blocks its
- * Bash — so execution stays delegated.
+ * The `executor-codex-heavy` subagent (a thin Claude launcher) invokes this.
+ * The Director itself cannot — the guard blocks its Bash — so execution
+ * stays delegated.
  *
  * Usage:
- *   node orchestra-exec.js --work-order <file> [--tier standard|heavy] \
+ *   node orchestra-exec.js --work-order <file> \
  *     [--model <id>] [--effort <level>] [--timeout-ms <n>] \
  *     [--forbid <cmd>]... [--cd <dir>] [--no-probe]
  *
@@ -86,9 +84,7 @@
  * nothing:
  *
  *   { "codex": {
- *       "execModel": "gpt-5.6-terra",
  *       "execHeavyModel": "gpt-5.6-sol",
- *       "execEffort": "",
  *       "execHeavyEffort": "high",
  *       "execTimeoutMs": 1800000,
  *       "execSandbox": "workspace-write",
@@ -106,13 +102,11 @@
  * helpersDir, and the integrity-ignore keys are SHARED with the review
  * runner — one Codex install, one set of machine facts.)
  *
- *   ORCHESTRA_EXEC_MODEL        Standard-tier model (default gpt-5.6-terra).
- *   ORCHESTRA_EXEC_HEAVY_MODEL  Heavy-tier model (default gpt-5.6-sol).
- *   ORCHESTRA_EXEC_EFFORT       Standard-tier reasoning effort (default: the
- *                               engine's own; passed to codex as
- *                               `-c model_reasoning_effort=<v>` when set).
- *   ORCHESTRA_EXEC_HEAVY_EFFORT Heavy-tier reasoning effort (default high —
- *                               the heavy tier exists to converge in one round).
+ *   ORCHESTRA_EXEC_HEAVY_MODEL  Executor model (default gpt-5.6-sol).
+ *   ORCHESTRA_EXEC_HEAVY_EFFORT Reasoning effort (default high — the
+ *                               exceptional-order executor exists to
+ *                               converge in one round; passed to codex as
+ *                               `-c model_reasoning_effort=<v>`).
  *   ORCHESTRA_EXEC_TIMEOUT_MS   Max wall-clock for the run (default 1800000).
  *                               Execution runs the project's verification, so
  *                               budget it like a build+suite, not like a chat.
@@ -180,19 +174,14 @@ const DEFAULT_INTEGRITY_IGNORE = [
   '.cache/', 'coverage/', '.coverage', '.nyc_output/', '*.log', '*.tmp',
 ];
 
-// Tier defaults. Sol is OpenAI's flagship tier and Terra its everyday
-// workhorse — the same capability split the Claude executors carry (Opus /
-// Sonnet), so the routing law in ORCHESTRA.md §2 maps across vendors
-// unchanged. Both are overridable per project (execModel / execHeavyModel).
-const TIER_DEFAULTS = {
-  standard: { model: 'gpt-5.6-terra', effort: '' },
-  heavy: { model: 'gpt-5.6-sol', effort: 'high' },
-};
+// The one Codex executor: Sol, OpenAI's flagship model, at high reasoning
+// effort by default — overridable per project (codex.execHeavyModel /
+// codex.execHeavyEffort, the config keys keep their existing names).
+const EXEC_DEFAULTS = { model: 'gpt-5.6-sol', effort: 'high' };
 
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
 const CONFIG = {
-  tier: 'standard',
   model: '',
   modelSource: 'default',
   effort: '',
@@ -232,7 +221,6 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--work-order') out.workOrder = argv[++i];
-    else if (a === '--tier') out.tier = argv[++i];
     else if (a === '--model') out.model = argv[++i];
     else if (a === '--effort') out.effort = argv[++i];
     else if (a === '--timeout-ms') out.timeoutMs = argv[++i];
@@ -957,7 +945,6 @@ const PREFLIGHT = [];
 function settingsBits() {
   return [
     'model: ' + (CONFIG.model || 'codex default') + ' (' + CONFIG.modelSource + ')',
-    'tier: ' + CONFIG.tier,
     'effort: ' + (CONFIG.effort || 'codex default'),
     'sandbox: ' + CONFIG.sandbox,
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
@@ -1116,7 +1103,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(
-      'Usage: node orchestra-exec.js --work-order <file> [--tier standard|heavy]\n' +
+      'Usage: node orchestra-exec.js --work-order <file>\n' +
         '         [--model <id>] [--effort <level>] [--timeout-ms <n>]\n' +
         '         [--forbid <cmd>]... [--cd <dir>] [--no-probe]\n' +
         '\n' +
@@ -1135,42 +1122,34 @@ function main() {
       ? projectCfg.codex
       : {};
 
-  // Anything other than an explicit, exact 'heavy' runs the standard tier —
-  // the safe direction for a typo'd tier value.
-  CONFIG.tier = (args.tier || '').trim().toLowerCase() === 'heavy' ? 'heavy' : 'standard';
-  const tierDefaults = TIER_DEFAULTS[CONFIG.tier];
-  const tierEnv = CONFIG.tier === 'heavy'
-    ? { model: process.env.ORCHESTRA_EXEC_HEAVY_MODEL, effort: process.env.ORCHESTRA_EXEC_HEAVY_EFFORT }
-    : { model: process.env.ORCHESTRA_EXEC_MODEL, effort: process.env.ORCHESTRA_EXEC_EFFORT };
-  const tierCfg = CONFIG.tier === 'heavy'
-    ? { model: codexCfg.execHeavyModel, effort: codexCfg.execHeavyEffort }
-    : { model: codexCfg.execModel, effort: codexCfg.execEffort };
-
+  // Resolution: flag > env > orchestra.json (codex.execHeavyModel /
+  // codex.execHeavyEffort) > default (gpt-5.6-sol / high). One model, one
+  // effort — there is no selectable tier.
   if (args.model && args.model.trim()) {
     CONFIG.model = args.model.trim();
     CONFIG.modelSource = 'flag';
-  } else if (tierEnv.model && tierEnv.model.trim()) {
-    CONFIG.model = tierEnv.model.trim();
+  } else if (process.env.ORCHESTRA_EXEC_HEAVY_MODEL && process.env.ORCHESTRA_EXEC_HEAVY_MODEL.trim()) {
+    CONFIG.model = process.env.ORCHESTRA_EXEC_HEAVY_MODEL.trim();
     CONFIG.modelSource = 'env';
-  } else if (typeof tierCfg.model === 'string' && tierCfg.model.trim()) {
-    CONFIG.model = tierCfg.model.trim();
+  } else if (typeof codexCfg.execHeavyModel === 'string' && codexCfg.execHeavyModel.trim()) {
+    CONFIG.model = codexCfg.execHeavyModel.trim();
     CONFIG.modelSource = 'orchestra.json';
   } else {
-    CONFIG.model = tierDefaults.model;
+    CONFIG.model = EXEC_DEFAULTS.model;
     CONFIG.modelSource = 'default';
   }
 
   if (args.effort && args.effort.trim()) {
     CONFIG.effort = args.effort.trim();
     CONFIG.effortSource = 'flag';
-  } else if (tierEnv.effort != null && String(tierEnv.effort).trim() !== '') {
-    CONFIG.effort = String(tierEnv.effort).trim();
+  } else if (process.env.ORCHESTRA_EXEC_HEAVY_EFFORT && String(process.env.ORCHESTRA_EXEC_HEAVY_EFFORT).trim() !== '') {
+    CONFIG.effort = String(process.env.ORCHESTRA_EXEC_HEAVY_EFFORT).trim();
     CONFIG.effortSource = 'env';
-  } else if (typeof tierCfg.effort === 'string' && tierCfg.effort.trim()) {
-    CONFIG.effort = tierCfg.effort.trim();
+  } else if (typeof codexCfg.execHeavyEffort === 'string' && codexCfg.execHeavyEffort.trim()) {
+    CONFIG.effort = codexCfg.execHeavyEffort.trim();
     CONFIG.effortSource = 'orchestra.json';
   } else {
-    CONFIG.effort = tierDefaults.effort;
+    CONFIG.effort = EXEC_DEFAULTS.effort;
     CONFIG.effortSource = 'default';
   }
 

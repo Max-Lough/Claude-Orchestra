@@ -15,7 +15,7 @@ minutes-long, under a real Director's round.
 
 - [ ] The install is v1.10.0: the project's root `.mcp.json` carries
       `orchestra-engine`, `.claude/hooks/orchestra-engine-mcp.js` exists, and
-      the four launcher profiles' `tools:` lines name MCP tools, not Bash.
+      the three launcher profiles' `tools:` lines name MCP tools, not Bash.
 - [ ] The project MCP server has been **approved** in Claude Code (first
       launch prompts once). Until then every lane reports unavailable —
       that state should be loud, not confusing; note how it presented.

@@ -218,14 +218,14 @@ function case3() {
   );
   check(
     'and the pack files are actually present',
-    fs.existsSync(path.join(withPack, '.claude', 'agents', 'executor-codex.md')) &&
+    fs.existsSync(path.join(withPack, '.claude', 'agents', 'executor-codex-heavy.md')) &&
       fs.existsSync(path.join(withPack, '.claude', 'hooks', 'orchestra-exec.js')),
     fs.readdirSync(path.join(withPack, '.claude', 'agents')).join(', ')
   );
   check(
     'a project that never asked for the pack did not gain one',
     installedPacks(plain).length === 0 &&
-      !fs.existsSync(path.join(plain, '.claude', 'agents', 'executor-codex.md')),
+      !fs.existsSync(path.join(plain, '.claude', 'agents', 'executor-codex-heavy.md')),
     installedPacks(plain).join()
   );
 

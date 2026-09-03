@@ -84,11 +84,11 @@
  *   ("codex" key)  >  built-in default.
  *
  * Project config (.claude/orchestra.json) is the durable place for these — a
- * work order saying "use a 30-minute timeout" is prose, and prose configures
+ * work order saying "use a 45-minute timeout" is prose, and prose configures
  * nothing:
  *
  *   { "codex": {
- *       "reviewTimeoutMs": 1800000,
+ *       "reviewTimeoutMs": 2700000,
  *       "reviewModel": "gpt-5.6-sol",
  *       "reviewSandbox": "workspace-write",
  *       "helpersDir": "/path/to/known-good-codex-helpers",
@@ -116,7 +116,7 @@
  *                               the reviewer actually run the test suite) or
  *                               read-only (hard no-write guarantee, but many
  *                               test runners can't run under it).
- *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for the review (default 1800000).
+ *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for the review (default 2700000).
  *                               This engine explores before it concludes, so
  *                               even a nine-line docs diff is MINUTES, not
  *                               seconds — an inert tier narrows what gets
@@ -299,7 +299,7 @@ const HELPER_CONSEQUENCE = {
 const CONFIG = {
   model: (process.env.ORCHESTRA_REVIEW_MODEL || '').trim(),
   sandbox: (process.env.ORCHESTRA_REVIEW_SANDBOX || 'workspace-write').trim(),
-  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || 1800000,
+  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || 2700000,
   timeoutSource: process.env.ORCHESTRA_REVIEW_TIMEOUT_MS ? 'env' : 'default',
   idleMs: intOr(process.env.ORCHESTRA_REVIEW_IDLE_MS, 1500),
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
@@ -2272,6 +2272,7 @@ function runAuthProbe(dir) {
   // failure this check should surface, and a probe that passed under different
   // conditions from the review would be answering a different question.
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
+  args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -2283,7 +2284,7 @@ function runAuthProbe(dir) {
     encoding: 'utf8',
     timeout: CONFIG.probeTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: childEnv(),
+    env: childEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
   });
   const elapsed = Date.now() - started;
   const said = (readFileOr(outFile, '') || r.stdout || '').trim();
@@ -2969,6 +2970,10 @@ function main() {
     if (CONFIG.model) codexArgs.push('--model', CONFIG.model);
     codexArgs.push('--output-last-message', lastMsgFile);
     if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+    // Keep the coexistence boundary last: Codex resolves repeated -c values in
+    // order, so ORCHESTRA_REVIEW_ARGS must not be able to re-enable a
+    // co-installed Codex-Orchestra's project instructions or hooks.
+    codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
     codexArgs.push('-'); // read the prompt from stdin
 
     const startedAt = Date.now();
@@ -2981,7 +2986,7 @@ function main() {
       // The engine runs far more git than this runner does, so the isolated
       // config has to reach IT, not just us — otherwise every command it issues
       // still warns about a global config path the sandbox cannot read.
-      env: childEnv(),
+      env: childEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
     });
     const elapsed = Date.now() - startedAt;
 

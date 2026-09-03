@@ -695,6 +695,7 @@ const PROBE_TOKEN = 'ORCHESTRA_PROBE_OK';
 function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', 'read-only', '--cd', dir, '--output-last-message', outFile];
+  args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -706,7 +707,7 @@ function runAuthProbe(dir) {
     encoding: 'utf8',
     timeout: CONFIG.probeTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: childEnv(),
+    env: childEnv({ ORCHESTRA_ROLE: 'planner-codex-external' }),
   });
   const elapsed = Date.now() - started;
   const said = (readFileOr(outFile, '') || r.stdout || '').trim();
@@ -1207,6 +1208,9 @@ function main() {
   if (CONFIG.web) codexArgs.push('-c', 'tools.web_search=true');
   codexArgs.push('--output-last-message', lastMsgFile);
   if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+  // These last-value-wins overrides are the boundary with a co-installed
+  // Codex-Orchestra. User extra args cannot turn project orchestration back on.
+  codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();
@@ -1216,7 +1220,7 @@ function main() {
     encoding: 'utf8',
     timeout: CONFIG.timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
-    env: childEnv(),
+    env: childEnv({ ORCHESTRA_ROLE: 'planner-codex-external' }),
   });
   const elapsed = Date.now() - startedAt;
 

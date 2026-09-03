@@ -353,6 +353,24 @@ function case2and3() {
     out.split('\n')[0]
   );
   check(
+    'a co-installed Codex-Orchestra cannot recast the external reviewer as its Director',
+    field(out, 'ORCHESTRA_ROLE') === 'reviewer-codex-external' &&
+      field(out, 'CONFIG_OVERRIDES').includes('features.hooks=false') &&
+      field(out, 'CONFIG_OVERRIDES').includes('project_doc_max_bytes=0'),
+    'ORCHESTRA_ROLE: ' + field(out, 'ORCHESTRA_ROLE') + ' CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
+  );
+  const hostile = runReview(
+    fx,
+    ['--tier', 'inert', '--no-tests', '--base-ref', fx.base, '--head-ref', fx.head],
+    { ORCHESTRA_REVIEW_ARGS: '-c features.hooks=true -c project_doc_max_bytes=65536' }
+  );
+  const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'user-supplied reviewer args cannot undo the coexistence boundary',
+    hostileOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
+  );
+  check(
     'the project working tree was left untouched',
     git(['status', '--porcelain', '--untracked-files=all'], fx.repo).split('\n').filter(Boolean).length === 32,
     git(['status', '--porcelain', '--untracked-files=all'], fx.repo)
@@ -578,14 +596,14 @@ function case6() {
 
   const dflt = runReview(fx, ['--tier', 'inert']);
   check(
-    'the default (1800000ms) already clears the 600000ms inert floor',
-    /timeout: 1800000ms \(default\)/.test(dflt.stdout || ''),
+    'the default (2700000ms) already clears the 600000ms inert floor',
+    /timeout: 2700000ms \(default\)/.test(dflt.stdout || ''),
     (dflt.stdout || '').split('\n')[0]
   );
 }
 
 function case6b() {
-  section('6b. Zero overrides: the Sol reviewer and the 1800000ms timeout are hard defaults');
+  section('6b. Zero overrides: the Sol reviewer and the 2700000ms timeout are hard defaults');
   // runReview() always forces ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol so every other
   // case exercises a real cross-vendor model name; this case proves the SAME
   // value is what the runner falls back to on its own, with no flag, no env,
@@ -614,8 +632,8 @@ function case6b() {
     'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
   );
   check(
-    'the default timeout is 1800000ms with no flag, env, or config',
-    /timeout: 1800000ms \(default\)/.test(out),
+    'the default timeout is 2700000ms with no flag, env, or config',
+    /timeout: 2700000ms \(default\)/.test(out),
     out.split('\n')[0]
   );
 }

@@ -868,6 +868,7 @@ const PROBE_TOKEN = 'ORCHESTRA_PROBE_OK';
 function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
+  args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -879,7 +880,7 @@ function runAuthProbe(dir) {
     encoding: 'utf8',
     timeout: CONFIG.probeTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: childEnv(),
+    env: childEnv({ ORCHESTRA_ROLE: 'executor-codex-external' }),
   });
   const elapsed = Date.now() - started;
   const said = (readFileOr(outFile, '') || r.stdout || '').trim();
@@ -1321,6 +1322,10 @@ function main() {
   if (CONFIG.effort) codexArgs.push('-c', 'model_reasoning_effort=' + CONFIG.effort);
   codexArgs.push('--output-last-message', lastMsgFile);
   if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+  // Keep the coexistence boundary last: Codex resolves repeated -c values in
+  // order, so ORCHESTRA_EXEC_ARGS must not be able to re-enable a co-installed
+  // Codex-Orchestra's project instructions or hooks.
+  codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();
@@ -1330,7 +1335,7 @@ function main() {
     encoding: 'utf8',
     timeout: CONFIG.timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
-    env: childEnv(),
+    env: childEnv({ ORCHESTRA_ROLE: 'executor-codex-external' }),
   });
   const elapsed = Date.now() - startedAt;
 

@@ -91,8 +91,8 @@ function effectiveCapMs(lane, timeoutMsArg) {
   if (num(timeoutMsArg)) return num(timeoutMsArg);
   const cfg = readCodexConfig();
   if (lane === 'review') {
-    // Default matches orchestra-review.js's own runner default (1800000ms).
-    return num(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS) || num(cfg.reviewTimeoutMs) || 1800000;
+    // Default matches orchestra-review.js's own runner default (2700000ms).
+    return num(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS) || num(cfg.reviewTimeoutMs) || 2700000;
   }
   if (lane === 'exec') {
     return num(process.env.ORCHESTRA_EXEC_TIMEOUT_MS) || num(cfg.execTimeoutMs) || 1800000;
@@ -577,7 +577,7 @@ const TOOLS = [
         base_ref: { type: 'string', description: 'Commit the change is measured FROM (with head_ref).' },
         head_ref: { type: 'string', description: 'Commit under review. Always pass when the change is committed — pins the review to a clean checkout.' },
         tier: { type: 'string', enum: ['inert'], description: 'Pass "inert" ONLY when the Director\'s order explicitly declares TIER: inert. Full depth is the default.' },
-        timeout_ms: { type: 'number', description: 'Wall-clock cap per attempt, only when the order names one. Default/inert floor is 1800000.' },
+        timeout_ms: { type: 'number', description: 'Wall-clock cap per attempt, only when the order names one. Default 2700000; inert floor 600000.' },
         no_tests: { type: 'boolean', description: 'Hard-forbid running the suite/build/app (order says so). Affected claims come back UNVERIFIED (prohibited).' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the reviewer must not execute.' },
         warmup_cmd: { type: 'string', description: 'Command run unsandboxed in the fresh pinned checkout before the integrity baseline (e.g. "pnpm install"). Pinned reviews only.' },

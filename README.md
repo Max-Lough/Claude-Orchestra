@@ -27,6 +27,29 @@ node install.js /path/to/your/project --packs codex       # with the OpenAI/Code
 
 PowerShell: `.\install.ps1 "C:\path\to\project"` (`-Packs codex`, `-Specialists <names>`, `-Uninstall`). POSIX: `./install.sh /path/to/project`.
 
+### Install beside Codex-Orchestra
+
+Both harnesses may be installed in the same project, in either order:
+
+```bash
+node /path/to/Claude-Orchestra/install.js /path/to/project --packs codex
+node /path/to/Codex-Orchestra/install.js /path/to/project --packs claude
+```
+
+Their owned surfaces do not overlap: Claude-Orchestra owns `.claude/`, its
+managed block in `CLAUDE.md`, and its root `.mcp.json` registration;
+Codex-Orchestra owns `.codex/`, the bundled `.agents/skills/orchestra-*`
+skills, and its managed block in `AGENTS.md`. Updating or uninstalling either
+harness leaves the other's files and managed block unchanged.
+
+Cross-family child processes are isolated from the other installed Director.
+Claude-Orchestra's Codex review, execution, and cross-compare runners set an
+external-worker role and launch Codex with project hooks disabled and project `AGENTS.md`
+discovery capped at zero. Codex-Orchestra's Claude review runner uses Claude's
+restricted safe mode. The repository-wide `ORCHESTRA_PAUSE=1` environment
+switch pauses both harnesses by design; `.claude/orchestra.pause` and
+`.codex/orchestra.pause` remain harness-specific.
+
 The installer is **idempotent** — re-run it anytime to update a project to the latest master. It copies `agents/*.md`, the bundled skills, `hooks/orchestra-guard.js`, and any named pack's files into `.claude/`; stamps `ORCHESTRA.md` with the harness version; merges its PreToolUse hook entry and git permission grants into `.claude/settings.json`; ensures `CLAUDE.md` imports the protocol inside `<!-- ORCHESTRA:BEGIN/END -->` markers; and records the pack/specialist selection in `.claude/orchestra-install.json` so a later plain re-run refreshes exactly that selection rather than dropping it. Pass `--packs`/`--specialists` again only to *change* the selection (`--no-packs` removes a pack's files; a pack no longer named is deselected the same way).
 
 **Before writing or copying anything**, an existing `.claude/orchestra.json` is preflighted: `roster: "new"` refuses the install with the message above; otherwise the installer scrubs exactly the deprecated 2.0/model-routing keys (`roster`, `rosterGeneration`, `seats`, `projectId`, `installedHooks`, `installedStore`, `installedFiles`, `verifier`, `reviewEngine`, and `codex.execModel`/`codex.execEffort`/`codex.execLightModel`) and leaves every other key in place — the file is re-serialised (two-space JSON) in the process, so the scrub preserves those keys' values, not the original bytes around them. An orphaned `.claude/orchestra/` runtime directory (2.0's ticket store/ledger) is reported, never deleted.

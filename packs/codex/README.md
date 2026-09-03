@@ -43,7 +43,7 @@ an engine verdict.
 This replaced the launcher shell pipeline — scratch files, run tokens,
 sentinels, background-and-poll, stdout scraping — that produced the majority
 of this pack's recorded field failures (see the 1.10.0 changelog entry). A
-blocking MCP call at the full 30-minute review default is measured to hold in
+blocking MCP call at the full 45-minute review default is measured to hold in
 Claude Code, top-level and subagent-nested, with no timeout tuning.
 
 The installer merges the registration into the project's root `.mcp.json`
@@ -55,6 +55,14 @@ should set `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` or keep the call in the
 foreground turn; interactive sessions need nothing.
 
 ## Setup
+
+**Co-installed Codex-Orchestra.** Review, execution, and cross-compare planning
+are external worker sessions, not new Codex-directed campaigns. All three
+runners set an explicit external-worker `ORCHESTRA_ROLE` and hard-pin
+`features.hooks=false` plus
+`project_doc_max_bytes=0` after user-supplied extra arguments. This prevents a
+target project's `.codex` hooks and `AGENTS.md` from inheriting the child
+session, even when Codex-Orchestra is installed in the same repository.
 
 **Review** (`reviewer-codex`): install the [Codex CLI](https://developers.openai.com/codex/)
 and authenticate it — either `codex login` or export `OPENAI_API_KEY`. Once
@@ -142,7 +150,7 @@ Environment variables override the file; explicit runner flags override both.
 ```json
 {
   "codex": {
-    "reviewTimeoutMs": 1800000,
+    "reviewTimeoutMs": 2700000,
     "reviewModel": "gpt-5.6-sol",
     "reviewSandbox": "workspace-write",
     "helpersDir": "C:/tools/codex-helpers",
@@ -156,7 +164,7 @@ Environment variables override the file; explicit runner flags override both.
 
 | Key | Effect |
 |---|---|
-| `reviewTimeoutMs` | Wall-clock cap. Reviews that run a real suite need far more than the 30-minute default. |
+| `reviewTimeoutMs` | Wall-clock cap. Reviews that run a real suite need far more than the 45-minute default. |
 | `reviewModel` / `reviewSandbox` | Same as `ORCHESTRA_REVIEW_MODEL` / `ORCHESTRA_REVIEW_SANDBOX`. |
 | `helpersDir` | A directory of known-good files mirrored into the Codex install directory before each run (see "Helper restore"). |
 | `doNotRun` | Commands the reviewer is forbidden to execute. Injected into the brief as a hard prohibition. |
@@ -297,7 +305,7 @@ loudly when it does.
 |---|---|---|
 | `ORCHESTRA_REVIEW_MODEL` | `gpt-5.6-sol` | Pin the OpenAI review model; hard default, not "Codex's own default". |
 | `ORCHESTRA_REVIEW_SANDBOX` | `workspace-write` | Codex sandbox; `read-only` forbids writes but blocks most test runners. |
-| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `1800000` | Wall-clock cap. |
+| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `2700000` | Wall-clock cap. |
 | `ORCHESTRA_REVIEW_IDLE_MS` | `1500` | Idle-precheck settle window; `0` disables. Live-tree reviews only. |
 | `ORCHESTRA_REVIEW_WORKTREE_ROOT` | OS temp dir | Scratch root for a pinned review's worktree. Set-and-unwritable is a hard failure. |
 | `ORCHESTRA_REVIEW_GIT_ISOLATION` | `1` | Isolate git's global config for the review; `0` disables. |

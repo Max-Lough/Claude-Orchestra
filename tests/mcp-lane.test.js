@@ -324,7 +324,10 @@ const EXEC_REPORT = 'STATUS: DONE — reformatted add(), committed.';
 async function case1() {
   section('1. handshake and tool surface');
   const fx = makeRepo();
-  const s = mcpSession({ fx });
+  const s = mcpSession({
+    fx,
+    env: { ORCHESTRA_CROSSPLAN_ARGS: '-c features.hooks=true -c project_doc_max_bytes=65536' },
+  });
   const init = await s.start();
   check('initialize returns serverInfo.name orchestra-engine',
     init.result && init.result.serverInfo && init.result.serverInfo.name === 'orchestra-engine',
@@ -441,14 +444,14 @@ async function case5() {
 }
 
 // 5b. The MCP backstop's effective review cap must track the runner's own
-//     default (orchestra-review.js: 1800000ms, set in WO-4) rather than a
+//     default (orchestra-review.js: 2700000ms) rather than a
 //     stale fallback baked into this file — a mismatch here is invisible
 //     until a real review runs long enough to hit the OLD, tighter backstop
 //     first. No --timeout-ms/env/config override, so effectiveCapMs('review')
 //     falls all the way to its own default; the progress notification is the
 //     one place that value is externally observable.
 async function case5b() {
-  section('5b. review lane default effective cap (no flag/env/config) is 1800000ms — matches the runner\'s own default');
+  section('5b. review lane default effective cap (no flag/env/config) is 2700000ms — matches the runner\'s own default');
   const fx = makeRepo();
   const s = mcpSession({
     fx,
@@ -466,8 +469,8 @@ async function case5b() {
   );
   check('at least one progress notification fired', progress.length >= 1, JSON.stringify(s.notifications.slice(0, 3)));
   check(
-    'with no --timeout-ms/env/config, the reported runner cap is 1800000ms',
-    progress.some((n) => /runner cap 1800000ms/.test((n.params && n.params.message) || '')),
+    'with no --timeout-ms/env/config, the reported runner cap is 2700000ms',
+    progress.some((n) => /runner cap 2700000ms/.test((n.params && n.params.message) || '')),
     JSON.stringify(progress.map((n) => n.params && n.params.message))
   );
   s.close();
@@ -655,6 +658,12 @@ async function case8() {
   check('the engine ran read-only', field(text, 'SANDBOX') === 'read-only', field(text, 'SANDBOX'));
   check('the default effort reached the engine as a config override',
     /model_reasoning_effort=high/.test(field(text, 'CONFIG_OVERRIDES')), field(text, 'CONFIG_OVERRIDES'));
+  check('a co-installed Codex-Orchestra cannot recast the external planner as its Director',
+    field(text, 'ORCHESTRA_ROLE') === 'planner-codex-external', field(text, 'ORCHESTRA_ROLE'));
+  const crossplanOverrides = field(text, 'CONFIG_OVERRIDES').split(' | ');
+  check('user-supplied crossplan args cannot undo the coexistence boundary',
+    crossplanOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    crossplanOverrides.join(' | '));
   check('REPORT INTEGRITY verified the nonce', /REPORT INTEGRITY: verified/.test(text), text.slice(-400));
   const saved = fs.existsSync(path.join(fx.repo, OUT)) ? fs.readFileSync(path.join(fx.repo, OUT), 'utf8') : '';
   check('the document landed at out_path', !!saved.trim(), OUT + ' missing or empty');

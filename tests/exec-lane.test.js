@@ -181,7 +181,7 @@ function case1() {
   );
   check(
     'the default effort is high, pinned as a config value, not prose',
-    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high' &&
+    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0' &&
       /effort: high/.test(out.split('\n')[0]),
     'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES') + ' — ' + out.split('\n')[0]
   );
@@ -189,6 +189,22 @@ function case1() {
     'the sandbox is workspace-write (an executor must write)',
     field(out, 'SANDBOX') === 'workspace-write',
     'SANDBOX: ' + field(out, 'SANDBOX')
+  );
+  check(
+    'a co-installed Codex-Orchestra cannot recast the external executor as its Director',
+    field(out, 'ORCHESTRA_ROLE') === 'executor-codex-external' &&
+      field(out, 'CONFIG_OVERRIDES').includes('features.hooks=false') &&
+      field(out, 'CONFIG_OVERRIDES').includes('project_doc_max_bytes=0'),
+    'ORCHESTRA_ROLE: ' + field(out, 'ORCHESTRA_ROLE') + ' CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
+  );
+  const hostile = runExec(fx, [], {
+    ORCHESTRA_EXEC_ARGS: '-c features.hooks=true -c project_doc_max_bytes=65536',
+  });
+  const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'user-supplied executor args cannot undo the coexistence boundary',
+    hostileOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
   );
   check(
     'there is no selectable tier: the header names no tier at all',
@@ -252,7 +268,7 @@ function case2() {
   const effortCfg = runExec(fx2, []);
   check(
     'orchestra.json (codex.execHeavyEffort) supplies the effort',
-    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium' &&
+    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0' &&
       /effort: medium/.test((effortCfg.stdout || '').split('\n')[0]),
     (effortCfg.stdout || '').split('\n')[0]
   );

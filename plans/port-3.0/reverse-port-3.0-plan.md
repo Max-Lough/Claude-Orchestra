@@ -291,7 +291,7 @@ The surviving full check set after WO-4 is:
 node install.js --lint
 node tests/frontmatter-lint.test.js
 node tests/review-lane.test.js
-node tests/scan.test.js
+node tests/scan-lane.test.js
 node tests/exec-lane.test.js
 node tests/mcp-lane.test.js
 node tests/install.test.js
@@ -356,7 +356,7 @@ Do not introduce a package-level test wrapper. A work order may add targeted arg
 - **Delete active roster:** `roster/architect.md`, `builder.md`, `builder-openai.md`, `conductor.md`, `data-engineer.md`, `investigator.md`, `red-team.md`, `reviewer-anthropic.md`, `reviewer-openai.md`, `sweeper.md`, `test-designer-vs-anthropic.md`, `test-designer-vs-openai.md`, and `roster/lint.js`. Do not delete any dated plan/report/exercise.
 - **Replace `roster/README.md:1-102`:** a short archive notice saying active agents live in `agents/` and `packs/codex/agents/`; all remaining files are historical evidence and are not installed or linted.
 - **Delete tests:** `tests/bridge.test.js`, `tests/bridge-close.test.js`, `tests/router.test.js`, `tests/tickets.test.js`, `tests/quartermaster.test.js`, `tests/registry.test.js`, `tests/verifier.test.js`, and `tests/wo12-tooling.test.js`. The first seven directly test deleted subsystems; WO12 tooling is a closed 2.0 construction harness and is not part of the end-state suite.
-- **CI edit:** delete the corresponding steps at `.github/workflows/test.yml:113-184`, `.github/workflows/test.yml:197-215`, and `.github/workflows/test.yml:224-231`; keep every surviving lane/install/guard step.
+- **CI edit:** delete the corresponding steps at `.github/workflows/test.yml:113-184`, `.github/workflows/test.yml:197-215`, and `.github/workflows/test.yml:224-231`; keep every surviving lane/install/guard step. **Fable addition (after WO-1):** also delete the `WO-7b misroute-recovery gates` step (it runs `plans/.../wo7b/score.js` through the live router, which WO-3 deletes; the script stays as history) and the `Roster contract lint` step (`roster/lint.js` is deleted here), and rename `Install suite (--roster legacy|new)` to `Install suite`. Note the surviving scan suite is `tests/scan-lane.test.js`, not `scan.test.js`.
 - **Verification:** run the entire surviving full check set listed above.
 - **Expected line delta:** approximately −27,000 to −29,000 lines including docs, tests, profiles, and probes. The Opus review's −20,000 estimate excludes several docs/schemas/probes and the 4,843-line WO12 tooling suite (`plans/port-3.0/port-review-opus-2026-09-02.md:463-492`).
 - **Difference from the Opus list:** it did not list `probes/**` or `tests/wo12-tooling.test.js`. Delete them because the probes are explicitly a 2.0 telemetry/pre-build runbook (`probes/RUNBOOK.md:1-202`, `probes/orchestra-telemetry.js:1-302`) and the test identifies itself as a standalone WO12 corpus-tooling suite with only stubbed runners (`tests/wo12-tooling.test.js:1-45`), not an end-state harness test. Keep the corresponding historical plans and review records.

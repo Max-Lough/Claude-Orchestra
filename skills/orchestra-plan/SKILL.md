@@ -5,11 +5,11 @@ description: "Author a durable Orchestra plan — work orders sized, sequenced, 
 
 # Orchestra plan
 
-Turn a goal into a plan file under `.claude/plans/` — the Director's own notebook: the guard permits the Director to Write markdown there directly (ORCHESTRA.md §3.1), so the plan is authored by you in both modes, never routed through an executor. Orchestration-class throughout; a dormant or paused session runs the same procedure with its own tools.
+Turn a goal into a plan file under `.claude/plans/` — the Director's own notebook: the guard permits the Director to Write markdown there directly (ORCHESTRA.md §3.1), so the plan is authored by you whatever the session's mode, never routed through an executor. Orchestration-class throughout; a NORMAL-mode or paused session runs the same procedure with its own tools.
 
 ## Procedure
 
-1. **INTAKE.** Restate the goal; write concrete done-criteria. Genuine ambiguity → AskUserQuestion now, not three phases in. (For large or risky work, plan mode and user sign-off still apply — this skill produces the durable artifact, not the approval.)
+1. **INTAKE.** Restate the goal; write concrete done-criteria. Genuine ambiguity → AskUserQuestion now, not three phases in. (For large or risky work, plan mode together with user sign-off still applies — this skill produces the durable artifact, not the approval.)
 2. **RECON — dispatch scouts, unless this session already mapped the exact territory.** Missions: the files/subsystems the work will touch, existing patterns to follow, test layout and protected suites, mechanical ceilings (lint caps, generated files, line counts), prior art. Independent missions launch together in one message. Causal *why/how* questions the plan depends on (root-cause a failure, trace a flow end-to-end) become detective cases once the scouts' map is back (ORCHESTRA.md §2). Under a director model you never explore yourself.
 3. **Probes for multi-subsystem work (§8.1.5).** Schedule as the plan's first orders: (a) a scout probe of mechanical ceilings on the files to be touched; (b) a risk-first micro-order that forces the scariest cross-system interaction first, alone.
 4. **Decompose into work orders (§8.1).** Every order passes this gate:
@@ -18,9 +18,10 @@ Turn a goal into a plan file under `.claude/plans/` — the Director's own noteb
    - **Credibly one executor run** (~≤80 tool calls) and one review round — else split, or bundle deliberately WITH §8.2 cadence clauses (numbered parts, heartbeat file, tool-call budget). Bundling and cadence are a package, never separable.
    - **Fan-out chains** (per-consumer migrations, per-file hardenings) → parallel orders in isolated worktrees, ending with an explicit sweep order ("find the consumers the sub-orders missed").
    - **Tools refuse to emit garbage** — an order authoring a generator/migrator/pipeline requires built-in self-validation.
-5. **Tier and route review (§8.3).** Per order: `TIER: full` unless provably inert (docs/comments/formatting, zero behavior impact) → `TIER: inert`; when unsure, full. Note the engine from `.claude/orchestra.json` `reviewEngine` (Reading that one file is permitted — §3.1), and — where the `codex` pack is installed — mark gate-class reviews (integration gates, a chain's final review) for a `reviewer-codex` second opinion. If an order needs a non-default review timeout or must forbid running something, state it in the order as a flag for the launcher to pass (`--timeout-ms`, `--no-tests`, `--forbid`); prose alone configures nothing. When the round's work will be committed before review, say so and name the base and head SHAs in the review order — the launcher passes `--base-ref`/`--head-ref` and the review then runs in a clean checkout of that commit instead of a working tree carrying the session's own plan files and notes. Do not shorten the cap for an inert round: the tier narrows what gets verified, not how long the engine takes to look, and the runner floors inert reviews at 600000ms regardless.
-6. **Write `.claude/plans/<kebab-slug>.md` yourself**, in the template below.
-7. **Present.** Phases, order count, parallelism, risks, and where sign-off matters — a few plain beats plus the file path. Get sign-off before EXECUTE when the work is large or risky.
+5. **Tier each order (§8.3).** Per order: `TIER: full` unless provably inert (docs/comments/formatting, zero behavior impact) → `TIER: inert`; when unsure, full. Tier narrows what a reviewer must verify — it never picks which engine reviews it; that routing happens at REVIEW time under §5 (Claude-authored → Sol when the `codex` pack is installed, else `reviewer`; Codex-authored → `reviewer`). If an order needs a non-default review timeout or must forbid running something, state it in the order as a flag for the launcher to pass (`--timeout-ms`, `--no-tests`, `--forbid`); prose alone configures nothing. Do not shorten the cap for an inert round: the tier narrows what gets verified, not how long the engine takes to look, and the runner floors inert reviews at 600000ms regardless.
+6. **Schedule campaign review (§5).** A plan does not need a review per order — it needs at least one independent review before the campaign's final REPORT. Group related orders into one or more review checkpoints and name them in the plan; for any checkpoint whose work will be committed before its review, require the base and head SHAs at execution time so the launcher can pass `--base-ref`/`--head-ref` and the review reads a clean checkout instead of a working tree carrying the session's own plan files and notes.
+7. **Write `.claude/plans/<kebab-slug>.md` yourself**, in the template below.
+8. **Present.** Phases, order count, parallelism, risks, and where sign-off matters — a few plain beats plus the file path. Get sign-off before EXECUTE when the work is large or risky.
 
 ## Plan file template
 
@@ -54,8 +55,8 @@ Date: <date> · Status: DRAFT | APPROVED | IN FLIGHT | DONE
 - Serial: <chains>
 - Gates: <integration gate(s); the chain's sweep order>
 
-## Review routing
-- Engine: <opus|codex|dual> (from orchestra.json) · second opinion at: <gate-class WO-ids | none>
+## Review checkpoints
+- <checkpoint name>: orders <WO-ids> · commit before review, base/head named at execution · engine per ORCHESTRA.md §5 (Sol default for Claude-authored work with the `codex` pack installed; fresh-context Opus otherwise, or for Codex-authored work)
 
 ## Risks
 - <risk → mitigation or probe order>

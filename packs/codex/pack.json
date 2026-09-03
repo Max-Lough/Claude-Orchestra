@@ -1,15 +1,15 @@
 {
   "name": "codex",
   "title": "Codex / GPT cross-vendor interface",
-  "summary": "Adds the OpenAI-backed half of the harness: cross-vendor code review through the Codex CLI, opt-in OpenAI executors (Terra standard tier, Sol heavy tier) through the same CLI, and the two-architect /cross-compare-plan session (independent drafts, cross-critique, blind synthesis) whose GPT lane runs read-only through the same CLI.",
+  "summary": "Adds the OpenAI-backed half of the harness: the Sol reviewer as the default cross-family reviewer for Claude-authored campaign work through the Codex CLI, an exceptional-order-only Sol executor through the same CLI, and the two-architect /cross-compare-plan session (independent drafts, cross-critique, blind synthesis) whose GPT lane (Sol, high effort) runs read-only through the same CLI.",
   "requires": {
-    "bin": ["codex (Codex CLI) — for reviewer-codex, the executor-codex tiers, and the cross-compare architect lane"],
+    "bin": ["codex (Codex CLI) — for reviewer-codex, executor-codex-heavy, and the cross-compare architect lane"],
     "env": ["OPENAI_API_KEY or `codex login` — review, execution, and cross-compare"]
   },
   "notes": [
-    "Review engine: set \"reviewEngine\": \"codex\" (or \"dual\") in .claude/orchestra.json.",
-    "Executor engine: set \"executorEngine\": \"codex\" to route execution to the OpenAI executors (Terra/Sol); the Claude executors remain the fallback and escalation rung.",
-    "Recommended pin for review: ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol. Execution defaults: gpt-5.6-terra (standard), gpt-5.6-sol (heavy). Cross-compare GPT-lane default: gpt-5.6-sol at high effort (ORCHESTRA_CROSSPLAN_MODEL / ORCHESTRA_CROSSPLAN_EFFORT).",
+    "reviewer-codex is the default independent reviewer for Claude-authored campaign work; Codex-authored work goes to fresh-context Opus review instead. There is no reviewEngine switch.",
+    "executor-codex-heavy is exceptional-only: a problem with concrete prior evidence that Anthropic models struggled on it, a Director routing decision made at PLAN time — never routine work. The Claude executors remain the default path.",
+    "Config keys (.claude/orchestra.json under \"codex\"): reviewModel (default gpt-5.6-sol), reviewTimeoutMs (default 2700000), execHeavyModel (default gpt-5.6-sol), execHeavyEffort (default high), crossplanModel (default gpt-5.6-sol), crossplanEffort (default high).",
     "Windows: codex-command-runner.exe, codex-resources AND codex-windows-sandbox-setup.exe must sit DIRECTLY beside codex.exe. Codex resolves the sandbox helper by name, so a copy one directory down (inside codex-resources\\) is never found — the sandbox is never set up and BOTH lanes (review and execution) return nothing while looking healthy. The self-check below finds that state and repairs it where it can.",
     "Without this pack the harness still gets full fresh-context Opus review and Claude execution; it just has no cross-vendor option."
   ],

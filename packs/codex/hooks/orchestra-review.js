@@ -84,11 +84,11 @@
  *   ("codex" key)  >  built-in default.
  *
  * Project config (.claude/orchestra.json) is the durable place for these — a
- * work order saying "use a 30-minute timeout" is prose, and prose configures
+ * work order saying "use a 45-minute timeout" is prose, and prose configures
  * nothing:
  *
  *   { "codex": {
- *       "reviewTimeoutMs": 1800000,
+ *       "reviewTimeoutMs": 2700000,
  *       "reviewModel": "gpt-5.6-sol",
  *       "reviewSandbox": "workspace-write",
  *       "helpersDir": "/path/to/known-good-codex-helpers",
@@ -108,13 +108,15 @@
  *                          "codex-windows-sandbox-setup.exe"]
  *   } }
  *
- *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin (e.g. gpt-5-codex). Unset →
- *                               Codex uses its own configured default.
+ *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin. Default gpt-5.6-sol — a
+ *                               hard default, not "Codex's own configured
+ *                               default"; the Sol reviewer is the cross-family
+ *                               reviewer for Claude-authored work.
  *   ORCHESTRA_REVIEW_SANDBOX    Codex sandbox: workspace-write (default — lets
  *                               the reviewer actually run the test suite) or
  *                               read-only (hard no-write guarantee, but many
  *                               test runners can't run under it).
- *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for the review (default 600000).
+ *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for the review (default 2700000).
  *                               This engine explores before it concludes, so
  *                               even a nine-line docs diff is MINUTES, not
  *                               seconds — an inert tier narrows what gets
@@ -208,6 +210,15 @@
  *   launch. Same code path as the review preflight, so it cannot drift from what
  *   a review actually verifies; exit 1 means a review would not find a complete
  *   install. The installer runs it when the codex pack is selected.
+ *
+ *   --no-repair (with --doctor): report without repairing. By default
+ *   --doctor mirrors missing/changed helper files in from a configured
+ *   "codex": { "helpersDir": <dir> } — a real write to the Codex install.
+ *   --no-repair skips that copy and instead names what is missing and the
+ *   exact command to fix it. The MCP orchestra_doctor tool passes this by
+ *   default (read-only unless its `repair` input is explicitly true) since
+ *   a Director-invoked doctor check must not mutate the install as a side
+ *   effect of a read.
  */
 'use strict';
 
@@ -283,24 +294,18 @@ const HELPER_CONSEQUENCE = {
     'reviews return nothing while looking healthy.',
 };
 
-// WO-14b leg 5: this run's own nonce (mirrors orchestra-exec.js's RUN_NONCE) —
-// generated once per process, injected into the brief, and required back
-// verbatim as the verdict-json block's `run_nonce` field. Printed on the
-// runner's own header (headerTail(), below `REVIEW ENGINE:` and BEFORE
-// `=== ENGINE OUTPUT ===`) so a stale or replayed report cannot wear a fresh
-// run's name — bridge/close.js cross-checks the two independently for a
-// codex-lane (author_family 'openai') verdict.
-const RUN_NONCE = crypto.randomBytes(8).toString('hex');
-
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
 const CONFIG = {
   model: (process.env.ORCHESTRA_REVIEW_MODEL || '').trim(),
   sandbox: (process.env.ORCHESTRA_REVIEW_SANDBOX || 'workspace-write').trim(),
-  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || 600000,
+  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || 2700000,
   timeoutSource: process.env.ORCHESTRA_REVIEW_TIMEOUT_MS ? 'env' : 'default',
   idleMs: intOr(process.env.ORCHESTRA_REVIEW_IDLE_MS, 1500),
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
+  // --no-repair (CLI only, no env/config equivalent): when true, --doctor
+  // reports missing helpers instead of copying them in from helpersDir.
+  noRepair: false,
   extraArgs: (process.env.ORCHESTRA_REVIEW_ARGS || '').trim(),
   bin: (process.env.CODEX_BIN || 'codex').trim(),
   resolvedBin: '',
@@ -367,6 +372,7 @@ function parseArgs(argv) {
     else if (a === '--no-probe') out.noProbe = true;
     else if (a === '--warmup-cmd') out.warmupCmd = argv[++i];
     else if (a === '--doctor') out.doctor = true;
+    else if (a === '--no-repair') out.noRepair = true;
     else if (a === '--live') out.live = true;
     else if (a === '--help' || a === '-h') out.help = true;
   }
@@ -1411,20 +1417,27 @@ function siblingPresent(dir, name) {
 // "Actually there" means BESIDE the binary and of the right kind — the two
 // weaker questions (does the name exist anywhere in the install, does anything
 // by that name exist here) each have a false-positive that reads as healthy.
-function verifyHelperSiblings(installDir, layout) {
+//
+// dryRun=true mirrors restoreHelpers()'s --no-repair contract: a known-good
+// source may be found, but nothing is copied — it is reported as still
+// missing (in `notRestored`, with where it was found) so `--doctor
+// --no-repair` can name the exact fix without writing outside its own
+// scratch.
+function verifyHelperSiblings(installDir, layout, dryRun) {
   const wanted = CONFIG.helperSiblings;
   if (!wanted.length || !installDir) {
-    return { checked: false, missing: [], restored: [], searched: [] };
+    return { checked: false, missing: [], restored: [], searched: [], notRestored: [] };
   }
   const missing = wanted.filter((name) => !siblingPresent(installDir, name));
   if (!missing.length) {
-    return { checked: true, missing: [], restored: [], searched: [] };
+    return { checked: true, missing: [], restored: [], searched: [], notRestored: [] };
   }
 
   const searched = helperSourceCandidates(installDir, layout);
   const restored = [];
   const problems = [];
   const stillMissing = [];
+  const notRestored = [];
   const under = (parent, child) => {
     try {
       const rel = path.relative(path.resolve(parent), path.resolve(child));
@@ -1446,6 +1459,11 @@ function verifyHelperSiblings(installDir, layout) {
       stillMissing.push(name);
       continue;
     }
+    if (dryRun) {
+      stillMissing.push(name);
+      notRestored.push(name + ' (found at ' + srcDir + ')');
+      continue;
+    }
     const src = path.join(srcDir, name);
     try {
       copyInto(src, dest);
@@ -1465,7 +1483,7 @@ function verifyHelperSiblings(installDir, layout) {
       problems.push(name + ': ' + ((e && e.message) || e));
     }
   }
-  return { checked: true, missing: stillMissing, restored, searched, problems };
+  return { checked: true, missing: stillMissing, restored, searched, problems, notRestored };
 }
 
 // FIX: a Codex self-update can silently remove files a working install needs.
@@ -1473,21 +1491,28 @@ function verifyHelperSiblings(installDir, layout) {
 // size) from the Codex install directory. No filenames are hardcoded — the
 // directory the user populates IS the repair kit. Never fatal: a failed
 // restore is reported and the review proceeds.
-function restoreHelpers(helpersDir, installDir) {
-  if (!helpersDir) return { restored: [], note: '' };
+//
+// dryRun=true performs the same walk and comparison but never touches the
+// install: differences land in `missing` instead of being copied and
+// reported as `restored`. Used by `--doctor --no-repair`, which must be
+// able to name what it would fix without fixing it.
+function restoreHelpers(helpersDir, installDir, dryRun) {
+  if (!helpersDir) return { restored: [], missing: [], note: '' };
   try {
     if (!fs.statSync(helpersDir).isDirectory()) {
-      return { restored: [], note: 'helpers path is not a directory: ' + helpersDir };
+      return { restored: [], missing: [], note: 'helpers path is not a directory: ' + helpersDir };
     }
   } catch (e) {
     return {
       restored: [],
+      missing: [],
       note: 'helpers directory unreadable (' + helpersDir + '): ' + ((e && e.message) || e),
     };
   }
   if (!installDir) {
     return {
       restored: [],
+      missing: [],
       note:
         'helpers configured but the Codex install directory is unknown — set CODEX_BIN ' +
         'to the executable\'s path so its install directory can be resolved',
@@ -1495,6 +1520,7 @@ function restoreHelpers(helpersDir, installDir) {
   }
 
   const restored = [];
+  const missing = [];
   const problems = [];
   const walk = (srcDir, destDir, rel) => {
     let list;
@@ -1522,6 +1548,10 @@ function restoreHelpers(helpersDir, installDir) {
           needs = true; // missing entirely — the self-update case
         }
         if (!needs) continue;
+        if (dryRun) {
+          missing.push(relName);
+          continue;
+        }
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(src, dest);
         try {
@@ -1539,6 +1569,7 @@ function restoreHelpers(helpersDir, installDir) {
 
   return {
     restored,
+    missing,
     note: problems.length ? 'helper restore had problems — ' + problems.join('; ') : '',
   };
 }
@@ -1581,8 +1612,18 @@ function inspectCodexInstall() {
   }
 
   if (CONFIG.helpersDir) {
-    const restore = restoreHelpers(CONFIG.helpersDir, installDir);
-    if (restore.restored.length) {
+    const restore = restoreHelpers(CONFIG.helpersDir, installDir, CONFIG.noRepair);
+    if (CONFIG.noRepair) {
+      if (restore.missing && restore.missing.length) {
+        lines.push(
+          'NOT restored (--no-repair): ' + restore.missing.length + ' file(s) differ from ' +
+            CONFIG.helpersDir + ': ' + restore.missing.join(', ') +
+            '. Repair with `node .claude/hooks/orchestra-review.js --doctor` (without ' +
+            '--no-repair), which copies them in from "codex": { "helpersDir": "' +
+            CONFIG.helpersDir + '" }.'
+        );
+      }
+    } else if (restore.restored.length) {
       lines.push(
         'restored ' + restore.restored.length + ' file(s) into the Codex install from ' +
           CONFIG.helpersDir + ': ' + restore.restored.join(', ')
@@ -1593,10 +1634,17 @@ function inspectCodexInstall() {
 
   // Helper siblings: the files a self-update strips — or a hand repair files in
   // the wrong place — verified next to the RESOLVED binary rather than assumed.
-  const siblings = verifyHelperSiblings(installDir, layout);
+  const siblings = verifyHelperSiblings(installDir, layout, CONFIG.noRepair);
   if (siblings.restored.length) {
     lines.push(
       'helper siblings repaired next to the resolved binary: ' + siblings.restored.join(', ')
+    );
+  }
+  if (CONFIG.noRepair && siblings.notRestored && siblings.notRestored.length) {
+    lines.push(
+      'NOT restored (--no-repair): ' + siblings.notRestored.length + ' helper sibling(s) found ' +
+        'but not copied: ' + siblings.notRestored.join(', ') +
+        '. Repair with `node .claude/hooks/orchestra-review.js --doctor` (without --no-repair).'
     );
   }
   for (const p of siblings.problems || []) lines.push('helper repair problem — ' + p);
@@ -1854,52 +1902,6 @@ function manifestLines(verification) {
   return lines;
 }
 
-// WO-14b leg 5: the served_model dictated into the verdict-json block below.
-// See the served_model investigation note above headerTail() — Codex CLI's
-// `--json` event stream and its local session rollout log both expose no
-// server-confirmed model identity, only the requested `-m` value echoed back
-// (exactly the untrustworthy "request echoed as evidence" shape). Rather than
-// let the model invent one, the runner DICTATES this literal value the same
-// way it dictates run_nonce — CONFIG.model when the caller named one, else
-// the 'UNKNOWN' sentinel bridge/telemetry.js already uses for "genuinely not
-// exposed" (never fabricated, never silently false).
-function dictatedServedModel() {
-  return (CONFIG.model && CONFIG.model.trim()) || 'UNKNOWN';
-}
-
-function verdictJsonInstructionLines() {
-  return [
-    'After NITS, and as the LAST thing in your response, emit EXACTLY ONE',
-    'trailing fenced block — not wrapped in any other fence, nothing after it:',
-    '',
-    '```verdict-json',
-    '{ "verdict": "APPROVE|REVISE", "findings": [ { "severity": "CRITICAL|MAJOR|MINOR|NIT",',
-    '  "path": "...", "line": 0, "claim": "...", "reproduced": true|false, "evidence": "..." } ],',
-    '  "claims_checked": [ { "claim": "...", "result": "CONFIRMED|REFUTED|UNVERIFIED", "how": "..." } ],',
-    '  "refutation_duty": { "present": true|false, "what_was_tried": "..." },',
-    '  "citation_replay": [ { "citation": "...", "command": "...", "result": "MATCH|MISMATCH|UNREPLAYABLE" } ],',
-    '  "served_model": "' + dictatedServedModel() + '", "run_nonce": "' + RUN_NONCE + '",',
-    '  "review": { "cross_family": null } }',
-    '```',
-    '',
-    'This block is JSON, not prose — valid, parseable JSON, matching this shape',
-    'exactly (no additional fields). It restates the same verdict, findings, and',
-    'claims-checked you already gave in prose above — every FINDINGS bullet also',
-    'appears as a findings[] entry with the same severity/path:line/claim, and',
-    'each CLAIMS CHECKED line as a claims_checked[] entry — never contradict the',
-    'prose. citation_replay is your OWN self-report of what you re-ran (a',
-    'separate mechanical replay happens later; this is not that). That replay',
-    're-runs each command on the CLOSING HOST with the project\'s own toolchain,',
-    'not in your sandbox — cite only git, the declared verification commands,',
-    'and tools the manifest itself uses; never sandbox-only tools such as rg.',
-    'Copy',
-    '"served_model" and "run_nonce" VERBATIM as printed above — do not alter,',
-    'omit, or invent either value. "review.cross_family" is always literally',
-    'null — it is dispatcher-computed, never yours to assert.',
-    '',
-  ];
-}
-
 function buildBrief(workOrder, executorReport, tier, verification, forbidden, scope) {
   const rule1 = forbidden.length
     ? [
@@ -1972,7 +1974,6 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
     'severity, and MINOR BREACHes, may be APPROVE with the findings listed —',
     'they are backlog for the dispatcher, not blockers for this change.',
     '',
-    ...verdictJsonInstructionLines(),
     ...scopeLines(scope.baseRef, scope.headRef, scope.pinned),
     ...prohibitionLines(forbidden),
     ...tierLines(tier),
@@ -2271,6 +2272,7 @@ function runAuthProbe(dir) {
   // failure this check should surface, and a probe that passed under different
   // conditions from the review would be answering a different question.
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
+  args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -2282,7 +2284,7 @@ function runAuthProbe(dir) {
     encoding: 'utf8',
     timeout: CONFIG.probeTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: childEnv(),
+    env: childEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
   });
   const elapsed = Date.now() - started;
   const said = (readFileOr(outFile, '') || r.stdout || '').trim();
@@ -2426,7 +2428,6 @@ function engineBinLine() {
 // (a genuine server-side field, not a config echo), wire it in here.
 function headerTail() {
   let out = '';
-  out += '\nREVIEW RUN NONCE: ' + RUN_NONCE;
   const binLine = engineBinLine();
   if (binLine) out += '\n' + binLine;
   if (CONFIG.resolvedBin && CONFIG.resolvedBin !== CONFIG.bin) {
@@ -2545,7 +2546,7 @@ function main() {
         '         [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]...\n' +
         '         [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
         '         [--retries <n>|--no-retry] [--no-probe] [--warmup-cmd <cmd>]\n' +
-        '       node orchestra-review.js --doctor [--live]\n' +
+        '       node orchestra-review.js --doctor [--no-repair] [--live]\n' +
         '\n' +
         '  --doctor checks the local Codex install the way a review does — real\n' +
         '  binary, install layout, the helper files that must sit BESIDE it —\n' +
@@ -2555,6 +2556,10 @@ function main() {
         '  the Codex config, and leftover session artifacts. Exit 0 means a\n' +
         '  review would find a complete, hazard-free install. It reviews\n' +
         '  nothing and needs no work order.\n' +
+        '\n' +
+        '  --no-repair (with --doctor): read-only. Skips copying files in from\n' +
+        '  a configured helpersDir and instead names what is missing and the\n' +
+        '  exact repair command.\n' +
         '\n' +
         '  --live (with --doctor) additionally runs a real no-op order through\n' +
         '  the sibling exec runner in a scratch directory (read-only sandbox)\n' +
@@ -2581,8 +2586,13 @@ function main() {
       ? projectCfg.codex
       : {};
 
-  if (!process.env.ORCHESTRA_REVIEW_MODEL && typeof codexCfg.reviewModel === 'string') {
+  if (!process.env.ORCHESTRA_REVIEW_MODEL && typeof codexCfg.reviewModel === 'string' && codexCfg.reviewModel.trim()) {
     CONFIG.model = codexCfg.reviewModel.trim();
+  }
+  // Flag → env → config are all absent: the Sol reviewer is a hard default,
+  // not "Codex's own configured default" — never leave the model unpinned.
+  if (!CONFIG.model) {
+    CONFIG.model = 'gpt-5.6-sol';
   }
   if (!process.env.ORCHESTRA_REVIEW_SANDBOX && typeof codexCfg.reviewSandbox === 'string') {
     CONFIG.sandbox = codexCfg.reviewSandbox.trim();
@@ -2600,6 +2610,7 @@ function main() {
   if (!process.env.ORCHESTRA_CODEX_HELPERS && typeof codexCfg.helpersDir === 'string') {
     CONFIG.helpersDir = codexCfg.helpersDir.trim();
   }
+  CONFIG.noRepair = !!args.noRepair;
   if (!process.env.ORCHESTRA_REVIEW_WORKTREE_ROOT && typeof codexCfg.worktreeRoot === 'string') {
     if (codexCfg.worktreeRoot.trim()) {
       CONFIG.worktreeRoot = codexCfg.worktreeRoot.trim();
@@ -2959,6 +2970,10 @@ function main() {
     if (CONFIG.model) codexArgs.push('--model', CONFIG.model);
     codexArgs.push('--output-last-message', lastMsgFile);
     if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+    // Keep the coexistence boundary last: Codex resolves repeated -c values in
+    // order, so ORCHESTRA_REVIEW_ARGS must not be able to re-enable a
+    // co-installed Codex-Orchestra's project instructions or hooks.
+    codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
     codexArgs.push('-'); // read the prompt from stdin
 
     const startedAt = Date.now();
@@ -2971,7 +2986,7 @@ function main() {
       // The engine runs far more git than this runner does, so the isolated
       // config has to reach IT, not just us — otherwise every command it issues
       // still warns about a global config path the sandbox cannot read.
-      env: childEnv(),
+      env: childEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
     });
     const elapsed = Date.now() - startedAt;
 

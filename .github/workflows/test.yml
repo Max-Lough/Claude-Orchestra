@@ -105,114 +105,6 @@ jobs:
         # asserts on settings resolution, the tree audit, and the no-retry law.
         run: node tests/exec-lane.test.js
 
-      - name: Registry suite
-        # WO-4: the class registry, six schemas, and the mechanical ownership
-        # invariant — plus tamper tests proving each corruption fails the
-        # load. (Added alongside the verifier suite; the step was missed when
-        # WO-4 landed.)
-        run: node tests/registry.test.js
-
-      - name: Verifier suite
-        # WO-5: the deterministic Verifier substrate. Builds a fixture
-        # project whose suite cannot run read-only, then proves the
-        # disposable-checkout substrate catches a red suite reported green,
-        # changes claimed against an untouched tree, an invertible test that
-        # stays green, and a broken row-count invariant.
-        run: node tests/verifier.test.js
-
-      - name: Router suite
-        # WO-6: route/cast/reviewer, the pool-state degradation machine, the
-        # pre-dispatch AU-O gate, and automatic Q0 creation. Proves
-        # no-self-family for every author family, that no mandatory-class
-        # dispatch can produce a same-family closing verdict under any bucket
-        # state including Red/exhausted, context-shape rejection, every rung's
-        # documented casting set, and Q0 spawn on every trigger.
-        run: node tests/router.test.js
-
-      - name: Ticket state machine suite
-        # WO-14b leg 2a: the activation bridge's ticket lifecycle
-        # (OPEN → CONSUMED → LAUNCHED → RESOLVED → CLOSED/NOT_CLOSED, plus
-        # EXPIRED/INVALIDATED). Proves one-use consumption, wrong-role and
-        # replay refusal, Q0-before-implementation ordering, generation-bump
-        # invalidation (the rollback hook), atomic locked writes with no lost
-        # update across two processes, and fail-closed on a corrupted store.
-        run: node tests/tickets.test.js
-
-      - name: Bridge suite (activation runtime)
-        # WO-14b leg 4/4b: the shared activation runtime core
-        # (dispatch/gate/requireTicket/generationCheck/doctor) and its
-        # ticket-gate hook adapter. Proves the leg-1 payload lifecycle end to
-        # end (dispatch -> Pre consume -> Post launch -> SubagentStop resolve
-        # -> Stop not blocked), every Pre denial class, generation
-        # invalidation, Q0-before-implementation ordering, DISABLED-seat
-        # passthrough, and — leg 4b — the owner-pinned manifest: no pin with
-        # a manifest that claims roster:"new" (or an installed roster:new
-        # fingerprint with no manifest at all) is untrusted-new / fail
-        # closed — never a silent downgrade to legacy; only a manifest that
-        # is absent or itself claims legacy, with no pin and no install
-        # fingerprint, reads as unpinned legacy (inert gate). A pin present
-        # with a manifest hash mismatch likewise fails every gate/dispatch/
-        # ticket decision closed rather than trusting a tamperable
-        # in-project file (roster/wo14b-leg3-redteam-1.md's [HIGH] finding).
-        run: node tests/bridge.test.js
-
-      - name: Bridge closure suite (two-stage close)
-        # WO-14b leg 5: bridge/close.js's two-stage ticket closure. Proves
-        # close #1 (RESOLVED implementation ticket -> bound Band C report ->
-        # verifier.runVerification with manifestRef pinned OUTSIDE the audited
-        # commit -> a computed opposite-family reviewer ticket on PASS, and no
-        # reviewer ticket at all on any other outcome) and close #2 (RESOLVED
-        # reviewer ticket -> strict single-block verdict-json parse ->
-        # citation replay re-run through the Verifier, never trusted from the
-        # block -> a deterministically constructed verdict audit -> CLOSED
-        # only for APPROVE + cross-family + audit-valid + no CRITICAL/MAJOR
-        # finding), that a malformed verdict (none/two/bad-JSON/schema-fail)
-        # and a codex-lane run_nonce mismatch both refuse closure, and that
-        # `'CLOSED'` as a close code is written nowhere else in the tree.
-        run: node tests/bridge-close.test.js
-
-      - name: WO-14b leg 6 installed acceptance suite
-        # The installed vertical spine: a fresh temp repo, the REAL installer
-        # (install.js --roster new --packs codex), the REGISTERED guard/gate
-        # hook commands read out of the installed project's own
-        # .claude/settings.json and invoked exactly as written, and the
-        # INSTALLED copy of the engine MCP server spoken to over stdio.
-        # Fresh install census; an Anthropic Q0 order end to end (Verifier ->
-        # ticketed OpenAI review -> replay refusal -> audited CLOSED); a
-        # bounded OpenAI order with casting/role/vendor/expiry denials and a
-        # forged-relay-over-REVISE case that stays durably NOT_CLOSED; and a
-        # roster:legacy rollback with an open ticket, followed by flipping
-        # back. See roster/wo14b-leg6-order.md.
-        run: node tests/bridge-acceptance.test.js
-
-      - name: Quartermaster suite
-        # WO-11: the P0 allowance substrate — recorded readings in, the
-        # router's bucket_state out. Proves it fails CLOSED on absent, stale,
-        # future-dated or malformed-latest evidence (never Green, never Red),
-        # that staleness is disclosed rather than discounted, and — the
-        # load-bearing part — that a P0-produced state drives the REAL router
-        # end-to-end: Green dispatches, a below-reserve AU-opus reading fires
-        # the P15 gate, an unconfirmed Amber fires the §5.5 arm, and a
-        # hard-throttled bucket takes the exhaustion-matrix path.
-        run: node tests/quartermaster.test.js
-
-      - name: WO-7b misroute-recovery gates
-        # Re-scores the committed WO-7b probe results through the live
-        # router, so a router change that would break the pre-registered
-        # G1/G2/G3 gates (recovery, no gate crossing, P95 hops) fails CI
-        # instead of silently invalidating the probe. (Added on an S0
-        # sweep finding — the same class of gap the registry suite had.)
-        run: node plans/cross-compare/agent-role-architecture/wo7b/score.js
-
-      - name: Roster contract lint
-        # WO-8-11: every staffed roster file carries all nine Part-2.0
-        # fields, its frontmatter matches the documented casting rung/lane,
-        # and mirror-or-declared-exception holds (plus the installer's
-        # frontmatter lint over the same files).
-        run: |
-          node roster/lint.js
-          node install.js --lint roster
-
       - name: MCP-lane suite
         # The orchestra-engine MCP server — the typed transport that replaced
         # the launcher shell pipeline. Speaks real JSON-RPC to the server over
@@ -221,31 +113,22 @@ jobs:
         # MCP TRANSPORT terms when the transport itself fails.
         run: node tests/mcp-lane.test.js
 
-      - name: WO-12 tooling suite
-        # The seeded-defect-corpus (SDC) tooling: build-corpus.js's
-        # reproducible variant materialization (same head sha from two
-        # independent clones) and fail-closed patch handling, run-lane.js's
-        # P0/OU Quartermaster gate and --yes/--dry-run refusals (stubbed
-        # quartermaster, no real codex invocation), and score.js's mechanical
-        # hit logic, Wilson intervals, and the 12d seed-level union table.
-        run: node tests/wo12-tooling.test.js
-
-      - name: Install suite (--roster legacy|new)
-        # WO-14b leg 3: legacy census pinned unchanged; the new-roster file
-        # census (agents, ORCHESTRA-CONDUCTOR.md, .claude/orchestra/
-        # substrates, bridge/ handled silently whether or not it exists);
-        # manifest keys (roster/seats/rosterGeneration) and generation-bump
-        # on every flip; user keys preserved byte-for-byte in settings.json,
+      - name: Install suite
+        # 3.0 legacy-only installer (plans/port-3.0/reverse-port-3.0-plan.md
+        # WO-1): fresh install, idempotent re-run, uninstall, user-settings
+        # preservation, pack selection and MCP merge, specialists, permission
+        # ownership; user keys preserved byte-for-byte in settings.json,
         # .mcp.json, and orchestra.json; malformed JSON and malformed
         # permissions refused before anything is touched; uninstall order
         # (settings validated first); default vs --grant-push grants incl.
-        # the deny counterweight; installedPermissions tracking; --lint.
+        # the deny counterweight; installedPermissions tracking; --lint; and
+        # the Design Decision 8 config preflight (refuse a 2.0 roster:new
+        # target, scrub its deprecated keys, warn on an orphaned runtime dir).
         run: node tests/install.test.js
 
       - name: Guard suite (orchestra-guard.js)
         # sdc-011/012: the .md + real-path plan-file containment fix
         # (symlink/junction escape denied), the deny hint naming every
-        # configured plan directory, and the roster:new asymmetry — an
-        # undetermined session model denies under roster:new and stands
-        # down under legacy.
+        # configured plan directory, and model-aware dormancy — an
+        # undetermined session model always stands the guard down.
         run: node tests/guard.test.js

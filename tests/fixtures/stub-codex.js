@@ -255,6 +255,7 @@ const report = [
   'MODEL: ' + (model || '(none)'),
   'SANDBOX: ' + (sandbox || '(none)'),
   'CONFIG_OVERRIDES: ' + (configOverrides.join(' | ') || '(none)'),
+  'ORCHESTRA_ROLE: ' + (process.env.ORCHESTRA_ROLE || '(unset)'),
   'GIT_USER_NAME: ' + (userName.status === 0 && userName.stdout ? userName.stdout : '(unset)'),
   'BRIEF_MARKERS: ' + (briefMarkers.join(' | ') || '(none)'),
   'HEAD: ' + head.stdout,

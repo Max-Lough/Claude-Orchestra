@@ -32,22 +32,6 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync, spawn } = require('child_process');
 
-const { validate } = require(path.join(path.resolve(__dirname, '..'), 'verifier', 'schema-check.js'));
-const VERDICT_SCHEMA = JSON.parse(
-  fs.readFileSync(path.join(path.resolve(__dirname, '..'), 'registry', 'schemas', 'verdict.schema.json'), 'utf8')
-);
-
-// WO-14b leg 5: the mandatory trailing ```verdict-json block — mirrors
-// bridge/close.js's own extraction (exactly one block, valid JSON) so a test
-// failure here means close.js would ALSO see it as malformed.
-function extractVerdictJsonBlocks(text) {
-  const re = /```verdict-json\r?\n([\s\S]*?)```/g;
-  const found = [];
-  let m;
-  while ((m = re.exec(String(text || '')))) found.push(m[1]);
-  return found;
-}
-
 const MASTER = path.resolve(__dirname, '..');
 // Defaults to the master copy. Point ORCHESTRA_TEST_RUNNER at a project's
 // installed .claude/hooks/orchestra-review.js to check what actually shipped —
@@ -369,39 +353,28 @@ function case2and3() {
     out.split('\n')[0]
   );
   check(
+    'a co-installed Codex-Orchestra cannot recast the external reviewer as its Director',
+    field(out, 'ORCHESTRA_ROLE') === 'reviewer-codex-external' &&
+      field(out, 'CONFIG_OVERRIDES').includes('features.hooks=false') &&
+      field(out, 'CONFIG_OVERRIDES').includes('project_doc_max_bytes=0'),
+    'ORCHESTRA_ROLE: ' + field(out, 'ORCHESTRA_ROLE') + ' CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
+  );
+  const hostile = runReview(
+    fx,
+    ['--tier', 'inert', '--no-tests', '--base-ref', fx.base, '--head-ref', fx.head],
+    { ORCHESTRA_REVIEW_ARGS: '-c features.hooks=true -c project_doc_max_bytes=65536' }
+  );
+  const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'user-supplied reviewer args cannot undo the coexistence boundary',
+    hostileOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
+  );
+  check(
     'the project working tree was left untouched',
     git(['status', '--porcelain', '--untracked-files=all'], fx.repo).split('\n').filter(Boolean).length === 32,
     git(['status', '--porcelain', '--untracked-files=all'], fx.repo)
   );
-
-  section('2b. The mandatory trailing verdict-json block');
-  const nonceLine = /^REVIEW RUN NONCE:\s*(\S+)/m.exec(out);
-  check('header carries a REVIEW RUN NONCE line', !!nonceLine, out.split('\n').slice(0, 6).join('\n'));
-  const blocks = extractVerdictJsonBlocks(out);
-  check('exactly one verdict-json block', blocks.length === 1, 'found ' + blocks.length + ' block(s)');
-  let verdictObj = null;
-  if (blocks.length === 1) {
-    try {
-      verdictObj = JSON.parse(blocks[0]);
-      check('verdict-json block is valid JSON', true);
-    } catch (e) {
-      check('verdict-json block is valid JSON', false, e.message + '\n' + blocks[0]);
-    }
-  }
-  if (verdictObj) {
-    const problems = validate(VERDICT_SCHEMA, verdictObj);
-    check('verdict-json block validates against verdict.schema.json', problems.length === 0, problems.join('; '));
-    check(
-      "run_nonce echoes the header's own REVIEW RUN NONCE token",
-      !!nonceLine && verdictObj.run_nonce === nonceLine[1],
-      'header: ' + (nonceLine && nonceLine[1]) + ' block: ' + verdictObj.run_nonce
-    );
-    check(
-      "review.cross_family is null (dispatcher-owned, never the reviewer's)",
-      verdictObj.review && verdictObj.review.cross_family === null,
-      JSON.stringify(verdictObj.review)
-    );
-  }
 
   section('3. Teardown leaks nothing after a successful review');
   check(
@@ -623,9 +596,45 @@ function case6() {
 
   const dflt = runReview(fx, ['--tier', 'inert']);
   check(
-    'the default already clears the floor',
-    /timeout: 600000ms \(default\)/.test(dflt.stdout || ''),
+    'the default (2700000ms) already clears the 600000ms inert floor',
+    /timeout: 2700000ms \(default\)/.test(dflt.stdout || ''),
     (dflt.stdout || '').split('\n')[0]
+  );
+}
+
+function case6b() {
+  section('6b. Zero overrides: the Sol reviewer and the 2700000ms timeout are hard defaults');
+  // runReview() always forces ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol so every other
+  // case exercises a real cross-vendor model name; this case proves the SAME
+  // value is what the runner falls back to on its own, with no flag, no env,
+  // and no orchestra.json entry at all — "gpt-5.6-sol" is a hard default, not
+  // "whatever Codex's own default happens to be".
+  const fx = makeDirtyRepo();
+  const env = Object.assign({}, process.env, {
+    CLAUDE_PROJECT_DIR: fx.repo,
+    CODEX_BIN: STUB_BIN,
+    ORCHESTRA_REVIEW_IDLE_MS: '0',
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
+    STUB_CODEX_PROBE_PATH: '.claude/plans/toon-conversion-campaign.md',
+    ORCHESTRA_ALLOW_STUB_ENGINE: '1',
+  });
+  delete env.ORCHESTRA_REVIEW_MODEL;
+  delete env.ORCHESTRA_REVIEW_TIMEOUT_MS;
+  const r = spawnSync(
+    process.execPath,
+    [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er],
+    { cwd: fx.repo, encoding: 'utf8', timeout: 120000, env }
+  );
+  const out = r.stdout || '';
+  check(
+    'the default model is gpt-5.6-sol with no flag, env, or config',
+    field(out, 'MODEL') === 'gpt-5.6-sol',
+    'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
+  );
+  check(
+    'the default timeout is 2700000ms with no flag, env, or config',
+    /timeout: 2700000ms \(default\)/.test(out),
+    out.split('\n')[0]
   );
 }
 
@@ -1554,6 +1563,99 @@ function case21() {
   );
 }
 
+function case22() {
+  section('22. `--doctor --no-repair` reports a missing helpersDir file without copying it');
+
+  // A configured helpersDir holding a "known-good" helper file the install is
+  // missing — the same shape as the restoreHelpers() repair kit, but here we
+  // assert the read-only path names it instead of copying it in.
+  const fx = makeDirtyRepo();
+  const installDir = path.join(fx.root, 'OpenAI', 'Codex', 'bin', 'dddd4444');
+  const bin = makeStubBin(installDir, 'codex-stub');
+  const helpersDir = path.join(fx.root, 'helpers-kit');
+  fs.mkdirSync(helpersDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersDir, 'known-good-helper.txt'), 'known good contents\n');
+  writeProjectConfig(fx, { helpersDir });
+
+  const noRepair = runDoctor(fx, { CODEX_BIN: bin }, ['--no-repair']);
+  const nrOut = noRepair.stdout || '';
+  check(
+    '--no-repair does not copy the helper into the install',
+    !fs.existsSync(path.join(installDir, 'known-good-helper.txt')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    '--no-repair names the missing helper and points at the repair command',
+    /NOT restored \(--no-repair\)/.test(nrOut) &&
+      /known-good-helper\.txt/.test(nrOut) &&
+      /--doctor` \(without --no-repair\)/.test(nrOut),
+    nrOut.slice(0, 1400)
+  );
+  check(
+    '--no-repair never prints the "restored N file(s)" line',
+    !/restored \d+ file\(s\) into the Codex install/.test(nrOut),
+    nrOut.slice(0, 1400)
+  );
+
+  // Control: the same fixture, without --no-repair, still repairs by default
+  // (unchanged runner behaviour — only the MCP orchestra_doctor tool defaults
+  // to read-only, by passing --no-repair itself).
+  const fx2 = makeDirtyRepo();
+  const installDir2 = path.join(fx2.root, 'OpenAI', 'Codex', 'bin', 'eeee5555');
+  const bin2 = makeStubBin(installDir2, 'codex-stub');
+  writeProjectConfig(fx2, { helpersDir });
+  const repaired = runDoctor(fx2, { CODEX_BIN: bin2 });
+  const rOut = repaired.stdout || '';
+  check(
+    'without --no-repair, the doctor still copies the helper in by default',
+    fs.existsSync(path.join(installDir2, 'known-good-helper.txt')),
+    fs.readdirSync(installDir2).join(', ')
+  );
+  check(
+    'and reports it as restored',
+    /restored 1 file\(s\) into the Codex install from/.test(rOut) && /known-good-helper\.txt/.test(rOut),
+    rOut.slice(0, 1400)
+  );
+
+  // Sol's fixture: a configured helper SIBLING (not a helpersDir file) missing
+  // beside the binary but present one directory deeper inside the same
+  // install — the "misplaced" case verifyHelperSiblings() repairs by default.
+  // Under --no-repair it must be detected and named, never copied.
+  const fx3 = makeDirtyRepo();
+  const installDir3 = path.join(fx3.root, 'OpenAI', 'Codex', 'bin', 'ffffaaaa');
+  const bin3 = makeStubBin(installDir3, 'codex-stub');
+  const nested3 = path.join(installDir3, 'nested');
+  fs.mkdirSync(nested3, { recursive: true });
+  fs.writeFileSync(path.join(nested3, 'codex-command-runner.exe'), 'MZ fake nested\n');
+  // Isolate the repair search from the real machine (see case 15's `iso`).
+  const iso3 = { HOME: fx3.root, USERPROFILE: fx3.root, CODEX_HOME: path.join(fx3.root, '.codex') };
+  const siblingEnv = Object.assign(
+    { CODEX_BIN: bin3, ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe' },
+    iso3
+  );
+
+  const siblingNoRepair = runDoctor(fx3, siblingEnv, ['--no-repair']);
+  const snrOut = siblingNoRepair.stdout || '';
+  check(
+    '--no-repair does not copy a helper sibling found one directory deeper',
+    !fs.existsSync(path.join(installDir3, 'codex-command-runner.exe')),
+    fs.readdirSync(installDir3).join(', ')
+  );
+  check(
+    '--no-repair names the missing sibling, where it was found, and the repair command',
+    /NOT restored \(--no-repair\)/.test(snrOut) &&
+      /codex-command-runner\.exe \(found at/.test(snrOut) &&
+      /nested/.test(snrOut) &&
+      /--doctor` \(without --no-repair\)/.test(snrOut),
+    snrOut.slice(0, 1600)
+  );
+  check(
+    '--no-repair never prints the "helper siblings repaired" line for it',
+    !/helper siblings repaired next to the resolved binary/.test(snrOut),
+    snrOut.slice(0, 1600)
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1574,6 +1676,7 @@ async function main() {
   await case4();
   case5();
   case6();
+  case6b();
   case7();
   case8();
   case9();
@@ -1589,6 +1692,7 @@ async function main() {
   case19();
   case20();
   case21();
+  case22();
 }
 
 main().then(finish, (e) => {

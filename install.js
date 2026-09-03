@@ -1614,7 +1614,7 @@ if (!uninstall) validatePatternKeys(orchestraJsonFile);
 rememberFormat(settingsFile);
 rememberFormat(settingsLocalFile);
 rememberFormat(mcpFile);
-rememberFormat(orchestraJsonFile);
+rememberFormat(orchestraJsonFile); // under --uninstall --ignore-manifest this only records indentation; the manifest's CONTENT is never read or validated
 
 // Exactly what the installer stamps into .claude/.gitattributes today. Never
 // compare a file against this constant byte-for-byte to decide ownership

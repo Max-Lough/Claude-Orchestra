@@ -726,9 +726,11 @@ function pauseWriteTargetPath(toolName, toolInput) {
   return typeof v === 'string' && v !== '' ? v : null;
 }
 
-// Self-pause write detector. No tool call may create or edit
-// .claude/orchestra.pause: the pause switch is out-of-band only (env var,
-// or the user creating the file directly). A write whose target resolves to
+// Self-pause write detector. In an identified Director session (Fable/Opus)
+// no tool call may create or edit .claude/orchestra.pause: the pause switch
+// is out-of-band only (env var, or the user creating the file directly). The
+// caller applies this only after the model gate; NORMAL-mode sessions are not
+// policed. A write whose target resolves to
 // that exact path — OR is nested UNDER it, treating the pause path as a
 // directory — is flagged for denial here, unconditionally, before any
 // model-dormancy check and before either remaining carve-out (plan/memory)

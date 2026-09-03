@@ -193,7 +193,7 @@ Verification is deliberately paid twice — the executor verifies, the reviewer 
 
 The Director may `Write`/`Edit` markdown directly under `.claude/plans/` (the plan is its own artifact — routing it through an executor loses fidelity) and edit `CLAUDE.md`/`CLAUDE.local.md`/auto-memory directly (a memory entry distills the current conversation, which only the Director holds) — both fenced by symlink-resolved containment and hardlink checks, and the managed `<!-- ORCHESTRA:BEGIN/END -->` block always survives an edit intact. `directorPlanPatterns`/`directorMemoryPatterns` add further glob-matched locations.
 
-Pause the harness for a plain session (a quick one-liner, debugging the harness itself) with `.claude/orchestra.pause` or `ORCHESTRA_PAUSE=1` — **out-of-band only**: no tool call, not even a Write from the Director itself, can create or edit that file; the guard denies it unconditionally. Create it yourself, in your own terminal.
+Pause the harness for a plain session (a quick one-liner, debugging the harness itself) with `.claude/orchestra.pause` or `ORCHESTRA_PAUSE=1` — **out-of-band only**: in a Director session (Fable or Opus identified) the guard denies any tool call that would create or edit that file, from the Director or its subagents; a NORMAL-mode session is not policed. Create it yourself, in your own terminal.
 
 ## Ledger and plans
 

@@ -32,22 +32,6 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync, spawn } = require('child_process');
 
-const { validate } = require(path.join(path.resolve(__dirname, '..'), 'verifier', 'schema-check.js'));
-const VERDICT_SCHEMA = JSON.parse(
-  fs.readFileSync(path.join(path.resolve(__dirname, '..'), 'registry', 'schemas', 'verdict.schema.json'), 'utf8')
-);
-
-// WO-14b leg 5: the mandatory trailing ```verdict-json block — mirrors
-// bridge/close.js's own extraction (exactly one block, valid JSON) so a test
-// failure here means close.js would ALSO see it as malformed.
-function extractVerdictJsonBlocks(text) {
-  const re = /```verdict-json\r?\n([\s\S]*?)```/g;
-  const found = [];
-  let m;
-  while ((m = re.exec(String(text || '')))) found.push(m[1]);
-  return found;
-}
-
 const MASTER = path.resolve(__dirname, '..');
 // Defaults to the master copy. Point ORCHESTRA_TEST_RUNNER at a project's
 // installed .claude/hooks/orchestra-review.js to check what actually shipped —
@@ -373,35 +357,6 @@ function case2and3() {
     git(['status', '--porcelain', '--untracked-files=all'], fx.repo).split('\n').filter(Boolean).length === 32,
     git(['status', '--porcelain', '--untracked-files=all'], fx.repo)
   );
-
-  section('2b. The mandatory trailing verdict-json block');
-  const nonceLine = /^REVIEW RUN NONCE:\s*(\S+)/m.exec(out);
-  check('header carries a REVIEW RUN NONCE line', !!nonceLine, out.split('\n').slice(0, 6).join('\n'));
-  const blocks = extractVerdictJsonBlocks(out);
-  check('exactly one verdict-json block', blocks.length === 1, 'found ' + blocks.length + ' block(s)');
-  let verdictObj = null;
-  if (blocks.length === 1) {
-    try {
-      verdictObj = JSON.parse(blocks[0]);
-      check('verdict-json block is valid JSON', true);
-    } catch (e) {
-      check('verdict-json block is valid JSON', false, e.message + '\n' + blocks[0]);
-    }
-  }
-  if (verdictObj) {
-    const problems = validate(VERDICT_SCHEMA, verdictObj);
-    check('verdict-json block validates against verdict.schema.json', problems.length === 0, problems.join('; '));
-    check(
-      "run_nonce echoes the header's own REVIEW RUN NONCE token",
-      !!nonceLine && verdictObj.run_nonce === nonceLine[1],
-      'header: ' + (nonceLine && nonceLine[1]) + ' block: ' + verdictObj.run_nonce
-    );
-    check(
-      "review.cross_family is null (dispatcher-owned, never the reviewer's)",
-      verdictObj.review && verdictObj.review.cross_family === null,
-      JSON.stringify(verdictObj.review)
-    );
-  }
 
   section('3. Teardown leaks nothing after a successful review');
   check(

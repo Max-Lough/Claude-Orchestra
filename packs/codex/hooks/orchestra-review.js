@@ -283,15 +283,6 @@ const HELPER_CONSEQUENCE = {
     'reviews return nothing while looking healthy.',
 };
 
-// WO-14b leg 5: this run's own nonce (mirrors orchestra-exec.js's RUN_NONCE) —
-// generated once per process, injected into the brief, and required back
-// verbatim as the verdict-json block's `run_nonce` field. Printed on the
-// runner's own header (headerTail(), below `REVIEW ENGINE:` and BEFORE
-// `=== ENGINE OUTPUT ===`) so a stale or replayed report cannot wear a fresh
-// run's name — bridge/close.js cross-checks the two independently for a
-// codex-lane (author_family 'openai') verdict.
-const RUN_NONCE = crypto.randomBytes(8).toString('hex');
-
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
 const CONFIG = {
@@ -1854,52 +1845,6 @@ function manifestLines(verification) {
   return lines;
 }
 
-// WO-14b leg 5: the served_model dictated into the verdict-json block below.
-// See the served_model investigation note above headerTail() — Codex CLI's
-// `--json` event stream and its local session rollout log both expose no
-// server-confirmed model identity, only the requested `-m` value echoed back
-// (exactly the untrustworthy "request echoed as evidence" shape). Rather than
-// let the model invent one, the runner DICTATES this literal value the same
-// way it dictates run_nonce — CONFIG.model when the caller named one, else
-// the 'UNKNOWN' sentinel bridge/telemetry.js already uses for "genuinely not
-// exposed" (never fabricated, never silently false).
-function dictatedServedModel() {
-  return (CONFIG.model && CONFIG.model.trim()) || 'UNKNOWN';
-}
-
-function verdictJsonInstructionLines() {
-  return [
-    'After NITS, and as the LAST thing in your response, emit EXACTLY ONE',
-    'trailing fenced block — not wrapped in any other fence, nothing after it:',
-    '',
-    '```verdict-json',
-    '{ "verdict": "APPROVE|REVISE", "findings": [ { "severity": "CRITICAL|MAJOR|MINOR|NIT",',
-    '  "path": "...", "line": 0, "claim": "...", "reproduced": true|false, "evidence": "..." } ],',
-    '  "claims_checked": [ { "claim": "...", "result": "CONFIRMED|REFUTED|UNVERIFIED", "how": "..." } ],',
-    '  "refutation_duty": { "present": true|false, "what_was_tried": "..." },',
-    '  "citation_replay": [ { "citation": "...", "command": "...", "result": "MATCH|MISMATCH|UNREPLAYABLE" } ],',
-    '  "served_model": "' + dictatedServedModel() + '", "run_nonce": "' + RUN_NONCE + '",',
-    '  "review": { "cross_family": null } }',
-    '```',
-    '',
-    'This block is JSON, not prose — valid, parseable JSON, matching this shape',
-    'exactly (no additional fields). It restates the same verdict, findings, and',
-    'claims-checked you already gave in prose above — every FINDINGS bullet also',
-    'appears as a findings[] entry with the same severity/path:line/claim, and',
-    'each CLAIMS CHECKED line as a claims_checked[] entry — never contradict the',
-    'prose. citation_replay is your OWN self-report of what you re-ran (a',
-    'separate mechanical replay happens later; this is not that). That replay',
-    're-runs each command on the CLOSING HOST with the project\'s own toolchain,',
-    'not in your sandbox — cite only git, the declared verification commands,',
-    'and tools the manifest itself uses; never sandbox-only tools such as rg.',
-    'Copy',
-    '"served_model" and "run_nonce" VERBATIM as printed above — do not alter,',
-    'omit, or invent either value. "review.cross_family" is always literally',
-    'null — it is dispatcher-computed, never yours to assert.',
-    '',
-  ];
-}
-
 function buildBrief(workOrder, executorReport, tier, verification, forbidden, scope) {
   const rule1 = forbidden.length
     ? [
@@ -1972,7 +1917,6 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
     'severity, and MINOR BREACHes, may be APPROVE with the findings listed —',
     'they are backlog for the dispatcher, not blockers for this change.',
     '',
-    ...verdictJsonInstructionLines(),
     ...scopeLines(scope.baseRef, scope.headRef, scope.pinned),
     ...prohibitionLines(forbidden),
     ...tierLines(tier),
@@ -2426,7 +2370,6 @@ function engineBinLine() {
 // (a genuine server-side field, not a config echo), wire it in here.
 function headerTail() {
   let out = '';
-  out += '\nREVIEW RUN NONCE: ' + RUN_NONCE;
   const binLine = engineBinLine();
   if (binLine) out += '\n' + binLine;
   if (CONFIG.resolvedBin && CONFIG.resolvedBin !== CONFIG.bin) {

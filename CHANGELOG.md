@@ -9,6 +9,25 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.0.0 — the reverse-port: Orchestra 2.0's control plane removed, the legacy loop restored, one Sol lane
+
+**Breaking.** The 2.0 roster (`--roster new`) no longer exists. A project still carrying a 2.0 install must be uninstalled with the **v2.5.0-final** checkout (`git checkout v2.5.0-final && node install.js <project> --uninstall`) before 3.0 is installed; the 3.0 installer refuses a `roster: "new"` target before writing anything. Rollback anchor: tag `v2.5.0-final`.
+
+**Why.** After two live weeks the ticketed control plane (ticket gate, router, class registry, two-call close, verifier, quartermaster) had cost far more than it returned: 116 tickets in PiratePartyPals produced more anomaly rows than casting records, bounded Haiku scouts were served by Opus, reviewer verdicts went unparsed, and the engine gate failed closed on the project after its own uninstall. Two independent reviews (a GPT-5.6 Sol oracle and an Opus second opinion, both under `plans/port-3.0/`) reached the same verdict: the useful parts are the cross-vendor runners and their evidence, not the machinery around them. The owner ruled: port those back onto the simple harness and delete the rest. Full record: `plans/port-3.0/reverse-port-3.0-plan.md`.
+
+**Removed.** `bridge/`, `router/`, `registry/`, `verifier/`, `quartermaster/`, `probes/`, `tools/` (ledger report, shakedown helpers), the twelve active roster profiles and `roster/lint.js` (dated records under `roster/` stay as history), `orchestra_dispatch` / `orchestra_close`, pins, seats, `rosterGeneration`, `projectId`, `installedFiles`, `installedStore`, `installedHooks`, `ORCHESTRA-CONDUCTOR.md`, the ticket-gate hooks, the Terra executor launcher (`executor-codex`), the exec `--tier` flag, `codex.execModel` / `codex.execEffort`, `reviewEngine`, and eight test suites with their CI steps. About 30,000 lines.
+
+**Kept, unchanged in law.** `ORCHESTRA.md` (now ~90 lines), the six Claude agents (`scout`, `detective`, `executor`, `executor-heavy`, `executor-heavy-xhigh`, `reviewer`), the specialists, the three bundled skills, the guard hook (now legacy-only: Director boundary, pause switch, managed markers, plan/memory paths, positive-evidence Fable/Opus activation), and the `codex` pack's runners (`orchestra-exec.js`, `orchestra-review.js`, `orchestra-crossplan.js`) behind a four-tool engine MCP server (`orchestra_review`, `orchestra_exec`, `orchestra_crossplan`, `orchestra_doctor`).
+
+**Changed.**
+- **Mode is session-model only.** Fable or Opus at the helm → Director mode. Sonnet, Haiku, anything else → a normal agent, with no dormancy notice and no denials. When Opus directs, its orders and explanations must be concise, basic, and clear without dropping context the executor or the owner needs.
+- **One Codex lane, all Sol.** `reviewer-codex` (GPT-5.6 Sol) is the default reviewer for Claude-authored work; `executor-codex-heavy` (Sol/high) is the only Codex executor and is reserved for problems with prior evidence that Anthropic models struggled; the cross-compare GPT architect is Sol/high. Terra and Luna are gone from the Claude-side harness.
+- **Review is per campaign, not per order.** A campaign is one contiguous user goal from INTAKE to its final REPORT. It must receive at least one independent review before any handoff, merge, release, deploy, or switch of goal; the Director may batch related completed goals into one cohesive, commit-pinned review.
+- **The Sol lane fails loudly.** When the pack is installed but Sol cannot review, the Director shows `⚠ CROSS-FAMILY REVIEW UNAVAILABLE — …` immediately, falls back to the fresh-context Opus `reviewer`, repeats the alarm in the final REPORT, and never calls the campaign Sol-reviewed. Work continues. The Codex launcher relays `REVIEW_UNAVAILABLE` verbatim; `orchestra_doctor` runs once at INTAKE so the alarm surfaces early.
+- **Defaults.** Review model `gpt-5.6-sol` (was the Codex default); review timeout 1800000 ms (was 600000 — Sol reviews at high effort ran 12–33 minutes in the field). `executorEngine` stays (`"claude"` default, `"codex"` selects the Sol executor; an in-conversation instruction overrides it).
+- **Installer.** Legacy-only. New preflight: refuses a `roster: "new"` target; on any other target scrubs the deprecated keys listed above from `.claude/orchestra.json` (preserving everything else) and warns about, but never deletes, an orphaned `.claude/orchestra/` directory.
+- **No telemetry code.** The plan ledger (`.claude/plans/ledger.md`, already mandated) is the record. A `SubagentStop` hook is the first follow-up if that proves insufficient.
+
 ## 2.5.0 — punch-list closures: engine model ids, Director-editable status files, a bounded Investigator rung, and two ORCHESTRA.md follow-ups
 
 Four independent fixes landed together as one version bump.

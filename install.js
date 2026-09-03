@@ -7,11 +7,6 @@
  *   node install.js [targetDir] --packs a[,b]          also install optional packs
  *   node install.js [targetDir] --no-packs             install with no packs
  *   node install.js [targetDir] --specialists a[,b]    also install domain specialists
- *   node install.js [targetDir] --roster legacy|new    roster generation (default legacy;
- *                                                      "new" co-installs the eleven-file
- *                                                      roster and its runtime substrates
- *                                                      ALONGSIDE the legacy six — see
- *                                                      "Roster generations" below)
  *   node install.js [targetDir] --grant-push           also grant an exact-match allowlist of
  *                                                      safe push invocations, with a
  *                                                      permissions.deny counterweight for
@@ -21,10 +16,6 @@
  *   node install.js [targetDir] --grants-local         write git grants to settings.local.json
  *                                                      (git-ignored, per-developer) instead of
  *                                                      the shared settings.json
- *   node install.js [targetDir] --verify-pin           recompute and report MATCH/MISMATCH/
- *                                                      NO-PIN against this project's external
- *                                                      manifest pin (see "Manifest pin" in the
- *                                                      README)
  *   node install.js [targetDir] --uninstall            remove cleanly
  *   node install.js --scan <dir> [--depth n]           report which installs are behind
  *   node install.js --scan <dir> --update              ...and bring the stale ones up
@@ -34,17 +25,11 @@
  *
  * targetDir defaults to the current working directory.
  *
- * Roster generations: "legacy" (default) is byte-for-byte the original
- * install — the six core agents/*.md files and nothing under roster/. "new"
- * installs the eleven roster/*.md role files (minus conductor.md, which is
- * the session's own standing contract, not a spawnable agent) into
- * .claude/agents/ IN ADDITION to the legacy six, conductor.md itself to
- * .claude/ORCHESTRA-CONDUCTOR.md, and the shared substrates (router/,
- * registry/, verifier/, quartermaster/, and bridge/ once leg 4 adds it) as a
- * runtime directory, .claude/orchestra/. Both rosters stay installed
- * together; the manifest flag .claude/orchestra.json "roster" is what a
- * later leg's runtime reads to decide which one is live, and flipping it
- * back to "legacy" is a flag flip, never a reinstall or a deletion.
+ * Before writing or copying anything, a target carrying an existing
+ * .claude/orchestra.json is preflighted: a 2.0 `roster: "new"` project is
+ * refused outright (see the 2.0->3.0 migration note in README.md), and any
+ * deprecated 2.0/model-routing keys on an otherwise-legacy project are
+ * scrubbed, with every other key preserved byte-for-byte.
  *
  * Packs (packs/<name>/) are OPTIONAL modules — agents, hook runners, and
  * skills that share a dependency the core harness does not have (e.g. the
@@ -56,10 +41,8 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
-const { spawnSync, execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const SRC = __dirname;
 
@@ -89,38 +72,13 @@ const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
 const SKILLS_DIR = path.join(SRC, 'skills');
 const PACKS_DIR = path.join(SRC, 'packs');
 
-// --------------------------------------------------------- roster (leg 3)
-//
-// roster/*.md holds the eleven-file new roster PLUS a mix of non-role
-// documents (README.md, dated campaign records, work-order dispositions).
-// This classification mirrors roster/lint.js's own isRoleFile exactly (kept
-// duplicated rather than required-in: install.js has no other dependency on
-// registry/router internals, and lint.js has no exported classifier) so the
-// two never silently disagree about what counts as a role file.
-const ROSTER_DIR = path.join(SRC, 'roster');
-const ROSTER_NON_ROLE_NAMES = new Set(['README.md', 'EXERCISES.md']);
-const ROSTER_RECORD_DOC_RE = /^(wo\d+[a-z]?-|r\d+-ex\d+-|(readiness|roster)-.*-\d{4}-\d{2}-\d{2}\.md$)/;
-function rosterRoleFiles() {
-  if (!fs.existsSync(ROSTER_DIR)) return [];
-  return fs
-    .readdirSync(ROSTER_DIR)
-    .filter(
-      (f) =>
-        f.endsWith('.md') && !ROSTER_NON_ROLE_NAMES.has(f) && !ROSTER_RECORD_DOC_RE.test(f)
-    )
-    .sort();
-}
-const ROSTER_CONDUCTOR_FILE = 'conductor.md';
-const ROSTER_CONDUCTOR_DEST = 'ORCHESTRA-CONDUCTOR.md'; // .claude/ORCHESTRA-CONDUCTOR.md — the
-  // session's standing contract, not a spawnable agent (A.2) — so it does
-  // NOT land in .claude/agents/ with the other ten role files.
-const ORCHESTRA_RUNTIME_DIRNAME = 'orchestra'; // .claude/orchestra/ — the shared substrates
-const ROSTER_SUBSTRATE_DIRS = ['router', 'registry', 'verifier', 'quartermaster'];
-const ROSTER_BRIDGE_DIRNAME = 'bridge'; // leg 4 creates this at the master root; today it
-  // does not exist, and its absence is handled silently (see rosterInstall()).
-const ORCHESTRA_MANIFEST_FILE = 'orchestra.json'; // .claude/orchestra.json — owner-pinned,
-  // read by the guard's loadPolicy() and (leg 4) the activation runtime.
-const DEFAULT_SEATS = { Architect: true, Sweeper: false };
+// 3.0 config file names. ORCHESTRA_RUNTIME_DIRNAME names the 2.0 runtime
+// directory (.claude/orchestra/ — ticket store/ledger) that 3.0 never
+// writes; the config preflight below only ever reads it, to warn about an
+// orphaned one left behind by an unmigrated 2.0 install.
+const ORCHESTRA_RUNTIME_DIRNAME = 'orchestra';
+const ORCHESTRA_MANIFEST_FILE = 'orchestra.json'; // .claude/orchestra.json — project config
+  // read by the guard's loadPolicy() and the codex pack's runners.
 
 function availableSpecialists() {
   if (!fs.existsSync(SPECIALISTS_DIR)) return [];
@@ -682,27 +640,6 @@ const GIT_PUSH_DENY_PATTERNS = [
   'Bash(git push origin --delete*)',
 ];
 
-// ------------------------------------------------------------- manifest pin
-//
-// .claude/orchestra.json is an ordinary project file: nothing stopped a
-// Director (or a hostile cloned repo) from editing it to loosen the guard's
-// policy (Red Team HIGH, 2026-09-01). The pin is a second copy of the
-// manifest's load-bearing fields, held OUTSIDE the project — under the
-// user's home directory by default — hashed to the manifest's own bytes, so
-// a guard-side check (leg 4 / the sibling builder's guard work) can detect
-// an in-project edit the pin does not agree with. ORCHESTRA_PIN_DIR
-// overrides the location (tests use a temp dir so runs never touch a real
-// machine's pin store).
-const PIN_DIR = process.env.ORCHESTRA_PIN_DIR || path.join(os.homedir(), '.claude', 'orchestra', 'pins');
-
-function projectRealPath(dir) {
-  try {
-    return fs.realpathSync(dir);
-  } catch (_) {
-    return path.resolve(dir);
-  }
-}
-
 // Item B1 (WO-14b leg-3 fix round 3B, Red Team re-verification #2 HIGH):
 // resolves `p` through any symlink/junction/reparse point on its path, even
 // when `p` itself does not exist yet — walks up to the deepest existing
@@ -730,357 +667,6 @@ function realish(p) {
       cur = parent;
     }
   }
-}
-
-function pinFilePath(projectDir) {
-  const real = projectRealPath(projectDir);
-  const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
-  return path.join(PIN_DIR, hash + '.json');
-}
-
-// Item 5 (WO-14b leg-3 fix round 2B): a second pin keyed on the manifest's
-// own `projectId` (minted once, at the first --roster new, and preserved
-// thereafter) rather than the project's real path. The path-keyed pin above
-// goes stale the instant a project directory moves or is re-cloned
-// elsewhere; the id-keyed copy survives that unchanged, so --verify-pin can
-// tell "never pinned" apart from "pinned, then moved" instead of reporting
-// NO-PIN for a project the owner genuinely already vouched for.
-function idPinFilePath(projectId) {
-  const hash = crypto.createHash('sha256').update(String(projectId), 'utf8').digest('hex');
-  return path.join(PIN_DIR, 'id-' + hash + '.json');
-}
-
-// Item 3 (WO-14b leg-3 fix round 3B): a third pin key, on the project's git
-// root commit — the first line of `git rev-list --max-parents=0 HEAD` in the
-// project directory. Unlike the id-keyed pin, this key does not depend on
-// the manifest still carrying the projectId it was minted with: a manifest
-// can be replaced wholesale (an attacker, a bad merge, a naive template
-// copy) and the git-keyed pin still finds the project by its actual commit
-// history, which nothing but a real git history rewrite can forge. Returns
-// null (never throws) when the directory is not a git repo, has no commits
-// yet (a fresh `git init` has no root commit — the git key appears on the
-// next --repin, or the next manifest write, after the first commit), or git
-// itself is unavailable — callers must treat that as "this key does not
-// apply here" and skip it silently, exactly like `--ignore-manifest` treats
-// a manifest it cannot read.
-function gitRootCommitHash(projectDir) {
-  try {
-    const out = execFileSync('git', ['rev-list', '--max-parents=0', 'HEAD'], {
-      cwd: projectDir,
-      encoding: 'utf8',
-      timeout: 5000,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const first = out.split(/\r?\n/).find((l) => l.trim());
-    return first ? first.trim() : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function gitPinFilePath(rootCommitHash) {
-  const hash = crypto.createHash('sha256').update(String(rootCommitHash), 'utf8').digest('hex');
-  return path.join(PIN_DIR, 'git-' + hash + '.json');
-}
-
-// Item 6 (WO-14b leg-3 fix round 4, CRITICAL, red-team pass #3): sha256 of
-// every INSTALLED bridge runtime file the guard's Agent seam trusts before
-// require()-ing it (see hooks/orchestra-guard.js's delegateAgentGate()) —
-// keyed by the same relative-path strings the guard checks against. Reads
-// straight off .claude/orchestra/<ROSTER_BRIDGE_DIRNAME>/... as it sits on
-// disk RIGHT NOW (after this run's own copy, if any); a file this run did
-// not install (roster:legacy, or a pre-leg-4 project with no bridge/ at
-// all) is simply omitted from the result, never a null placeholder, so the
-// guard's "missing entry" check has something concrete to fail on.
-// Writes/refreshes the pin for `projectDir` from the manifest file as JUST
-// WRITTEN to disk (the hash covers the exact bytes written, indentation and
-// all). Returns the path-keyed pin file path. Called after every write to
-// orchestra.json that carries roster/seat information — never for a plain
-// legacy install, which writes no manifest and therefore gets no pin. Writes
-// BOTH the path-keyed and (when the manifest carries a projectId) the
-// id-keyed pin, with identical content.
-function writePin(projectDir, manifestFile, manifestObj) {
-  const bytes = fs.readFileSync(manifestFile);
-  const pin = {
-    projectDir: projectRealPath(projectDir),
-    manifestSha256: crypto.createHash('sha256').update(bytes).digest('hex'),
-    roster: manifestObj.roster || 'legacy',
-    rosterGeneration: typeof manifestObj.rosterGeneration === 'number' ? manifestObj.rosterGeneration : 0,
-    seats: manifestObj.seats || {},
-    projectId: typeof manifestObj.projectId === 'string' && manifestObj.projectId ? manifestObj.projectId : null,
-    // WO-14b leg 3R, item 7: runtimeSha256 is removed — the guard no longer
-    // require()s or executes any project-tree runtime file (delegateAgentGate()
-    // is gone), so a hash pinning it to a trusted copy is no longer meaningful.
-    writtenAt: new Date().toISOString(),
-    by: 'install.js',
-  };
-  const body = JSON.stringify(pin, null, 2) + '\n';
-  const pf = pinFilePath(projectDir);
-  fs.mkdirSync(path.dirname(pf), { recursive: true });
-  fs.writeFileSync(pf, body, 'utf8');
-  if (pin.projectId) {
-    const idPf = idPinFilePath(pin.projectId);
-    fs.mkdirSync(path.dirname(idPf), { recursive: true });
-    fs.writeFileSync(idPf, body, 'utf8');
-  }
-  // Item 3: third copy keyed on the git root commit, identical content.
-  // Silently skipped when the project has no resolvable root commit yet
-  // (see gitRootCommitHash) — `--repin` is how that copy gets added later,
-  // after the first commit exists.
-  const rootCommitHash = gitRootCommitHash(projectDir);
-  if (rootCommitHash) {
-    const gitPf = gitPinFilePath(rootCommitHash);
-    fs.mkdirSync(path.dirname(gitPf), { recursive: true });
-    fs.writeFileSync(gitPf, body, 'utf8');
-  }
-  return pf;
-}
-
-// Removes the path-keyed, id-keyed, and git-keyed pin for a project — every
-// copy this run can still find or compute. `knownProjectId` lets a caller
-// that already has the manifest's projectId (e.g. --uninstall, reading
-// orchestra.json before it clears the file) remove the id-keyed copy even
-// if the path-keyed one is already gone (a moved project that was never
-// --repin'd). When the manifest has been replaced wholesale (its projectId
-// lost) and no path-keyed pin survives at this location either, the
-// git-keyed pin — found purely from the project's own commit history — is
-// read AS WELL, and its projectId (identical content to the other two
-// copies, per writePin) recovers the id-keyed copy too (item 3, WO-14b
-// leg-3 fix round 3B).
-//
-// Item 4 (WO-14b leg-3 fix round 4, MINOR, cross-vendor review #4): every
-// pin file's own content records the projectDir it was written for
-// (writePin() stamps `projectRealPath(projectDir)` verbatim). When that
-// project has since MOVED, `projectDir` here (the current/new location)
-// computes a different path key than the one the pin was originally filed
-// under — so a pin recovered by its git or id key, at the new location,
-// left the OLD path-keyed copy (still sitting at the hash of the pre-move
-// path) on disk forever: nothing else ever revisits it, and a different
-// project later created at that same old path would misread it as its own
-// pin. Every pin object we manage to parse below is checked for a
-// `projectDir` that disagrees with where we are removing FROM; each
-// distinct one found gets its own path key computed and removed too.
-function removePin(projectDir, knownProjectId) {
-  const pf = pinFilePath(projectDir);
-  const currentReal = projectRealPath(projectDir);
-  let projectId = knownProjectId || null;
-  let removedAny = false;
-  let removedPath = null;
-  const oldRecordedDirs = new Set();
-
-  const readPinJson = (file) => {
-    try {
-      return JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch (_) {
-      return null;
-    }
-  };
-  const noteRecordedDir = (pin) => {
-    if (pin && typeof pin.projectDir === 'string' && pin.projectDir && pin.projectDir !== currentReal) {
-      oldRecordedDirs.add(pin.projectDir);
-    }
-  };
-
-  if (fs.existsSync(pf)) {
-    const pin = readPinJson(pf);
-    if (pin && pin.projectId && !projectId) projectId = pin.projectId;
-    noteRecordedDir(pin);
-    fs.unlinkSync(pf);
-    removedPath = pf;
-    removedAny = true;
-  }
-  // Git-keyed copy, computed fresh from the project's current git history
-  // (the project directory still exists at uninstall time, unlike after a
-  // move) — silently skipped when there is none to compute.
-  const rootCommitHash = gitRootCommitHash(projectDir);
-  if (rootCommitHash) {
-    const gitPf = gitPinFilePath(rootCommitHash);
-    if (fs.existsSync(gitPf)) {
-      const gitPin = readPinJson(gitPf);
-      if (gitPin && gitPin.projectId && !projectId) projectId = gitPin.projectId;
-      noteRecordedDir(gitPin);
-      fs.unlinkSync(gitPf);
-      removedAny = true;
-      if (!removedPath) removedPath = gitPf;
-    }
-  }
-  if (projectId) {
-    const idPf = idPinFilePath(projectId);
-    if (fs.existsSync(idPf)) {
-      noteRecordedDir(readPinJson(idPf));
-      fs.unlinkSync(idPf);
-      removedAny = true;
-      if (!removedPath) removedPath = idPf;
-    }
-  }
-  // Item 4: the old path-keyed pin(s), named by whatever `projectDir` the
-  // pins we actually found were written for. Prefer sha256(realpath(...))
-  // — matching pinFilePath()'s own scheme exactly for a path that still
-  // resolves to something on disk — and fall back to sha256 of the
-  // recorded string as written when that path no longer exists at all
-  // (the ordinary case for a project that moved rather than was copied):
-  // the recorded value is itself already a realpath as of when the pin was
-  // written (writePin() stamps `projectRealPath(projectDir)`), so hashing
-  // it directly reproduces the exact key pinFilePath() used at write time.
-  for (const recordedDir of oldRecordedDirs) {
-    let real;
-    try {
-      real = fs.realpathSync(recordedDir);
-    } catch (_) {
-      real = recordedDir;
-    }
-    const hash = crypto.createHash('sha256').update(real, 'utf8').digest('hex');
-    const oldPf = path.join(PIN_DIR, hash + '.json');
-    if (oldPf !== pf && fs.existsSync(oldPf)) {
-      fs.unlinkSync(oldPf);
-      removedAny = true;
-      if (!removedPath) removedPath = oldPf;
-    }
-  }
-  return removedAny ? removedPath : null;
-}
-
-// The shared status computation behind --verify-pin AND --uninstall's
-// pin-before-ledger check (item 2). Returns
-// { status: 'MATCH'|'MISMATCH'|'NO-PIN'|'MOVED', ... } — never throws.
-//
-//   MATCH               — the path-keyed pin exists and its hash + projectDir
-//                          agree with the manifest on disk right now.
-//   MISMATCH            — a pin exists (by path, id, or git-root) but its
-//                          hash disagrees with the manifest on disk, and the
-//                          manifest itself is still readable here.
-//   NO-PIN              — no pin was ever recorded for this project, by any
-//                          key.
-//   NO-MANIFEST-WITH-PIN — .claude/orchestra.json is gone, but a pin for this
-//                          project was found by SOME key (path, id, or
-//                          git-root) — proof of a real prior install even
-//                          though there is no manifest left to hash-check it
-//                          against (item 1, WO-14b leg-3 fix round 4: MAJOR,
-//                          cross-vendor review #4). Callers treat this the
-//                          same as --ignore-manifest: run the canonical-name
-//                          cleanup and remove every discoverable pin.
-//   MOVED               — no path-keyed pin here, but the manifest's own
-//                          projectId (or, failing that, its git root commit)
-//                          resolves to an id- or git-keyed pin elsewhere whose
-//                          hash MATCHES the manifest on disk now — a
-//                          relocated, still-trusted project (item 5's
-//                          guard-side rule: trusted iff hash matches).
-//                          --repin promotes this to a fresh path-keyed pin.
-//
-// Item 1 fix (WO-14b leg-3 fix round 4): review #4's MAJOR found the git-root
-// lookup nested entirely inside `if (fs.existsSync(orchestraJsonFile))` —
-// so a project that was BOTH moved (no path-keyed pin survives at the new
-// location) AND had its manifest deleted (not just replaced) skipped every
-// key but the path one, fell straight through to NO-PIN, and `--uninstall`
-// treated that as "never installed here" — leaving every roster:new file
-// behind with a clean exit 0. The git-root key never needed the manifest to
-// begin with (gitRootCommitHash() reads the project's own commit history,
-// not orchestra.json) — it is now computed and checked UNCONDITIONALLY,
-// manifest present or not. The id key still needs a readable manifest (it is
-// the only place `projectId` lives), so it stays gated on the manifest being
-// parseable — but not on the manifest still EXISTING at the top level; see
-// below.
-function verifyPinStatus(target, orchestraJsonFile) {
-  const pf = pinFilePath(target);
-  const realDir = projectRealPath(target);
-  const manifestExists = fs.existsSync(orchestraJsonFile);
-  const manifestBytes = () => fs.readFileSync(orchestraJsonFile);
-
-  if (fs.existsSync(pf)) {
-    let pin;
-    try {
-      pin = JSON.parse(fs.readFileSync(pf, 'utf8'));
-    } catch (e) {
-      return { status: 'NO-PIN', pf, reason: 'pin file exists but is not valid JSON (' + pf + ': ' + e.message + ')' };
-    }
-    if (!manifestExists) {
-      return { status: 'NO-MANIFEST-WITH-PIN', pf, pin, realDir, reason: '.claude/orchestra.json no longer exists here' };
-    }
-    const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
-    if (actualSha === pin.manifestSha256 && realDir === pin.projectDir) {
-      return { status: 'MATCH', pf, pin, actualSha, realDir };
-    }
-    return { status: 'MISMATCH', pf, pin, actualSha, realDir };
-  }
-
-  // No path-keyed pin here. The id key needs a readable manifest carrying a
-  // projectId (that field lives nowhere else); the git-root key needs only
-  // the project's own git history and is tried whether or not the manifest
-  // is readable at all.
-  let manifest = null;
-  if (manifestExists) {
-    try {
-      manifest = JSON.parse(fs.readFileSync(orchestraJsonFile, 'utf8'));
-    } catch (_) {
-      /* unparseable manifest — id key unavailable; git key is still tried below */
-    }
-  }
-  if (manifest && typeof manifest.projectId === 'string' && manifest.projectId) {
-    const idPf = idPinFilePath(manifest.projectId);
-    if (fs.existsSync(idPf)) {
-      let idPin;
-      try {
-        idPin = JSON.parse(fs.readFileSync(idPf, 'utf8'));
-      } catch (e) {
-        return { status: 'NO-PIN', pf, reason: 'id-pin file exists but is not valid JSON (' + idPf + ': ' + e.message + ')' };
-      }
-      const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
-      if (actualSha === idPin.manifestSha256) {
-        return { status: 'MOVED', pf, idPf, pin: idPin, actualSha, realDir };
-      }
-      return { status: 'MISMATCH', pf, idPf, pin: idPin, actualSha, realDir };
-    }
-  }
-  const rootCommitHash = gitRootCommitHash(target);
-  if (rootCommitHash) {
-    const gitPf = gitPinFilePath(rootCommitHash);
-    if (fs.existsSync(gitPf)) {
-      let gitPin;
-      try {
-        gitPin = JSON.parse(fs.readFileSync(gitPf, 'utf8'));
-      } catch (e) {
-        return { status: 'NO-PIN', pf, reason: 'git-pin file exists but is not valid JSON (' + gitPf + ': ' + e.message + ')' };
-      }
-      if (!manifestExists) {
-        return { status: 'NO-MANIFEST-WITH-PIN', pf, gitPf, pin: gitPin, realDir, reason: '.claude/orchestra.json no longer exists here' };
-      }
-      const actualSha = crypto.createHash('sha256').update(manifestBytes()).digest('hex');
-      if (actualSha === gitPin.manifestSha256) {
-        return { status: 'MOVED', pf, gitPf, pin: gitPin, actualSha, realDir };
-      }
-      return { status: 'MISMATCH', pf, gitPf, pin: gitPin, actualSha, realDir };
-    }
-  }
-  return { status: 'NO-PIN', pf };
-}
-
-// Every write to orchestra.json that carries roster/seat information goes
-// through this one function, so the external pin can never drift from the
-// manifest bytes actually on disk (item 9). Plain grant-only bookkeeping for
-// a byte-for-byte legacy install never calls this — see item 1.
-function writeManifestAndPin(targetDir, manifestFile, manifestObj) {
-  writeJson(manifestFile, manifestObj);
-  const pf = writePin(targetDir, manifestFile, manifestObj);
-  did('.claude/orchestra.json pin refreshed (' + pf + ')');
-}
-
-// All file paths under `dir`, relative to `dir`, forward-slashed. Used to
-// record exactly what a --roster new install copied under
-// .claude/orchestra/<substrate>/, so --uninstall can remove precisely that
-// later without ever having to ask the CURRENT master what it would install
-// today (item 4).
-function listFilesRecursive(dir) {
-  const out = [];
-  const walk = (d, rel) => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name);
-      const r = rel ? rel + '/' + e.name : e.name;
-      if (e.isDirectory()) walk(p, r);
-      else out.push(r);
-    }
-  };
-  walk(dir, '');
-  return out;
 }
 
 // --------------------------------------------------- JSON round-trip guard
@@ -1307,67 +893,19 @@ function rememberFormat(file) {
 }
 
 // Empty matcher = the hook fires on every main-session tool call; the guard
-// script is the single source of truth for policy (including orchestra.json
-// MCP patterns). Subagent tool calls never trigger project PreToolUse hooks.
-//
-// WO-14b leg 3R: the guard's roster:new path is now selected ONLY by this
-// invocation's own `--roster new` argument (hooks/orchestra-guard.js's
-// rosterFromArgv()) — never by `.claude/orchestra.json`, a pin, an on-disk
-// fingerprint, or transcript content. A `--roster new` install writes the
-// argument onto the command line below; the legacy flip rewrites the entry
-// WITHOUT it (see isOurHookEntry()/GUARD_MARK — a re-run always replaces the
-// whole entry, so a roster flip never leaves a stale argument behind).
-function guardHookEntry(roster) {
-  const command =
-    roster === 'new'
-      ? 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js" --roster new'
-      : 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js"';
+// script is the single source of truth for policy (including
+// orchestra.json MCP patterns). Subagent tool calls never trigger project
+// PreToolUse hooks.
+function guardHookEntry() {
   return {
     matcher: '',
     hooks: [
       {
         type: 'command',
-        command: command,
+        command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/orchestra-guard.js"',
       },
     ],
   };
-}
-
-// The bridge's ticket-gate hook (WO-14b leg 4c) — registered into
-// .claude/settings.json ONLY under --roster new (the gate is inert under
-// legacy anyway; removed on a legacy flip as hygiene, not a behaviour
-// change). Four events: PreToolUse/PostToolUse matched to tool "Agent" only
-// (the gate has nothing to say about any other tool); SubagentStop/Stop
-// fire on every such event (no matcher concept applies to non-tool events).
-// GATE_HOOK_MARK identifies our entries the same way GUARD_MARK identifies
-// the guard's, via isOurGateHookEntry() below — so a re-run replaces rather
-// than duplicates them, and a user's own entries for these same four events
-// are always left untouched.
-// WO-14b leg 4 fix round (item 11): the FULL relative path our own
-// gateHookEntry() writes below, never the bare basename — a user's own hook
-// command (e.g. `node tools/ticket-gate.js`) contains the basename but not
-// this path, so isOurGateHookEntry() no longer misclassifies it as ours and
-// wrongly removes it on install/legacy-flip/uninstall.
-const GATE_HOOK_MARK = '.claude/orchestra/bridge/hooks/ticket-gate.js';
-const GATE_HOOK_EVENTS = ['PreToolUse', 'PostToolUse', 'SubagentStop', 'Stop'];
-// WO-14b repair A item 8: the exact command string this installer writes
-// for a given event — the ONLY thing isOurGateHookEntry() below is allowed
-// to recognize as "ours" (see that function's own comment).
-function gateHookCommand(eventName) {
-  return 'node "$CLAUDE_PROJECT_DIR/' + GATE_HOOK_MARK + '" ' + eventName;
-}
-
-function gateHookEntry(eventName) {
-  const entry = {
-    hooks: [
-      {
-        type: 'command',
-        command: gateHookCommand(eventName),
-      },
-    ],
-  };
-  if (eventName === 'PreToolUse' || eventName === 'PostToolUse') entry.matcher = 'Agent';
-  return entry;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -1381,61 +919,6 @@ function did(msg) {
 function fail(msg) {
   console.error('ERROR: ' + msg);
   process.exit(1);
-}
-
-// PL-11: the runtime-state paths (relative to .claude/) that must never be
-// versioned — the live ticket store, the ledger, the MCP scratch dir, and the
-// Quartermaster pool readings. Written to .claude/.gitignore under
-// --roster new (see the 1a block). Also the exact list the tracked-state
-// warning below checks against.
-const RUNTIME_STATE_GITIGNORE_HEADER = '# Orchestra runtime state (live ticket store, ledger, scratch, pool readings) - never versioned';
-const RUNTIME_STATE_GITIGNORE_ENTRIES = [
-  ORCHESTRA_RUNTIME_DIRNAME + '/tickets/',
-  ORCHESTRA_RUNTIME_DIRNAME + '/ledger/',
-  'scratch/',
-  'orchestra-pool-readings.jsonl',
-];
-
-// Idempotent, additive: creates .claude/.gitignore with the runtime-state
-// entries, or appends only the entries an existing file lacks (a user's own
-// lines are never touched or reordered). Then, if the target is a git repo,
-// warns about any runtime-state path ALREADY tracked — a gitignore does not
-// untrack a file, and a tracked ticket store is exactly what collided under
-// the running helm in shakedown finding #4.
-function ensureRuntimeStateGitignore(dotClaudeDir, targetDir) {
-  const file = path.join(dotClaudeDir, '.gitignore');
-  const existed = fs.existsSync(file);
-  const current = existed ? fs.readFileSync(file, 'utf8') : '';
-  const have = new Set(current.split(/\r?\n/).map((l) => l.trim()));
-  const missing = RUNTIME_STATE_GITIGNORE_ENTRIES.filter((e) => !have.has(e));
-  if (missing.length) {
-    let text = current;
-    if (text && !text.endsWith('\n')) text += '\n';
-    if (!have.has(RUNTIME_STATE_GITIGNORE_HEADER)) text += (text ? '\n' : '') + RUNTIME_STATE_GITIGNORE_HEADER + '\n';
-    text += missing.join('\n') + '\n';
-    fs.writeFileSync(file, text, 'utf8');
-    did(
-      '.claude/.gitignore: ' + (existed ? 'appended ' : 'written with ') + missing.length + ' runtime-state entr' +
-        (missing.length === 1 ? 'y' : 'ies') + ' (' + missing.join(', ') + ') — commit the install so a branch ' +
-        'switch or `git stash -u` cannot sweep the harness; the runtime state itself stays untracked'
-    );
-  }
-  // Tracked-state warning: read-only git query; silent when not a repo.
-  let tracked = '';
-  try {
-    const r = spawnSync('git', ['-C', targetDir, 'ls-files', '--', ...RUNTIME_STATE_GITIGNORE_ENTRIES.map((e) => '.claude/' + e)], {
-      encoding: 'utf8',
-      windowsHide: true,
-    });
-    if (!r.error && r.status === 0) tracked = String(r.stdout || '').trim();
-  } catch (_) { /* not a git repo, or git absent — nothing to warn about */ }
-  if (tracked) {
-    const files = tracked.split(/\r?\n/).filter(Boolean);
-    console.error(
-      '  ! ' + files.length + ' runtime-state file(s) are TRACKED by git and .gitignore cannot untrack them — ' +
-        'run: git rm -r --cached ' + files.map((f) => '"' + f + '"').join(' ') + '  (then commit)'
-    );
-  }
 }
 
 // See HOOKS_PACKAGE_JSON_CONTENT above for why this file exists. Idempotent:
@@ -1510,15 +993,12 @@ function writeJson(file, obj) {
 // uninstall, before any fs mutation. Malformed `permissions` (a string, an
 // array — not an object) is refused too, named explicitly, rather than
 // silently replaced with {} the way a plain readJson() would invite.
-// Refuse before touching ANYTHING (sdc-012 MINOR, extended by WO-14b leg-3
-// fix round B items 5/6/7): malformed JSON, a non-object top level, a
-// numeric literal that cannot survive a JSON.parse/stringify round trip, and
-// (for orchestra.json specifically) a non-integer rosterGeneration, in any
-// of the settings-like files this installer reads/writes. `files` is an
-// array of { file, checkPermissions, checkRosterGeneration } — the caller
-// decides which extra checks apply to which path (permissions shape only
-// makes sense for a settings-style file; rosterGeneration only for the
-// manifest).
+// Refuse before touching ANYTHING: malformed JSON, a non-object top level,
+// or a numeric literal that cannot survive a JSON.parse/stringify round
+// trip, in any of the settings-like files this installer reads/writes.
+// `files` is an array of { file, checkPermissions } — the caller decides
+// which extra checks apply to which path (permissions shape only makes
+// sense for a settings-style file).
 function refuseIfTargetMalformed(files) {
   for (const spec of files) {
     const f = spec.file;
@@ -1571,15 +1051,6 @@ function refuseIfTargetMalformed(files) {
             );
           }
         }
-      }
-    }
-    if (spec.checkRosterGeneration && parsed.rosterGeneration !== undefined) {
-      const g = parsed.rosterGeneration;
-      if (typeof g !== 'number' || !Number.isInteger(g) || g < 0) {
-        fail(
-          f + ': "rosterGeneration" must be a non-negative integer, found ' + JSON.stringify(g) +
-            '. Refusing to touch anything in this project — fix it first.'
-        );
       }
     }
   }
@@ -1655,52 +1126,6 @@ function isOurHookEntry(entry) {
       (h) => h && typeof h.command === 'string' && h.command.includes(GUARD_MARK)
     )
   );
-}
-
-// WO-14b repair A item 8: matches only an entry carrying the EXACT command
-// this installer writes for one of the four gate hook events — never a
-// substring test. The old `command.includes(GATE_HOOK_MARK)` misclassified
-// any user hook that merely CONTAINED our managed path as an argument (or
-// as a longer backup-path prefix, e.g. a user's own backup/restore command
-// operating on a copy of ticket-gate.js) as one of Orchestra's own entries,
-// so an install/legacy-flip/uninstall transition would remove a user's own
-// hook it never installed.
-function isOurGateHookEntry(entry) {
-  return (
-    entry &&
-    Array.isArray(entry.hooks) &&
-    entry.hooks.some(
-      (h) => h && typeof h.command === 'string' &&
-        GATE_HOOK_EVENTS.some((ev) => h.command === gateHookCommand(ev))
-    )
-  );
-}
-
-// WO-14b leg 3R, item 7: re-reads .claude/settings.json fresh off disk (not
-// the in-memory `settings` object the install just mutated) and confirms
-// all four gate hook events carry an entry this installer recognizes
-// (isOurGateHookEntry) — the same identification the guard's own
-// verifyGateHooksRegistered() uses at Agent-call time. This does not
-// duplicate that registration (done above, by the pre-existing leg-4c
-// code); it only proves the write actually landed.
-function verifyGateHooksWritten(targetDir) {
-  const settingsPath = path.join(targetDir, '.claude', 'settings.json');
-  let onDisk;
-  try {
-    onDisk = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-  } catch (e) {
-    return { ok: false, reason: 'settings.json unreadable after write (' + e.message + ')' };
-  }
-  if (!onDisk || typeof onDisk !== 'object' || Array.isArray(onDisk) || !onDisk.hooks || typeof onDisk.hooks !== 'object') {
-    return { ok: false, reason: 'no hooks object in settings.json after write' };
-  }
-  for (const eventName of GATE_HOOK_EVENTS) {
-    const list = Array.isArray(onDisk.hooks[eventName]) ? onDisk.hooks[eventName] : [];
-    if (!list.some((e) => isOurGateHookEntry(e))) {
-      return { ok: false, reason: eventName + ' gate hook entry missing after write' };
-    }
-  }
-  return { ok: true };
 }
 
 function stringList(value) {
@@ -2000,12 +1425,8 @@ let scanArg = null; // null = not scanning
 let updateFlag = false;
 let depthArg = null;
 let lintFlag = false;
-let rosterArg = null; // null = not given (defaults to "legacy" below)
 let grantPushFlag = false;
 let grantsLocalFlag = false;
-let verifyPinFlag = false;
-let repinFlag = false;
-let ignoreManifestFlag = false;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--uninstall') uninstall = true;
@@ -2021,53 +1442,23 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--depth') depthArg = args[++i] || '';
   else if (a.startsWith('--depth=')) depthArg = a.slice('--depth='.length);
   else if (a === '--lint') lintFlag = true;
-  else if (a === '--roster') rosterArg = args[++i] || '';
-  else if (a.startsWith('--roster=')) rosterArg = a.slice('--roster='.length);
   else if (a === '--grant-push') grantPushFlag = true;
   else if (a === '--grants-local') grantsLocalFlag = true;
-  else if (a === '--verify-pin') verifyPinFlag = true;
-  else if (a === '--repin') repinFlag = true;
-  else if (a === '--ignore-manifest') ignoreManifestFlag = true;
   else if (a.startsWith('--')) {
     fail(
       'Unknown flag: ' + a +
         ' (expected --uninstall, --packs <names>, --no-packs, --specialists <names>,' +
         ' --no-specialists, --scan <dir>, --update, --depth <n>, --lint [dir],' +
-        ' --roster legacy|new, --grant-push, --grants-local, --verify-pin, --repin,' +
-        ' or --uninstall --ignore-manifest)'
+        ' --grant-push, or --grants-local)'
     );
   } else if (!dirArg) dirArg = a;
   else fail('Unexpected extra argument: ' + a);
 }
-if (rosterArg !== null && rosterArg !== 'legacy' && rosterArg !== 'new') {
-  fail('--roster must be "legacy" or "new", got: ' + JSON.stringify(rosterArg));
-}
-// PL-14 (shakedown finding #7, 2026-09-02): a plain re-run used to default
-// to "legacy" and silently DOWNGRADED a roster:new install — gate hooks
-// removed, generation bumped, enforcement gone — while packs/specialists were
-// remembered. The roster is now inherited from the installed manifest
-// (.claude/orchestra.json "roster", the flag the runtime reads) when no
-// --roster is given; resolved below once the target paths exist.
-let roster = rosterArg; // null = inherit from the installed manifest, else "legacy"
 if (grantPushFlag && uninstall) {
   fail('--grant-push does nothing with --uninstall — grants are removed by uninstall itself.');
 }
 if (grantsLocalFlag && uninstall) {
   fail('--grants-local does nothing with --uninstall — grants are removed from wherever they were written.');
-}
-if (verifyPinFlag && (uninstall || scanArg !== null || lintFlag || updateFlag)) {
-  fail('--verify-pin runs alone against one target: node install.js [targetDir] --verify-pin');
-}
-if (repinFlag && (uninstall || scanArg !== null || lintFlag || updateFlag)) {
-  fail('--repin runs alone against one target: node install.js [targetDir] --repin');
-}
-// --ignore-manifest (item 7, WO-14b leg-3 fix round 2B): the escape hatch
-// for a malformed .claude/orchestra.json that otherwise locks --uninstall
-// out entirely (refuseIfTargetMalformed refuses the WHOLE run, uninstall
-// included, on a file the owner cannot fix without hand-editing it first).
-// Only means something paired with --uninstall.
-if (ignoreManifestFlag && !uninstall) {
-  fail('--ignore-manifest only means something with --uninstall: node install.js [targetDir] --uninstall --ignore-manifest');
 }
 
 // --- lint mode: the frontmatter check on its own, for CI and contributors.
@@ -2126,10 +1517,10 @@ if (scanArg !== null) {
         "project's selection by installing into it directly."
     );
   }
-  if (rosterArg !== null || grantPushFlag) {
+  if (grantPushFlag) {
     fail(
-      '--scan cannot be combined with --roster/--grant-push, for the same reason as ' +
-        "--packs/--specialists above: change a project's roster or grants by installing " +
+      '--scan cannot be combined with --grant-push, for the same reason as ' +
+        "--packs/--specialists above: change a project's grants by installing " +
         'into it directly.'
     );
   }
@@ -2173,97 +1564,16 @@ const pauseFile = path.join(dotClaude, 'orchestra.pause');
 const gitattributesFile = path.join(dotClaude, '.gitattributes');
 const mcpFile = path.join(target, '.mcp.json');
 const orchestraJsonFile = path.join(dotClaude, ORCHESTRA_MANIFEST_FILE);
-const conductorFile = path.join(dotClaude, ROSTER_CONDUCTOR_DEST);
 const orchestraRuntimeDir = path.join(dotClaude, ORCHESTRA_RUNTIME_DIRNAME);
 
-// --verify-pin: read-only, runs alone against one target, before any of the
-// mutation below (and before refuseIfTargetMalformed, since it only reads
-// bytes and a hash — it does not need the manifest to be well-formed to
-// report MISMATCH/NO-PIN honestly).
-if (verifyPinFlag) {
-  const status = verifyPinStatus(target, orchestraJsonFile);
-  if (status.status === 'NO-PIN') {
-    console.log('NO-PIN — no pin recorded for this project' + (status.reason ? ' (' + status.reason + ')' : ' (looked for ' + status.pf + ')'));
-    process.exit(1);
-  }
-  if (status.status === 'MATCH') {
-    console.log('MATCH — .claude/orchestra.json matches the pin recorded ' + status.pin.writtenAt + ' (' + status.pf + ')');
-    process.exit(0);
-  }
-  if (status.status === 'MOVED') {
-    const foundVia = status.idPf ? 'id' : 'git';
-    const foundAt = status.idPf || status.gitPf;
-    console.log('MOVED — no pin at this path, but the project\'s ' + (foundVia === 'id' ? 'manifest projectId' : 'git root commit') + ' resolves to a pin recorded ' + status.pin.writtenAt + ' at a different location, and its hash MATCHES the manifest here (' + foundAt + ')');
-    console.log('  pinned projectDir (old): ' + status.pin.projectDir);
-    console.log('  actual projectDir (new): ' + status.realDir);
-    console.log('  Trusted (item 5/item 3: found by ' + foundVia + ', hash matches). Run --repin to also write a path-keyed pin for this location.');
-    process.exit(0);
-  }
-  // MISMATCH
-  console.log('MISMATCH — .claude/orchestra.json has changed since the pin was written (' + (status.pf && fs.existsSync(status.pf) ? status.pf : (status.idPf || status.gitPf)) + ')');
-  console.log('  pin projectDir:     ' + status.pin.projectDir);
-  console.log('  actual projectDir:  ' + status.realDir);
-  console.log('  pin manifestSha256: ' + status.pin.manifestSha256);
-  console.log('  actual sha256:      ' + (status.actualSha || '(unavailable — ' + (status.reason || 'manifest missing') + ')'));
-  process.exit(1);
-}
-
-// --repin (item 5): promotes a MOVED verdict (a relocated project, still
-// trusted because its hash matches the id-keyed pin) into a fresh
-// path-keyed pin at the new location — never usable to manufacture trust:
-// refused unless verifyPinStatus itself already says MOVED.
-if (repinFlag) {
-  const status = verifyPinStatus(target, orchestraJsonFile);
-  if (status.status !== 'MOVED') {
-    console.log('--repin refused: pin status here is ' + status.status + ', not MOVED. Nothing changed.');
-    process.exit(1);
-  }
-  const newPin = Object.assign({}, status.pin, {
-    projectDir: status.realDir,
-    writtenAt: new Date().toISOString(),
-  });
-  const body = JSON.stringify(newPin, null, 2) + '\n';
-  const pf = pinFilePath(target);
-  fs.mkdirSync(path.dirname(pf), { recursive: true });
-  fs.writeFileSync(pf, body, 'utf8');
-  if (newPin.projectId) {
-    const idPf = idPinFilePath(newPin.projectId);
-    fs.mkdirSync(path.dirname(idPf), { recursive: true });
-    fs.writeFileSync(idPf, body, 'utf8');
-  }
-  // Item 3: also (re)write the git-keyed copy — this is how a project first
-  // pinned before its first commit (no root commit to key on yet) picks one
-  // up later, and how a MOVED project found only via the git key still ends
-  // up with a fresh git-keyed copy at its new writtenAt.
-  const repinRootCommitHash = gitRootCommitHash(target);
-  if (repinRootCommitHash) {
-    const gitPf = gitPinFilePath(repinRootCommitHash);
-    fs.mkdirSync(path.dirname(gitPf), { recursive: true });
-    fs.writeFileSync(gitPf, body, 'utf8');
-  }
-  console.log('REPINNED — path-keyed pin written for the new location (' + pf + ')');
-  process.exit(0);
-}
-
 // Refuse before touching ANYTHING — settings.json, settings.local.json (if
-// present), .mcp.json, orchestra.json (A.4/A.5, WO-14b leg-3 fix round B
-// items 5/6/7). Runs for both install and uninstall, before any fs mutation
-// below (including the frontmatter lint's own file reads, which touch
-// nothing in the target either way).
-// Item 7 (WO-14b leg-3 fix round 2B): --uninstall --ignore-manifest skips
-// this check for orchestra.json specifically — a malformed manifest must
-// never lock the owner out of removing the harness, and the whole point of
-// --ignore-manifest is running the uninstall's untracked path WITHOUT
-// reading this file at all (not even to validate it).
-const manifestMalformedCheck = uninstall && ignoreManifestFlag ? [] : [
+// present), .mcp.json, orchestra.json. Runs for both install and uninstall,
+// before any fs mutation below (including the frontmatter lint's own file
+// reads, which touch nothing in the target either way).
+const manifestMalformedCheck = [
   {
     file: orchestraJsonFile,
-    checkRosterGeneration: true,
-    hint: uninstall
-      ? '.claude/orchestra.json may simply be deleted to proceed — --uninstall handles a project ' +
-        'with no manifest cleanly once it is gone — or re-run with --uninstall --ignore-manifest ' +
-        'to remove Orchestra without ever reading this file.'
-      : '.claude/orchestra.json may simply be deleted to proceed, if you do not need its contents preserved.',
+    hint: '.claude/orchestra.json may simply be deleted to proceed, if you do not need its contents preserved.',
   },
 ];
 refuseIfTargetMalformed([
@@ -2322,14 +1632,6 @@ function isOurGitattributes(raw) {
 const priorState = readJson(stateFile);
 const priorPacks = stringList(priorState.packs);
 const priorSpecialists = stringList(priorState.specialists);
-// PL-14: no --roster given → keep whatever generation is installed. The
-// manifest is the authority (it is what the guard/runtime read); the state
-// file is a fallback for a manifest that went missing. Never installed → legacy.
-if (roster === null) {
-  const priorManifestRoster = (readJsonSafe(orchestraJsonFile) || {}).roster;
-  const recorded = priorManifestRoster === 'new' || priorManifestRoster === 'legacy' ? priorManifestRoster : priorState.roster;
-  roster = recorded === 'new' ? 'new' : 'legacy';
-}
 
 // Explicit flag wins; otherwise inherit the recorded selection.
 const specialists = specialistsArg === null ? priorSpecialists : parseList(specialistsArg);
@@ -2355,30 +1657,79 @@ for (const p of packs) {
     );
   }
 }
-// A roster role file lands in .claude/agents/ alongside the core six and any
-// specialists — a colliding name would silently overwrite one (Red Team LOW,
-// 2026-09-01: reproduced with roster/scout.md clobbering agents/scout.md).
-// Same refuse-before-touch discipline as assertNoCollisions() for packs.
-function assertNoRosterCollisions() {
-  const owners = new Map();
-  for (const a of AGENTS) owners.set(a, 'the core harness');
-  for (const s of availableSpecialists()) owners.set(s + '.md', 'a specialist');
-  for (const f of rosterRoleFiles()) {
-    if (f === ROSTER_CONDUCTOR_FILE) continue; // lands outside .claude/agents/ — not a collision risk
-    const owner = owners.get(f);
-    if (owner) {
-      fail(
-        'roster role file "' + f + '" would overwrite .claude/agents/' + f + ', owned by ' +
-          owner + '. Rename it in roster/ before installing --roster new.'
-      );
+// Design Decision 8 (reverse-port 3.0 plan): a legacy-only 3.0 installer
+// cannot safely write into a 2.0 `roster: "new"` project — its ticket
+// store, gate hooks, and pinned manifest keys have no 3.0 owner. Read any
+// existing .claude/orchestra.json BEFORE writing or copying anything:
+// refuse outright on roster:new, else scrub the deprecated 2.0/model-
+// routing keys and leave every other key byte-for-byte. Runs install-only,
+// right after target path resolution and before any collision check or
+// copy — see the call site below.
+const DEPRECATED_CONFIG_KEYS = [
+  'roster',
+  'rosterGeneration',
+  'seats',
+  'projectId',
+  'installedHooks',
+  'installedStore',
+  'installedFiles',
+  'verifier',
+  'reviewEngine',
+];
+const DEPRECATED_CODEX_CONFIG_KEYS = ['execModel', 'execEffort', 'execLightModel'];
+
+function runConfigPreflight(jsonFile, runtimeDir) {
+  if (fs.existsSync(jsonFile)) {
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+    } catch (_) {
+      manifest = null; // refuseIfTargetMalformed (called earlier) already gives the canonical error for this
     }
+    if (manifest && typeof manifest === 'object' && !Array.isArray(manifest)) {
+      if (manifest.roster === 'new') {
+        console.error(
+          '3.0 cannot safely upgrade a 2.0 roster:new install in place. Check out ' +
+            'v2.5.0-final, run its installer with <project> --uninstall, then retry ' +
+            'this install.'
+        );
+        process.exit(1);
+      }
+      let changed = false;
+      for (const key of DEPRECATED_CONFIG_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(manifest, key)) {
+          delete manifest[key];
+          changed = true;
+          console.log('  * scrubbed deprecated key "' + key + '" from .claude/orchestra.json');
+        }
+      }
+      if (manifest.codex && typeof manifest.codex === 'object' && !Array.isArray(manifest.codex)) {
+        for (const key of DEPRECATED_CODEX_CONFIG_KEYS) {
+          if (Object.prototype.hasOwnProperty.call(manifest.codex, key)) {
+            delete manifest.codex[key];
+            changed = true;
+            console.log('  * scrubbed deprecated key "codex.' + key + '" from .claude/orchestra.json');
+          }
+        }
+      }
+      // Re-serialised at 2 spaces regardless of the file's prior formatting
+      // (Design Decision 8) — this scrub is a one-time migration write, not
+      // an ordinary settings merge.
+      if (changed) fs.writeFileSync(jsonFile, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+    }
+  }
+  if (fs.existsSync(runtimeDir)) {
+    console.error(
+      '  ! .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/ is orphaned 2.0 runtime state ' +
+        '(ticket store/ledger) — not touched; remove it by hand if unwanted.'
+    );
   }
 }
 
 if (!uninstall) {
+  runConfigPreflight(orchestraJsonFile, orchestraRuntimeDir);
   packs.forEach(packManifest); // validate manifests before touching anything
   assertNoCollisions(packs);
-  if (roster === 'new') assertNoRosterCollisions();
 }
 
 const vTag = VERSION ? ' v' + VERSION : '';
@@ -2396,15 +1747,6 @@ if (!uninstall) {
   for (const a of AGENTS) lintTargets.push({ file: path.join(SRC, 'agents', a), required: true });
   for (const s of specialists) {
     lintTargets.push({ file: path.join(SPECIALISTS_DIR, s + '.md'), required: true });
-  }
-  // Roster role files (WO-14b leg-3 fix round B item 8) — required when
-  // --roster new is requested, same as the core six: a silently-dropped
-  // agent is the one failure class this whole lint apparatus exists to
-  // prevent, and roster/*.md was the one path that bypassed it.
-  if (roster === 'new') {
-    for (const f of rosterRoleFiles()) {
-      lintTargets.push({ file: path.join(ROSTER_DIR, f), required: true });
-    }
   }
   for (const s of availableSkills()) lintTargets.push(...collectLintables(path.join(SKILLS_DIR, s)));
   for (const name of packs) {
@@ -2438,190 +1780,6 @@ if (!uninstall) {
     copyFileStamped(path.join(SRC, 'agents', a), path.join(agentsDir, a));
   }
   did('agents: ' + AGENTS.join(', ') + ' -> .claude/agents/');
-
-  // 1a. New roster (--roster new), ALONGSIDE the legacy six (WO-15's
-  // precondition — both stay installed). conductor.md is the session's own
-  // standing contract, not a spawnable agent, so it lands at
-  // .claude/ORCHESTRA-CONDUCTOR.md instead of .claude/agents/ (A.2).
-  // sweeper.md installs like every other role file here; it is the
-  // manifest's seats.Sweeper:false that marks it benched, not withholding
-  // the file. Nothing below runs under --roster legacy (default): the
-  // installed-file census of a legacy install is unchanged by this leg.
-  const rosterFiles = roster === 'new' ? rosterRoleFiles() : [];
-  // Every path this block writes under .claude/, relative to .claude/ itself
-  // (forward-slashed) — recorded into the manifest below as installedFiles
-  // (item 4) so --uninstall removes exactly these, and nothing it merely
-  // recognizes the NAME of.
-  const rosterInstalledFiles = [];
-  // Whether THIS run found (or just created) the ticket store — read by the
-  // 1b manifest block below to set installedStore. Stays false for a plain
-  // legacy install (rosterFiles.length === 0, bridge/ never touched).
-  let storeManaged = false;
-  if (rosterFiles.length) {
-    const installedRoleFiles = [];
-    for (const f of rosterFiles) {
-      if (f === ROSTER_CONDUCTOR_FILE) continue;
-      copyFileStamped(path.join(ROSTER_DIR, f), path.join(agentsDir, f));
-      installedRoleFiles.push(f);
-      rosterInstalledFiles.push('agents/' + f);
-    }
-    if (installedRoleFiles.length) {
-      did('roster (new): ' + installedRoleFiles.join(', ') + ' -> .claude/agents/');
-    }
-    if (rosterFiles.includes(ROSTER_CONDUCTOR_FILE)) {
-      copyFileStamped(path.join(ROSTER_DIR, ROSTER_CONDUCTOR_FILE), conductorFile);
-      rosterInstalledFiles.push(ROSTER_CONDUCTOR_DEST);
-      did('roster (new): conductor.md -> .claude/' + ROSTER_CONDUCTOR_DEST + " (the session's standing contract, not a spawnable agent)");
-    }
-    // Substrates as a runtime directory. leg 4 adds dispatch.js/close.js and
-    // the MCP wiring here; this leg only installs what exists today.
-    const installedSubstrates = [];
-    for (const sub of ROSTER_SUBSTRATE_DIRS) {
-      const subSrc = path.join(SRC, sub);
-      if (!fs.existsSync(subSrc)) continue; // defensive — all four exist in this master
-      const subDest = path.join(orchestraRuntimeDir, sub);
-      fs.rmSync(subDest, { recursive: true, force: true });
-      copyDir(subSrc, subDest);
-      installedSubstrates.push(sub);
-      for (const rel of listFilesRecursive(subDest)) {
-        rosterInstalledFiles.push(ORCHESTRA_RUNTIME_DIRNAME + '/' + sub + '/' + rel);
-      }
-    }
-    if (installedSubstrates.length) {
-      did('roster (new): substrates (' + installedSubstrates.join(', ') + ') -> .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/');
-    }
-    // bridge/ — leg 4 creates this top-level directory; today it does not
-    // exist in this master, and that absence is handled silently (no file,
-    // no warning line) — the census test pins both cases.
-    const bridgeSrc = path.join(SRC, ROSTER_BRIDGE_DIRNAME);
-    if (fs.existsSync(bridgeSrc)) {
-      const bridgeDest = path.join(orchestraRuntimeDir, ROSTER_BRIDGE_DIRNAME);
-      fs.rmSync(bridgeDest, { recursive: true, force: true });
-      copyDir(bridgeSrc, bridgeDest);
-      for (const rel of listFilesRecursive(bridgeDest)) {
-        rosterInstalledFiles.push(ORCHESTRA_RUNTIME_DIRNAME + '/' + ROSTER_BRIDGE_DIRNAME + '/' + rel);
-      }
-      did('roster (new): bridge/ -> .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/' + ROSTER_BRIDGE_DIRNAME + '/');
-
-      // Ticket store init (WO-14b leg 4 fix round CONTINUATION): the runtime
-      // never auto-creates a missing store (STORE_UNAVAILABLE, item 9) —
-      // bridge/cli.js's `init-store` is the ONLY lawful creation path, and a
-      // fresh --roster new install must call that same code path, on the
-      // just-installed copy under .claude/orchestra/, exactly once, so the
-      // first dispatch() after install has a store to write to. Idempotent:
-      // a store that already exists (a re-run of --roster new, a --repin, or
-      // a legacy-flip-then-back-to-new) is left untouched — never
-      // reinitialised, never wiped.
-      const ticketStoreFile = path.join(orchestraRuntimeDir, 'tickets', 'tickets.json');
-      const storeAlreadyExisted = fs.existsSync(ticketStoreFile);
-      if (!storeAlreadyExisted) {
-        const runtimeFile = path.join(bridgeDest, 'runtime.js');
-        try {
-          delete require.cache[require.resolve(runtimeFile)];
-          const { createRuntime } = require(runtimeFile);
-          createRuntime({ projectDir: target }).initStore();
-          did('roster (new): ticket store initialised at .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/tickets/ (bridge/cli.js init-store, first install)');
-        } catch (e) {
-          fail('failed to initialise the ticket store via the installed bridge/runtime.js: ' + (e && e.message ? e.message : String(e)));
-        }
-      }
-      // True once this run confirms a store is present, whether it was
-      // already there (re-run/--repin) or was just created above.
-      storeManaged = true;
-    }
-
-    // PL-11 (shakedown finding #4, 2026-09-01): the live ticket store, the
-    // ledger, the MCP scratch dir and the pool readings are RUNTIME STATE
-    // that mutates under a running session. Tracked, they collide with every
-    // branch switch (a builder's `git checkout -B` reverted/removed them
-    // under the helm; `git stash -u` swept the untracked store — PL-9). So
-    // the installer writes .claude/.gitignore for exactly those paths.
-    // Idempotent and additive: an existing user-authored file keeps every
-    // line it has; only the missing entries are appended. Never removed by
-    // --uninstall (a gitignore is harmless and may carry the owner's lines).
-    ensureRuntimeStateGitignore(dotClaude, target);
-  }
-
-  // 1b. Manifest (.claude/orchestra.json) roster flag — the owner-pinned
-  // value the guard's loadPolicy() and (leg 4) the runtime read (A.3). A
-  // plain legacy install with no prior "new" state touches this file NOT AT
-  // ALL, not even to create an empty one — the legacy install-file census
-  // must stay exactly what it was before this leg (A.1). Two cases write
-  // here: --roster new (create/refresh), and --roster legacy given OVER an
-  // existing new install (the rollback — a flag flip, never a reinstall or
-  // a file deletion: the new-roster files copied above are left in place).
-  {
-    const manifestExisted = fs.existsSync(orchestraJsonFile);
-    const manifest = manifestExisted ? readJson(orchestraJsonFile) : {};
-    const prevRoster = manifest.roster;
-    if (roster === 'new') {
-      const hadSeats = manifest.seats !== undefined;
-      manifest.roster = 'new';
-      if (!hadSeats) manifest.seats = Object.assign({}, DEFAULT_SEATS);
-      // Item 5 (WO-14b leg-3 fix round 2B): mint projectId once, at the
-      // first --roster new install, and preserve it on every later run —
-      // it is what lets a pin survive the project directory moving (see
-      // "Manifest pin" / --repin).
-      if (typeof manifest.projectId !== 'string' || !manifest.projectId) {
-        manifest.projectId = crypto.randomUUID();
-      }
-      const flipped = prevRoster !== 'new';
-      if (flipped) {
-        manifest.rosterGeneration =
-          typeof manifest.rosterGeneration === 'number' ? manifest.rosterGeneration + 1 : 1;
-      }
-      // installedFiles (item 4): the exact roster/runtime paths THIS run
-      // wrote, replacing whatever was tracked before — rosterRoleFiles() and
-      // the substrate copy above are recomputed from the CURRENT master on
-      // every --roster new run, so the tracked list must be too, or a file
-      // removed from a later master would linger untracked forever.
-      manifest.installedFiles = rosterInstalledFiles.slice();
-      // installedHooks (leg 4c): the four bridge gate hook events this run
-      // registers into .claude/settings.json (section 2, below) — recorded
-      // here, in the SAME manifest write, so --uninstall and a later legacy
-      // flip always know precisely what to remove without re-deriving it
-      // from the CURRENT master's event list.
-      manifest.installedHooks = GATE_HOOK_EVENTS.slice();
-      // installedStore (this fix round's "install.js -> init-store"): true
-      // whenever this run found or created a ticket store under
-      // .claude/orchestra/tickets/ (storeManaged, set above) — read by
-      // --uninstall to know it owns that directory. A legacy flip (the
-      // other branch below) leaves this key exactly as it was: the store
-      // stays on disk across a flip, same as the roster files themselves.
-      manifest.installedStore = storeManaged;
-      writeManifestAndPin(target, orchestraJsonFile, manifest);
-      did(
-        '.claude/orchestra.json: roster="new", rosterGeneration=' + manifest.rosterGeneration +
-          (flipped ? ' (bumped)' : ' (unchanged — already new)') + ', seats ' +
-          (hadSeats ? 'preserved' : 'defaulted to Architect:true, Sweeper:false') +
-          ', installedFiles tracks ' + manifest.installedFiles.length + ' path(s)' +
-          ', installedHooks tracks ' + manifest.installedHooks.join(', ') +
-          ', installedStore=' + manifest.installedStore +
-          ' (every other key preserved byte-for-byte)'
-      );
-    } else if (manifestExisted && prevRoster === 'new') {
-      manifest.roster = 'legacy';
-      manifest.rosterGeneration =
-        typeof manifest.rosterGeneration === 'number' ? manifest.rosterGeneration + 1 : 1;
-      // installedFiles is left exactly as it was: the rollback is a flag
-      // flip, never a reinstall or a deletion, so what --uninstall would
-      // remove later must not change just because the flag flipped.
-      // installedHooks IS cleared: unlike installedFiles (roster files stay
-      // on disk across a flip), the gate hook entries are actually removed
-      // from settings.json below (section 2) — the gate is inert under
-      // legacy anyway, so leaving stale entries registered would be pure
-      // clutter with no files left to reconcile them against.
-      delete manifest.installedHooks;
-      writeManifestAndPin(target, orchestraJsonFile, manifest);
-      did(
-        '.claude/orchestra.json: roster flipped to "legacy" (rosterGeneration bumped to ' +
-          manifest.rosterGeneration + ') — the new-roster files stay installed; this is a ' +
-          'rollback flag, not a reinstall'
-      );
-    }
-    // Otherwise: --roster legacy (explicit or default) with no prior "new"
-    // state — nothing touched, on purpose (A.1).
-  }
 
   for (const s of specialists) {
     copyFileStamped(path.join(SPECIALISTS_DIR, s + '.md'), path.join(agentsDir, s + '.md'));
@@ -2739,18 +1897,6 @@ if (!uninstall) {
       'Installed by the Orchestra harness (v' + VERSION + ').'
     );
   }
-  // A.2: "reference it [conductor.md] from ORCHESTRA.md". Stamped into the
-  // INSTALLED copy only (this is install.js code, not a master ORCHESTRA.md
-  // edit — the master's own §3.1 plan-file bullet is the only master-content
-  // change this leg makes to that file, per the order's FILES list), the
-  // same way the version number above is stamped rather than authored.
-  if (roster === 'new') {
-    protocol = protocol.replace(
-      '<!-- Installed by the Orchestra harness',
-      '<!-- roster:new — the session\'s standing contract is .claude/' + ROSTER_CONDUCTOR_DEST +
-        ' -->\n<!-- Installed by the Orchestra harness'
-    );
-  }
   fs.writeFileSync(orchestraMd, protocol.replace(/\r\n/g, '\n'), 'utf8');
   did('protocol -> .claude/ORCHESTRA.md' + (VERSION ? ' (v' + VERSION + ')' : ''));
 
@@ -2776,44 +1922,8 @@ if (!uninstall) {
   if (typeof settings.hooks !== 'object' || settings.hooks === null) settings.hooks = {};
   const pre = Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : [];
   const kept = pre.filter((e) => !isOurHookEntry(e));
-  kept.push(guardHookEntry(roster));
+  kept.push(guardHookEntry());
   settings.hooks.PreToolUse = kept;
-
-  // 2a. The bridge's ticket-gate hook entries (leg 4c) — registered under
-  // --roster new, tagged like the guard's own entry (isOurGateHookEntry, so
-  // a re-run replaces rather than duplicates them and a user's own entries
-  // for these four events are always left untouched), removed on a legacy
-  // flip (the gate is inert under legacy anyway — this is hygiene, not a
-  // behaviour change). A plain legacy install (never --roster new) finds
-  // nothing of ours to remove, so these event keys are left exactly as
-  // found — same guarantee as the guard's own PreToolUse entry above.
-  const gateEventsInstalled = [];
-  const gateEventsRemoved = [];
-  for (const eventName of GATE_HOOK_EVENTS) {
-    const priorList = Array.isArray(settings.hooks[eventName]) ? settings.hooks[eventName] : [];
-    const hadOurs = priorList.some((e) => isOurGateHookEntry(e));
-    const keptList = priorList.filter((e) => !isOurGateHookEntry(e));
-    if (roster === 'new') {
-      keptList.push(gateHookEntry(eventName));
-      gateEventsInstalled.push(eventName);
-    } else if (hadOurs) {
-      gateEventsRemoved.push(eventName);
-    }
-    if (keptList.length) settings.hooks[eventName] = keptList;
-    else delete settings.hooks[eventName];
-  }
-  if (gateEventsInstalled.length) {
-    did(
-      'ticket-gate hooks merged into .claude/settings.json (' + gateEventsInstalled.join(', ') +
-        ' -> node .claude/orchestra/bridge/hooks/ticket-gate.js <Event>, other settings preserved)'
-    );
-  }
-  if (gateEventsRemoved.length) {
-    did(
-      'ticket-gate hooks removed from .claude/settings.json (' + gateEventsRemoved.join(', ') +
-        ') — the gate is inert under roster:legacy; this is hygiene, not a behaviour change'
-    );
-  }
 
   const grantsManifestExisted = fs.existsSync(orchestraJsonFile);
   const grantsPriorManifest = grantsManifestExisted ? readJson(orchestraJsonFile) : {};
@@ -2891,27 +2001,6 @@ if (!uninstall) {
       (pre.length - kept.length + 1 > 1 ? 'replaced existing entry' : 'added') +
       ', other settings preserved)'
   );
-  // WO-14b leg 3R, item 7: under --roster new, hooks/orchestra-guard.js's
-  // Agent handling is fail-closed on these same four entries (it re-checks
-  // them itself, fresh, on every Agent call — see its
-  // verifyGateHooksRegistered()) — but the install itself must not exit 0
-  // having silently failed to write them (a settings.json write that lost
-  // data to a concurrent editor, a permissions.json race, or a logic bug in
-  // the merge above). Re-read what was just written and confirm the four
-  // gate entries are present with the exact command the guard expects
-  // (registration itself is the existing leg-4c code above — this verifies,
-  // it does not duplicate).
-  if (roster === 'new') {
-    const gateVerify = verifyGateHooksWritten(target);
-    if (!gateVerify.ok) {
-      fail(
-        'gate hook entries were not verified in .claude/settings.json after writing (' +
-          gateVerify.reason + '). Refusing to report a successful --roster new install with an ' +
-          'unverifiable Agent gate — re-run the installer, and if this persists, check for another ' +
-          'process editing .claude/settings.json concurrently.'
-      );
-    }
-  }
   if (grantsFile !== settingsFile) writeJson(grantsFile, grantsSettings);
   did(
     'git permissions for the executor (' +
@@ -2938,16 +2027,13 @@ if (!uninstall) {
     );
   }
 
-  // installedPermissions / installedDeny bookkeeping (A.5, sdc-012 Sonnet
-  // MINOR; items 1 and 4; reshaped to {file, entry} pairs by item 3): tracked
-  // ONLY when this install writes, or has already written, a manifest for
-  // grant purposes — --roster new, --grant-push, or a project this
-  // installer already tracks from an earlier run. A byte-for-byte legacy
-  // install (no --roster new, no --grant-push, no prior tracking) must NOT
-  // create .claude/orchestra.json at all — that is the pinned legacy census
-  // (item 1). Its --uninstall instead falls back to the pre-existing
-  // exact-string removal of the add/commit pair (documented, sdc-012 Sonnet
-  // MINOR).
+  // installedPermissions / installedDeny bookkeeping: tracked ONLY when
+  // this install writes, or has already written, a manifest for grant
+  // purposes — --grant-push, or a project this installer already tracks
+  // from an earlier run. A byte-for-byte legacy install (no --grant-push,
+  // no prior tracking) must NOT create .claude/orchestra.json at all. Its
+  // --uninstall instead falls back to the pre-existing exact-string removal
+  // of the add/commit pair.
   const newPermObjs = missingPerms.map((entry) => ({ file: grantsFileName, entry }));
   const newDenyObjs = missingDeny.map((entry) => ({ file: grantsFileName, entry }));
   const mergeUniquePermEntries = (prior, fresh) => {
@@ -2958,14 +2044,14 @@ if (!uninstall) {
     return out;
   };
   const trackingActive =
-    roster === 'new' || grantPushFlag || priorTrackedPerms.length > 0 || priorTrackedDeny.length > 0;
+    grantPushFlag || priorTrackedPerms.length > 0 || priorTrackedDeny.length > 0;
   if (trackingActive) {
     const trackedPerms = mergeUniquePermEntries(priorTrackedPerms, newPermObjs);
     const trackedDeny = grantPushFlag ? mergeUniquePermEntries(priorTrackedDeny, newDenyObjs) : priorTrackedDeny;
     const manifest = Object.assign({}, grantsPriorManifest, { installedPermissions: trackedPerms });
     if (trackedDeny.length) manifest.installedDeny = trackedDeny;
     else delete manifest.installedDeny;
-    writeManifestAndPin(target, orchestraJsonFile, manifest);
+    writeJson(orchestraJsonFile, manifest);
     did(
       '.claude/orchestra.json: installedPermissions tracks (' +
         trackedPerms.map((e) => e.file + ':' + e.entry).join(', ') + ')' +
@@ -2994,9 +2080,8 @@ if (!uninstall) {
     version: VERSION || null,
     packs: packs.slice().sort(),
     specialists: specialists.slice().sort(),
-    roster: roster,
   });
-  did('selection recorded in .claude/' + STATE_FILE + ' (re-runs keep it, roster included; change it with --packs / --specialists / --roster)');
+  did('selection recorded in .claude/' + STATE_FILE + ' (re-runs keep it; change it with --packs / --specialists)');
 
   console.log('\nDone. Notes:');
   console.log(
@@ -3141,55 +2226,14 @@ if (!uninstall) {
   // left to stand between the Director and the repo. refuseIfTargetMalformed()
   // above already refused on bad JSON before any of this runs.
 
-  // 0. Read the manifest (unless --ignore-manifest, item 7) and check the pin
-  // it wrote BEFORE trusting any of its ledgers (item 2, Red Team HIGH): the
-  // manifest is an ordinary project file, so a MISMATCH or NO-PIN state
-  // means installedPermissions/installedDeny/installedFiles could be an
-  // attacker-supplied list rather than the truth. --ignore-manifest never
-  // even reads this file.
-  //
-  // Item B2 (WO-14b leg-3 fix round 3B, Red Team re-verification #2 HIGH):
-  // the pin check used to run ONLY when the manifest file currently exists
-  // — but verifyPinStatus() already handles a manifest that is GONE (it
-  // returns MISMATCH, "no longer exists here", for a pin that still does).
-  // Gating the whole check on the manifest's existence meant a DELETED
-  // orchestra.json skipped the check entirely, left ledgerTrusted at its
-  // default `true`, and read an empty priorManifest as an installedFiles
-  // list of zero — stranding every roster:new file with a clean exit 0. The
-  // check now always runs (whenever --ignore-manifest was not passed), and
-  // the manifest's mere on-disk existence is no longer what gates it.
+  // 0. Read the manifest, if any. Its installedPermissions/installedDeny
+  // ledger is the source of truth for exactly what this installer added; a
+  // project with no manifest at all (a byte-for-byte legacy install, or one
+  // Orchestra never configured for grants) falls back to the exact-string
+  // removal below instead.
   const manifestFileExistsNow = fs.existsSync(orchestraJsonFile);
-  const manifestExistsForUninstall = !ignoreManifestFlag && manifestFileExistsNow;
-  const priorManifest = manifestExistsForUninstall ? readJson(orchestraJsonFile) : {};
-  let ledgerTrusted = true;
-  let pinFoundAnywhere = false; // item B2: a pin can prove a real prior install even with no manifest left to read
-  let pinUntrustedReport = '';
-  if (!ignoreManifestFlag) {
-    const pinStatus = verifyPinStatus(target, orchestraJsonFile);
-    ledgerTrusted = pinStatus.status === 'MATCH' || pinStatus.status === 'MOVED';
-    pinFoundAnywhere = pinStatus.status !== 'NO-PIN';
-    if (!ledgerTrusted && pinFoundAnywhere) {
-      pinUntrustedReport =
-        pinStatus.status + ' — this project\'s pin does not vouch for the .claude/orchestra.json on disk now (' +
-        (pinStatus.status === 'NO-PIN'
-          ? 'a manifest exists but no pin was ever recorded for it'
-          : 'the pin recorded ' + ((pinStatus.pin && pinStatus.pin.writtenAt) || '(unknown time)') + ' does not match, or the manifest itself is gone') +
-        '). Refusing to trust installedPermissions/installedDeny/installedFiles — falling back to ' +
-        'the untracked exact-string grant removal and canonical roster-file removal instead.';
-      console.error('  ! ' + pinUntrustedReport);
-    }
-  }
-  // The untracked/canonical fallback applies whenever the ledger cannot be
-  // trusted AND there is affirmative evidence this project was ever a real
-  // Orchestra install — a manifest currently on disk (even a malformed or
-  // substituted one), or a pin recorded for it (proof of a real prior
-  // writeManifestAndPin() call, even if the manifest itself is now gone,
-  // item B2) — or the caller passed --ignore-manifest outright (item 7). A
-  // project with NEITHER a manifest NOR a pin has no evidence it was ever
-  // Orchestra-managed, so nothing here runs the canonical-name sweep against
-  // it (Red Team MAJOR, 2026-09-01: a hand-authored file merely sharing a
-  // roster role's name must never be swept on no evidence at all).
-  const useUntrackedFallback = ignoreManifestFlag || (!ledgerTrusted && (manifestFileExistsNow || pinFoundAnywhere));
+  const priorManifest = manifestFileExistsNow ? readJson(orchestraJsonFile) : {};
+  const useUntrackedFallback = !manifestFileExistsNow;
 
   // 1. Grants — installer-tracked only (sdc-012 Sonnet MINOR; items 1/2/4;
   // reshaped to {file, entry} pairs by item 3): an identical string the USER
@@ -3204,8 +2248,8 @@ if (!uninstall) {
   const grantFiles = [settingsFile, settingsLocalFile];
 
   if (trackedPerms.length || trackedDeny.length) {
-    // Manifest-tracked install with a trusted pin: remove exactly the
-    // (file, entry) pairs tracked against EACH file, never the other one's.
+    // Manifest-tracked install: remove exactly the (file, entry) pairs
+    // tracked against EACH file, never the other one's.
     for (const gf of grantFiles) {
       if (!fs.existsSync(gf)) continue;
       const gfName = path.basename(gf);
@@ -3236,33 +2280,26 @@ if (!uninstall) {
       }
     }
   } else {
-    // Untracked fallback (item 1: a plain legacy install never wrote a
-    // manifest; item 2: a manifest exists but its pin does not vouch for
-    // it) — remove the known Orchestra-authored strings by EXACT match
-    // instead of trusting a ledger that might not be ours: the add/commit
-    // pair (matching the pre-leg-3 installer byte-for-byte) plus the push
-    // exact-match allowlist and its deny counterweight (item 2: the
-    // Red Team's stranded-push-grant reproduction — installedPermissions
-    // edited to `[]` used to leave every push allow/deny entry behind
-    // forever). Documented limitation, sdc-012 Sonnet MINOR: an identical
-    // string the user added independently to settings.json is removed too.
+    // Untracked fallback: no .claude/orchestra.json exists to read a
+    // tracked ledger from (a plain legacy install never wrote one) — remove
+    // the known Orchestra-authored strings by EXACT match instead: the
+    // add/commit pair plus the push exact-match allowlist and its deny
+    // counterweight. Documented limitation: an identical string the user
+    // added independently to settings.json is removed too.
     //
-    // settings.local.json is NEVER auto-removed from here (WO-14b leg-3 fix
-    // round 3B, review #3 MAJOR): with no trusted ledger to say which copy
-    // is Orchestra's, an identical string there is just as likely the
-    // user's own independently-added grant — settings.local.json is by
-    // convention the user's personal, usually gitignored file, unlike
-    // settings.json (Orchestra's own historical write target, matched here
-    // byte-for-byte against what the pre-leg-3 installer used to write).
-    // Any Orchestra-looking string found in settings.local.json is reported
-    // for the owner to review and remove by hand; it is never deleted
-    // automatically by this fallback.
-    // Item B4 (WO-14b leg-3 fix round 3B, Red Team re-verification #2
-    // MEDIUM): even though the rest of the manifest's ledgers are not
-    // trusted here, a readable manifest's userOwnedPermissions list (the
-    // same hand-authored escape hatch install-time stripping already
-    // honors — see GIT_PUSH_PERMISSION above) is still honored: an entry
-    // named there is never removed by this fallback, trusted ledger or not.
+    // settings.local.json is NEVER auto-removed from here: with no tracked
+    // ledger to say which copy is Orchestra's, an identical string there is
+    // just as likely the user's own independently-added grant —
+    // settings.local.json is by convention the user's personal, usually
+    // gitignored file, unlike settings.json (Orchestra's own historical
+    // write target). Any Orchestra-looking string found in
+    // settings.local.json is reported for the owner to review and remove
+    // by hand; it is never deleted automatically by this fallback.
+    //
+    // A readable manifest's userOwnedPermissions list (the same
+    // hand-authored escape hatch install-time stripping already honors —
+    // see GIT_PUSH_PERMISSION above) is still honored: an entry named
+    // there is never removed by this fallback.
     const userOwnedForFallback = stringList(priorManifest.userOwnedPermissions);
     const fallbackAllow = GIT_PERMISSIONS.concat(GIT_PUSH_SAFE_ALLOW).filter((p) => !userOwnedForFallback.includes(p));
     const fallbackDeny = GIT_PUSH_DENY_PATTERNS.filter((p) => !userOwnedForFallback.includes(p));
@@ -3289,14 +2326,9 @@ if (!uninstall) {
         if (settingsG.permissions && Object.keys(settingsG.permissions).length === 0) delete settingsG.permissions;
         writeJson(settingsFile, settingsG);
         did(
-          'removed Bash(git add:*)/Bash(git commit:*)/the push allowlist+deny by exact string match from ' +
-            '.claude/settings.json ON SUSPICION (no trusted ledger — a userOwnedPermissions entry in ' +
-            'orchestra.json, if readable, is excluded even so) — ' +
-            (ignoreManifestFlag
-              ? '--ignore-manifest, item 7'
-              : (manifestExistsForUninstall || pinFoundAnywhere)
-                ? 'pin-untrusted fallback, item 2/B2/B4'
-                : 'legacy install, untracked — sdc-012 Sonnet MINOR')
+          'removed Bash(git add:*)/Bash(git commit:*)/the push allowlist+deny by exact string ' +
+            'match from .claude/settings.json (no .claude/orchestra.json to read a tracked ledger ' +
+            'from — a userOwnedPermissions entry there, if present, is excluded even so)'
         );
       }
     }
@@ -3316,21 +2348,17 @@ if (!uninstall) {
       }
     }
   }
-  if (ledgerTrusted && fs.existsSync(orchestraJsonFile) && (priorManifest.installedPermissions !== undefined || priorManifest.installedDeny !== undefined)) {
+  if (!useUntrackedFallback && fs.existsSync(orchestraJsonFile) && (priorManifest.installedPermissions !== undefined || priorManifest.installedDeny !== undefined)) {
     const manifest = Object.assign({}, priorManifest);
     delete manifest.installedPermissions;
     delete manifest.installedDeny;
     if (JSON.stringify(manifest) !== JSON.stringify(priorManifest)) {
       writeJson(orchestraJsonFile, manifest);
-      did('cleared installedPermissions/installedDeny bookkeeping from .claude/orchestra.json (roster/seats, if set, are left in place — user/owner-pinned)');
+      did('cleared installedPermissions/installedDeny bookkeeping from .claude/orchestra.json (every other key left in place)');
     }
   }
 
-  // 2. Hook entries (settings.json PreToolUse guard + the four ticket-gate
-  // events, leg 4c) and MCP registrations. The gate entries are removed
-  // unconditionally by marker match here, exactly like the guard's own
-  // entry — never gated on manifest/pin trust: an untrustworthy manifest is
-  // still cleaned up on uninstall.
+  // 2. Hook entries (settings.json PreToolUse guard) and MCP registrations.
   if (fs.existsSync(settingsFile)) {
     const settings = readJson(settingsFile);
     let guardRemoved = false;
@@ -3342,26 +2370,10 @@ if (!uninstall) {
         guardRemoved = true;
       }
     }
-    const removedGateEvents = [];
-    for (const eventName of GATE_HOOK_EVENTS) {
-      if (!settings.hooks || !Array.isArray(settings.hooks[eventName])) continue;
-      const keptList = settings.hooks[eventName].filter((e) => !isOurGateHookEntry(e));
-      if (keptList.length !== settings.hooks[eventName].length) {
-        if (keptList.length > 0) settings.hooks[eventName] = keptList;
-        else delete settings.hooks[eventName];
-        removedGateEvents.push(eventName);
-      }
-    }
-    if (guardRemoved || removedGateEvents.length) {
+    if (guardRemoved) {
       if (settings.hooks && Object.keys(settings.hooks).length === 0) delete settings.hooks;
       writeJson(settingsFile, settings);
-      if (guardRemoved) did('removed guard entry from .claude/settings.json (other settings preserved)');
-      if (removedGateEvents.length) {
-        did(
-          'removed ticket-gate hook entries from .claude/settings.json (' + removedGateEvents.join(', ') +
-            ') (other settings preserved)'
-        );
-      }
+      did('removed guard entry from .claude/settings.json (other settings preserved)');
     }
   }
   const packAgents = [];
@@ -3412,141 +2424,6 @@ if (!uninstall) {
     }
   }
 
-  // roster:new files (role files, conductor file, runtime substrates, item
-  // 4, containment-checked per item 1) — removed strictly by the manifest's
-  // OWN record of what it installed (installedFiles), never by asking the
-  // CURRENT master what a roster:new install would contain today. A plain
-  // legacy install that never ran --roster new tracks no installedFiles, so
-  // this section removes nothing, leaving any file that happens to share a
-  // roster role name (e.g. a hand-authored .claude/agents/architect.md, or
-  // .claude/orchestra/user-data.txt) untouched (Red Team MAJOR,
-  // 2026-09-01). Directories are removed only once they are empty — never a
-  // wholesale recursive delete of .claude/orchestra/ or .claude/agents/*.
-  let removedRosterCount = 0;
-  const touchedDirs = new Set();
-  if (!useUntrackedFallback) {
-    const trackedInstalledFiles = stringList(priorManifest.installedFiles);
-    let skippedUnsafeCount = 0;
-    for (const rel of trackedInstalledFiles) {
-      // Item 1 (Red Team HIGH, 2026-09-01): installedFiles is an ordinary
-      // manifest field an attacker (a hostile cloned repo, a compromised
-      // subagent) can edit, so before deleting anything at the joined path
-      // it must be proven to still resolve inside .claude/ — a `..`
-      // sequence with no depth limit, or a Windows/POSIX absolute path,
-      // reproduced deleting files entirely outside the project. Containment
-      // is checked on the RESOLVED path, never on the raw string.
-      const resolved = path.resolve(dotClaude, rel);
-      const relToDot = path.relative(dotClaude, resolved);
-      if (!relToDot || relToDot.startsWith('..') || path.isAbsolute(relToDot)) {
-        skippedUnsafeCount++;
-        console.error('  ! SKIPPED unsafe installedFiles entry (would resolve outside .claude/, never deleted): ' + rel);
-        continue;
-      }
-      // Item B1: the string-level check above is not enough — a reparse
-      // point (junction/symlink) planted inside .claude/ can make a
-      // syntactically-contained entry resolve, on the real filesystem, to a
-      // path outside the project. Re-check containment on the REAL path.
-      const resolvedReal = realish(resolved);
-      const dotClaudeReal = realish(dotClaude);
-      const relToDotReal = path.relative(dotClaudeReal, resolvedReal);
-      if (!relToDotReal || relToDotReal.startsWith('..') || path.isAbsolute(relToDotReal)) {
-        skippedUnsafeCount++;
-        console.error('  ! SKIPPED unsafe installedFiles entry (resolves outside .claude/ via a reparse point, never deleted): ' + rel);
-        continue;
-      }
-      if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
-        fs.unlinkSync(resolved);
-        removedRosterCount++;
-        touchedDirs.add(path.dirname(resolved));
-      }
-    }
-    if (skippedUnsafeCount) {
-      did('SKIPPED ' + skippedUnsafeCount + ' unsafe installedFiles entr' + (skippedUnsafeCount === 1 ? 'y' : 'ies') + ' that would have resolved outside .claude/ — nothing outside the project was touched (item 1)');
-    }
-    if (removedRosterCount) {
-      did('removed ' + removedRosterCount + " roster:new file(s) tracked in orchestra.json's installedFiles");
-    }
-  } else {
-    // Untracked fallback (item 2: the ledger is not trusted; OR
-    // --ignore-manifest/item 7, which never reads the manifest at all — the
-    // manifest may not even be valid JSON). WO-14b leg-3 fix round 3B,
-    // review #3 MAJOR: --ignore-manifest used to satisfy neither this branch
-    // nor the trusted one above (ledgerTrusted stays true by default when
-    // the manifest was never read, but its priorManifest is `{}`, so
-    // trackedInstalledFiles was always empty) — a malformed-manifest
-    // uninstall exited 0 having removed the guard and grants but left every
-    // roster:new file (architect.md, ORCHESTRA-CONDUCTOR.md, the runtime
-    // substrates) behind. Remove only the KNOWN Orchestra roster:new item
-    // names — the eleven roster role files, ORCHESTRA-CONDUCTOR.md, and the
-    // named substrate directories — never the manifest's own (possibly
-    // attacker-supplied, or in the --ignore-manifest case simply unread)
-    // installedFiles list.
-    for (const f of rosterRoleFiles()) {
-      if (f === ROSTER_CONDUCTOR_FILE) continue;
-      const p = path.join(agentsDir, f);
-      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
-        fs.unlinkSync(p);
-        removedRosterCount++;
-        touchedDirs.add(path.dirname(p));
-      }
-    }
-    if (fs.existsSync(conductorFile) && fs.statSync(conductorFile).isFile()) {
-      fs.unlinkSync(conductorFile);
-      removedRosterCount++;
-      touchedDirs.add(path.dirname(conductorFile));
-    }
-    for (const sub of ROSTER_SUBSTRATE_DIRS.concat([ROSTER_BRIDGE_DIRNAME])) {
-      const d = path.join(orchestraRuntimeDir, sub);
-      if (fs.existsSync(d)) {
-        fs.rmSync(d, { recursive: true, force: true });
-        removedRosterCount++;
-        touchedDirs.add(orchestraRuntimeDir); // so the empty-dir prune below considers .claude/orchestra/ itself
-      }
-    }
-    if (removedRosterCount) {
-      did(
-        (ignoreManifestFlag ? '--ignore-manifest' : 'pin untrusted') + ' — removed ' + removedRosterCount +
-          ' known Orchestra roster:new item(s) by canonical name/path (the eleven roster role files, ' +
-          'ORCHESTRA-CONDUCTOR.md, the named substrate directories) instead of trusting installedFiles ' +
-          '(item 2' + (ignoreManifestFlag ? '/item 7' : '') + ')'
-      );
-    }
-  }
-
-  // Ticket store (this fix round's "install.js -> init-store"): removed
-  // whenever THIS install created/managed it (priorManifest.installedStore),
-  // or — same rationale as the untracked bridge/ removal just above — the
-  // manifest's own ledger is not trusted at all (useUntrackedFallback), in
-  // which case a store under the canonical .claude/orchestra/tickets/ path
-  // is removed by name rather than by asking the (possibly attacker-edited
-  // or unread) manifest whether it owns it.
-  {
-    const ticketStoreDir = path.join(orchestraRuntimeDir, 'tickets');
-    if ((useUntrackedFallback || priorManifest.installedStore === true) && fs.existsSync(ticketStoreDir)) {
-      fs.rmSync(ticketStoreDir, { recursive: true, force: true });
-      touchedDirs.add(orchestraRuntimeDir);
-      did('removed .claude/' + ORCHESTRA_RUNTIME_DIRNAME + '/tickets/ (ticket store' + (useUntrackedFallback ? ', untracked fallback' : ', installedStore') + ')');
-    }
-  }
-
-  const dirsToCheck = new Set();
-  for (const d of touchedDirs) {
-    let cur = d;
-    while (cur === dotClaude || (cur + path.sep).startsWith(dotClaude + path.sep)) {
-      dirsToCheck.add(cur);
-      if (cur === dotClaude) break;
-      cur = path.dirname(cur);
-    }
-  }
-  for (const d of Array.from(dirsToCheck).sort((a, b) => b.length - a.length)) {
-    if (d === dotClaude) continue;
-    try {
-      if (fs.existsSync(d) && fs.readdirSync(d).length === 0) fs.rmdirSync(d);
-    } catch (_) {
-      /* not empty, or busy — leave it */
-    }
-  }
-
   // The stamped .gitattributes is removed only when it matches OUR shape —
   // any version we've ever written, not just today's GITATTRIBUTES_CONTENT
   // (see isOurGitattributes) — so a project stamped by an older installer
@@ -3593,19 +2470,8 @@ if (!uninstall) {
     }
   }
 
-  // Pin (item 9, extended by item 5): removed on uninstall even though
-  // orchestra.json itself is left in place below — the guard is no longer
-  // installed to honor it, and a stale pin would only cause a false
-  // MISMATCH/NO-PIN/MOVED confusion later. Removes BOTH the path-keyed and
-  // id-keyed copies; the manifest's own projectId (when readable) lets the
-  // id-keyed copy be found even if the path-keyed one is already gone (a
-  // moved project that was never --repin'd).
-  const knownProjectId = manifestExistsForUninstall && typeof priorManifest.projectId === 'string' ? priorManifest.projectId : undefined;
-  const removedPin = removePin(target, knownProjectId);
-  if (removedPin) did('removed pin (' + removedPin + ')');
-
   if (fs.existsSync(orchestraJsonFile)) {
-    console.log('  ! left in place (owner-pinned): .claude/orchestra.json — delete it yourself if unwanted (roster/seats survive an uninstall on purpose)');
+    console.log('  ! left in place: .claude/orchestra.json — delete it yourself if unwanted');
   }
 
   if (actions.length === 0) console.log('  (nothing to remove — Orchestra was not installed here)');

@@ -171,20 +171,6 @@ jobs:
         # `'CLOSED'` as a close code is written nowhere else in the tree.
         run: node tests/bridge-close.test.js
 
-      - name: WO-14b leg 6 installed acceptance suite
-        # The installed vertical spine: a fresh temp repo, the REAL installer
-        # (install.js --roster new --packs codex), the REGISTERED guard/gate
-        # hook commands read out of the installed project's own
-        # .claude/settings.json and invoked exactly as written, and the
-        # INSTALLED copy of the engine MCP server spoken to over stdio.
-        # Fresh install census; an Anthropic Q0 order end to end (Verifier ->
-        # ticketed OpenAI review -> replay refusal -> audited CLOSED); a
-        # bounded OpenAI order with casting/role/vendor/expiry denials and a
-        # forged-relay-over-REVISE case that stays durably NOT_CLOSED; and a
-        # roster:legacy rollback with an open ticket, followed by flipping
-        # back. See roster/wo14b-leg6-order.md.
-        run: node tests/bridge-acceptance.test.js
-
       - name: Quartermaster suite
         # WO-11: the P0 allowance substrate — recorded readings in, the
         # router's bucket_state out. Proves it fails CLOSED on absent, stale,

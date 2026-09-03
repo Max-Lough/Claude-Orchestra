@@ -208,7 +208,10 @@ function load(baseDir) {
   requireFields('report.schema.json', ['status', 'requested_casting', 'author_family', 'co_author_families', 'served_model', 'integrity']);
   requireFields('verdict.schema.json', ['review']);
   requireFields('authorization-packet.schema.json', ['action', 'risk', 'dry_run_result', 'rollback_script', 'rollback_restore_test_result', 'invariant_comparison', 'blast_radius', 'approver', 'approved_at']);
-  requireFields('casting-record.schema.json', ['task_id', 'class', 'requested_casting', 'served_model', 'review_cross_family']);
+  // review_policy/close_mode joined the required set on 2026-09-02 (Verifier-
+  // only close): a record that omits them cannot say which review band closed
+  // it, which is precisely the ledger gap the oracle could not answer.
+  requireFields('casting-record.schema.json', ['task_id', 'class', 'requested_casting', 'served_model', 'review_cross_family', 'review_policy', 'close_mode']);
   requireFields('verdict-audit.schema.json', ['citation_replay', 'refutation_duty_present', 'cross_family', 'outcome']);
 
   const verdictSchema = schemas['verdict.schema.json'];
@@ -254,6 +257,28 @@ function load(baseDir) {
   const tiersInOrder = 'T0,T1,T2,T3';
   checkEnum('order.schema.json', (s) => (s.properties.risk || {}).enum, tiersInOrder, 'risk');
   checkEnum('casting-record.schema.json', (s) => (s.properties.risk || {}).enum, tiersInOrder, 'risk');
+
+  // The two closure-band enums are NOT registry-derived (their source of
+  // truth is router.js's reviewPolicy() and bridge/close.js's three close
+  // paths), so they are pinned literally here: a silently widened enum is a
+  // silently widened review exemption.
+  const castingRecord = schemas['casting-record.schema.json'];
+  if (castingRecord) {
+    const props = castingRecord.properties || {};
+    for (const [field, expected] of [
+      ['review_policy', 'mandatory,preferred,none'],
+      ['close_mode', 'verifier-only,reviewed,recon'],
+    ]) {
+      const values = (props[field] || {}).enum;
+      if (!values) fail('casting-record.schema.json is missing its ' + field + ' enum');
+      else if (values.join(',') !== expected) {
+        fail('casting-record.schema.json ' + field + ' enum must be exactly [' + expected + '] in that order');
+      }
+    }
+    if (castingRecord.additionalProperties !== false) {
+      fail('casting-record.schema.json must keep additionalProperties:false — an unknown field is an unaudited close');
+    }
+  }
 
   return { registry, schemas, problems };
 }

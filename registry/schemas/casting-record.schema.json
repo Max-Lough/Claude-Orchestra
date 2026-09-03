@@ -14,7 +14,9 @@
     "bucket",
     "context_shape",
     "status",
-    "review_cross_family"
+    "review_cross_family",
+    "review_policy",
+    "close_mode"
   ],
   "properties": {
     "task_id": { "type": "string", "minLength": 1 },
@@ -43,6 +45,11 @@
     "review_rounds": { "type": "integer", "minimum": 0 },
     "verdict": { "enum": ["APPROVE", "REVISE", null] },
     "review_cross_family": { "type": "boolean", "description": "dispatcher-set; a mandatory-class change closed with false is an incident, not a tripwire (§3.4)" },
+    "review_policy": { "enum": ["mandatory", "preferred", "none"], "description": "The policy the DISPATCHER computed at routing time (router.js reviewPolicy(), carried on the envelope order) — never the executor's opinion. Required so the ledger can answer 'which band was this closed under', which the 2026-09-02 oracle could not (FINDINGS 1, UNCERTAIN 'Per-ticket risk/policy')." },
+    "close_mode": { "enum": ["verifier-only", "reviewed", "recon"], "description": "How the ticket actually closed: 'verifier-only' = the §3 Verifier-only exemption (dispatcher-recorded review_policy none + Verifier PASS + deterministic_only_closure + a diff inside the 2-file/20-line ceiling), 'reviewed' = the ordinary cross-family reviewer close #2, 'recon' = the read-only Investigator close. An enum, never a free string: a typo must not read as a new exemption." },
+    "close_mode_reason": { "type": "string", "minLength": 1, "description": "Set when an exemption was ATTEMPTED and refused — names the condition that failed, so a fall-through to review is auditable rather than invisible." },
+    "diff_files": { "type": "integer", "minimum": 0, "description": "Files touched by the pinned base..head range, as measured by git diff --numstat at close. Recorded on the verifier-only path so the exemption ceiling is re-checkable from the ledger alone." },
+    "diff_lines": { "type": "integer", "minimum": 0, "description": "Changed lines (additions + deletions) across the pinned base..head range." },
     "escape": { "type": ["boolean", "null"], "description": "Set later, when a defect the review missed surfaces" },
     "human_intervention": { "type": "boolean" }
   },

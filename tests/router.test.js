@@ -139,7 +139,8 @@ section('3. Every rung yields its documented casting set (Part 2, transcribed)')
 const EXPECTED_RUNGS = {
   'Conductor': { primary: 'anthropic|Fable 5|owner-set', mirror: 'openai|GPT-5.6 Sol|matched' },
   'Architect': { primary: 'openai|GPT-5.6 Sol|xhigh', nebulous: 'anthropic|Fable 5|high–xhigh', exhaustionFallback: 'anthropic|Opus 5|high', mirror: 'anthropic|Fable 5|high–xhigh', ceilingAnthropic: 'anthropic|Fable 5|xhigh', ceilingOpenai: 'openai|GPT-5.6 Sol|max' },
-  'Investigator': { primary: 'anthropic|Opus 5|high', mirror: 'openai|GPT-5.6 Sol|high', ceiling: 'anthropic|Fable 5|high' },
+  // `bounded` = the retired Scout's N0 casting, restored by owner ruling 2026-09-02 (PL-36).
+  'Investigator': { bounded: 'anthropic|Haiku 4.5|off', primary: 'anthropic|Opus 5|high', mirror: 'openai|GPT-5.6 Sol|high', ceiling: 'anthropic|Fable 5|high' },
   'Builder': {
     preferredBounded: 'openai|GPT-5.6 Luna|xhigh–max', primary: 'anthropic|Sonnet 5|med', dense: 'anthropic|Sonnet 5|high', mirror: 'openai|GPT-5.6 Terra|med',
     denseMirror: 'openai|GPT-5.6 Terra|high', denseOverrideSol: 'openai|GPT-5.6 Sol|med', deepPrimary: 'anthropic|Opus 5|high', deepOverrideSol: 'openai|GPT-5.6 Sol|high',
@@ -335,6 +336,55 @@ check('both-family authorship: no independent family → named human only',
   (() => { const r = router.reviewer(['anthropic', 'openai'], 'T2', { policy: 'mandatory', buckets: G }); return r.closes === false && /named human/.test(r.options.join('|')); })());
 check('unattributed T1 preferred may take only the disclosed degraded path',
   (() => { const r = router.reviewer([], 'T1', { policy: 'preferred', buckets: G }); return r.degraded === true && r.review_cross_family === false && r.disclosed === true; })());
+
+// ---- 6b. review_policy `none` (2026-09-02 oracle §ALTERNATIVE) -----------
+section('6b. reviewer(): the `none` branch, and the row a policy actually selects');
+
+check('policy none at T1: closes with review "none" and NO casting — nobody is cast',
+  (() => {
+    const r = router.reviewer(['anthropic'], 'T1', { buckets: G, policy: 'none' });
+    return r.closes === true && r.review === 'none' && r.casting === null &&
+      r.reviewerFamily === null && r.review_cross_family === false &&
+      /dispatcher-recorded inert/.test(r.reason);
+  })());
+check('policy none at T0 likewise (inert is a T0/T1 affordance)',
+  (() => { const r = router.reviewer(['anthropic'], 'T0', { buckets: G, policy: 'none' }); return r.closes === true && r.review === 'none' && r.casting === null; })());
+check('policy none consults no bucket state at all — it returns before the bucket guard',
+  (() => { const r = router.reviewer(['anthropic'], 'T1', { policy: 'none' }); return r.closes === true && r.review === 'none'; })());
+check('policy none at T2 THROWS — never a soft refusal a caller could paper over',
+  (() => {
+    let threw = null;
+    try { router.reviewer(['anthropic'], 'T2', { buckets: G, policy: 'none' }); } catch (e) { threw = e; }
+    return !!threw && /never applies above T1|refusing to downgrade/.test(threw.message);
+  })());
+check('policy none at T3 THROWS too',
+  (() => {
+    let threw = null;
+    try { router.reviewer(['anthropic'], 'T3', { buckets: G, policy: 'none' }); } catch (e) { threw = e; }
+    return !!threw;
+  })());
+check('policy none on a Red review lane still returns none — there is no lane to be Red',
+  (() => { const r = router.reviewer(['anthropic'], 'T1', { buckets: buckets({ OU: 'Red' }), policy: 'none' }); return r.closes === true && r.review === 'none'; })());
+
+// The row, not the model name: the anthropic T1 and T2 rows BOTH serve
+// GPT-5.6 Sol · high while Terra is unqualified, so a model-name assertion
+// cannot tell the promoted band from the unpromoted one. rowTier can.
+check('rowTier: mandatory T1 IS promoted to the T2 row; preferred T1 is NOT',
+  router.reviewer(['anthropic'], 'T1', { buckets: G, policy: 'mandatory' }).rowTier === 'T2' &&
+  router.reviewer(['anthropic'], 'T1', { buckets: G, policy: 'preferred' }).rowTier === 'T1');
+check('rowTier: T0 normalizes onto the T1 row under preferred, and is still promoted under mandatory',
+  router.reviewer(['anthropic'], 'T0', { buckets: G, policy: 'preferred' }).rowTier === 'T1' &&
+  router.reviewer(['anthropic'], 'T0', { buckets: G, policy: 'mandatory' }).rowTier === 'T2');
+check('rowTier: T2/T3 are never promoted anywhere — the row is the tier',
+  router.reviewer(['anthropic'], 'T2', { buckets: G, policy: 'mandatory' }).rowTier === 'T2' &&
+  router.reviewer(['anthropic'], 'T3', { buckets: G, policy: 'mandatory' }).rowTier === 'T3' &&
+  router.reviewer(['anthropic'], 'T3', { buckets: G, policy: 'preferred' }).rowTier === 'T3');
+check('the promotion is what the T1 preferred/mandatory split actually buys: same served model, different row',
+  (() => {
+    const m = router.reviewer(['anthropic'], 'T1', { buckets: G, policy: 'mandatory' });
+    const p = router.reviewer(['anthropic'], 'T1', { buckets: G, policy: 'preferred' });
+    return m.casting.model === p.casting.model && m.rowTier !== p.rowTier;
+  })());
 
 // ------- 7. mandatory never closes same-family, under any bucket state at all
 section('7. No mandatory-class dispatch produces a same-family closing verdict under ANY bucket state (incl. Red/Exhausted)');
@@ -1151,7 +1201,10 @@ check('merged-class dispatch: E3 keeps its mandatory review row (class carries t
 check('merged-class dispatch: N0 routes to Investigator, mode N0, carrying the read-only pin',
   (() => {
     const d = router.dispatch(order('N0', 'T0'), G);
-    return d.ok && d.class === 'N0' && d.role === 'Investigator' && d.mode === 'N0' && d.pin === 'read-only' && d.casting.casting.model === 'Opus 5';
+    // PL-36 (owner ruling 2026-09-02): N0 runs at the Investigator's bounded
+    // Haiku rung — the retired Scout's casting — never the Opus primary.
+    return d.ok && d.class === 'N0' && d.role === 'Investigator' && d.mode === 'N0' && d.pin === 'read-only' &&
+      d.casting.rung === 'bounded' && d.casting.casting.model === 'Haiku 4.5' && d.casting.casting.effort === 'off';
   })());
 check('merged-class dispatch: N1/N2/M0 all route to Investigator with their own mode, no tier field (Investigator is not tiered)',
   ['N1', 'N2', 'M0'].every((cls) => {

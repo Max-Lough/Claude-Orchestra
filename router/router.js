@@ -219,6 +219,9 @@ function createRouter(opts) {
     if (classToRole.has(id)) fail('class ' + id + ' is both owned by a role and listed in mergedClasses');
     if (m.workflow !== undefined) continue;
     if (!m.role || !hasOwn(roles, m.role)) { fail('mergedClasses.' + id + ' targets unknown role ' + JSON.stringify(m.role)); continue; }
+    if (m.rung !== undefined && !hasOwn(roles[m.role].rungs || {}, m.rung)) {
+      fail('mergedClasses.' + id + ' names rung ' + JSON.stringify(m.rung) + ' that ' + m.role + ' does not have');
+    }
     if (m.tier !== undefined && !((roles[m.role].tiers || {})[m.tier])) {
       fail('mergedClasses.' + id + ' names tier ' + JSON.stringify(m.tier) + ' that ' + m.role + ' does not have');
     }
@@ -781,6 +784,35 @@ function createRouter(opts) {
     if (!['mandatory', 'preferred', 'none'].includes(policy)) throw new Error('unknown review policy: ' + policy);
     risk = normalizeRisk(risk);
     if (risk === null) throw new Error('unknown risk tier — refusing rather than guessing a lane');
+
+    // review_policy `none` — the dispatcher already proved this order inert
+    // at T0/T1 (reviewPolicy() above, which computes mandatory FIRST and
+    // lets `inert` speak only when nothing mandatory applies). There is no
+    // reviewer row to select, so no lane and no bucket is consulted: this
+    // returns BEFORE the bucket guard on purpose, because a policy that
+    // casts nobody cannot fabricate a Green lane.
+    //
+    // The T2/T3 floor is a THROW, not a soft refusal. `none` above T1 means
+    // the caller's policy and the caller's risk disagree, i.e. an upstream
+    // defect — and a defect that would silently delete a mandatory review is
+    // exactly the P15 silent-relaxation failure. A returned
+    // DOES_NOT_CLOSE/notClosed here would be retryable and could be papered
+    // over by a caller; an exception cannot.
+    if (policy === 'none') {
+      if (risk === 'T2' || risk === 'T3') {
+        throw new Error('review policy `none` at ' + risk + ' — inert never applies above T1; refusing to downgrade a mandatory review');
+      }
+      return {
+        closes: true,
+        review: 'none',
+        casting: null,
+        reviewerFamily: null,
+        review_cross_family: false,
+        rowTier: null,
+        reason: 'review_policy none (dispatcher-recorded inert T0/T1)',
+      };
+    }
+
     // Bucket state is required, not defaulted: `|| allGreen()` on the
     // exported API was the last fabricated-Green fail-open (WO-14 re-review
     // NIT, ruling C). A caller that measured Green passes allGreen() itself.
@@ -839,6 +871,14 @@ function createRouter(opts) {
     // Opus 5 · high, even at nominal T1); the qualified-Terra/Sonnet T1 rows
     // serve the preferred band only.
     const effRisk = risk === 'T0' ? 'T1' : risk;
+    // The T1→T2 promotion keys on the POLICY, not the tier: only a
+    // mandatory-class T1 takes the frontier row. A `preferred` T1 stays on
+    // the T1 row it was computed for — until 2026-09-02 close #1 passed no
+    // policy at all, so every close defaulted to mandatory and promoted here
+    // (the oracle's FINDINGS 1). `rowTier` is returned so callers and tests
+    // can assert the ROW rather than the model name — today the T1 and T2
+    // anthropic rows both serve GPT-5.6 Sol · high, so the served model
+    // alone cannot tell the two bands apart.
     const rowTier = policy === 'mandatory' && effRisk === 'T1' ? 'T2' : effRisk;
     let row, secondOpinion = null;
     if (modelFams.length === 0) {
@@ -865,7 +905,7 @@ function createRouter(opts) {
       }
       return degradedPath(modelFams[0] || null, o, nb, 'reviewer lane at ' + laneState + '; preferred band may take the disclosed degraded path');
     }
-    const out = guard(casting, secondOpinion ? { secondOpinion } : null);
+    const out = guard(casting, Object.assign({ rowTier }, secondOpinion ? { secondOpinion } : null));
     return out;
   }
 
@@ -1100,6 +1140,12 @@ function createRouter(opts) {
       ? null
       : cast(roleName, buckets, Object.assign(
           { risk: order.risk, purpose: o.purpose || 'authoring', tier: order.tier || mergedDefaultTier },
+          // PL-36 (owner ruling 2026-09-02): a merged class may pin its own
+          // rung on the target role — N0 lookups run at the Investigator's
+          // `bounded` Haiku rung, not the Opus primary. An explicit caller
+          // castOpts.rung still wins (the alias path's forced rung, an
+          // owner override); the ladder/reserve gates below apply unchanged.
+          merge && merge.rung ? { rung: merge.rung } : {},
           o.castOpts,
           {
             securitySensitive,

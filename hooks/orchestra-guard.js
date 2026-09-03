@@ -25,10 +25,13 @@
  *     containment/hardlink/marker protections, unchanged), an optional
  *     TIGHTENING-ONLY directorBlockedPatterns key, the explicit out-of-band
  *     user pause, and the separately registered ticket gate for Agent. The
- *     three LOOSENING keys (directorAllowedTools, directorPlanPatterns,
- *     directorMemoryPatterns) are ignored outright under roster:new — a
- *     warning names them in the denial reason — no manifest field can loosen
- *     roster:new policy, trusted-looking or not.
+ *     TOOL-loosening key (directorAllowedTools) is ignored outright under
+ *     roster:new — a warning names it in the denial reason — no manifest
+ *     field can unblock a tool for the Director, trusted-looking or not.
+ *     The two PATH keys (directorPlanPatterns, directorMemoryPatterns) are
+ *     honoured in both rosters (owner ruling 2026-09-02): they only widen
+ *     which markdown files count as plan/memory files, under the same
+ *     containment, .md, hardlink and managed-block protections.
  *   - The guard NEVER requires/executes project code. There is no seam that
  *     delegates to `.claude/orchestra/bridge/runtime.js` any more. Under
  *     roster:new, an Agent PreToolUse is handled by verifying the four gate
@@ -159,11 +162,13 @@
  *     unconditionally (it can only add restrictions). A REJECTED entry fails
  *     the whole guard CLOSED for every tool in BLOCKED until fixed or
  *     removed — see denyBlockedPatternsInvalid().
- *   directorAllowedTools / directorPlanPatterns / directorMemoryPatterns:
- *     LOOSENING keys. Honoured under LEGACY only, directly from the
- *     manifest (no pin/trust gate any more — the manifest was never a
- *     security boundary against same-user code, and roster:new does not
- *     honour them at all regardless of manifest state).
+ *   directorAllowedTools: TOOL-loosening key. Honoured under LEGACY only,
+ *     directly from the manifest (no pin/trust gate any more — the manifest
+ *     was never a security boundary against same-user code); roster:new
+ *     ignores it regardless of manifest state.
+ *   directorPlanPatterns / directorMemoryPatterns: PATH keys, honoured in
+ *     BOTH rosters. They add markdown locations to the built-in plan/memory
+ *     carve-outs; a match still passes every protection above.
  *
  * ---------------------------------------------------------------- pin note
  *
@@ -348,7 +353,7 @@ function withNote(msg, policy) {
   if (policy && policy.ignoredLoosening && policy.ignoredLoosening.length) {
     out +=
       ' [.claude/' + CONFIG_BASENAME + ' sets ' + policy.ignoredLoosening.join(', ') +
-      ', but roster:new ignores every loosening key regardless of manifest or pin state]';
+      ', but roster:new ignores the tool-loosening key regardless of manifest or pin state]';
   }
   return out;
 }
@@ -887,16 +892,25 @@ function loadPolicy(roster) {
       out.planPatterns = cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [];
       out.memoryPatterns = cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [];
     } else {
-      // roster:new: static policy. The three loosening keys are ignored
-      // outright, no matter what the manifest or pin say — name any that
-      // were present so the denial can warn about it.
+      // roster:new: static TOOL policy. directorAllowedTools is ignored
+      // outright, no matter what the manifest or pin say — named so the
+      // denial can warn about it. The two PATH keys (directorPlanPatterns /
+      // directorMemoryPatterns) are honoured exactly as under legacy
+      // (owner ruling 2026-09-02, shakedown: a project's status/plan file
+      // outside .claude/plans/ is Director thinking, and routing every edit
+      // of it through a builder ticket is cost without gain). They widen
+      // only WHICH markdown files count as plans/memory; every containment,
+      // .md, hardlink and managed-block protection still applies to a match.
       const ignored = [];
-      if (cfg) {
-        if (cfg.directorAllowedTools !== undefined) ignored.push('directorAllowedTools');
-        if (cfg.directorPlanPatterns !== undefined) ignored.push('directorPlanPatterns');
-        if (cfg.directorMemoryPatterns !== undefined) ignored.push('directorMemoryPatterns');
-      }
+      if (cfg && cfg.directorAllowedTools !== undefined) ignored.push('directorAllowedTools');
       out.ignoredLoosening = ignored;
+      const rawPlanPatterns =
+        cfg && Array.isArray(cfg.directorPlanPatterns) && cfg.directorPlanPatterns.length <= MAX_PATTERN_ARRAY_LEN
+          ? arrOfStrings(cfg.directorPlanPatterns)
+          : [];
+      out.planPatternsRaw = rawPlanPatterns;
+      out.planPatterns = cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [];
+      out.memoryPatterns = cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [];
     }
 
     out.pinNote = pinTamperNote(real, cfg, manifestBytes);
@@ -1221,8 +1235,8 @@ function pauseFileStatus(root) {
 
 // Plan-file carve-out (ORCHESTRA.md §4 PLAN): the Director may author plan
 // files itself — markdown inside <project>/.claude/plans/ by default, plus
-// (legacy only — see loadPolicy()) any project-relative path matching
-// directorPlanPatterns. Containment is checked on the REAL (symlink-
+// any project-relative path matching directorPlanPatterns (both rosters —
+// see loadPolicy()). Containment is checked on the REAL (symlink-
 // resolved) path so a pre-existing symlink/junction inside the plans dir
 // cannot escape the project, and BOTH routes require a .md extension on the
 // resolved path. A match that resolves to a link-unsafe target
@@ -1259,9 +1273,9 @@ function classifyPlanOperation(toolName, toolInput, planPatterns) {
   const inPlansDir =
     relToPlans !== '' && !relToPlans.startsWith('..') && !path.isAbsolute(relToPlans);
 
-  // Project-configured plan locations (legacy only — planPatterns is always
-  // [] under roster:new; see loadPolicy()). Globs over the forward-slash
-  // REAL project-relative path — same containment guarantee as above.
+  // Project-configured plan locations (directorPlanPatterns, both rosters —
+  // see loadPolicy()). Globs over the forward-slash REAL project-relative
+  // path — same containment guarantee as above.
   const posixRel = realRelToProject.split(path.sep).join('/');
   const matchesPattern = matchesAny(planPatterns, posixRel);
 

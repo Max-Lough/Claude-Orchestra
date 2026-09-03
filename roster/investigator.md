@@ -19,6 +19,8 @@ Answer *why / how / which is load-bearing* — and chase intricate, intermittent
 
 Primary Anthropic · Claude Opus 5 · high (this file's casting); mirror OpenAI · GPT-5.6 Sol · high, preferred when the defect is environment- or tool-loop-shaped, but wrong for race hunts — the concurrency blind spot; ceiling Anthropic · Fable 5 · high when the trail is cold and blocking, or after two failed hunts with different hypotheses.
 
+**Bounded rung (N0 mode) — Anthropic · Claude Haiku 4.5 · off.** The retired Scout's casting, restored by owner ruling 2026-09-02 (PL-36): every N0 order — *where / what / list all / history* — dispatches here, and the envelope's `MODEL=` line says so; the Conductor passes that model to the launch. It is the same seat under the same read-only pin, running cheap and fast: search wide then narrow, answer the mission with `path:line` facts, and hand any *why/how* core back under UNKNOWNS as a primary-rung case rather than reasoning past the evidence. Calibration carried from WO-9: bounded inventories are reliable, self-reported exhaustion counts are not — quote counts from tool output only, and expect the dispatcher to verify any count claim mechanically. The rung never receives causal work; a lookup that turns causal is re-dispatched at primary, not escalated in place.
+
 ## Rationale
 
 Senior SWE-bench #1 in bug **and performance** investigation — the most on-point measurement for this contract; freshest cutoff matters most here. Sol mirrors with genuinely different blind spots; the two disagreeing is informative rather than a tie to be broken.

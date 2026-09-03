@@ -9,6 +9,65 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 2.5.0 — punch-list closures: engine model ids, Director-editable status files, a bounded Investigator rung, and two ORCHESTRA.md follow-ups
+
+Four independent fixes landed together as one version bump.
+
+`packs/codex/hooks/orchestra-engine-mcp.js` gained `codexModelId()`: under a ticket,
+`orchestra_exec` had been forwarding the roster casting's display name (`GPT-5.6
+Terra`) verbatim as `--model`, which Codex answers with an entitlement-shaped 400
+("The 'GPT-5.6 Terra' model is not supported when using Codex with a ChatGPT
+account"); the function now maps display names to runtime ids before the flag is
+built. Regression check: `tests/mcp-lane.test.js` case 10b (PL-18).
+
+`hooks/orchestra-guard.js` now honours the two PATH keys `directorPlanPatterns` and
+`directorMemoryPatterns` under `roster:new` — only `directorAllowedTools` (a TOOL
+key) stays ignored — so a project can name a status/plan file outside
+`.claude/plans/` (e.g. `docs/current_status.md`) as Director-editable without
+routing every edit through a builder ticket. Covered by `tests/guard.test.js` case
+14(b′); README wording updated (PL-38).
+
+Investigator gained a `bounded` rung (Anthropic · Haiku 4.5 · off) in
+`router/castings.json`; the `mergedClasses.N0` entry and the `scout` alias now route
+to it instead of the Opus·high primary casting, restoring a cheap path for
+where/what/list lookups. `router/router.js` passes a merged class's `rung` into
+`cast()` and validates it; `roster/investigator.md` documents the N0-mode contract;
+`registry/classes.json`'s N0 casting text and `tests/router.test.js` were updated
+(PL-36).
+
+`ORCHESTRA.md` §3.4 gained the roster:new batching sentence (all independent
+dispatches in one message, then all their `Agent` launches in the next), and §1
+MODE B gained a note that Opus/Sonnet cannot read Fable 5.1 thinking blocks, so a
+MODE A→B switch belongs in a fresh session (PL-37, items 2 and 3; item 1, an
+effort re-sweep on Fable-cast rungs, remains open pending a measured exercise).
+
+Also new, not yet installed anywhere: `tools/orchestra-ledger-report.js`, a
+read-only ledger roll-up — per-ticket durations, token usage drawn from subagent
+transcripts with an API-price equivalent, pool-reading draw, and anomalies.
+
+`bridge/close.js` close #1 now honours the review policy the dispatcher already
+computed. `router/router.js` has always returned `mandatory`/`preferred`/`none`
+and dispatch has always recorded it on the envelope, but close #1 called
+`reviewer()` with no `policy` at all — so the default won, every T1 was promoted
+to the T2 frontier row, and a cross-family reviewer was minted for *every*
+implementation, including no-change and verification-only work (a 2026-09-02
+oracle measured reviewers at ~35% of recorded active time with 5 of 17 reviewer
+tickets ever reaching `CLOSED`). The policy is now passed through; `reviewer()`
+gained a `none` branch that casts nobody (and *throws* at T2/T3 rather than
+silently downgrading a mandatory review) plus a `rowTier` field so the selected
+row is assertable — the T1 and T2 anthropic rows both serve GPT-5.6 Sol · high,
+so the model name alone could not tell the bands apart. On a dispatcher-recorded
+`none`, close #1 closes on the Verifier alone — but only after re-proving
+`PASS`, `deterministic_only_closure`, and a `git diff --numstat` range of at
+most 2 files / 20 lines from its own evidence; anything short of that falls
+through to the ordinary reviewed path with `close_mode_reason` naming the
+condition that refused it. `registry/schemas/casting-record.schema.json` gained
+required `review_policy` and `close_mode` (plus optional `close_mode_reason`,
+`diff_files`, `diff_lines`), keeping `additionalProperties:false`, so the ledger
+can finally answer which review band closed a ticket — the question the oracle
+could not. Covered by `tests/router.test.js` §6b, `tests/bridge-close.test.js`
+§11, and five new `tests/registry.test.js` tamper cases.
+
 ## 2.4.1 — WO-12 pre-trial work closed under an oracle-authored bound; 12f withdrawn
 
 What prompted this release is a postmortem, not a finding. Rounds 4–8 of the

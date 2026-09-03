@@ -192,6 +192,36 @@ section('3. Tampering is caught — the invariant can actually fail');
     'finding 4: ticket.schema.json class enum drifting from the registry fails closed',
     tamper((r, s) => { s['ticket.schema.json'].properties.class.enum.push('Z9'); }).some((p) => /ticket\.schema\.json.*class.*diverges from the registry/.test(p))
   );
+  // 2026-09-02 (Verifier-only close): the casting record now has to say which
+  // review band closed the ticket. Each of these is a way that guarantee
+  // could be quietly removed.
+  check(
+    'casting-record dropping review_policy from required is caught',
+    tamper((r, s) => {
+      s['casting-record.schema.json'].required = s['casting-record.schema.json'].required.filter((f) => f !== 'review_policy');
+    }).some((p) => /must require review_policy/.test(p))
+  );
+  check(
+    'casting-record dropping close_mode from required is caught',
+    tamper((r, s) => {
+      s['casting-record.schema.json'].required = s['casting-record.schema.json'].required.filter((f) => f !== 'close_mode');
+    }).some((p) => /must require close_mode/.test(p))
+  );
+  check(
+    'a WIDENED close_mode enum is caught — a new close mode is a new review exemption',
+    tamper((r, s) => { s['casting-record.schema.json'].properties.close_mode.enum.push('trust-me'); })
+      .some((p) => /close_mode enum must be exactly/.test(p))
+  );
+  check(
+    'a widened review_policy enum is caught',
+    tamper((r, s) => { s['casting-record.schema.json'].properties.review_policy.enum.push('skip'); })
+      .some((p) => /review_policy enum must be exactly/.test(p))
+  );
+  check(
+    'casting-record losing additionalProperties:false is caught',
+    tamper((r, s) => { s['casting-record.schema.json'].additionalProperties = true; })
+      .some((p) => /additionalProperties:false/.test(p))
+  );
 }
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');

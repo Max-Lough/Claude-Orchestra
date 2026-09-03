@@ -388,6 +388,38 @@ function extractReportedModel(text) {
   return m ? m[1].trim() : null;
 }
 
+// A ticket's casting carries the ROSTER display name ("GPT-5.6 Terra");
+// the Codex CLI wants the model id ("gpt-5.6-terra"). Shakedown 2026-09-02
+// (PL-18 root cause, corrected): forwarding the display name verbatim as
+// `--model` made Codex answer 400 "The 'GPT-5.6 Terra' model is not supported
+// when using Codex with a ChatGPT account" — an entitlement-shaped message
+// for what was a name-shape defect. Anything already id-shaped passes through
+// unchanged; unknown display names fall back to lower-case with spaces
+// hyphenated, which is the id convention for every OpenAI casting on the ladder.
+const CODEX_MODEL_IDS = {
+  'gpt-5.6 sol': 'gpt-5.6-sol',
+  'gpt-5.6 terra': 'gpt-5.6-terra',
+  'gpt-5.6 luna': 'gpt-5.6-luna',
+};
+function codexModelId(name) {
+  const s = String(name || '').trim();
+  if (!s) return null;
+  if (!/\s/.test(s)) return s;
+  const key = s.toLowerCase();
+  return CODEX_MODEL_IDS[key] || key.replace(/\s+/g, '-');
+}
+// Same shape defect for EFFORT (shakedown 2026-09-02, Tug of War A2): the
+// roster ladder spells the middle rung `med` (router/castings.json
+// effortLadders.openai), Codex's model_reasoning_effort accepts only
+// `medium`, so every Terra · med casting died at preflight. Everything else
+// on the ladder (none/low/high/xhigh/max) is already Codex's own spelling.
+const CODEX_EFFORTS = { med: 'medium' };
+function codexEffort(level) {
+  const s = String(level || '').trim().toLowerCase();
+  if (!s) return null;
+  return CODEX_EFFORTS[s] || s;
+}
+
 /* ------------------------------------------------- in-flight run registry -- */
 
 // JSON-RPC request id -> the run it started. Populated at spawn, cleared in the
@@ -968,8 +1000,8 @@ const TOOLS = [
       // never supplied, falls through to here. Legacy/unticketed calls
       // (gated.skip) have no ticket to source from, so the caller's own
       // values (if any) are used exactly as before.
-      const effectiveModel = gated.consumed ? (gated.consumed.casting && gated.consumed.casting.model) || null : callerModel;
-      const effectiveEffort = gated.consumed ? (gated.consumed.casting && gated.consumed.casting.effort) || null : callerEffort;
+      const effectiveModel = codexModelId(gated.consumed ? (gated.consumed.casting && gated.consumed.casting.model) || null : callerModel);
+      const effectiveEffort = codexEffort(gated.consumed ? (gated.consumed.casting && gated.consumed.casting.effort) || null : callerEffort);
 
       const dir = makeRunDir('exec');
       const args = ['--work-order', writeInput(dir, 'work-order.txt', workOrder)];
@@ -1035,7 +1067,7 @@ const TOOLS = [
           args.push(flag, p);
         }
       }
-      if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', a.effort);
+      if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', codexEffort(a.effort));
       if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       runRunner(id, 'crossplan', args, progressToken);

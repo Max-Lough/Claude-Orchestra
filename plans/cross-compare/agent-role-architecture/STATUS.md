@@ -859,20 +859,59 @@ proposed, not scheduled. The lab is now fully ported and can be deleted.
   model passes, both blind scorings, boundary redraws #2 and #3, the cross-vendor review
   record (`pr27-cross-vendor-review.md`), and the WO-7a-quater corpus plus blind scoring.
 
+## OWNER RULING 2026-09-02 (evening) — Orchestra 2.0 is on its last chance
+
+**Read this before the quick start.** The owner's assessment after the 2026-09-02 live Tug of War
+run in PiratePartyPals: Orchestra 2.0 "has created many more issues than it has solved and the
+legacy harness (1.0) is looking better and better by the minute."
+
+**The ruling:**
+
+1. The current live test and its revision attempts are Orchestra 2.0's last chance of success.
+2. **The next revision attempt is the last one.** It goes ahead only if the live evidence shows a
+   massive improvement in performance. Anything short of that ends 2.0 as a harness.
+3. If 2.0 fails that bar, the few advantages it has are pulled out and **ported back to 1.0**
+   (the legacy harness). No further 2.0 revisions after that.
+
+**What "performance" is judged on** (the ledger report is the instrument —
+`node tools/orchestra-ledger-report.js "E:/Godot Projects/PiratePartyPals" --since <ISO>`):
+tickets that reach CLOSED with a casting record on the first close call; served model matching the
+cast model (no `served_model_mismatch` rows); reviewer verdicts parsed and evidence-backed rather
+than UNPARSED / REVIEW_UNAVAILABLE; wall-clock and pool draw per delivered change versus what 1.0
+spends on the same kind of order. Evidence from 2026-09-02 13:00Z–21:09Z for the record: 66 tickets
+since midnight, 14 reviewer tickets with 43% UNPARSED, 3 bounded-Investigator tickets served by Opus
+instead of Haiku, 64 anomaly rows (most: RESOLVED-but-never-CLOSED builders).
+
+**Oracle verdict (Sol·max, same evening):** `plans/port-3.0/harness-value-oracle-2026-09-02.md` — PARTIAL at the
+component level, **NO for 2.0 as a whole; no-go for another architecture revision.** Keep the legacy
+loop; port only the cross-vendor exec/review runners, the Verifier as an explicit `verify` command,
+passive telemetry + ledger report, and a small install receipt; delete the ticket gate, Router,
+class registry, close protocol and Quartermaster. Its "one last test" is allowed only frozen, against
+a measured legacy control, with hard thresholds (§ WHAT 2.0 SUCCESS WOULD REQUIRE) and a stopping rule.
+
+**How to apply:** no speculative features, no new review→fix cycles, no harness reinvention. Every
+change between now and the decision must be traceable to a ledger anomaly it removes. When the
+decision comes, the candidate list of "advantages worth porting to 1.0" starts with: the ticket
+ledger + casting records + `orchestra-ledger-report.js` telemetry, the config-hash pin, and the
+cross-family reviewer lane. Extends the 2026-09-01 close-out mandate (KISS/YAGNI/DRY, telemetry is
+the only important aspect).
+
 ## Fresh-session quick start (as of 2026-09-02 15:06Z — WO-14b SHAKEDOWN, order #6 final delta REVIEWED, both PRs mergeable, harness FREEZE next)
 
-**START HERE.** Order #6 is done end to end: the owner eye-checked the bar, the constants commit was redone
-in-harness at 1dc965b3 (builder CLOSED with casting record; cross-family Codex review APPROVE, verdict audit
-PASS 6/6). Target PR #400 (feat/health-bar-below-hull @ 1dc965b3 → main) is MERGEABLE, not merged. Master
-PR #32 is MERGEABLE, CI 4/4 green. Environment: Steam closed → Godot exits normally (PL-30 resolved); the
-Codex lane is repaired (PL-33; pre-flight: the three runner paths hash `f0cbcc339587…`). **Owner sequence:**
-(1) merge target PR #400, delete `backup/health-bar-367f87ad`; (2) merge master PR #32; (3) **FREEZE the
-harness** and run ten real orders, counting: orders reaching CLOSED without a harness edit, verdict audits
-that caught something the reviewer missed, helm prompt corrections (PL-25/31/35 kind), Godot orphans, and
-recurrences of the checkout-reverts-harness class (PL-9/11/15/17). Pre-committed rule: one recurrence of
-that class → do the gate-reads-the-pin-copy fix; zero → YAGNI. Still unproven: PL-22 — the next Codex
-review that allows gdUnit must be dispatched with NO `forbid: ["godot"]` (PL-35). Rows PL-31..35 are
-guidance only. Full rows: last two lines of `roster/wo14b-activation-bridge-progress.md`.
+**START HERE (2026-09-02).** (1) Master PR #32 is **merged**. PR #33 (`claude/v2.5.0-shakedown-fixes`)
+is open with six commits — merge it. (2) PiratePartyPals already runs the same bytes: the harness has
+been reinstalled into the project after every commit on PR #33, config hash unchanged throughout; live
+Tug of War tests are in progress there. (3) How to read the live tests: `node
+tools/orchestra-ledger-report.js "E:/Godot Projects/PiratePartyPals" --since <ISO>` (durations, usage,
+anomalies, REVIEW VERDICTS) and record pool readings with `node quartermaster/quartermaster.js --file
+<project>/.claude/orchestra-pool-readings.jsonl --record <bucket> <fraction> --source "..."`. (4) Open
+items, in priority order: helm must close every resolved builder ticket (unclosed = no casting record);
+PL-40 degraded-path dead-end (only if the OU bucket goes Red); PL-39 batching pilot (decide after 20–30
+close-outs under the new policy wiring); PL-37 item 1 effort re-sweep (needs a measured Architect
+exercise); Codex engine token usage not captured (OU draw only visible via pool readings). (5) Reinstall
+rule: stop the project session first, or accept that its MCP server holds old engine/close code until
+restart; never hand-edit the manifest while a ticket is LAUNCHED, and any manifest edit needs an
+immediate `node install.js <project>` to re-pin.
 
 ## Previous quick start (as of 2026-09-02 01:40Z — WO-14b SHAKEDOWN, order #6 **CLOSED first call, owner present**)
 

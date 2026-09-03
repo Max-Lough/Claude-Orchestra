@@ -30,6 +30,14 @@ casting, influenced_outcome, absorbing_rule}`); this core always emits
 (cheapest tier, ensemble votes, WO-6+) cannot omit them, and so an
 assisted outcome can never satisfy a deterministic-only closure.
 
+Since 2026-09-02 that flag is load-bearing rather than advisory: it is one of
+the conditions `bridge/close.js` close #1 requires before closing a ticket on
+the Verifier alone, with no reviewer cast (alongside the dispatcher's own
+`review_policy: none` and a pinned-range diff inside a 2-file/20-line
+ceiling). `COVERAGE_GAP` therefore keeps its existing meaning exactly —
+everything ran green but the declared oracle is incomplete, so force model
+review — and can never satisfy the exemption.
+
 ## Why the checkout is writable
 
 Half the mandatory checks write: builds populate caches, test runners write

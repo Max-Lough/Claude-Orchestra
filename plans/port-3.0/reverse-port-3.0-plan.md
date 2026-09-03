@@ -536,3 +536,21 @@ Current measured active surfaces are: `ORCHESTRA.md` 126 lines (`ORCHESTRA.md:1-
 | **net repository delta** | — | **approximately −31,000 to −34,000 lines** |
 
 Plan for **six repository executor rounds** after the live baseline (WO-1 as two commits, WO-2 through WO-5), plus **one live-project proving round** (WO-6). WO-3 is pure deletion. WO-1, WO-2, and WO-4 change behavior and may be batched into one Sol review only if they remain one cohesive reverse-port campaign with exact commit ranges; WO-5 is the mandatory final campaign review gate. Practical expectation: six Sonnet/Opus executor rounds, two Sol review passes (behavior batch plus release/docs gate), and one PiratePartyPals proving campaign. No review→fix cycle is pre-planned; a REVISE creates a bounded repair order or triggers a stopping rule.
+
+## CAMPAIGN REVIEW AND FOLLOW-UPS (Fable, 2026-09-02 late)
+
+Sol (gpt-5.6-sol, pinned worktree @ df4346d) reviewed main..port/3.0-legacy: **REVISE**, 6 MAJOR + 1 MINOR + 1 NIT. All eight suites confirmed by the reviewer. Disposition:
+
+| Finding | Disposition |
+|---|---|
+| MCP backstop still uses the 600000 ms review default | FIXED in the fix round |
+| Guard denies on a corrupt transcript without identifying Fable/Opus | FIXED — corrupt transcript now fails open |
+| ORCHESTRA.md let a speed request skip the campaign review | FIXED — "a user request for speed changes the batch, never the gate" |
+| INTAKE `orchestra_doctor` could mutate the Codex install (helper restore) | FIXED — doctor is read-only unless `repair=true`; runner gains `--no-repair` |
+| `agents/reviewer.md` description advertised per-change Opus review | FIXED |
+| README "byte-for-byte" wording; permission-grant claim | FIXED to match the code |
+| Uninstall removes a pre-existing user grant identical to an installer grant | **FOLLOW-UP F1** — reproduced identically on v2.5.0-final; pre-existing legacy behaviour, not a port regression |
+| Uninstall deletes a user-authored `.claude/agents/reviewer.md` in a never-installed project (deletion by name, no ownership evidence) | **FOLLOW-UP F2** — reproduced identically on v2.5.0-final; pre-existing legacy behaviour |
+
+**Follow-ups after merge, each its own small order:** F1 protect pre-existing identical grants (record what the installer *added* vs found); F2 uninstall removes only files carrying the installer's managed marker or listed in `orchestra-install.json`; F3 (from the Opus review) a `SubagentStop` telemetry hook if the plan ledger proves insufficient after a week; F4 the guard's second-pass reduction toward ~400 lines; F5 delete the stale pre-2.0 leftovers in PiratePartyPals (`orchestra-deepplan.js`, `orchestra-ultraplan.js`, `deep-plan`, `clean-slate`) on owner say-so.
+

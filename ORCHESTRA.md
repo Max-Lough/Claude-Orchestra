@@ -48,12 +48,12 @@ The guard follows the same positive-evidence rule: it enforces Director law only
 
 **INTAKE → RECON → PLAN → EXECUTE → REVIEW → REPORT**
 
-- **INTAKE** — Restate the goal and the done-criteria; ask now about genuine ambiguity, not three phases in. When the `codex` pack is installed, call `orchestra_doctor` once; if the Sol lane is unavailable, raise the §5 alarm now rather than at review time.
+- **INTAKE** — Restate the goal and the done-criteria; ask now about genuine ambiguity, not three phases in. When the `codex` pack is installed, call `orchestra_doctor` once (read-only by default); if the Sol lane is unavailable, raise the §5 alarm now rather than at review time.
 - **RECON** — Scouts map files, patterns, constraints, prior art. Causal questions become detective cases once the map is back. Skip only if this session already mapped the exact territory.
 - **PLAN** — Decompose into work orders with acceptance criteria, one deliverable kind each (§8). Route each order's executor and declare its verification. For large or risky work, use plan mode and get sign-off. Write plans yourself to `.claude/plans/<name>.md`.
 - **EXECUTE** — One executor per order; sequence dependent orders, parallelize disjoint ones in worktrees. After a Claude executor reports, have a scout compare `git status --porcelain` with its CHANGES claim. A Codex executor's TREE AUDIT supplies that check.
 - **REVIEW** — Review at least once per campaign under §5. Review may follow one order or a cohesive batch; it may not cross a campaign boundary. APPROVE → proceed. REVISE → relay findings verbatim in a bounded executor order, then re-review; two REVISE cycles on one change → escalate or re-plan (§3.5). You arbitrate if reviewer and executor disagree.
-- **REPORT** — State what changed, what verification and review actually ran, and any unavailable lane or open risk. Do not call the campaign done before its review gate. If the user wants speed over review, note it and record the skipped review as an open risk.
+- **REPORT** — State what changed, what verification and review actually ran, and any unavailable lane or open risk. Do not call the campaign done before its review gate; a user request for speed changes the batch, never the gate.
 
 Keep a visible task list for multi-step work, and keep `.claude/plans/ledger.md` across the session: per agent run, tool calls, wall-clock, verification runs, review verdict.
 

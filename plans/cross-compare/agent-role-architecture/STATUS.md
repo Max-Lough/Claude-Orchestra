@@ -882,7 +882,7 @@ spends on the same kind of order. Evidence from 2026-09-02 13:00Z–21:09Z for t
 since midnight, 14 reviewer tickets with 43% UNPARSED, 3 bounded-Investigator tickets served by Opus
 instead of Haiku, 64 anomaly rows (most: RESOLVED-but-never-CLOSED builders).
 
-**Oracle verdict (Sol·max, same evening):** `roster/harness-value-oracle-2026-09-02.md` — PARTIAL at the
+**Oracle verdict (Sol·max, same evening):** `plans/port-3.0/harness-value-oracle-2026-09-02.md` — PARTIAL at the
 component level, **NO for 2.0 as a whole; no-go for another architecture revision.** Keep the legacy
 loop; port only the cross-vendor exec/review runners, the Verifier as an explicit `verify` command,
 passive telemetry + ledger report, and a small install receipt; delete the ticket gate, Router,

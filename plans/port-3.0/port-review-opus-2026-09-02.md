@@ -1,6 +1,6 @@
 # Port review — independent (Opus 5, max effort), 2026-09-02
 
-Scope: judge the Sol oracle's KEEP/PORT/DELETE table (`roster/harness-value-oracle-2026-09-02.md:37-51`),
+Scope: judge the Sol oracle's KEEP/PORT/DELETE table (`plans/port-3.0/harness-value-oracle-2026-09-02.md:37-51`),
 design the minimum viable port against the owner's five requirements, and say what it costs.
 Read-only review; the only file written is this one.
 
@@ -347,7 +347,7 @@ capability makes redundant.
 classifies *dynamically*: any `.md` in `roster/` that is not `README.md`/`EXERCISES.md` and does not
 match the record-doc regex at `install.js:102` is treated as an installable agent profile. That
 classifier is running right now and would install **thirteen** files, because
-`roster/harness-value-oracle-2026-09-02.md` does not match the regex — it is a genuine (if benign)
+`plans/port-3.0/harness-value-oracle-2026-09-02.md` does not match the regex — it is a genuine (if benign)
 latent bug, and this report's own filename has the same shape.
 
 So the delete must also remove: `rosterRoleFiles()` and its constants (`install.js:92-119`), the

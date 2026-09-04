@@ -9,7 +9,7 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
-## 3.0.2 — docs-only work stops paying for the cross-family lane
+## 3.0.2 — docs-only work skips the cross-family lane, and five review-lane field fixes
 
 **The failure.** Review routing keyed on the author's vendor alone, so a
 prose-only commit — a README rewording, a CHANGELOG entry, a stale comment —
@@ -34,6 +34,68 @@ omits its fallback banner because this review is the design, not a degradation.
 markdown, but they are the harness's behavior: an edit there changes what
 agents do, so it routes by author vendor like code. Same for anything that
 touches config, dependencies, or data. When unsure, it is not docs-only.
+
+**Five field failures from one campaign day (2026-09-03), fixed in the
+cross-vendor lanes.**
+
+- **A prohibition the order only wrote is now binding.** Four reviews timed out
+  running a suite their order had told them not to run. The order said it in
+  prose, and prose reaches the engine only inside the `WORK ORDER` block —
+  which the brief frames as the AUTHOR's intent, not as instructions to the
+  reviewer, so the reviewer read "do not run the full ci.sh" as a fact about
+  someone else's task and obeyed RULE 1 instead. The brief now carries a
+  standing rule that a restriction written into the work order binds the
+  reviewer with the same force as a `--forbid` flag, overrides RULE 1, and is
+  reported as `UNVERIFIED (prohibited: …)`. The flags remain the precise
+  mechanism: `reviewer-codex` is now told to lift prohibitions out of the
+  order's prose — wherever they appear, including inside the pasted work order
+  — into `no_tests`/`forbid`, and the header states `prohibited commands: N`
+  **always**, including `0`, so a prohibition that never became a flag is
+  visible in the report instead of being discovered in the burnt clock. Same
+  always-on count in the exec header.
+
+- **A project setting that did not land says so.** `codex.reviewTimeoutMs` was
+  always read (flag > env > `orchestra.json` > default), but the read was a
+  silent `try/catch`: an unparseable file and a key written at the top level
+  instead of under `"codex"` both looked exactly like "no config at all", and
+  the review then spent a default-length clock with nothing in the report to
+  explain why. Both now leave a `PREFLIGHT` note naming the file and what was
+  ignored, in the exec runner as well as the review runner. The header already stated the cap and its source (`(default)` vs
+  `(orchestra.json)`); that line plus the note is now enough to diagnose it
+  from the verdict alone.
+
+- **Concurrent reviews of one repository no longer sabotage each other.** Two
+  Sol reviews pinned worktrees off the same repository; the second spent its
+  whole budget on `fatal: not a git repository: .../.git/worktrees/<name>` from
+  every git command and timed out. A linked worktree keeps its metadata in the
+  SHARED repository, and `git worktree prune` deletes the entry of any worktree
+  whose directory it cannot see — so one review's teardown, sweep, or a user's
+  own tidy-up unhooks a live checkout, and a directory that is merely
+  unreadable for a moment (a sandbox ACL, a slow mount) counts as "cannot see".
+  The runner now LOCKS its pinned worktree for the life of the review, which is
+  exactly what prune is documented to skip. Because a lock survives its owner,
+  the reason names the owning pid and the startup sweep releases the locks
+  whose process is gone; a lock the harness did not take is never released.
+
+- **A Codex sandbox-helper failure is diagnosed instead of guessed at.** One
+  run logged `Failed to create unified exec process: helper_unknown_error:
+  apply deny-read ACLs`, after which the engine could not find lines in files
+  it had just read. The classifier called that "codex chose to exit"
+  (non-retryable) and offered a list of causes it had not tested. Both runners
+  now recognise the failure, name it as an INSTALL fault rather than a fault in
+  the work, point at `--doctor` and the Windows helper siblings, and — in the
+  review lane — retry it, because a fresh sandbox setup often succeeds. Only
+  phrases that ARE the failure are matched; the helper filenames deliberately
+  are not, so a change that merely talks about them is never misdiagnosed.
+
+- **A killed attempt keeps the findings it had already written.** A timed-out
+  review had already streamed a real defect — the fallback reviewer later
+  reproduced the same one from scratch — and the runner kept a ten-line tail
+  and discarded the rest. Failed attempts now carry up to 80 lines / 6000
+  characters of what the engine actually said, under a `PARTIAL ENGINE OUTPUT —
+  NOT A VERDICT` heading that says what it is: a LEAD for the fallback reviewer
+  to confirm or discard, never a result this lane produced. The `VERDICT:` line
+  is untouched — a partial is never promoted to a verdict.
 
 ## 3.0.1 — coexistence with Codex-Orchestra, and a review cap that stops eating whole reviews
 

@@ -12,6 +12,8 @@
  * Behaviour knobs (env):
  *   STUB_CODEX_SLEEP_MS   busy-wait this long before writing anything (used to
  *                         kill the runner mid-review).
+ *   STUB_CODEX_PARTIAL    text streamed to stdout BEFORE that sleep — an engine
+ *                         that had already said something when it was killed.
  *   STUB_CODEX_EXIT       exit with this status instead of 0.
  *   STUB_CODEX_TOUCH      relative path(s) to create inside --cd, comma-split
  *                         (integrity test).
@@ -105,6 +107,15 @@ if (/ORCHESTRA_PROBE_OK/.test(brief)) {
   process.exit(0);
 }
 
+// Text streamed BEFORE the sleep: a real engine narrates as it works, so an
+// attempt the runner kills mid-review has already emitted whatever it had
+// concluded so far. Without this the stub's timeouts produce an empty stream,
+// which is the one shape that cannot test what the runner does with partial
+// work.
+if (process.env.STUB_CODEX_PARTIAL) {
+  process.stdout.write(process.env.STUB_CODEX_PARTIAL.replace(/\\n/g, '\n') + '\n');
+}
+
 const sleepMs = parseInt(process.env.STUB_CODEX_SLEEP_MS || '', 10);
 if (Number.isFinite(sleepMs) && sleepMs > 0) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleepMs);
@@ -189,7 +200,12 @@ const userName = git(['config', 'user.name']);
 
 // Which known brief sections reached the engine — checkable without dumping
 // the whole brief into the report.
-const briefMarkers = ['PROHIBITED COMMANDS', 'VERIFICATION MANIFEST', 'WORK ORDER']
+const briefMarkers = [
+  'PROHIBITED COMMANDS',
+  'A RESTRICTION WRITTEN INTO THE WORK ORDER IS BINDING ON YOU TOO',
+  'VERIFICATION MANIFEST',
+  'WORK ORDER',
+]
   .filter((m) => brief.includes(m));
 
 // The exec runner's brief names a per-run token the report must echo on a

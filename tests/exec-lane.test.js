@@ -551,6 +551,30 @@ function case11() {
     /VERIFICATION MANIFEST/.test(field(m.stdout || '', 'BRIEF_MARKERS')),
     'BRIEF_MARKERS: ' + field(m.stdout || '', 'BRIEF_MARKERS')
   );
+  // Zero is a number the Director needs: an order whose prose forbade
+  // something, dispatched with no flag, reads as "prohibited commands: 0" here
+  // rather than as silence.
+  check(
+    'the count is stated even when nothing is prohibited',
+    /prohibited commands: 0/.test((m.stdout || '').split('\n')[0]),
+    (m.stdout || '').split('\n')[0]
+  );
+
+  // A codex key written one level too high is inert. It used to be inert AND
+  // invisible, which is how a project "sets" a timeout and keeps getting the
+  // default.
+  const fx3 = makeRepo();
+  fs.mkdirSync(path.join(fx3.repo, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(fx3.repo, '.claude', 'orchestra.json'),
+    JSON.stringify({ execTimeoutMs: 1800000, codex: {} }, null, 2)
+  );
+  const mis = runExec(fx3, []).stdout || '';
+  check(
+    'a misplaced codex key is named as ignored in the header',
+    /execTimeoutMs/.test(mis) && /TOP LEVEL/.test(mis),
+    mis.split('\n').slice(0, 10).join('\n')
+  );
 }
 
 function case12() {

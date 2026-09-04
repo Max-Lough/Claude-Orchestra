@@ -75,6 +75,12 @@ cross-family requirement and goes to `reviewer` either way. If the Sol lane
 is unavailable, the runner reports `REVIEW_UNAVAILABLE` and the Director falls
 back to Opus review with a loud cross-family-unavailable alarm.
 
+Reviews of the same repository can run concurrently: each pins its own
+throwaway worktree and LOCKS it, so no other review's teardown — or a user's
+own `git worktree prune` — can unhook a live checkout. A run killed hard
+leaves its lock behind by design; the next run releases it, because the lock
+reason names the owning process.
+
 **Execution** (`executor-codex-heavy`): same Codex CLI + auth as review. This
 is the exceptional-order executor only — a Director routing decision made at
 PLAN time for a problem with concrete prior evidence that Anthropic models

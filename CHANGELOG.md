@@ -9,6 +9,32 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.0.2 — docs-only work stops paying for the cross-family lane
+
+**The failure.** Review routing keyed on the author's vendor alone, so a
+prose-only commit — a README rewording, a CHANGELOG entry, a stale comment —
+bought the same full Sol review as a subsystem change: a cross-vendor
+sub-process, a tree checkout, an exploration pass that does not shrink with the
+diff, and up to the 45-minute cap. Worse, when the Sol lane was down that
+commit raised `⚠ CROSS-FAMILY REVIEW UNAVAILABLE` and got a "fallback" banner
+on its verdict, reporting a degraded gate for work whose gate was never at
+risk. Cross-family review exists to de-correlate *error modes in behavior*; a
+diff that changes no behavior has none to de-correlate.
+
+**The rule (§5).** A campaign whose whole diff is prose — README, CHANGELOG,
+comments, user docs, plans, with no code, config, dependency, or
+agent/skill/protocol instruction file touched — routes to the fresh-context
+Opus `reviewer`. The gate is untouched: every campaign is still reviewed
+(§3.2), the inert verification tier is still a claim the reviewer proves from
+the diff first (§8.4), and the reviewer verifies the docs-only claim the same
+way before accepting it. Only the lane relaxes — no alarm, and `reviewer`
+omits its fallback banner because this review is the design, not a degradation.
+
+**Where the carve-out stops.** `ORCHESTRA.md`, agent files, and skill files are
+markdown, but they are the harness's behavior: an edit there changes what
+agents do, so it routes by author vendor like code. Same for anything that
+touches config, dependencies, or data. When unsure, it is not docs-only.
+
 ## 3.0.1 — coexistence with Codex-Orchestra, and a review cap that stops eating whole reviews
 
 **Dual-install safety.** Codex-Orchestra now exists as a second harness, and the two are installed into the same project often enough that the boundary has to be enforced rather than assumed. A Codex child launched by the review, execution, or cross-compare runner would otherwise read the target project's `AGENTS.md` and fire its `.codex` hooks — meaning a co-installed Codex-Orchestra could recast a worker as its own Director and start a campaign inside a review. All three runners now set an external-worker `ORCHESTRA_ROLE` (`reviewer-codex-external`, `executor-codex-external`, `planner-codex-external`) and pin `features.hooks=false` with `project_doc_max_bytes=0` **after** any user-supplied extra args, on the auth probe as well as the real call. Ordering is the whole mechanism: Codex resolves repeated `-c` flags last-wins, so an override placed before `ORCHESTRA_REVIEW_ARGS` could be undone by it. Verified against codex 0.151.0 — with an `AGENTS.md` sentinel, `codex debug prompt-input` carries it at baseline, drops it under `project_doc_max_bytes=0`, still drops it under the runners' hostile-then-isolation ordering, and restores it when the order is reversed. The owned surfaces are disjoint by construction: Codex-Orchestra's installer hard-refuses any managed path under `.claude/` and never touches `CLAUDE.md` or `.mcp.json`; the protocol files are `.claude/ORCHESTRA.md` and `.codex/ORCHESTRA.md`. `ORCHESTRA_PAUSE=1` pauses both by design; the pause files stay harness-specific.

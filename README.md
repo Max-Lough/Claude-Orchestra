@@ -116,7 +116,7 @@ Recon has two deliberately-routed tiers: `scout` (Haiku) for cheap *where/what* 
 
 The `codex` pack (`--packs codex`) is the harness's optional cross-vendor surface — everything that talks to OpenAI, in one bundle:
 
-- **`reviewer-codex` (Sol) is the default reviewer for Claude-authored campaign work.** Codex-authored work goes to the fresh-context Opus `reviewer` instead, so author and reviewer always sit on different vendors — there is no `reviewEngine` switch to configure.
+- **`reviewer-codex` (Sol) is the default reviewer for Claude-authored campaign work.** Codex-authored work goes to the fresh-context Opus `reviewer` instead, so author and reviewer always sit on different vendors — there is no `reviewEngine` switch to configure. Docs-only work is the exception — a prose-only diff routes to `reviewer` either way (see below).
 - **`executor-codex-heavy` (Sol, high effort) is the one Codex executor, and it's exceptional-only** — a Director routing decision made at PLAN time for a problem with concrete prior evidence that Anthropic models struggled on it, never routine work. The Claude executors remain the default path for everything else.
 - **`/cross-compare-plan`** runs a two-architect planning session — a fresh-context Claude architect and the GPT lane (Sol, high effort, read-only) draft independently from one shared brief, cross-critique, revise, and a blind Opus synthesizer merges the strongest final plan, with a default post-synthesis cross-family audit. See [`packs/codex/skills/cross-compare-plan/SKILL.md`](packs/codex/skills/cross-compare-plan/SKILL.md).
 
@@ -135,6 +135,8 @@ It resolves the real `codex` binary, names the install layout, verifies the help
 A **campaign** is one contiguous user goal from INTAKE through its final REPORT — it may span several related executor orders or commits, and ends before any handoff, merge, release, deploy, or switch to an unrelated goal. Every campaign must receive **at least one** independent review; the Director may batch related completed goals into one cross-family review, but must run it before the earliest campaign-ending event. A batch is one cohesive diff, names every included goal, and uses exact base/head refs when committed — commit before review, pass `head_ref` by default, never review a moving tree.
 
 Routing follows the author's vendor: Claude-authored work goes to `reviewer-codex` (Sol) when the `codex` pack is installed; Codex-authored work goes to the fresh-context Opus `reviewer`. A reviewer returns `APPROVE`, `REVISE`, or `REVIEW_UNAVAILABLE` and never fixes the change itself.
+
+**Docs-only campaigns don't need the cross-family lane.** When the whole diff is prose — README, CHANGELOG, comments, user docs, plans — and touches no code, config, dependency, or agent/skill/protocol instruction file, the review goes to the fresh-context Opus `reviewer`. The gate is unchanged: every campaign is still reviewed, and the reviewer verifies the docs-only claim from the diff before accepting it. Only the lane relaxes, so an unavailable Sol lane raises no alarm for that campaign and the verdict carries no fallback banner. Agent, skill, and `ORCHESTRA.md` edits are behavior changes, not docs — they route by author vendor like code.
 
 **If the pack isn't installed**, the Director says so once in the final REPORT and uses `reviewer` — no alarm, this is the expected shape for a Claude-only install. **If the Sol lane is installed but can't run for any reason**, the Director shows this line immediately, not just at review time:
 

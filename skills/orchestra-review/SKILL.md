@@ -1,6 +1,6 @@
 ---
 name: orchestra-review
-description: Run an Orchestra-grade adversarial review of existing changes on demand — the working tree, staged changes, a branch, or a commit range. Routes a Claude-authored change to reviewer-codex (Sol) when the codex pack is installed, else to the fresh-context Opus reviewer; a Codex-authored change always goes to reviewer. Shows the §5 alarm on any Sol failure. Use when the user asks to review changes or a diff, wants a second opinion before merging, or when work reached the session without going through the harness's EXECUTE→REVIEW loop.
+description: Run an Orchestra-grade adversarial review of existing changes on demand — the working tree, staged changes, a branch, or a commit range. Routes a Claude-authored change to reviewer-codex (Sol) when the codex pack is installed, else to the fresh-context Opus reviewer; a Codex-authored change, and any docs-only change, always goes to reviewer. Shows the §5 alarm on any Sol failure. Use when the user asks to review changes or a diff, wants a second opinion before merging, or when work reached the session without going through the harness's EXECUTE→REVIEW loop.
 ---
 
 # Orchestra review (on demand)
@@ -10,7 +10,7 @@ Give arbitrary existing changes the same adversarial review the loop gives its o
 ## Procedure
 
 1. **Fix the scope, then commit it.** Default: all uncommitted changes (staged + unstaged). The user may instead name a branch (review `<base>...<head>`), a commit range, or specific paths. Dispatch one scout for: `git status`, `git diff --stat` over the chosen scope, the merge-base if a branch was named, and the commit messages in scope — those messages are the claimed intent when no author report exists. Commit the change under review before dispatching, and pass `head_ref` (and `base_ref`) by default so the reviewer reads a pinned checkout, not a moving tree.
-2. **Pick the engine (§5).** Claude-authored change → `reviewer-codex` (Sol) when the `codex` pack is installed, else `reviewer`. Codex-authored change → `reviewer` — author and reviewer stay cross-family either way. An in-conversation user instruction overrides this for the session. If `reviewer-codex` returns `REVIEW_UNAVAILABLE`, show ORCHESTRA.md §5's alarm line verbatim, then run `reviewer` in fresh context.
+2. **Pick the engine (§5).** Claude-authored change → `reviewer-codex` (Sol) when the `codex` pack is installed, else `reviewer`. Codex-authored change → `reviewer` — author and reviewer stay cross-family either way. Docs-only change (prose only — no code, config, dependency, or agent/skill/protocol instruction file) → `reviewer` whatever the author's vendor: the cross-family requirement doesn't apply and a missing Sol lane is no alarm. An in-conversation user instruction overrides this for the session. If `reviewer-codex` returns `REVIEW_UNAVAILABLE`, show ORCHESTRA.md §5's alarm line verbatim, then run `reviewer` in fresh context.
 3. **Author the review order** — self-contained (§3), containing:
    - **INTENT** — what the change claims to do, from the user's description and/or the commit messages. If neither exists, say so: intent unknown; review for coherence, correctness, and unexplained changes.
    - **SCOPE** — `head_ref`/`base_ref`, or the exact diff command(s) if uncommitted, plus in-scope paths.

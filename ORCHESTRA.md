@@ -74,6 +74,8 @@ Every campaign must receive at least one independent review. The Director may ba
 
 For Claude-authored work, `reviewer-codex` (Sol) is the default. For Codex-authored work, use the fresh-context Opus `reviewer`. A reviewer returns APPROVE, REVISE, or REVIEW_UNAVAILABLE and never fixes the change. A `reviewer-codex` report is one outcome however many attempts it took; its `FINALITY` line means no later verdict is coming. An `⚠ INTEGRITY WARNING` in its verdict means the reviewer touched non-artifact paths: treat the tree as suspect until a scout confirms only the intended change remains.
 
+**Docs-only work needs no cross-family lane.** When the whole diff is prose — README, CHANGELOG, comments, user docs, plans — and touches no code, config, dependency, or agent/skill/protocol instruction file, route the review to the fresh-context `reviewer`. The gate is unchanged: the campaign is still reviewed (§3.2) and the reviewer verifies the docs-only claim from the diff before accepting it. Only the lane relaxes — an unavailable Sol lane is no alarm here, and the verdict carries no fallback banner. Agent, skill, and `ORCHESTRA.md` edits are behavior, not docs: they route by author vendor like code.
+
 If the pack is not installed, say so once in the REPORT and use `reviewer`; no alarm. If the Sol lane is installed but cannot run for any reason, immediately show this user-visible line:
 
 ⚠ CROSS-FAMILY REVIEW UNAVAILABLE — Sol did not review this campaign: `<reason>`. Falling back to fresh-context Anthropic review; work continues.

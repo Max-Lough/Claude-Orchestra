@@ -41,6 +41,7 @@ const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { boundedDiagnostic } = require('./orchestra-redact');
 
 /* ---------------------------------------------------------------- roots -- */
 
@@ -63,8 +64,6 @@ const ROOT = resolveRoot();
 const HOOKS_DIR = process.env.ORCHESTRA_MCP_HOOKS_DIR
   ? path.resolve(process.env.ORCHESTRA_MCP_HOOKS_DIR)
   : __dirname;
-const SCRATCH_BASE = path.join(ROOT, '.claude', 'scratch', 'mcp');
-
 const RUNNERS = {
   review: path.join(HOOKS_DIR, 'orchestra-review.js'),
   exec: path.join(HOOKS_DIR, 'orchestra-exec.js'),
@@ -120,25 +119,17 @@ function backstopMs(lane, capMs) {
 
 /* ------------------------------------------------------------- scratch -- */
 
-let runSeq = 0;
 function makeRunDir(lane) {
-  const id = `${lane}-${process.pid}-${Date.now().toString(36)}-${++runSeq}`;
-  const dir = path.join(SCRATCH_BASE, id);
-  fs.mkdirSync(dir, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `orchestra-engine-${lane}-`));
+  if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
   return dir;
 }
 
-function sweepStaleRunDirs() {
-  // Best-effort: clear run dirs older than 7 days left by hard kills.
+function removeRunDir(dir) {
+  if (!dir) return;
   try {
-    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
-    for (const name of fs.readdirSync(SCRATCH_BASE)) {
-      const p = path.join(SCRATCH_BASE, name);
-      try {
-        if (fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { recursive: true, force: true });
-      } catch (_) { /* ignore */ }
-    }
-  } catch (_) { /* ignore */ }
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (_) { /* best effort after the runner has closed */ }
 }
 
 /* ------------------------------------------------------------ transport -- */
@@ -153,7 +144,8 @@ function textResult(id, text, isError) {
 // attributes no cause it did not measure, and names no engine. Returns the
 // composed text (not just sends it) so every caller builds it exactly once.
 function composeTransportText(lines) {
-  return ['MCP TRANSPORT ERROR (orchestra-engine server, not the engine):', ...lines].join('\n');
+  const safe = lines.map((line) => boundedDiagnostic(line, 16000));
+  return ['MCP TRANSPORT ERROR (orchestra-engine server, not the engine):', ...safe].join('\n');
 }
 
 function transportError(id, lines) {
@@ -240,7 +232,6 @@ function lookupRun(requestId) {
   return hit;
 }
 
-const KILL_GRACE_MS = 3000;        // POSIX SIGTERM -> SIGKILL escalation window
 const TASKKILL_TIMEOUT_MS = 5000;  // taskkill answers in milliseconds or not at all
 
 // Kill the runner AND everything it spawned. The runners drive the Codex CLI
@@ -251,12 +242,14 @@ const TASKKILL_TIMEOUT_MS = 5000;  // taskkill answers in milliseconds or not at
 // signal handler there could never fire.
 //   Windows: taskkill /T walks the OS process tree.
 //   POSIX:   the runner leads its own process group (spawn detached), so the
-//            group is signalled as one, SIGTERM then SIGKILL.
+//            group is terminated as one with SIGKILL.
 // Always records what it actually did in run.killOutcome / run.treeConfirmed:
 // the transport reports the outcome it measured, never a kill it assumed.
-// `immediate` is for teardown, where no timer can fire and there is nothing to
-// be polite about.
-function killTree(run, immediate) {
+// A delayed escalation cannot safely target a numeric process-group id after
+// the original group exits: the kernel may reuse it for an unrelated process.
+// Cancellation and the backstop are already terminal conditions, so they use
+// one immediate group kill instead of leaving a stale timer armed.
+function killTree(run) {
   const child = run && run.child;
   if (!child || !child.pid) return;
   if (child.exitCode !== null || child.signalCode !== null) {
@@ -302,31 +295,11 @@ function killTree(run, immediate) {
     }
   };
 
-  if (immediate) {
-    const ok = signalGroup('SIGKILL');
-    run.treeConfirmed = ok;
-    run.killOutcome = ok
-      ? `SIGKILL to process group ${pid}`
-      : `the process group could not be signalled; only the direct runner process was`;
-    return;
-  }
-
-  const grouped = signalGroup('SIGTERM');
-  run.treeConfirmed = grouped;
-  run.killOutcome = grouped
-    ? `SIGTERM to process group ${pid}, SIGKILL escalation armed (${KILL_GRACE_MS}ms)`
-    : `the process group could not be signalled; only the direct runner process was — a descendant engine may survive`;
-
-  // The escalation is armed once and is NEVER cleared — not by the runner's own
-  // 'close', not by anything. The runner dies on SIGTERM within milliseconds; a
-  // descendant that ignores or slow-handles SIGTERM outlives it, so clearing
-  // this timer when the runner closes would disarm the sweep in precisely the
-  // case it exists for. It is unref'd, so an armed sweep never holds the server
-  // open, and signalling a group with no members is a harmless ESRCH.
-  if (!run.killTimer) {
-    run.killTimer = setTimeout(() => signalGroup('SIGKILL'), KILL_GRACE_MS);
-    if (typeof run.killTimer.unref === 'function') run.killTimer.unref();
-  }
+  const ok = signalGroup('SIGKILL');
+  run.treeConfirmed = ok;
+  run.killOutcome = ok
+    ? `SIGKILL to process group ${pid}`
+    : `the process group could not be signalled; only the direct runner process was`;
 }
 
 // A client asked to cancel a request. If it is still in flight, kill its whole
@@ -349,7 +322,7 @@ function cancelRun(requestId, reason) {
 // escalation nothing would ever run.
 function drainInFlight() {
   for (const run of IN_FLIGHT.values()) {
-    try { killTree(run, true); } catch (_) { /* best effort; we are leaving */ }
+    try { killTree(run); } catch (_) { /* best effort; we are leaving */ }
   }
   IN_FLIGHT.clear();
 }
@@ -368,7 +341,7 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
 
 const OUTPUT_CAP = 4 * 1024 * 1024; // per stream; a runner report is a few KB
 
-function runRunner(id, lane, args, progressToken, extraEnv) {
+function runRunner(id, lane, args, progressToken, extraEnv, runDir) {
   const runner = RUNNERS[lane === 'doctor' ? 'review' : lane];
   if (!fs.existsSync(runner)) {
     transportError(id, [
@@ -376,6 +349,7 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
       `hooks dir: ${HOOKS_DIR}`,
       'The codex pack may not be installed in this project (node install.js <project> --packs codex).',
     ]);
+    removeRunDir(runDir);
     return;
   }
 
@@ -397,10 +371,11 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
     });
   } catch (e) {
     transportError(id, [`the runner process could not be spawned: ${e.message}`]);
+    removeRunDir(runDir);
     return;
   }
 
-  const run = { child, cancelled: false, cancelReason: '', killTimer: null, killOutcome: '', treeConfirmed: false };
+  const run = { child, cancelled: false, cancelReason: '', killOutcome: '', treeConfirmed: false };
   if (id !== undefined && id !== null) IN_FLIGHT.set(id, run); // rememberId happens at dispatch, not here
 
   let out = '', err = '', outTruncated = false, errTruncated = false;
@@ -447,20 +422,19 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
     // A cancellation already owns this request's answer. Staying silent here
     // keeps ONE response on one JSON-RPC id, and lets the 'close' handler
     // deliver the accurate one instead of a misleading "failed to launch"
-    // ahead of it. run.killTimer is deliberately NOT cleared — see killTree.
+    // ahead of it.
     if (run.cancelled) return;
     transportError(id, [`the runner process failed to launch or crashed at the OS level: ${e.message}`]);
   });
 
   child.on('close', (code, signal) => {
     clearTimeout(backstopTimer); if (progressTimer) clearInterval(progressTimer);
-    // Registry cleanup lives HERE and only here: node emits 'close' after
-    // 'error' in every case, including a spawn that failed at the OS level, so
-    // this always runs. run.killTimer is deliberately left armed (see killTree)
-    // — the SIGKILL sweep must outlive the runner it was armed for.
+    // Registry and private-input cleanup live HERE: node emits 'close' after
+    // 'error' in every case, including a spawn that failed at the OS level.
     if (id !== undefined && id !== null) IN_FLIGHT.delete(id);
+    removeRunDir(runDir);
     const elapsed = Date.now() - started;
-    const tail = (s, n) => (s.length > n ? '…' + s.slice(-n) : s);
+    const tail = (s, n) => boundedDiagnostic(s, n, Math.max(16384, n * 4));
     const unconfirmed = 'WARNING: this server could NOT confirm the whole process tree died. A descendant ' +
       'engine process may still be running — and in the exec lane, still editing the tree. Look for a stray ' +
       'engine process before starting another run.';
@@ -501,7 +475,9 @@ function runRunner(id, lane, args, progressToken, extraEnv) {
 
     if (lane === 'doctor') {
       // --doctor is the one runner mode whose exit code is meaningful.
-      const text = `DOCTOR EXIT CODE: ${code}\n` + out + (err ? `\n[doctor stderr]\n${err}` : '');
+      const safeOut = boundedDiagnostic(out, 16000);
+      const safeErr = boundedDiagnostic(err, 8000);
+      const text = `DOCTOR EXIT CODE: ${code}\n` + safeOut + (safeErr ? `\n[doctor stderr]\n${safeErr}` : '');
       textResult(id, text, code !== 0);
       return;
     }
@@ -549,7 +525,8 @@ function requireString(a, name) {
 
 function writeInput(dir, name, content) {
   const p = path.join(dir, name);
-  fs.writeFileSync(p, content, 'utf8');
+  fs.writeFileSync(p, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  if (process.platform !== 'win32') fs.chmodSync(p, 0o600);
   return p;
 }
 
@@ -590,14 +567,20 @@ const TOOLS = [
         workOrder = requireString(a, 'work_order');
         executorReport = requireString(a, 'executor_report');
       } catch (e) {
-        textResult(id, String(e && e.message ? e.message : e), true);
+        textResult(id, boundedDiagnostic(e && e.message ? e.message : e, 2000), true);
         return;
       }
       const dir = makeRunDir('review');
-      const args = [
-        '--work-order', writeInput(dir, 'work-order.txt', workOrder),
-        '--executor-report', writeInput(dir, 'executor-report.txt', executorReport),
-      ];
+      let args;
+      try {
+        args = [
+          '--work-order', writeInput(dir, 'work-order.txt', workOrder),
+          '--executor-report', writeInput(dir, 'executor-report.txt', executorReport),
+        ];
+      } catch (e) {
+        removeRunDir(dir);
+        throw e;
+      }
       if (a.base_ref) args.push('--base-ref', String(a.base_ref));
       if (a.head_ref) args.push('--head-ref', String(a.head_ref));
       if (a.tier === 'inert') args.push('--tier', 'inert');
@@ -605,7 +588,7 @@ const TOOLS = [
       if (a.no_tests) args.push('--no-tests');
       pushForbids(args, a.forbid);
       if (typeof a.warmup_cmd === 'string' && a.warmup_cmd.trim()) args.push('--warmup-cmd', a.warmup_cmd);
-      runRunner(id, 'review', args, progressToken);
+      runRunner(id, 'review', args, progressToken, undefined, dir);
     },
   },
   {
@@ -635,7 +618,7 @@ const TOOLS = [
       try {
         workOrder = requireString(a, 'work_order');
       } catch (e) {
-        textResult(id, String(e && e.message ? e.message : e), true);
+        textResult(id, boundedDiagnostic(e && e.message ? e.message : e, 2000), true);
         return;
       }
       const callerModel = typeof a.model === 'string' && a.model.trim() ? a.model.trim() : null;
@@ -644,13 +627,19 @@ const TOOLS = [
       const effectiveEffort = codexEffort(callerEffort);
 
       const dir = makeRunDir('exec');
-      const args = ['--work-order', writeInput(dir, 'work-order.txt', workOrder)];
+      let args;
+      try {
+        args = ['--work-order', writeInput(dir, 'work-order.txt', workOrder)];
+      } catch (e) {
+        removeRunDir(dir);
+        throw e;
+      }
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       pushForbids(args, a.forbid);
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);
       if (effectiveModel) args.push('--model', effectiveModel);
       if (effectiveEffort) args.push('--effort', effectiveEffort);
-      runRunner(id, 'exec', args, progressToken);
+      runRunner(id, 'exec', args, progressToken, undefined, dir);
     },
   },
   {
@@ -680,13 +669,11 @@ const TOOLS = [
       required: ['phase', 'brief', 'out_path'],
     },
     handler(id, a, progressToken) {
-      const dir = makeRunDir('crossplan');
       const resolve = (p) => (path.isAbsolute(String(p)) ? String(p) : path.join(ROOT, String(p)));
-      const args = [
-        '--phase', requireString(a, 'phase'),
-        '--brief', writeInput(dir, 'brief.txt', requireString(a, 'brief')),
-        '--out', resolve(requireString(a, 'out_path')),
-      ];
+      const phase = requireString(a, 'phase');
+      const brief = requireString(a, 'brief');
+      const outPath = resolve(requireString(a, 'out_path'));
+      const attachments = [];
       for (const [key, flag] of [
         ['own_plan_path', '--own-plan'],
         ['rival_plan_path', '--rival-plan'],
@@ -695,13 +682,26 @@ const TOOLS = [
         if (typeof a[key] === 'string' && a[key].trim()) {
           const p = resolve(a[key].trim());
           if (!fs.existsSync(p)) throw new Error(`${key} not found: ${p}`);
-          args.push(flag, p);
+          attachments.push(flag, p);
         }
+      }
+      const dir = makeRunDir('crossplan');
+      let args;
+      try {
+        args = [
+          '--phase', phase,
+          '--brief', writeInput(dir, 'brief.txt', brief),
+          '--out', outPath,
+          ...attachments,
+        ];
+      } catch (e) {
+        removeRunDir(dir);
+        throw e;
       }
       if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', codexEffort(a.effort));
       if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
-      runRunner(id, 'crossplan', args, progressToken);
+      runRunner(id, 'crossplan', args, progressToken, undefined, dir);
     },
   },
   {
@@ -751,13 +751,12 @@ function handleMessage(line) {
 
   try {
     if (method === 'initialize') {
-      sweepStaleRunDirs();
       send({
         jsonrpc: '2.0', id,
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.0.1' },
+          serverInfo: { name: 'orchestra-engine', version: '3.0.2' },
         },
       });
       return;
@@ -806,7 +805,7 @@ function handleMessage(line) {
     }
   } catch (e) {
     if (id !== undefined) {
-      send({ jsonrpc: '2.0', id, error: { code: -32603, message: `internal error: ${e.message}` } });
+      send({ jsonrpc: '2.0', id, error: { code: -32603, message: 'internal error: ' + boundedDiagnostic(e.message, 2000) } });
     }
   }
 }

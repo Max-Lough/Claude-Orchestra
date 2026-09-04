@@ -339,7 +339,7 @@ function case5() {
     STUB_CODEX_FAIL_UNTIL_ATTEMPT: '1',
     STUB_CODEX_ATTEMPT_FILE: counter,
     STUB_CODEX_EXIT: '143',
-    STUB_CODEX_STDERR: 'codex: stream closed unexpectedly',
+    STUB_CODEX_STDERR: 'codex: stream closed unexpectedly\n{"Authorization":"Basic dXNlcjpwYXNz"} TOKEN=exec-secret ssh://alice:hunter2@example.test SK-ANT-UPPERCASE99',
   });
   const out = r.stdout || '';
   check('the failure is the outcome', /STATUS: EXEC_UNAVAILABLE/.test(out), out.slice(0, 400));
@@ -363,6 +363,12 @@ function case5() {
     "codex's last words on stderr are quoted",
     /codex stderr \(last 25 lines\):[\s\S]*stream closed unexpectedly/.test(out),
     out.slice(-1200)
+  );
+  check(
+    'exec diagnostics redact every supported credential shape',
+    !/dXNlcjpwYXNz|exec-secret|alice:hunter2|SK-ANT-UPPERCASE99/i.test(out) &&
+      (out.match(/\[REDACTED\]/g) || []).length >= 4,
+    out.slice(-1600)
   );
 
   // A timeout the runner itself enforced says so, by name.

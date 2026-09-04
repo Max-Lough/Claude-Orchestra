@@ -12,6 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { boundedDiagnostic } = require('./orchestra-redact');
 
 function argValue(name) {
   const index = process.argv.indexOf(name);
@@ -58,6 +59,7 @@ function gitStatus(root) {
 }
 
 function printUnavailable(detail, next) {
+  detail = boundedDiagnostic(detail, 4000);
   process.stdout.write(
     'REVIEW ENGINE: NONE — no verdict produced ' +
       '(attempted: Claude CLI, cross-vendor)\n\n' +
@@ -204,7 +206,7 @@ function main() {
       'Claude CLI exited with status ' +
         run.status +
         ': ' +
-        (run.stderr || '').trim().slice(0, 3000),
+        (run.stderr || ''),
       'Run `claude auth` or adjust ORCHESTRA_CLAUDE_REVIEW_* settings; ' +
         'otherwise use the native GPT-5.6 Sol reviewer.'
     );
@@ -221,8 +223,10 @@ function main() {
   const outputDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'orchestra-claude-review-')
   );
+  if (process.platform !== 'win32') fs.chmodSync(outputDir, 0o700);
   const responseFile = path.join(outputDir, 'response.md');
-  fs.writeFileSync(responseFile, response + '\n', 'utf8');
+  fs.writeFileSync(responseFile, response + '\n', { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  if (process.platform !== 'win32') fs.chmodSync(responseFile, 0o600);
 
   const after = gitStatus(root);
   if (before !== null && after !== null && before !== after) {
@@ -244,4 +248,3 @@ try {
     'Use the native GPT-5.6 Sol reviewer and inspect this runner.'
   );
 }
-

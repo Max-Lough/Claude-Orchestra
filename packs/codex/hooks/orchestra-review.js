@@ -227,6 +227,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redact');
 
 // ------------------------------------------------------------------ config
 
@@ -390,9 +391,7 @@ function readFileOr(file, fallback) {
 
 // Tail the last N lines of a possibly-large string (for error excerpts).
 function tail(text, n) {
-  if (!text) return '';
-  const lines = text.replace(/\s+$/, '').split('\n');
-  return lines.slice(Math.max(0, lines.length - n)).join('\n');
+  return boundedDiagnosticLines(text, n);
 }
 
 function stringList(value) {
@@ -674,7 +673,7 @@ function makeScratchDir(configured, configuredSource) {
           : '',
       };
     } catch (e) {
-      tried.push(root + ' (' + ((e && e.message) || e) + ')');
+      tried.push(root + ' (' + boundedDiagnostic((e && e.message) || e, 2000) + ')');
     }
   }
   return {
@@ -756,7 +755,7 @@ function setupGitIsolation() {
     );
     SCRATCH.gitConfigFile = cfg;
   } catch (e) {
-    PREFLIGHT.push('git config isolation unavailable: ' + ((e && e.message) || e));
+    PREFLIGHT.push('git config isolation unavailable: ' + boundedDiagnostic((e && e.message) || e, 2000));
   }
 }
 
@@ -858,7 +857,7 @@ function runExecSelftest() {
   try {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-selftest-'));
   } catch (e) {
-    return { ok: false, lines: ['exec-lane self-test: could not create a scratch dir (' + ((e && e.message) || e) + ')'] };
+    return { ok: false, lines: ['exec-lane self-test: could not create a scratch dir (' + boundedDiagnostic((e && e.message) || e, 2000) + ')'] };
   }
   try {
     // A git repo lets the runner produce a real (empty) tree audit.
@@ -1480,7 +1479,7 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
       }
     } catch (e) {
       stillMissing.push(name);
-      problems.push(name + ': ' + ((e && e.message) || e));
+      problems.push(name + ': ' + boundedDiagnostic((e && e.message) || e, 2000));
     }
   }
   return { checked: true, missing: stillMissing, restored, searched, problems, notRestored };
@@ -1506,7 +1505,7 @@ function restoreHelpers(helpersDir, installDir, dryRun) {
     return {
       restored: [],
       missing: [],
-      note: 'helpers directory unreadable (' + helpersDir + '): ' + ((e && e.message) || e),
+      note: 'helpers directory unreadable (' + helpersDir + '): ' + boundedDiagnostic((e && e.message) || e, 2000),
     };
   }
   if (!installDir) {
@@ -1527,7 +1526,7 @@ function restoreHelpers(helpersDir, installDir, dryRun) {
     try {
       list = fs.readdirSync(srcDir, { withFileTypes: true });
     } catch (e) {
-      problems.push(rel + ': ' + ((e && e.message) || e));
+      problems.push(rel + ': ' + boundedDiagnostic((e && e.message) || e, 2000));
       return;
     }
     for (const entry of list) {
@@ -1561,7 +1560,7 @@ function restoreHelpers(helpersDir, installDir, dryRun) {
         }
         restored.push(relName);
       } catch (e) {
-        problems.push(relName + ': ' + ((e && e.message) || e));
+        problems.push(relName + ': ' + boundedDiagnostic((e && e.message) || e, 2000));
       }
     }
   };
@@ -2062,7 +2061,7 @@ function classifyExit(run, elapsedMs) {
   if (run.error) {
     return {
       kind: 'spawn-error',
-      headline: 'failed to launch Codex: ' + String(run.error.message || run.error),
+      headline: 'failed to launch Codex: ' + boundedDiagnostic(run.error.message || run.error, 2000),
       killedBy: 'the launch itself failed (' + (run.error.code || 'no code') + ')',
       ran,
       retryable: true,
@@ -2244,7 +2243,7 @@ function runWarmup(dir) {
       (timedOut
         ? 'hit its ' + CONFIG.warmupTimeoutMs + 'ms cap'
         : r.error
-        ? 'could not run (' + ((r.error && r.error.message) || r.error) + ')'
+        ? 'could not run (' + boundedDiagnostic((r.error && r.error.message) || r.error, 2000) + ')'
         : r.status === 0
         ? 'completed in ' + ms(elapsed)
         : 'exited ' + r.status + ' after ' + ms(elapsed)) +
@@ -2315,7 +2314,7 @@ function runAuthProbe(dir) {
       reason: 'the Codex CLI could not be launched (' + (r.error.code || 'spawn error') + ')',
       detail:
         'Launching ' + (CONFIG.resolvedBin || CONFIG.bin) + ' failed before any review was ' +
-        'attempted:\n  ' + String(r.error.message || r.error) + '\n' +
+        'attempted:\n  ' + boundedDiagnostic(r.error.message || r.error, 2000) + '\n' +
         'This is the executable or the platform refusing the launch — not authentication, ' +
         'and not the model. Check that the path is the real executable (a .cmd/.bat shim is ' +
         'handled, a directory or a broken link is not) and that it is runnable by this user.',
@@ -2503,14 +2502,16 @@ function printReview(body) {
 
 function printUnavailable(reason, detail) {
   const tried = ATTEMPTS.length;
+  const safeReason = boundedDiagnostic(reason, 4000);
+  const safeDetail = boundedDiagnostic(detail, 16000);
   const block = [
     'VERDICT: REVIEW_UNAVAILABLE',
     '',
     'REASON',
-    '- ' + reason,
+    '- ' + safeReason,
     '',
     'DETAIL',
-    detail ? detail.split('\n').map((l) => '  ' + l).join('\n') : '  (none)',
+    safeDetail ? safeDetail.split('\n').map((l) => '  ' + l).join('\n') : '  (none)',
     '',
     // FIX: a REVIEW_UNAVAILABLE that a launcher then retried into a real
     // verdict produced two "final" reports for one review, and the books were
@@ -3136,7 +3137,7 @@ try {
   // Never throw an unhandled error back at the launcher — that would look like
   // a crash rather than a review. Degrade to REVIEW_UNAVAILABLE.
   try {
-    printUnavailable('review runner error', String((e && e.stack) || e));
+    printUnavailable('review runner error', boundedDiagnostic((e && e.stack) || e, 16000));
   } catch (_) {
     process.stdout.write('VERDICT: REVIEW_UNAVAILABLE\n');
   }

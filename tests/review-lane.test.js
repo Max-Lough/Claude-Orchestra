@@ -803,7 +803,7 @@ function case12() {
   const r = runReview(fx, ['--head-ref', fx.head, '--no-retry'], {
     STUB_CODEX_SILENT: '1',
     STUB_CODEX_EXIT: '143',
-    STUB_CODEX_STDERR: 'codex: stream closed unexpectedly',
+    STUB_CODEX_STDERR: 'codex: stream closed unexpectedly\n{"Authorization":"Basic dXNlcjpwYXNz"} TOKEN=review-secret ftp://alice:hunter2@example.test SK-ANT-UPPERCASE99',
   });
   const out = r.stdout || '';
   check(
@@ -824,6 +824,12 @@ function case12() {
   check(
     "codex's last words on stderr are quoted",
     /codex stderr \(last 25 lines\):[\s\S]*stream closed unexpectedly/.test(out),
+    out
+  );
+  check(
+    'review diagnostics redact every supported credential shape',
+    !/dXNlcjpwYXNz|review-secret|alice:hunter2|SK-ANT-UPPERCASE99/i.test(out) &&
+      (out.match(/\[REDACTED\]/g) || []).length >= 4,
     out
   );
   check(

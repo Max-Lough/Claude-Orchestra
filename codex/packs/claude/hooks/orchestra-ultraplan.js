@@ -11,6 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { boundedDiagnostic } = require('./orchestra-redact');
 
 function argValue(name) {
   const index = process.argv.indexOf(name);
@@ -25,6 +26,7 @@ function readRequired(file, label) {
 }
 
 function unavailable(detail, next) {
+  detail = boundedDiagnostic(detail, 4000);
   process.stdout.write(
     'ULTRA-PLAN ENGINE: Claude CLI (cross-vendor)\n\n' +
       'VERDICT: ULTRAPLAN_UNAVAILABLE\n\n' +
@@ -153,7 +155,7 @@ function main() {
       'Claude CLI exited with status ' +
         run.status +
         ': ' +
-        (run.stderr || '').trim().slice(0, 3000),
+        (run.stderr || ''),
       'Run `claude auth` or adjust ORCHESTRA_CLAUDE_PLAN_* settings.'
     );
   }
@@ -175,8 +177,10 @@ function main() {
   const outputDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'orchestra-claude-plan-')
   );
+  if (process.platform !== 'win32') fs.chmodSync(outputDir, 0o700);
   const responseFile = path.join(outputDir, 'round-' + round + '.md');
-  fs.writeFileSync(responseFile, response + '\n', 'utf8');
+  fs.writeFileSync(responseFile, response + '\n', { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  if (process.platform !== 'win32') fs.chmodSync(responseFile, 0o600);
 
   process.stdout.write(
     'ULTRA-PLAN ENGINE: Claude CLI (model: ' +
@@ -202,4 +206,3 @@ try {
     'Inspect the runner and retry the same round.'
   );
 }
-

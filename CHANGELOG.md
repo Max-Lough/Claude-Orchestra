@@ -9,6 +9,34 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.0.2 — private relay inputs and bounded, credential-safe diagnostics
+
+**MCP relay hardening.** The Codex engine transport no longer serializes work
+orders and executor reports below the predictable project directory
+`.claude/scratch/mcp/`, where default POSIX permissions could expose them to
+other local users. Every call now receives an unpredictable directory under the
+OS temp root, explicitly mode `0700`, with exclusive `0600` input files; the
+directory is removed as soon as the runner closes. The transport tests inspect
+those permissions in the child process, prove the directory is outside the
+project, and prove cleanup occurred.
+
+**No stale process-group signal.** Cancellation and the MCP kill-backstop now
+terminate the detached POSIX process group immediately with `SIGKILL`. The old
+SIGTERM-then-timer escalation deliberately survived the runner's close, which
+meant its numeric process-group target could be reused before the delayed
+SIGKILL fired. Windows retains the measured `taskkill /T /F` path. The
+cancellation regression still proves both runner and grandchild are gone, and
+the server source is pinned against reintroducing a delayed kill timer.
+
+**Credential-safe diagnostics.** One shared redactor now covers quoted JSON
+credential keys, Basic and Bearer authorization, case variants of `sk-` tokens,
+and credential-bearing URLs for any URI scheme. Diagnostic handling refuses to
+scan inputs larger than 256 KiB and emits an omission marker instead, avoiding
+the prior redact-before-truncate full-buffer cost while preserving the safe
+ordering. The helper is used by the MCP transport, all three installed Codex
+lane runners, and the retained legacy Claude relay runners. Tests cover every
+credential shape and oversized diagnostics.
+
 ## 3.0.1 — coexistence with Codex-Orchestra, and a review cap that stops eating whole reviews
 
 **Dual-install safety.** Codex-Orchestra now exists as a second harness, and the two are installed into the same project often enough that the boundary has to be enforced rather than assumed. A Codex child launched by the review, execution, or cross-compare runner would otherwise read the target project's `AGENTS.md` and fire its `.codex` hooks — meaning a co-installed Codex-Orchestra could recast a worker as its own Director and start a campaign inside a review. All three runners now set an external-worker `ORCHESTRA_ROLE` (`reviewer-codex-external`, `executor-codex-external`, `planner-codex-external`) and pin `features.hooks=false` with `project_doc_max_bytes=0` **after** any user-supplied extra args, on the auth probe as well as the real call. Ordering is the whole mechanism: Codex resolves repeated `-c` flags last-wins, so an override placed before `ORCHESTRA_REVIEW_ARGS` could be undone by it. Verified against codex 0.151.0 — with an `AGENTS.md` sentinel, `codex debug prompt-input` carries it at baseline, drops it under `project_doc_max_bytes=0`, still drops it under the runners' hostile-then-isolation ordering, and restores it when the order is reversed. The owned surfaces are disjoint by construction: Codex-Orchestra's installer hard-refuses any managed path under `.claude/` and never touches `CLAUDE.md` or `.mcp.json`; the protocol files are `.claude/ORCHESTRA.md` and `.codex/ORCHESTRA.md`. `ORCHESTRA_PAUSE=1` pauses both by design; the pause files stay harness-specific.

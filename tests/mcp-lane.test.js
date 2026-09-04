@@ -138,7 +138,9 @@ const FIXTURE_RUNNERS = (() => {
   fs.mkdirSync(bad);
   fs.writeFileSync(
     path.join(bad, 'orchestra-review.js'),
-    'process.stdout.write("half a report, then death\\n"); process.exit(3);\n'
+    'process.stdout.write("half a report, then death\\n");' +
+      'process.stderr.write("{\\\"Authorization\\\":\\\"Basic dXNlcjpwYXNz\\\"} TOKEN=tok-secret ftp://alice:hunter2@example.test SK-ANT-UPPERCASE99\\n");' +
+      'process.exit(3);\n'
   );
   fs.writeFileSync(
     path.join(bad, 'orchestra-exec.js'),
@@ -178,7 +180,36 @@ const FIXTURE_RUNNERS = (() => {
     ].join('\n')
   );
 
-  return { empty: path.join(d, 'empty'), bad, tree };
+  const privateInputs = path.join(d, 'private-inputs');
+  fs.mkdirSync(privateInputs);
+  fs.writeFileSync(
+    path.join(privateInputs, 'orchestra-review.js'),
+    [
+      'const fs = require("fs");',
+      'const path = require("path");',
+      'const argv = process.argv.slice(2);',
+      'const value = (flag) => argv[argv.indexOf(flag) + 1];',
+      'const wo = value("--work-order");',
+      'const report = value("--executor-report");',
+      'const dir = path.dirname(wo);',
+      'process.stdout.write(JSON.stringify({',
+      '  dir,',
+      '  dirMode: fs.statSync(dir).mode & 0o777,',
+      '  workOrderMode: fs.statSync(wo).mode & 0o777,',
+      '  reportMode: fs.statSync(report).mode & 0o777',
+      '}));',
+      '',
+    ].join('\n')
+  );
+
+  const huge = path.join(d, 'huge');
+  fs.mkdirSync(huge);
+  fs.writeFileSync(
+    path.join(huge, 'orchestra-review.js'),
+    'process.stderr.write("x".repeat(300 * 1024) + " TOKEN=oversized-tail-secret"); process.exit(3);\n'
+  );
+
+  return { empty: path.join(d, 'empty'), bad, tree, privateInputs, huge };
 })();
 
 // Is a pid still around? EPERM means it exists but is not ours to signal.
@@ -355,6 +386,10 @@ async function case1() {
   const unknown = await s.rpc('tools/call', { name: 'orchestra_bogus', arguments: {} });
   check('unknown tool is a JSON-RPC error, not a fake report',
     unknown.error && unknown.error.code === -32602, JSON.stringify(unknown));
+  const serverSource = fs.readFileSync(SERVER, 'utf8');
+  check('cancellation has no delayed process-group kill timer',
+    !/killTimer|KILL_GRACE_MS|SIGKILL escalation armed/.test(serverSource),
+    'a stale delayed kill path remains in the server');
   s.close();
 }
 
@@ -581,6 +616,10 @@ async function case6() {
     abnormal.result && abnormal.result.isError && /code=3/.test(abText) && /half a report, then death/.test(abText),
     abText.slice(0, 500));
   check('abnormal output is labelled NOT a runner report', /NOT a runner report/.test(abText), abText.slice(0, 500));
+  check('transport diagnostics redact JSON keys, Basic auth, credential URLs, and case variants',
+    !/dXNlcjpwYXNz|tok-secret|alice:hunter2|SK-ANT-UPPERCASE99/i.test(abText) &&
+      (abText.match(/\[REDACTED\]/g) || []).length >= 4,
+    abText.slice(0, 1000));
 
   const silent = await s3.rpc('tools/call', {
     name: 'orchestra_exec', arguments: { work_order: 'w' },
@@ -598,6 +637,33 @@ async function case6() {
     wedged.result && wedged.result.isError && /kill-backstop/.test(resultText(wedged)) && /killed by THIS SERVER/.test(resultText(wedged)),
     resultText(wedged).slice(0, 400));
   s3.close();
+
+  const s4 = mcpSession({ fx, hooksDir: FIXTURE_RUNNERS.privateInputs });
+  await s4.start();
+  const privateResult = await s4.rpc('tools/call', {
+    name: 'orchestra_review', arguments: { work_order: 'private work order', executor_report: 'private report' },
+  });
+  const inputState = JSON.parse(resultText(privateResult));
+  check('serialized inputs live under a random OS-temp directory outside the project',
+    path.dirname(inputState.dir) === path.resolve(os.tmpdir()) &&
+      !path.resolve(inputState.dir).startsWith(path.resolve(fx.repo) + path.sep), inputState.dir);
+  check('serialized input directory and files are owner-only on POSIX',
+    process.platform === 'win32' ||
+      (inputState.dirMode === 0o700 && inputState.workOrderMode === 0o600 && inputState.reportMode === 0o600),
+    JSON.stringify(inputState));
+  check('serialized inputs are removed after the runner closes', !fs.existsSync(inputState.dir), inputState.dir);
+  s4.close();
+
+  const s5 = mcpSession({ fx, hooksDir: FIXTURE_RUNNERS.huge });
+  await s5.start();
+  const hugeResult = await s5.rpc('tools/call', {
+    name: 'orchestra_review', arguments: { work_order: 'w', executor_report: 'e' },
+  });
+  const hugeText = resultText(hugeResult);
+  check('oversized diagnostics are omitted before redaction scanning or tail extraction',
+    /diagnostic omitted: exceeded safe redaction scan cap/.test(hugeText) &&
+      !/oversized-tail-secret/.test(hugeText), hugeText.slice(-800));
+  s5.close();
 }
 
 // 7. Progress notifications flow when (and only when) the client sends a
@@ -725,8 +791,7 @@ async function case9() {
   const readPid = (p) => { try { return Number(fs.readFileSync(p, 'utf8').trim()) || 0; } catch (_) { return 0; } };
 
   // Every pid any wedge in this case ever reported, so nothing survives the
-  // suite however the case ends. The fixture's grandchild ignores SIGTERM, so
-  // reap with SIGKILL.
+  // suite however the case ends. Reap with SIGKILL.
   const seenPids = [];
   cleanups.push(() => {
     for (const pid of seenPids) { try { process.kill(pid, 'SIGKILL'); } catch (_) { /* gone */ } }
@@ -765,7 +830,7 @@ async function case9() {
 
   // --- 9a. the crux: a cancelled run's whole tree dies, and the request answers.
   const w = await startWedge();
-  check('the wedged runner and its SIGTERM-ignoring grandchild both started', !!w.up,
+  check('the wedged runner and its grandchild both started', !!w.up,
     'runner=' + w.runnerPid + ' engine=' + w.enginePid);
   check('the grandchild engine is a DIFFERENT process from the runner',
     !!w.runnerPid && !!w.enginePid && w.runnerPid !== w.enginePid,
@@ -791,17 +856,18 @@ async function case9() {
   // The transport must describe the kill it actually performed, never assume one.
   check('the resolution names the mechanism that actually stopped the tree',
     process.platform === 'win32'
-      ? /taskkill \/PID \d+ \/T \/F killed the process tree/.test(text)
-      : /SIGTERM to process group \d+, SIGKILL escalation armed/.test(text),
+      ? /taskkill (?:\/PID \d+ \/T \/F killed the process tree|\/T \/F did NOT confirm the kill)/.test(text)
+      : /SIGKILL to process group \d+/.test(text),
     text.slice(0, 900));
-  check('a confirmed tree-kill carries no could-NOT-confirm warning',
-    !/could NOT confirm/.test(text), text.slice(0, 900));
+  const killWasConfirmed = process.platform !== 'win32' || /taskkill \/PID \d+ \/T \/F killed/.test(text);
+  check('the tree-confirmation warning matches the measured kill result',
+    killWasConfirmed ? !/could NOT confirm/.test(text) : /could NOT confirm/.test(text),
+    text.slice(0, 900));
 
-  // The crux. The grandchild ignores SIGTERM, so on POSIX it can ONLY die by the
-  // SIGKILL escalation surviving the runner's own exit — the defect that shipped
-  // green the first time round. Poll: escalation is 3s, taskkill reaps async.
+  // The crux. The whole process group must be gone before its numeric id can be
+  // reused. There is no delayed signal that could hit a later, unrelated group.
   const engineGone = await waitFor(() => (!alive(w.enginePid) ? true : null), 20000);
-  check('the SIGTERM-ignoring grandchild ENGINE was killed (escalation survives the runner\'s exit)',
+  check('the grandchild ENGINE was killed with the runner process group',
     !!engineGone, 'engine pid ' + w.enginePid + ' still alive 20s after cancellation');
   const runnerGone = await waitFor(() => (!alive(w.runnerPid) ? true : null), 20000);
   check('the runner process was killed', !!runnerGone, 'runner pid ' + w.runnerPid + ' still alive');

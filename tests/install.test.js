@@ -109,6 +109,7 @@ const EXPECTED_LEGACY_CENSUS = [
   '.claude/agents/executor-heavy-xhigh.md',
   '.claude/agents/executor-heavy.md',
   '.claude/agents/executor.md',
+  '.claude/agents/executor-principal.md',
   '.claude/agents/reviewer.md',
   '.claude/agents/scout.md',
   '.claude/hooks/orchestra-guard.js',

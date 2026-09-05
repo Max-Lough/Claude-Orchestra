@@ -9,6 +9,50 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.1.0 — a principal executor for goal-shaped orders
+
+**New agent: `executor-principal` (Fable, high effort).** The company gains a
+seventh core Claude agent, installed and uninstalled with the rest. It shares the
+Executor's law in full and differs on one axis only: the **shape of the order**.
+Where `executor` and the Opus heavy tiers take step-shaped orders (exact paths,
+one deliverable kind, ≤ ~3 subsystems), the principal takes a *goal-shaped* order
+— goal, observable done-criteria, the intent behind it, explicit boundaries, the
+case file, and the full cadence package — does its own recon inside the boundary,
+sequences its own parts, and reports every judgment call under a new `DECISIONS`
+section so the Director and the Reviewer can see where latitude was used.
+
+**Why.** Two kinds of work were being served badly by the sizing rule in §8.1.
+A change spanning many coupled seams is only correct if one mind holds all the
+seams at once; cutting it into narrow orders spends the Director's context — the
+scarcest resource in the system — on coherence that a single executor with a
+fresh, large context holds for free, and the fragments then bounce at the seams
+even when each passes alone. And work in unmapped territory cannot be planned
+before it is explored: recon and implementation are inseparable, so the
+scout → plan → order → report round trip runs several times for one goal. Both
+shapes are exactly where the guidance for the Fable tier says its gains are
+widest (long autonomous runs, first-shot implementations of well-specified
+systems, navigating ambiguity), and neither is served by a *harder* Opus
+executor: difficulty and coherence are different axes.
+
+**Routing law (ORCHESTRA.md §2, §3.5, §8.1, §8.3).** The principal is chosen at
+PLAN time, never self-promoted, and never for routine or merely hard work — the
+heavy tier keeps that. Three triggers: coherence a chain of narrow orders would
+lose, recon and implementation inseparable, or the user asks for it by name. §3.5
+gains one legitimate re-plan: two heavy-tier bounces that were a coherence
+failure (each fragment passed alone, the seams failed) may become one principal
+order, never a third try at the same fragment. §8.1 exempts a principal order
+from the kind and subsystem caps but not from cadence clauses or the §5 review
+gate. §8.3 pins it at high effort. It keeps `disallowedTools: Agent` like every
+other executor: the Director remains the only orchestrator, and nesting a second
+one inside a subagent would multiply cost without an owner watching it.
+
+**Surfaces touched.** `agents/executor-principal.md` (new); the installer's core
+agent list and the fresh-install census in `tests/install.test.js`; ORCHESTRA.md
+§2 (table row and executor steering), §3.5, §8.1, §8.3; the README company table
+and executor steering; `/orchestra-status` (company line); `/orchestra-plan`
+(a principal branch in the decomposition gate and an `Intent` field in the plan
+template). No guard, runner, or `orchestra.json` change: minor bump.
+
 ## 3.0.2 — private relay inputs and bounded, credential-safe diagnostics
 
 **MCP relay hardening.** The Codex engine transport no longer serializes work

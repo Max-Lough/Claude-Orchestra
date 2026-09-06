@@ -1049,14 +1049,63 @@ function case19() {
     );
   }
 
+  // 4. The default rung and the tight-spec rung. The failure this guards is
+  //    the one the owner actually observed in the field: Sonnet given orders
+  //    that needed judgment about what they meant. That is a routing default,
+  //    so it lives in frontmatter, and frontmatter drifts silently.
+  const execFm = read('agents/executor.md');
+  check(
+    'executor is Opus at medium effort — the default rung',
+    /^model: opus$/m.test(execFm) && /^effort: medium$/m.test(execFm),
+    (execFm.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor declares itself THE DEFAULT EXECUTOR',
+    /THE DEFAULT EXECUTOR/.test(frontmatter('agents/executor.md')),
+    frontmatter('agents/executor.md').slice(0, 160)
+  );
+  const mech = read('agents/executor-mechanical.md');
+  check(
+    'executor-mechanical is Sonnet at high effort',
+    /^model: sonnet$/m.test(mech) && /^effort: high$/m.test(mech),
+    (mech.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-mechanical is reserved by SPEC TIGHTNESS, not task size',
+    /RESERVED for orders that are routine and mechanical, or whose goal and instructions are airtight/.test(
+      frontmatter('agents/executor-mechanical.md')
+    ),
+    frontmatter('agents/executor-mechanical.md').slice(0, 200)
+  );
+  check(
+    'executor-mechanical keeps the full executor law, including Blocked beats guessed',
+    /\*\*Blocked beats guessed\.\*\*/.test(mech) && /STATUS: DONE \| PARTIAL \| BLOCKED \| CHECKPOINT/.test(mech),
+    'the shared executor law did not survive into the mechanical rung'
+  );
+  check(
+    'executor-mechanical treats a mis-routed vague order as BLOCKED, not something to widen',
+    /mis-routed/.test(mech) && /Never widen a vague order/.test(mech),
+    'the mis-routing escape hatch is missing'
+  );
+
   // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the two
   //    claims an order's routing actually turns on.
   const protocol = read('ORCHESTRA.md');
   check(
-    'ORCHESTRA.md steering names the three-rung ladder ending at Astra',
-    /One ladder, three rungs/.test(protocol) &&
-      /double bounce at Opus escalates straight to Astra/.test(protocol),
+    'ORCHESTRA.md makes executor (Opus medium) the default rung',
+    /`executor` \(Opus, medium\) is the default/.test(protocol),
     (protocol.match(/^\*\*Executor steering\.\*\*.*$/m) || ['no steering line'])[0].slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md routes by thinking difficulty, not diff size',
+    /Route by how hard the thinking is, not by how big the diff is/.test(protocol) &&
+      /Sonnet is not the small-task rung; it is the tight-spec rung/.test(protocol),
+    'the route-by-thinking rule is missing — this is the rule that keeps Sonnet from being overloaded'
+  );
+  check(
+    'ORCHESTRA.md still escalates across the vendor line to Astra',
+    /double bounce at the heavy tier escalates straight to Astra/.test(protocol),
+    'the vendor-crossing escalation sentence is missing'
   );
   check(
     'ORCHESTRA.md marks the Fable and Sol executors user-request-only',
@@ -1065,8 +1114,8 @@ function case19() {
     'the user-request-only paragraph is missing or reworded'
   );
   check(
-    'ORCHESTRA.md 3.5 escalates executor -> executor-heavy -> executor-codex-principal',
-    /`executor` → `executor-heavy` → `executor-codex-principal`/.test(protocol),
+    'ORCHESTRA.md 3.5 carries the full five-rung escalation ladder',
+    /`executor-mechanical` → `executor` → `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`/.test(protocol),
     (protocol.match(/^5\. \*\*Escalate.*$/m) || ['no rule 5'])[0].slice(0, 300)
   );
   check(

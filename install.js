@@ -63,6 +63,7 @@ const VERSION = (() => {
 const AGENTS = [
   'scout.md',
   'detective.md',
+  'executor-mechanical.md',
   'executor.md',
   'executor-heavy.md',
   'executor-heavy-xhigh.md',

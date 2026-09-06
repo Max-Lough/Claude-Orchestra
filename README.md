@@ -100,8 +100,9 @@ The guard applies the same positive-evidence rule independently: it reads the se
 | Director | this session | Fable / Opus | decompose, decide, arbitrate, synthesize, talk to the user; never implement |
 | Scout | `scout` | Haiku | read-only *where/what* mapping; cheap, fan out freely |
 | Detective | `detective` | Opus | read-only *why/how* investigation; one question per case, evidence chains, confidence grade |
-| Executor | `executor` | Sonnet | routine edits, commands, builds, and tests |
-| Heavy executor | `executor-heavy` / `executor-heavy-xhigh` | Opus high / xhigh | hard, split-resistant, or escalated Claude work; chosen at PLAN time |
+| Mechanical executor | `executor-mechanical` | Sonnet, high | routine mechanical orders, and orders whose goal and instructions are airtight |
+| Executor | `executor` | Opus, medium | **the default** — every order that isn't specifically routed elsewhere |
+| Heavy executor | `executor-heavy` / `executor-heavy-xhigh` | Opus high / xhigh | the same model at more effort — hard, split-resistant, or escalated work; chosen at PLAN time |
 | Principal executor † | `executor-codex-principal` | GPT-6 Astra, xhigh | **the top rung of the default ladder** — exceptional orders: many coupled moving parts, an approach the plan cannot settle, or a second bounce at the Opus heavy tier |
 | Principal executor ‡ | `executor-principal` / `executor-principal-xhigh` | Fable high / xhigh | the same exceptional work on the Anthropic side; user request only, or the announced substitute when the Astra rung is unavailable |
 | Sol executor †‡ | `executor-codex-heavy` | GPT-5.6 Sol, high | the cheaper cross-vendor executor; user request only |
@@ -150,21 +151,24 @@ Then it runs `reviewer` in fresh context, repeats the alarm in the campaign's fi
 
 ## Executor steering
 
-One ladder, three rungs, all chosen at PLAN time and never self-promoted:
+`executor` (Opus, medium) is the default: an order lands there unless the plan has a specific reason to put it elsewhere. From there it moves in one of three directions, all decided at PLAN time and never self-promoted.
 
-| Rung | Agent | Model | For |
+| Route | Agent | Model | When |
 |---|---|---|---|
-| 1 | `executor` | Sonnet | routine, well-scoped orders |
-| 2 | `executor-heavy` / `-xhigh` | Opus high / xhigh | hard, split-resistant, or already-escalated orders |
-| 3 | `executor-codex-principal` † | GPT-6 Astra, xhigh | exceptional orders — many coupled moving parts that resist splitting, an approach or outcome the plan cannot settle in advance, or a second bounce at the heavy tier |
+| down | `executor-mechanical` | Sonnet, high | routine mechanical orders, or orders whose goal and instructions are airtight — a rename ripple, a codemod, a spelled-out patch, a well-trodden test addition |
+| **default** | `executor` | Opus, medium | **everything else** |
+| up (effort) | `executor-heavy` → `executor-heavy-xhigh` | Opus high → xhigh | the thinking is hard — algorithmically hard cores, coupled cross-subsystem changes, risk-first probes, or a bounce at the rung below |
+| up (vendor) | `executor-codex-principal` † | GPT-6 Astra, xhigh | long-winded or highly detailed work worth spinning up the Codex lane for — many coupled moving parts that resist splitting, an approach the plan cannot settle in advance, or a second bounce at the heavy tier |
 
-The ladder crosses the vendor line at the top rung: a double bounce at Opus escalates straight to Astra, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS and, on escalated orders, sweeps the whole class of each reviewer finding rather than the cited instance.
+**Route by how hard the thinking is, not by how big the diff is.** Sonnet is not the small-task rung, it's the tight-spec rung: an order goes to `executor-mechanical` only because nothing about its *meaning* is still open. A two-line change with an unresolved question belongs on `executor`; a thousand-line codemod with an airtight spec does not. Between `executor` and `executor-heavy` the model doesn't change at all — only the effort — so scale up when the reasoning is hard, not when the output is long.
+
+The ladder crosses the vendor line at the top rung: a double bounce at the heavy tier escalates straight to Astra, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS and, on escalated orders, sweeps the whole class of each reviewer finding rather than the cited instance.
 
 **Everything else on the bench is user request only.** The Fable principal profiles (`executor-principal`, `executor-principal-xhigh`) and the Sol executor (`executor-codex-heavy`) are installed and fully functional, but no routing rule reaches them. They run when you name them in conversation, or when `executorEngine: "codex"` in `.claude/orchestra.json` makes the Codex lane this project's executor lane — the durable form of the same request. The Director never promotes an order into them on its own judgment.
 
 **If the Astra rung is unavailable** — the `codex` pack isn't installed, or the lane can't run — the Director says so in one line, escalates to `executor-principal` (Fable) instead, and names the substitution in the REPORT. Announced, never silent: the campaign was not executed by Astra, and you can see that it wasn't.
 
-**Escalating past Opus flips the review lane.** An Astra-executed order is Codex-authored, so its review goes to the fresh-context Opus `reviewer` rather than to `reviewer-codex` — the cross-family rule (ORCHESTRA.md §5) working as intended, not a fallback, and it carries no alarm.
+**Escalating past the heavy tier flips the review lane.** An Astra-executed order is Codex-authored, so its review goes to the fresh-context Opus `reviewer` rather than to `reviewer-codex` — the cross-family rule (ORCHESTRA.md §5) working as intended, not a fallback, and it carries no alarm.
 
 A Codex executor's `STATUS: EXEC_UNAVAILABLE` is not a completed order — read its `TREE AUDIT`, have a scout confirm the tree, then route the order to the appropriate Claude executor and say so.
 
@@ -281,7 +285,7 @@ The 3.0 installer refuses a `roster: "new"` target outright rather than attempti
 Orchestra/
 ├── README.md, CHANGELOG.md, VERSION, ORCHESTRA.md
 ├── install.js / install.ps1 / install.sh   ← idempotent installer/uninstaller
-├── agents/            ← the eight core Claude agents + specialists/
+├── agents/            ← the nine core Claude agents + specialists/
 ├── hooks/orchestra-guard.js  ← PreToolUse hook enforcing Director law
 ├── skills/             ← orchestra-status, orchestra-plan, orchestra-review
 ├── tests/               ← harness tests (master-only; never stamped into projects)

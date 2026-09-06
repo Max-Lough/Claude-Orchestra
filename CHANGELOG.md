@@ -9,7 +9,7 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
-## 3.2.0 — GPT-6 Astra becomes the top executor rung; Fable and Sol demoted to user request
+## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 
 **Why.** OpenAI shipped GPT-6 Astra on 2026-09-03. On Terminal-Bench 4.0 it
 scores 57.7% against GPT-5.6 Sol's 37.3% and Claude Fable 5.1's 55.8% — and
@@ -19,15 +19,50 @@ on the strength of the Tug campaign, where the longest review→fix chains all
 sat at the heavy tier with no rung above. Astra is a better answer to that same
 problem, so it takes that rung.
 
-**The ladder is now three rungs and crosses the vendor line at the top:**
+**Sonnet was carrying orders it should never have seen.** This one is the
+owner's read of the harness in use, not a measured result — no Tug number
+isolates it, and it is recorded here as the judgment it is. The mechanism is
+concrete enough to act on: `executor` was Sonnet and took everything not
+specifically routed elsewhere, so any order whose spec turned out to be softer
+than it looked at PLAN time got answered with a confident guess instead of a
+BLOCKED question. The fix is to make the default rung a model with the judgment
+to notice, and to reserve Sonnet for the orders where that judgment is
+genuinely not needed. If the shakedown shows the old default was fine, the
+change to revert is one line of frontmatter.
 
-| Rung | Agent | Model |
+- **`executor` is now Opus at medium effort** — still the default, still the
+  same name, so "the default executor" and `executor` stay the same thing.
+- **`executor-mechanical` (Sonnet, high) is new**, and it is reserved by *spec
+  tightness*, not task size: a rename ripple, a codemod, a spelled-out patch, a
+  well-trodden test addition. Its name says the criterion out loud because
+  `-light` would have invited exactly the size-based routing being corrected. It
+  carries the executor law verbatim, including "Blocked beats guessed", plus one
+  extra clause — an order that turns out to need judgment about its own meaning
+  was mis-routed, and the answer is BLOCKED, never widening the order to keep
+  moving.
+- **The Opus rungs are now an effort ladder, not a model ladder.** `executor`
+  (medium) → `executor-heavy` (high) → `executor-heavy-xhigh` (xhigh) are one
+  model at three efforts, so the routing question is how hard the *thinking*
+  is, not how big the diff will be. No executor inherits the session default
+  effort any more; every rung is pinned.
+
+**The ladder in full:**
+
+| Route | Agent | Model |
 |---|---|---|
-| 1 | `executor` | Sonnet |
-| 2 | `executor-heavy` / `-xhigh` | Opus high / xhigh |
-| 3 | `executor-codex-principal` | GPT-6 Astra, xhigh |
+| down | `executor-mechanical` | Sonnet, high |
+| **default** | `executor` | **Opus, medium** |
+| up (effort) | `executor-heavy` → `executor-heavy-xhigh` | Opus high → xhigh |
+| up (vendor) | `executor-codex-principal` | GPT-6 Astra, xhigh |
 
-A double bounce at the Opus heavy tier escalates straight to Astra. The
+**Migration note.** `executor` changes model under an existing name, so
+reinstalling into a project moves its default executor from Sonnet to Opus
+medium. That is the intended effect; projects that want the old behaviour for a
+specific order route it to `executor-mechanical`.
+
+**Astra takes the top rung.** A double bounce at the Opus heavy tier escalates
+straight to Astra, crossing the vendor line — for long-winded or highly
+detailed work where spinning up the Codex lane is worth it. The
 principal charter is unchanged from 3.1.0 and moves with the rung: exceptional
 orders only — many coupled moving parts that resist splitting, an approach or
 outcome the plan cannot settle in advance, or a second bounce at the heavy tier

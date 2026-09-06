@@ -1,6 +1,6 @@
 ---
 name: executor-heavy-xhigh
-description: Orchestra heavy executor at xhigh effort (Opus). The deepest-reasoning execution point in the company — use only for orders the Director judges hardest at PLAN time, where even the high-effort heavy tier is not credibly enough. Identical law to executor-heavy; everything else hard-tier routes there instead, and routine well-scoped orders go to the executor (Sonnet). Executes precise work orders exactly as scoped and reports results factually.
+description: Orchestra heavy executor at xhigh effort (Opus). The deepest-reasoning execution point in the company — use only for orders the Director judges hardest at PLAN time, where even the high-effort heavy tier is not credibly enough. Identical law to executor-heavy; everything else hard-tier routes there instead, ordinary orders stay on the default executor (Opus medium), and routine mechanical or airtight orders go to executor-mechanical (Sonnet). Executes precise work orders exactly as scoped and reports results factually.
 disallowedTools: Agent
 model: opus
 effort: xhigh

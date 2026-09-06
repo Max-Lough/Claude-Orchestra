@@ -204,6 +204,12 @@ const briefMarkers = [
   'PROHIBITED COMMANDS',
   'A RESTRICTION WRITTEN INTO THE WORK ORDER IS BINDING ON YOU TOO',
   'VERIFICATION MANIFEST',
+  // The principal rung's goal-shaped charter, and the DECISIONS section the
+  // launcher promises the Director on its behalf. Both must be checkable from
+  // the engine's side: an agent file that claims a report section nothing ever
+  // asked the engine to write is exactly the gap this marker closes.
+  'THIS IS A PRINCIPAL ORDER',
+  'DECISIONS',
   'WORK ORDER',
 ]
   .filter((m) => brief.includes(m));

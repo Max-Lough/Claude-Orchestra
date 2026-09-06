@@ -823,6 +823,7 @@ function case17() {
   // impossible rather than merely discouraged.
   const launchers = [
     ['packs/codex/agents/executor-codex-heavy.md', 'mcp__orchestra-engine__orchestra_exec'],
+    ['packs/codex/agents/executor-codex-principal.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/reviewer-codex.md', 'mcp__orchestra-engine__orchestra_review'],
   ];
   for (const [rel, tool] of launchers) {
@@ -848,6 +849,349 @@ function case17() {
       /[Oo]ne call|calls? the .* tool once|\*\*one\*\* call/i.test(text),
       'no one-call language found'
     );
+  }
+}
+
+// The second Codex executor rung. The lane is now two profiles behind one
+// runner, and the whole safety story rests on three properties: the default is
+// unchanged (a run that names no profile is the run this file always made),
+// each rung reads only its OWN env vars and config keys (pinning one may never
+// move the other), and a profile that does not exist can never silently run
+// the other engine while a launcher relays the report as that engine's work.
+function case18() {
+  section('18. Two executor rungs: profile selection, key isolation, unknown-profile alarm');
+
+  const fx = makeRepo();
+
+  const dflt = runExec(fx, []);
+  check(
+    'no --profile is the heavy rung, unchanged: Sol at high effort',
+    field(dflt.stdout || '', 'MODEL') === 'gpt-5.6-sol' &&
+      /profile: heavy, model: gpt-5\.6-sol \(default\), effort: high/.test(dflt.stdout || ''),
+    (dflt.stdout || '').split('\n')[0]
+  );
+
+  const principal = runExec(fx, ['--profile', 'principal']);
+  const pout = principal.stdout || '';
+  check(
+    '--profile principal is GPT-6 Astra at xhigh effort',
+    field(pout, 'MODEL') === 'gpt-6-astra' &&
+      /profile: principal, model: gpt-6-astra \(default\), effort: xhigh/.test(pout),
+    pout.split('\n')[0]
+  );
+  check(
+    'the principal rung reaches the engine as a real run, not a refusal',
+    /STATUS: DONE/.test(pout) && /^EXEC ENGINE: OpenAI/m.test(pout),
+    pout.slice(0, 300)
+  );
+  check(
+    'the principal rung sends its effort to codex, not just to the header',
+    field(pout, 'CONFIG_OVERRIDES') ===
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0',
+    'CONFIG_OVERRIDES: ' + field(pout, 'CONFIG_OVERRIDES')
+  );
+
+  // Key isolation, both directions. A project that pins the heavy rung has
+  // said nothing about the principal rung, and vice versa.
+  const pinnedHeavy = makeRepo();
+  writeProjectConfig(pinnedHeavy, {
+    codex: { execHeavyModel: 'sol-pinned', execHeavyEffort: 'medium' },
+  });
+  const heavyKeysOnPrincipal = runExec(pinnedHeavy, ['--profile', 'principal']);
+  check(
+    'codex.execHeavyModel/Effort do not leak into the principal rung',
+    field(heavyKeysOnPrincipal.stdout || '', 'MODEL') === 'gpt-6-astra' &&
+      /effort: xhigh/.test((heavyKeysOnPrincipal.stdout || '').split('\n')[0]),
+    (heavyKeysOnPrincipal.stdout || '').split('\n')[0]
+  );
+
+  const pinnedPrincipal = makeRepo();
+  writeProjectConfig(pinnedPrincipal, {
+    codex: { execPrincipalModel: 'astra-pinned', execPrincipalEffort: 'max' },
+  });
+  const principalKeysOnHeavy = runExec(pinnedPrincipal, []);
+  check(
+    'codex.execPrincipalModel/Effort do not leak into the heavy rung',
+    field(principalKeysOnHeavy.stdout || '', 'MODEL') === 'gpt-5.6-sol' &&
+      /effort: high/.test((principalKeysOnHeavy.stdout || '').split('\n')[0]),
+    (principalKeysOnHeavy.stdout || '').split('\n')[0]
+  );
+  const principalPinned = runExec(pinnedPrincipal, ['--profile', 'principal']);
+  check(
+    'codex.execPrincipalModel/Effort DO supply the principal rung, and are credited',
+    field(principalPinned.stdout || '', 'MODEL') === 'astra-pinned' &&
+      /model: astra-pinned \(orchestra\.json\), effort: max/.test(principalPinned.stdout || ''),
+    (principalPinned.stdout || '').split('\n')[0]
+  );
+
+  // Same isolation for the environment.
+  const envCross = runExec(fx, ['--profile', 'principal'], {
+    ORCHESTRA_EXEC_HEAVY_MODEL: 'sol-from-env',
+  });
+  check(
+    'ORCHESTRA_EXEC_HEAVY_MODEL does not reach the principal rung',
+    field(envCross.stdout || '', 'MODEL') === 'gpt-6-astra',
+    (envCross.stdout || '').split('\n')[0]
+  );
+  const envPrincipal = runExec(fx, ['--profile', 'principal'], {
+    ORCHESTRA_EXEC_PRINCIPAL_MODEL: 'astra-from-env',
+    ORCHESTRA_EXEC_PRINCIPAL_EFFORT: 'high',
+  });
+  check(
+    'ORCHESTRA_EXEC_PRINCIPAL_* supply the principal rung and are credited',
+    field(envPrincipal.stdout || '', 'MODEL') === 'astra-from-env' &&
+      /model: astra-from-env \(env\), effort: high/.test(envPrincipal.stdout || ''),
+    (envPrincipal.stdout || '').split('\n')[0]
+  );
+  const envOnHeavy = runExec(fx, [], { ORCHESTRA_EXEC_PRINCIPAL_MODEL: 'astra-from-env' });
+  check(
+    'ORCHESTRA_EXEC_PRINCIPAL_MODEL does not reach the heavy rung',
+    field(envOnHeavy.stdout || '', 'MODEL') === 'gpt-5.6-sol',
+    (envOnHeavy.stdout || '').split('\n')[0]
+  );
+
+  // An unknown rung must never quietly become the other one. "astra" is the
+  // near-miss a human would actually type for the principal rung, so it is the
+  // one worth pinning.
+  const bogus = runExec(fx, ['--profile', 'astra']);
+  const bout = bogus.stdout || '';
+  check(
+    'an unknown --profile falls back to heavy rather than inventing an engine',
+    field(bout, 'MODEL') === 'gpt-5.6-sol' && /profile: heavy/.test(bout),
+    bout.split('\n')[0]
+  );
+  check(
+    'an unknown --profile is announced in PREFLIGHT, naming what did not exist',
+    /^PREFLIGHT: unknown --profile "astra"/m.test(bout) &&
+      /known profiles: heavy, principal/.test(bout),
+    (bout.match(/^PREFLIGHT:.*$/m) || ['no PREFLIGHT line'])[0]
+  );
+
+  // A profile is still only a pair of defaults: an explicit flag outranks it,
+  // exactly as it outranks env and config on the heavy rung (case 2).
+  const flagOverPrincipal = runExec(fx, ['--profile', 'principal', '--model', 'gpt-6-flag']);
+  check(
+    'an explicit --model still outranks the profile default',
+    field(flagOverPrincipal.stdout || '', 'MODEL') === 'gpt-6-flag' &&
+      /profile: principal, model: gpt-6-flag \(flag\)/.test(flagOverPrincipal.stdout || ''),
+    (flagOverPrincipal.stdout || '').split('\n')[0]
+  );
+}
+
+// The executor ladder is doctrine, not code — it lives in prose the Director
+// reads at PLAN time, so nothing mechanical stops it from drifting back. These
+// checks pin the three claims that make the ladder work, in the files that
+// actually carry them. The failure they guard against is silent: a reworded
+// agent description that quietly re-promotes a demoted profile would change
+// where every escalated order goes, with no test red and no runtime error.
+function case19() {
+  section('19. Executor ladder doctrine: Astra on top, Fable and Sol demoted');
+
+  const read = (rel) => fs.readFileSync(path.join(MASTER, rel), 'utf8');
+  const frontmatter = (rel) => (/^description: (.*)$/m.exec(read(rel)) || [])[1] || '';
+
+  // 1. The demoted profiles must SAY they are demoted, in the description —
+  //    that string is what the Director's agent picker actually sees.
+  for (const rel of [
+    'agents/executor-principal.md',
+    'agents/executor-principal-xhigh.md',
+    'packs/codex/agents/executor-codex-heavy.md',
+  ]) {
+    const d = frontmatter(rel);
+    check(
+      rel + ': description declares USER REQUEST ONLY',
+      /USER REQUEST ONLY/.test(d),
+      d.slice(0, 200)
+    );
+    check(
+      rel + ': description does not claim to be the top rung of the ladder',
+      !/\bthe top rung of the default\b|\bTOP RUNG OF THE DEFAULT\b/.test(d),
+      d.slice(0, 200)
+    );
+  }
+
+  // 2. The Astra launcher must claim the top rung, and name the ladder that
+  //    reaches it. A launcher that does not know it is the escalation target
+  //    cannot tell the Director that a failure here is a plan problem.
+  const astra = read('packs/codex/agents/executor-codex-principal.md');
+  check(
+    'executor-codex-principal declares itself the default ladder\'s top rung',
+    /TOP RUNG OF THE DEFAULT EXECUTOR LADDER/.test(astra) &&
+      /top rung of the default executor ladder/i.test(astra),
+    astra.slice(0, 400)
+  );
+  check(
+    'executor-codex-principal names the full ladder that reaches it',
+    /`executor`[^\n]*`executor-heavy`[^\n]*you/.test(astra),
+    (astra.match(/^You are the \*\*top rung.*$/m) || ['no ladder line'])[0].slice(0, 200)
+  );
+  check(
+    'executor-codex-principal knows nothing is above it',
+    /There is no rung above you/.test(astra),
+    'the no-higher-rung line is missing'
+  );
+
+  // 3. The Opus heavy profiles must NOT claim to be the top tier: that stale
+  //    line (true before 3.1.0, false since) tells the rung directly below the
+  //    escalation target that there is nowhere to escalate to.
+  for (const rel of ['agents/executor-heavy.md', 'agents/executor-heavy-xhigh.md']) {
+    const t = read(rel);
+    check(
+      rel + ': does not claim to be the top execution tier',
+      !/You are the top execution tier/.test(t) &&
+        !/there is no higher tier to re-send the order to/.test(t),
+      (t.match(/^.*top execution tier.*$/m) || ['ok'])[0].slice(0, 200)
+    );
+    check(
+      rel + ': names the principal rung as where a dead end escalates',
+      /executor-codex-principal/.test(t),
+      'the heavy profile never names its escalation target'
+    );
+  }
+
+  // 4. The default rung and the tight-spec rung. The failure this guards is
+  //    the one the owner actually observed in the field: Sonnet given orders
+  //    that needed judgment about what they meant. That is a routing default,
+  //    so it lives in frontmatter, and frontmatter drifts silently.
+  const execFm = read('agents/executor.md');
+  check(
+    'executor is Opus at medium effort — the default rung',
+    /^model: opus$/m.test(execFm) && /^effort: medium$/m.test(execFm),
+    (execFm.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor declares itself THE DEFAULT EXECUTOR',
+    /THE DEFAULT EXECUTOR/.test(frontmatter('agents/executor.md')),
+    frontmatter('agents/executor.md').slice(0, 160)
+  );
+  const mech = read('agents/executor-mechanical.md');
+  check(
+    'executor-mechanical is Sonnet at high effort',
+    /^model: sonnet$/m.test(mech) && /^effort: high$/m.test(mech),
+    (mech.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-mechanical is reserved by SPEC TIGHTNESS, not task size',
+    /RESERVED for orders that are routine and mechanical, or whose goal and instructions are airtight/.test(
+      frontmatter('agents/executor-mechanical.md')
+    ),
+    frontmatter('agents/executor-mechanical.md').slice(0, 200)
+  );
+  check(
+    'executor-mechanical keeps the full executor law, including Blocked beats guessed',
+    /\*\*Blocked beats guessed\.\*\*/.test(mech) && /STATUS: DONE \| PARTIAL \| BLOCKED \| CHECKPOINT/.test(mech),
+    'the shared executor law did not survive into the mechanical rung'
+  );
+  check(
+    'executor-mechanical treats a mis-routed vague order as BLOCKED, not something to widen',
+    /mis-routed/.test(mech) && /Never widen a vague order/.test(mech),
+    'the mis-routing escape hatch is missing'
+  );
+
+  // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the two
+  //    claims an order's routing actually turns on.
+  const protocol = read('ORCHESTRA.md');
+  check(
+    'ORCHESTRA.md makes executor (Opus medium) the default rung',
+    /`executor` \(Opus, medium\) is the default/.test(protocol),
+    (protocol.match(/^\*\*Executor steering\.\*\*.*$/m) || ['no steering line'])[0].slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md routes by thinking difficulty, not diff size',
+    /Route by how hard the thinking is, not by how big the diff is/.test(protocol) &&
+      /Sonnet is not the small-task rung; it is the tight-spec rung/.test(protocol),
+    'the route-by-thinking rule is missing — this is the rule that keeps Sonnet from being overloaded'
+  );
+  check(
+    'ORCHESTRA.md still escalates across the vendor line to Astra',
+    /double bounce at the heavy tier escalates straight to Astra/.test(protocol),
+    'the vendor-crossing escalation sentence is missing'
+  );
+  check(
+    'ORCHESTRA.md marks the Fable and Sol executors user-request-only',
+    /\*\*Everything else on the bench is user request only\*\*/.test(protocol) &&
+      /`executor-principal`, `executor-principal-xhigh`\) and the Sol executor/.test(protocol),
+    'the user-request-only paragraph is missing or reworded'
+  );
+  check(
+    'ORCHESTRA.md 3.5 carries the full five-rung escalation ladder',
+    /`executor-mechanical` → `executor` → `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`/.test(protocol),
+    (protocol.match(/^5\. \*\*Escalate.*$/m) || ['no rule 5'])[0].slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md requires the Astra-unavailable substitution to be announced',
+    /When the Astra rung is unavailable/.test(protocol) &&
+      /escalate to `executor-principal` instead/.test(protocol),
+    'the unavailable-rung fallback rule is missing'
+  );
+}
+
+// The principal rung's charter has to reach the ENGINE, not just the launcher.
+// The Astra launcher tells the Director that the report will carry a DECISIONS
+// section and that the order is goal-shaped; before this, nothing in the brief
+// asked the engine for either, so the launcher was promising a section on
+// behalf of a model that had never been told to write it. These checks pin the
+// charter to the profile that earns it, and pin its ABSENCE on the rung that
+// does not — a heavy order is step-shaped and must not be told otherwise.
+function case20() {
+  section('20. The principal charter reaches the engine, and only on the principal rung');
+
+  const fx = makeRepo();
+
+  const heavy = runExec(fx, []);
+  const heavyMarkers = field(heavy.stdout || '', 'BRIEF_MARKERS');
+  check(
+    'a heavy order is NOT given the principal charter',
+    !/THIS IS A PRINCIPAL ORDER/.test(heavyMarkers),
+    'BRIEF_MARKERS: ' + heavyMarkers
+  );
+  check(
+    'a heavy order is NOT asked for a DECISIONS section',
+    !/DECISIONS/.test(heavyMarkers),
+    'BRIEF_MARKERS: ' + heavyMarkers
+  );
+  check(
+    'the heavy brief still carries the shared executor law and the work order',
+    /WORK ORDER/.test(heavyMarkers),
+    'BRIEF_MARKERS: ' + heavyMarkers
+  );
+
+  const principal = runExec(fx, ['--profile', 'principal']);
+  const pMarkers = field(principal.stdout || '', 'BRIEF_MARKERS');
+  check(
+    'a principal order IS given the goal-shaped charter',
+    /THIS IS A PRINCIPAL ORDER/.test(pMarkers),
+    'BRIEF_MARKERS: ' + pMarkers
+  );
+  check(
+    'a principal order IS asked for a DECISIONS section — the launcher promises it',
+    /DECISIONS/.test(pMarkers),
+    'BRIEF_MARKERS: ' + pMarkers
+  );
+  check(
+    'the principal brief still carries the shared executor law and the work order',
+    /WORK ORDER/.test(pMarkers),
+    'BRIEF_MARKERS: ' + pMarkers
+  );
+  check(
+    'the principal run still produces a normal report — the charter did not break the contract',
+    /STATUS: DONE/.test(principal.stdout || '') &&
+      /REPORT INTEGRITY: verified/.test(principal.stdout || ''),
+    (principal.stdout || '').slice(-400)
+  );
+
+  // The charter is text the engine reads, so pin its load-bearing clauses in
+  // the runner source rather than only its presence in the brief.
+  const runnerSrc = fs.readFileSync(RUNNER, 'utf8');
+  for (const [label, re] of [
+    ['goal-shaped, not step-shaped', /goal-shaped, not step-shaped/],
+    ['boundaries are the scope, not a file list', /not a file[\s\S]{0,40}list/],
+    ['decide the routine, ask about the material', /Decide the routine, ask about the material/],
+    ['recon before you build', /Recon before you build/],
+    ['surface the coupling', /Surface the coupling/],
+    ['a wrong goal is BLOCKED, never a silent substitution', /never a silent substitution/],
+  ]) {
+    check('principal charter states: ' + label, re.test(runnerSrc), 'clause missing from the brief');
   }
 }
 
@@ -882,6 +1226,9 @@ async function main() {
   case15();
   case16();
   case17();
+  case18();
+  case19();
+  case20();
 }
 
 main().then(finish, (e) => {

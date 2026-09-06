@@ -4,20 +4,29 @@
  *
  * Drives an OpenAI model through the Codex CLI to CARRY OUT a work order —
  * edits, commands, builds, tests — in the project working tree. The default
- * Orchestra executors are the Claude `executor` (Sonnet) and `executor-heavy`
- * (Opus); this engine is the exceptional-case cross-vendor executor for a
- * problem with concrete prior evidence that Anthropic models struggled on it
- * — never routine work. One model: gpt-5.6-sol, high reasoning effort by
- * default.
+ * Orchestra executors are the Claude `executor` (Sonnet), `executor-heavy`
+ * (Opus) and `executor-principal` (Fable); this engine is the exceptional-case
+ * cross-vendor executor for a problem with concrete prior evidence that
+ * Anthropic models struggled on it — never routine work.
  *
- * The `executor-codex-heavy` subagent (a thin Claude launcher) invokes this.
- * The Director itself cannot — the guard blocks its Bash — so execution
- * stays delegated.
+ * Two rungs, selected by `--profile` and nothing else:
+ *
+ *   heavy      (default)   GPT-5.6 Sol at high effort
+ *   principal              GPT-6 Astra at xhigh effort
+ *
+ * The rungs differ ONLY in model and effort — same sandbox, same idle
+ * precheck, same tree audit, same one-attempt law, same report contract, and
+ * each reads its own env vars and config keys. A run that names no profile
+ * behaves exactly as this file did before the principal rung existed.
+ *
+ * The `executor-codex-heavy` and `executor-codex-principal` subagents (thin
+ * Claude launchers) invoke this. The Director itself cannot — the guard
+ * blocks its Bash — so execution stays delegated.
  *
  * Usage:
  *   node orchestra-exec.js --work-order <file> \
- *     [--model <id>] [--effort <level>] [--timeout-ms <n>] \
- *     [--forbid <cmd>]... [--cd <dir>] [--no-probe]
+ *     [--profile heavy|principal] [--model <id>] [--effort <level>] \
+ *     [--timeout-ms <n>] [--forbid <cmd>]... [--cd <dir>] [--no-probe]
  *
  * The work-order file is plain text the launcher wrote verbatim from what the
  * Director handed it: goal, exact scope, constraints, context, and the report
@@ -86,6 +95,8 @@
  *   { "codex": {
  *       "execHeavyModel": "gpt-5.6-sol",
  *       "execHeavyEffort": "high",
+ *       "execPrincipalModel": "gpt-6-astra",
+ *       "execPrincipalEffort": "xhigh",
  *       "execTimeoutMs": 1800000,
  *       "execSandbox": "workspace-write",
  *       "idleMs": 1500,
@@ -102,11 +113,19 @@
  * helpersDir, and the integrity-ignore keys are SHARED with the review
  * runner — one Codex install, one set of machine facts.)
  *
- *   ORCHESTRA_EXEC_HEAVY_MODEL  Executor model (default gpt-5.6-sol).
- *   ORCHESTRA_EXEC_HEAVY_EFFORT Reasoning effort (default high — the
- *                               exceptional-order executor exists to
+ *   ORCHESTRA_EXEC_HEAVY_MODEL  Heavy-rung model (default gpt-5.6-sol).
+ *   ORCHESTRA_EXEC_HEAVY_EFFORT Heavy-rung reasoning effort (default high —
+ *                               the exceptional-order executor exists to
  *                               converge in one round; passed to codex as
  *                               `-c model_reasoning_effort=<v>`).
+ *   ORCHESTRA_EXEC_PRINCIPAL_MODEL
+ *                               Principal-rung model (default gpt-6-astra).
+ *   ORCHESTRA_EXEC_PRINCIPAL_EFFORT
+ *                               Principal-rung reasoning effort (default
+ *                               xhigh; Astra's ladder is
+ *                               low|medium|high|xhigh|max, with no `none`).
+ *                               Only the SELECTED profile reads its own pair;
+ *                               the other rung's vars are ignored entirely.
  *   ORCHESTRA_EXEC_TIMEOUT_MS   Max wall-clock for the run (default 1800000).
  *                               Execution runs the project's verification, so
  *                               budget it like a build+suite, not like a chat.
@@ -175,14 +194,40 @@ const DEFAULT_INTEGRITY_IGNORE = [
   '.cache/', 'coverage/', '.coverage', '.nyc_output/', '*.log', '*.tmp',
 ];
 
-// The one Codex executor: Sol, OpenAI's flagship model, at high reasoning
-// effort by default — overridable per project (codex.execHeavyModel /
-// codex.execHeavyEffort, the config keys keep their existing names).
-const EXEC_DEFAULTS = { model: 'gpt-5.6-sol', effort: 'high' };
+// The Codex executor rungs. Two named PROFILES, each with its own model,
+// effort, env vars and config keys — nothing else about the run differs, and
+// there is no effort ladder to select inside a profile (the removed `--tier`
+// flag was exactly that, and is not coming back).
+//
+//   heavy     GPT-5.6 Sol at high     — the exceptional-order rung
+//   principal GPT-6 Astra at xhigh    — the rung above it
+//
+// `heavy` is the default, so a run that names no profile behaves exactly as
+// it did before the principal rung existed, down to the config keys it reads.
+const EXEC_PROFILES = {
+  heavy: {
+    model: 'gpt-5.6-sol',
+    effort: 'high',
+    modelEnv: 'ORCHESTRA_EXEC_HEAVY_MODEL',
+    effortEnv: 'ORCHESTRA_EXEC_HEAVY_EFFORT',
+    modelKey: 'execHeavyModel',
+    effortKey: 'execHeavyEffort',
+  },
+  principal: {
+    model: 'gpt-6-astra',
+    effort: 'xhigh',
+    modelEnv: 'ORCHESTRA_EXEC_PRINCIPAL_MODEL',
+    effortEnv: 'ORCHESTRA_EXEC_PRINCIPAL_EFFORT',
+    modelKey: 'execPrincipalModel',
+    effortKey: 'execPrincipalEffort',
+  },
+};
+const DEFAULT_PROFILE = 'heavy';
 
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
 const CONFIG = {
+  profile: DEFAULT_PROFILE,
   model: '',
   modelSource: 'default',
   effort: '',
@@ -222,6 +267,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--work-order') out.workOrder = argv[++i];
+    else if (a === '--profile') out.profile = argv[++i];
     else if (a === '--model') out.model = argv[++i];
     else if (a === '--effort') out.effort = argv[++i];
     else if (a === '--timeout-ms') out.timeoutMs = argv[++i];
@@ -350,7 +396,8 @@ function sleepSync(msec) {
 const CONFIG_NOTES = [];
 
 const CODEX_ONLY_KEYS = [
-  'execTimeoutMs', 'execHeavyModel', 'execHeavyEffort', 'execSandbox', 'doNotRun',
+  'execTimeoutMs', 'execHeavyModel', 'execHeavyEffort',
+  'execPrincipalModel', 'execPrincipalEffort', 'execSandbox', 'doNotRun',
   'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'helpersDir', 'gitConfigIsolation',
   'crossplanModel', 'crossplanEffort',
 ];
@@ -696,7 +743,50 @@ function manifestLines(verification) {
   return lines;
 }
 
-function buildBrief(workOrder, verification, forbidden) {
+// The PRINCIPAL rung takes a different SHAPE of order, not merely a harder
+// one. A principal order names a goal, its done-criteria, the intent behind
+// it and the boundaries — not a file list — because the work reaching this
+// rung is work that loses its value when cut into narrow orders: many coupled
+// seams that only stay correct if one mind holds them at once, or territory
+// that cannot be planned before it is explored. These lines say so to the
+// engine. Without them the launcher promises the Director a DECISIONS section
+// that nothing ever asked the engine to write.
+function principalLines(profile) {
+  if (profile !== 'principal') return [];
+  return [
+    'THIS IS A PRINCIPAL ORDER — read these before the rules above bite.',
+    'P1. The order is goal-shaped, not step-shaped. It names a goal, its',
+    '    done-criteria, the intent behind it, and boundaries — not a file',
+    '    list. Inside those boundaries you decide which files change; outside',
+    '    them you change nothing. Rule 1 still binds: the boundary is the',
+    '    scope. Latitude inside the goal is not licence to redesign it — if',
+    '    you believe the goal or a stated constraint is itself wrong, that is',
+    '    a BLOCKED report, never a silent substitution.',
+    'P2. Decide the routine, ask about the material. Make the ordinary calls',
+    '    yourself (a name, a default, which of two equivalent approaches) and',
+    '    record each under DECISIONS. Reserve BLOCKED for where different',
+    '    readings of the goal would lead to materially different work, a',
+    '    stated constraint cannot be met, or a done-criterion cannot be made',
+    '    observable. First do everything that does not depend on the answer.',
+    'P3. Recon before you build. You are expected to map the territory',
+    '    yourself: the code the goal touches, the tests protecting it, the',
+    '    conventions around it, and any case file this order carries (prior',
+    '    reports, reviewer findings). Absorb that history first and never',
+    '    repeat an approach it already rules out; say which dead ends you',
+    '    avoided and why.',
+    'P4. Surface the coupling. Orders reach this rung precisely because seams',
+    '    interact. Where your change touches one — an invariant another',
+    '    subsystem relies on, an ordering assumption, a data-shape contract —',
+    '    name it in CONCERNS even when everything passes, so the reviewer',
+    '    knows where to press.',
+    'P5. Prefer the minimal coherent change. Capability is not licence for',
+    '    cleverness: edit surgically rather than rewriting a file when the',
+    '    result is the same.',
+    '',
+  ];
+}
+
+function buildBrief(workOrder, verification, forbidden, profile) {
   return [
     'You are the EXECUTOR in a multi-agent engineering harness. A Director',
     '(who never touches the code) wrote the work order below; your edits and',
@@ -743,6 +833,7 @@ function buildBrief(workOrder, verification, forbidden) {
     '   progress file, append one status line there after each part, before',
     '   starting the next.',
     '',
+    ...principalLines(profile),
     'OUTPUT — end your final message with EXACTLY this structure (it is the',
     'report the Director will read; make it self-contained, no "see above").',
     'Do not wrap it in code fences.',
@@ -760,6 +851,14 @@ function buildBrief(workOrder, verification, forbidden) {
     '- <anything done beyond, short of, or differently than the order — or',
     '  "none">',
     '',
+    ...(profile === 'principal'
+      ? [
+          'DECISIONS',
+          '- <each judgment call the goal left to you, and why you chose it —',
+          '  or "none">',
+          '',
+        ]
+      : []),
     'CONCERNS',
     '- <risks, smells, or follow-ups the Director should weigh — or "none">',
     '',
@@ -1023,6 +1122,7 @@ const PREFLIGHT = [];
 
 function settingsBits() {
   return [
+    'profile: ' + CONFIG.profile,
     'model: ' + (CONFIG.model || 'codex default') + ' (' + CONFIG.modelSource + ')',
     'effort: ' + (CONFIG.effort || 'codex default'),
     'sandbox: ' + CONFIG.sandbox,
@@ -1188,8 +1288,11 @@ function main() {
   if (args.help) {
     process.stdout.write(
       'Usage: node orchestra-exec.js --work-order <file>\n' +
-        '         [--model <id>] [--effort <level>] [--timeout-ms <n>]\n' +
-        '         [--forbid <cmd>]... [--cd <dir>] [--no-probe]\n' +
+        '         [--profile heavy|principal] [--model <id>] [--effort <level>]\n' +
+        '         [--timeout-ms <n>] [--forbid <cmd>]... [--cd <dir>] [--no-probe]\n' +
+        '\n' +
+        '  --profile heavy      GPT-5.6 Sol at high effort (default)\n' +
+        '  --profile principal  GPT-6 Astra at xhigh effort\n' +
         '\n' +
         '  Carries out an Orchestra work order via an OpenAI model driven by the\n' +
         '  Codex CLI, in the LIVE working tree. One attempt, never auto-retried —\n' +
@@ -1208,34 +1311,55 @@ function main() {
       ? projectCfg.codex
       : {};
 
-  // Resolution: flag > env > orchestra.json (codex.execHeavyModel /
-  // codex.execHeavyEffort) > default (gpt-5.6-sol / high). One model, one
-  // effort — there is no selectable tier.
+  // Which rung is running. An unrecognised --profile is a header fact, not a
+  // silent substitution: the run still happens on the default rung, and the
+  // PREFLIGHT line tells the launcher its order named something that did not
+  // exist, so a Sol run can never be relayed as an Astra one.
+  if (args.profile != null && String(args.profile).trim()) {
+    const want = String(args.profile).trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(EXEC_PROFILES, want)) {
+      CONFIG.profile = want;
+    } else {
+      PREFLIGHT.push(
+        'unknown --profile "' + boundedDiagnostic(want, 200) + '" — the run used the ' +
+          DEFAULT_PROFILE + ' profile (' + EXEC_PROFILES[DEFAULT_PROFILE].model + '); ' +
+          'known profiles: ' + Object.keys(EXEC_PROFILES).join(', ')
+      );
+    }
+  }
+  const profile = EXEC_PROFILES[CONFIG.profile];
+
+  // Resolution, per profile: flag > env > orchestra.json > profile default.
+  // Each rung reads its OWN env var and config key, so pinning the principal
+  // rung never moves the heavy one. The heavy rung's keys keep the names they
+  // shipped with (codex.execHeavyModel / execHeavyEffort) — projects have them
+  // written down. Within a profile there is still one model and one effort;
+  // the removed `--tier` flag selected efforts inside a rung and is not back.
   if (args.model && args.model.trim()) {
     CONFIG.model = args.model.trim();
     CONFIG.modelSource = 'flag';
-  } else if (process.env.ORCHESTRA_EXEC_HEAVY_MODEL && process.env.ORCHESTRA_EXEC_HEAVY_MODEL.trim()) {
-    CONFIG.model = process.env.ORCHESTRA_EXEC_HEAVY_MODEL.trim();
+  } else if (process.env[profile.modelEnv] && process.env[profile.modelEnv].trim()) {
+    CONFIG.model = process.env[profile.modelEnv].trim();
     CONFIG.modelSource = 'env';
-  } else if (typeof codexCfg.execHeavyModel === 'string' && codexCfg.execHeavyModel.trim()) {
-    CONFIG.model = codexCfg.execHeavyModel.trim();
+  } else if (typeof codexCfg[profile.modelKey] === 'string' && codexCfg[profile.modelKey].trim()) {
+    CONFIG.model = codexCfg[profile.modelKey].trim();
     CONFIG.modelSource = 'orchestra.json';
   } else {
-    CONFIG.model = EXEC_DEFAULTS.model;
+    CONFIG.model = profile.model;
     CONFIG.modelSource = 'default';
   }
 
   if (args.effort && args.effort.trim()) {
     CONFIG.effort = args.effort.trim();
     CONFIG.effortSource = 'flag';
-  } else if (process.env.ORCHESTRA_EXEC_HEAVY_EFFORT && String(process.env.ORCHESTRA_EXEC_HEAVY_EFFORT).trim() !== '') {
-    CONFIG.effort = String(process.env.ORCHESTRA_EXEC_HEAVY_EFFORT).trim();
+  } else if (process.env[profile.effortEnv] && String(process.env[profile.effortEnv]).trim() !== '') {
+    CONFIG.effort = String(process.env[profile.effortEnv]).trim();
     CONFIG.effortSource = 'env';
-  } else if (typeof codexCfg.execHeavyEffort === 'string' && codexCfg.execHeavyEffort.trim()) {
-    CONFIG.effort = codexCfg.execHeavyEffort.trim();
+  } else if (typeof codexCfg[profile.effortKey] === 'string' && codexCfg[profile.effortKey].trim()) {
+    CONFIG.effort = codexCfg[profile.effortKey].trim();
     CONFIG.effortSource = 'orchestra.json';
   } else {
-    CONFIG.effort = EXEC_DEFAULTS.effort;
+    CONFIG.effort = profile.effort;
     CONFIG.effortSource = 'default';
   }
 
@@ -1398,7 +1522,7 @@ function main() {
     if (settled !== null) before = settled;
   }
 
-  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden);
+  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden, CONFIG.profile);
 
   // --- the one attempt.
   const lastMsgFile = path.join(SCRATCH.dir, 'report.txt');

@@ -9,6 +9,166 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
+
+**Why.** OpenAI shipped GPT-6 Astra on 2026-09-03. On Terminal-Bench 4.0 it
+scores 57.7% against GPT-5.6 Sol's 37.3% and Claude Fable 5.1's 55.8% — and
+long-horizon agentic work in a live terminal is precisely what an executor
+does. 3.1.0 had just added a Fable principal tier above the Opus heavy profiles
+on the strength of the Tug campaign, where the longest review→fix chains all
+sat at the heavy tier with no rung above. Astra is a better answer to that same
+problem, so it takes that rung.
+
+**Sonnet was carrying orders it should never have seen.** This one is the
+owner's read of the harness in use, not a measured result — no Tug number
+isolates it, and it is recorded here as the judgment it is. The mechanism is
+concrete enough to act on: `executor` was Sonnet and took everything not
+specifically routed elsewhere, so any order whose spec turned out to be softer
+than it looked at PLAN time got answered with a confident guess instead of a
+BLOCKED question. The fix is to make the default rung a model with the judgment
+to notice, and to reserve Sonnet for the orders where that judgment is
+genuinely not needed. If the shakedown shows the old default was fine, the
+change to revert is one line of frontmatter.
+
+- **`executor` is now Opus at medium effort** — still the default, still the
+  same name, so "the default executor" and `executor` stay the same thing.
+- **`executor-mechanical` (Sonnet, high) is new**, and it is reserved by *spec
+  tightness*, not task size: a rename ripple, a codemod, a spelled-out patch, a
+  well-trodden test addition. Its name says the criterion out loud because
+  `-light` would have invited exactly the size-based routing being corrected. It
+  carries the executor law verbatim, including "Blocked beats guessed", plus one
+  extra clause — an order that turns out to need judgment about its own meaning
+  was mis-routed, and the answer is BLOCKED, never widening the order to keep
+  moving.
+- **The Opus rungs are now an effort ladder, not a model ladder.** `executor`
+  (medium) → `executor-heavy` (high) → `executor-heavy-xhigh` (xhigh) are one
+  model at three efforts, so the routing question is how hard the *thinking*
+  is, not how big the diff will be. No executor inherits the session default
+  effort any more; every rung is pinned.
+
+**The ladder in full:**
+
+| Route | Agent | Model |
+|---|---|---|
+| down | `executor-mechanical` | Sonnet, high |
+| **default** | `executor` | **Opus, medium** |
+| up (effort) | `executor-heavy` → `executor-heavy-xhigh` | Opus high → xhigh |
+| up (vendor) | `executor-codex-principal` | GPT-6 Astra, xhigh |
+
+**Migration note.** `executor` changes model under an existing name, so
+reinstalling into a project moves its default executor from Sonnet to Opus
+medium. That is the intended effect; projects that want the old behaviour for a
+specific order route it to `executor-mechanical`.
+
+**Astra takes the top rung.** A double bounce at the Opus heavy tier escalates
+straight to Astra, crossing the vendor line — for long-winded or highly
+detailed work where spinning up the Codex lane is worth it. The
+principal charter is unchanged from 3.1.0 and moves with the rung: exceptional
+orders only — many coupled moving parts that resist splitting, an approach or
+outcome the plan cannot settle in advance, or a second bounce at the heavy tier
+— plus the two principal duties (the order names any decision it delegates and
+its bounds, the principal records what it chose under DECISIONS, and on
+escalated orders it fixes the whole class of a reviewer finding rather than the
+cited instance).
+
+**Demoted to user request only:** the Fable principal profiles
+(`executor-principal`, `executor-principal-xhigh`) and the Sol executor
+(`executor-codex-heavy`). All three stay installed and fully functional; no
+routing rule reaches them. They run when the user names them, or when
+`executorEngine: "codex"` makes the Codex lane the project's executor lane —
+which is now the durable form of that same user request, and the only
+routing-free path to Sol. Sol's old criterion ("concrete prior evidence that
+Anthropic models struggled with this problem") is gone as a rule: with Astra as
+the escalation target, a Director following it would have reached the weaker
+cross-vendor engine on the way to the stronger one.
+
+**Two consequences worth stating plainly.**
+
+*Installing the `codex` pack now changes where escalated Claude work goes.* It
+is no longer a purely additive cross-vendor layer. Without the pack the ladder
+has no top rung: the Director says so in one line, escalates to
+`executor-principal` (Fable) instead, and names the substitution in the REPORT.
+Announced, never silent — the same posture as the §5 review alarm.
+
+*Escalating past Opus flips the review lane.* An Astra-executed order is
+Codex-authored, so §5 routes its review to the fresh-context Opus `reviewer`
+rather than to `reviewer-codex`. That is the cross-family rule working as
+intended, not a fallback, and it carries no alarm.
+
+**A stale line fixed on the way through.** `executor-heavy` and
+`executor-heavy-xhigh` still told themselves "You are the top execution tier —
+there is no higher tier to re-send the order to." That went stale when 3.1.0
+added the principal tier above them and was never corrected; it now sits
+directly below the escalation target and would suppress the exact escalation
+this release is built on. Both profiles now name `executor-codex-principal` as
+where a dead end goes, with the stop-grinding law itself unchanged.
+
+**One runner, two profiles.** `orchestra-exec.js` gained `--profile
+heavy|principal` and the MCP tool a matching typed `profile` enum. The rungs
+differ in model and effort and in nothing else: same `workspace-write` sandbox,
+same idle precheck, same tree audit, same report-integrity nonce, same
+one-attempt-never-retried law, same report contract. Each reads only its own
+settings — `ORCHESTRA_EXEC_PRINCIPAL_MODEL` / `_EFFORT` and
+`codex.execPrincipalModel` / `execPrincipalEffort`, defaulting to `gpt-6-astra`
+/ `xhigh` — so pinning one rung can never move the other. `heavy` stays the
+runner's default and keeps the key names it shipped with, so a run that names
+no profile behaves exactly as it did in 3.1.0, down to the config it reads.
+
+This is not the `--tier` flag 3.0.0 removed. That selected *effort levels of
+one model* and earned its deletion; a profile names a model and its effort
+together, and there is still no effort ladder to select inside a rung.
+
+**An unknown profile is an alarm, not a substitution.** `--profile astra` — the
+near-miss a human would actually type — falls back to the heavy rung and says
+so on a `PREFLIGHT` line naming what did not exist and what ran instead. The
+principal launcher is told to check the header for `profile: heavy` and flag
+it, because the one unrecoverable failure here is a Sol run relayed as Astra's
+work. `codexModelId` also learned the `GPT-6 Astra` → `gpt-6-astra`
+display-name mapping — the same shape defect that cost the lane a round on Sol
+in the 2026-09-02 shakedown.
+
+**A principal order is goal-shaped, and the engine is finally told so.**
+Harvested from PR #37, an independent parallel design for a principal executor
+that branched before 3.1.0 merged and was closed rather than merged (its
+`executor-principal` was a *different* agent from the one 3.1.0 shipped, and it
+predated this ladder). Its good idea survives here: the principal rung takes a
+goal, its observable done-criteria, the intent behind it and boundaries —
+**not a file list** — because the work reaching that rung is work that loses its
+value when cut into narrow orders. What that changed:
+
+- The exec runner's brief is now profile-aware. A `principal` run carries five
+  extra clauses (goal-shaped scope, decide-the-routine/ask-about-the-material,
+  recon-before-you-build, surface-the-coupling, minimal-coherent-change) and is
+  asked for a `DECISIONS` section. **This closes a real gap**: the launcher had
+  been telling the Director to expect DECISIONS from a model nothing had ever
+  asked to write one. A `heavy` run is unchanged and must not receive the
+  charter — a heavy order is step-shaped.
+- `/orchestra-plan` gains the principal branch in its decomposition gate and an
+  `Intent:` field in the order template, so a goal-shaped order can actually be
+  written down. Difficulty alone stays a heavy-tier reason, never a principal
+  one.
+- §8.1 exempts a principal order from the kind and subsystem caps — it is sized
+  by its done-criteria, always carries the cadence clauses, and still gets
+  exactly one review. §3.5 adds that one legitimate re-plan after a coherence
+  failure (each fragment passed alone, the seams failed) is a single principal
+  order, never a third try at the same fragment.
+- The Fable `executor-principal` carries the same charter, because it is the
+  announced substitute when the Astra rung is unavailable and must be able to
+  take the same order shape.
+
+**Coverage.** Exec-lane case 18 pins profile selection, both directions of
+env/config key isolation, the unknown-profile fallback and its PREFLIGHT line,
+and that an explicit `--model` still outranks a profile default. Case 19 pins
+the ladder itself, because it is prose the Director reads and nothing
+mechanical stops it drifting back: the demoted profiles must declare
+themselves user-request-only, the Astra launcher must claim the top rung and
+know nothing is above it, the heavy profiles must not claim to be the top tier,
+and ORCHESTRA.md must carry the three-rung ladder, the demotion, the §3.5
+escalation path and the announced-substitution rule. Case 20 pins the principal charter to the rung that earns it and its
+ABSENCE on the heavy rung, plus the clauses the brief must state. MCP-lane case
+4b pins the enum, that `profile` stays optional, both rungs end to end, and the
+display-name mapping. Case 17's structural launcher checks cover the new agent.
+
 ## 3.1.0 — a Fable principal-executor tier above the Opus heavy profiles
 
 **The failure.** In the PiratePartyPals Tug of War campaign (2026-09-02 →

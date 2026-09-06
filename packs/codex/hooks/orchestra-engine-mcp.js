@@ -163,6 +163,7 @@ function transportError(id, lines) {
 // which is the id convention for every OpenAI model name.
 const CODEX_MODEL_IDS = {
   'gpt-5.6 sol': 'gpt-5.6-sol',
+  'gpt-6 astra': 'gpt-6-astra',
 };
 function codexModelId(name) {
   const s = String(name || '').trim();
@@ -598,13 +599,15 @@ const TOOLS = [
       'working tree, runs verification, and reports in the Orchestra executor format). Blocks until done and ' +
       'returns the full report verbatim — header, STATUS line, report body, TREE AUDIT, REPORT INTEGRITY. ' +
       'Execution is deliberately NEVER auto-retried (a half-dead engine may have half-edited the tree): call ' +
-      'this ONCE per work order and relay a STATUS: EXEC_UNAVAILABLE as-is. Default model gpt-5.6-sol at high ' +
-      'reasoning effort — this is the exceptional-order executor, never routine work; model/effort overrides ' +
-      'are for an explicit exceptional order, never a launcher\'s own judgment.',
+      'this ONCE per work order and relay a STATUS: EXEC_UNAVAILABLE as-is. Two rungs, chosen by `profile`: ' +
+      '"heavy" (default, GPT-5.6 Sol at high effort) and "principal" (GPT-6 Astra at xhigh effort). Both are ' +
+      'exceptional-order executors, never routine work; which rung a launcher passes is fixed by which launcher ' +
+      'it is, and model/effort overrides are for an explicit exceptional order, never a launcher\'s own judgment.',
     inputSchema: {
       type: 'object',
       properties: {
         work_order: { type: 'string', description: 'The FULL execution work order — goal, scope, constraints, context, verification expectations — verbatim.' },
+        profile: { type: 'string', enum: ['heavy', 'principal'], description: 'Which Codex executor rung runs the order. "heavy" (default) is GPT-5.6 Sol at high effort; "principal" is GPT-6 Astra at xhigh effort. Each launcher passes its own rung and never chooses between them.' },
         timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one. Default 1800000 — budget a build plus a suite.' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the executor must not run.' },
         cd: { type: 'string', description: 'Isolated worktree directory to execute in, only when the order names one.' },
@@ -634,6 +637,7 @@ const TOOLS = [
         removeRunDir(dir);
         throw e;
       }
+      if (typeof a.profile === 'string' && a.profile.trim()) args.push('--profile', a.profile.trim());
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       pushForbids(args, a.forbid);
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);

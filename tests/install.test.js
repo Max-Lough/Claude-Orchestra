@@ -108,6 +108,7 @@ const EXPECTED_LEGACY_CENSUS = [
   '.claude/agents/detective.md',
   '.claude/agents/executor-heavy-xhigh.md',
   '.claude/agents/executor-heavy.md',
+  '.claude/agents/executor-mechanical.md',
   '.claude/agents/executor-principal-xhigh.md',
   '.claude/agents/executor-principal.md',
   '.claude/agents/executor.md',

@@ -462,6 +462,69 @@ async function case4() {
   s.close();
 }
 
+// 4b. The exec tool's `profile` argument is the ONLY thing that selects the
+//     Astra rung, and a launcher's whole contract rests on it actually
+//     reaching the runner. A dropped `profile` would run Sol while the
+//     principal launcher relayed the report as Astra's work, so this pins the
+//     round trip end to end: schema, forwarding, and the header that comes
+//     back. The typed enum also fences the near-miss spellings a launcher
+//     could otherwise invent.
+async function case4b() {
+  section('4b. orchestra_exec: profile selects the executor rung, end to end');
+  const fx = makeRepo();
+  const s = mcpSession({ fx, env: { STUB_CODEX_FIRST_LINE: 'STATUS: DONE' } });
+  await s.start();
+
+  const list = await s.rpc('tools/list');
+  const exec = ((list.result && list.result.tools) || []).find((t) => t.name === 'orchestra_exec');
+  const prop = exec && exec.inputSchema.properties && exec.inputSchema.properties.profile;
+  check(
+    'the schema exposes profile as a two-value enum',
+    prop && prop.type === 'string' &&
+      JSON.stringify((prop.enum || []).slice().sort()) === JSON.stringify(['heavy', 'principal']),
+    JSON.stringify(prop)
+  );
+  check(
+    'profile is optional: an existing launcher that omits it is still valid',
+    exec && !(exec.inputSchema.required || []).includes('profile'),
+    JSON.stringify(exec && exec.inputSchema.required)
+  );
+
+  const principal = resultText(await s.rpc('tools/call', {
+    name: 'orchestra_exec',
+    arguments: { work_order: 'Report only.', profile: 'principal', timeout_ms: 60000 },
+  }, 180000));
+  check(
+    'profile principal reaches the runner and runs Astra at xhigh',
+    /profile: principal/.test(principal) && field(principal, 'MODEL') === 'gpt-6-astra' &&
+      /effort: xhigh/.test(principal),
+    principal.split('\n')[0]
+  );
+
+  const dflt = resultText(await s.rpc('tools/call', {
+    name: 'orchestra_exec',
+    arguments: { work_order: 'Report only.', timeout_ms: 60000 },
+  }, 180000));
+  check(
+    'omitting profile is still the heavy rung on Sol',
+    /profile: heavy/.test(dflt) && field(dflt, 'MODEL') === 'gpt-5.6-sol',
+    dflt.split('\n')[0]
+  );
+
+  // A display name still has to become an id; Astra joins Sol in that map.
+  const named = resultText(await s.rpc('tools/call', {
+    name: 'orchestra_exec',
+    arguments: { work_order: 'Report only.', model: 'GPT-6 Astra', timeout_ms: 60000 },
+  }, 180000));
+  check(
+    'the roster display name "GPT-6 Astra" is sent to codex as gpt-6-astra',
+    field(named, 'MODEL') === 'gpt-6-astra',
+    'MODEL: ' + field(named, 'MODEL')
+  );
+
+  s.close();
+}
+
 // 5. The doctor: exit code is the one meaningful runner exit, so the server
 //    surfaces it as data on the first line instead of swallowing it.
 async function case5() {
@@ -999,6 +1062,7 @@ async function main() {
   await case2();
   await case3();
   await case4();
+  await case4b();
   await case5();
   await case5b();
   await case5c();

@@ -1,16 +1,17 @@
 {
   "name": "codex",
   "title": "Codex / GPT cross-vendor interface",
-  "summary": "Adds the OpenAI-backed half of the harness: the Sol reviewer as the default cross-family reviewer for Claude-authored campaign work through the Codex CLI, an exceptional-order-only Sol executor through the same CLI, and the two-architect /cross-compare-plan session (independent drafts, cross-critique, blind synthesis) whose GPT lane (Sol, high effort) runs read-only through the same CLI.",
+  "summary": "Adds the OpenAI-backed half of the harness: the Sol reviewer as the default cross-family reviewer for Claude-authored campaign work through the Codex CLI, the harness's top executor rung (GPT-6 Astra at xhigh) plus a user-request-only Sol executor, both through the same CLI, and the two-architect /cross-compare-plan session (independent drafts, cross-critique, blind synthesis) whose GPT lane (Sol, high effort) runs read-only through the same CLI.",
   "requires": {
-    "bin": ["codex (Codex CLI) — for reviewer-codex, executor-codex-heavy, and the cross-compare architect lane"],
+    "bin": ["codex (Codex CLI) — for reviewer-codex, executor-codex-heavy, executor-codex-principal, and the cross-compare architect lane"],
     "env": ["OPENAI_API_KEY or `codex login` — review, execution, and cross-compare"]
   },
   "notes": [
     "reviewer-codex is the default independent reviewer for Claude-authored campaign work; Codex-authored work goes to fresh-context Opus review instead. There is no reviewEngine switch. Docs-only work is exempt: a prose-only diff routes to fresh-context Opus review — no cross-family requirement, no alarm.",
-    "executor-codex-heavy is exceptional-only: a problem with concrete prior evidence that Anthropic models struggled on it, a Director routing decision made at PLAN time — never routine work. The Claude executors remain the default path.",
-    "Config keys (.claude/orchestra.json under \"codex\"): reviewModel (default gpt-5.6-sol), reviewTimeoutMs (default 2700000), execHeavyModel (default gpt-5.6-sol), execHeavyEffort (default high), crossplanModel (default gpt-5.6-sol), crossplanEffort (default high).",
-    "Windows: codex-command-runner.exe, codex-resources AND codex-windows-sandbox-setup.exe must sit DIRECTLY beside codex.exe. Codex resolves the sandbox helper by name, so a copy one directory down (inside codex-resources\\) is never found — the sandbox is never set up and BOTH lanes (review and execution) return nothing while looking healthy. The self-check below finds that state and repairs it where it can.",
+    "executor-codex-principal (GPT-6 Astra, xhigh) is the TOP RUNG OF THE HARNESS'S DEFAULT EXECUTOR LADDER, not a side lane: executor (Sonnet) then executor-heavy (Opus) then Astra, one rung per double bounce, so escalation crosses the vendor line at the top. Exceptional orders only, declared at PLAN time — never routine work, never a launcher's own escalation. Installing this pack therefore changes where escalated Claude work goes; without it the ladder has no top rung and the Director substitutes the Fable executor-principal, announced rather than silently.",
+    "executor-codex-heavy (GPT-5.6 Sol, high) is the cheaper cross-vendor executor and is USER REQUEST ONLY — no routing rule reaches it. It runs when the user names it, or when executorEngine: \"codex\" makes the Codex lane the project's executor lane.",
+    "Config keys (.claude/orchestra.json under \"codex\"): reviewModel (default gpt-5.6-sol), reviewTimeoutMs (default 2700000), execHeavyModel (default gpt-5.6-sol), execHeavyEffort (default high), execPrincipalModel (default gpt-6-astra), execPrincipalEffort (default xhigh), crossplanModel (default gpt-5.6-sol), crossplanEffort (default high). Each executor rung reads only its own pair, so pinning one never moves the other; the heavy keys keep the names they shipped with.",
+    "Windows: codex-command-runner.exe, codex-resources AND codex-windows-sandbox-setup.exe must sit DIRECTLY beside codex.exe. Codex resolves the sandbox helper by name, so a copy one directory down (inside codex-resources\\) is never found — the sandbox is never set up and BOTH lanes (review and execution, at either rung) return nothing while looking healthy. The self-check below finds that state and repairs it where it can.",
     "Without this pack the harness still gets full fresh-context Opus review and Claude execution; it just has no cross-vendor option."
   ],
   "selfCheck": {

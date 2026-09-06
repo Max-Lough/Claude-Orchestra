@@ -100,25 +100,29 @@ The guard applies the same positive-evidence rule independently: it reads the se
 | Director | this session | Fable / Opus | decompose, decide, arbitrate, synthesize, talk to the user; never implement |
 | Scout | `scout` | Haiku | read-only *where/what* mapping; cheap, fan out freely |
 | Detective | `detective` | Opus | read-only *why/how* investigation; one question per case, evidence chains, confidence grade |
-| Executor | `executor` | Sonnet | routine edits, commands, builds, and tests |
-| Heavy executor | `executor-heavy` / `executor-heavy-xhigh` | Opus high / xhigh | hard, split-resistant, or escalated Claude work; chosen at PLAN time |
-| Principal executor | `executor-principal` / `executor-principal-xhigh` | Fable high / xhigh | exceptional Claude work — many coupled moving parts, an approach the plan cannot settle, or a second bounce at the heavy tier; the top rung, chosen at PLAN time |
+| Mechanical executor | `executor-mechanical` | Sonnet, high | routine mechanical orders, and orders whose goal and instructions are airtight |
+| Executor | `executor` | Opus, medium | **the default** — every order that isn't specifically routed elsewhere |
+| Heavy executor | `executor-heavy` / `executor-heavy-xhigh` | Opus high / xhigh | the same model at more effort — hard, split-resistant, or escalated work; chosen at PLAN time |
+| Principal executor † | `executor-codex-principal` | GPT-6 Astra, xhigh | **the top rung of the default ladder** — exceptional orders: many coupled moving parts, an approach the plan cannot settle, or a second bounce at the Opus heavy tier |
+| Principal executor ‡ | `executor-principal` / `executor-principal-xhigh` | Fable high / xhigh | the same exceptional work on the Anthropic side; user request only, or the announced substitute when the Astra rung is unavailable |
+| Sol executor †‡ | `executor-codex-heavy` | GPT-5.6 Sol, high | the cheaper cross-vendor executor; user request only |
 | Reviewer | `reviewer` | Opus, fresh context | fallback review; primary review of Codex-authored work |
 | Sol reviewer † | `reviewer-codex` | GPT-5.6 Sol | default independent review of Claude-authored campaign work |
-| Sol executor † | `executor-codex-heavy` | GPT-5.6 Sol, high | exceptional work that has given Anthropic models trouble; never routine work |
 | Cross-compare architects † | `architect-claude` (+`-xhigh`/`-max`) / `architect-codex` | Fable / GPT-5.6 Sol | independent plans, cross-critique, revision (`/cross-compare-plan`) |
 | Plan synthesizer † | `plan-synthesizer` | Opus, fresh/blind | adjudicate revised plans without lane identity |
 
-† Installed only with the optional `codex` pack. Without it, Claude execution and fresh-context Opus review remain fully available; the harness reports the missing cross-family lane plainly rather than degrading silently. Projects may add **specialist executors** (see "Specialists" above) — route only to agents that actually exist in the project (`/orchestra-status` lists them).
+‡ **User request only** — never chosen by a routing rule. These run when you name them, or when `executorEngine` selects the Codex lane; the Fable profiles additionally stand in, announced, for an unavailable Astra rung.
+
+† Installed only with the optional `codex` pack. Without it the default ladder has no top rung — the Director substitutes `executor-principal` (Fable) and announces it — and review falls to fresh-context Opus; the harness reports the missing cross-family lane plainly rather than degrading silently. Projects may add **specialist executors** (see "Specialists" above) — route only to agents that actually exist in the project (`/orchestra-status` lists them).
 
 Recon has two deliberately-routed tiers: `scout` (Haiku) for cheap *where/what* fan-out, `detective` (Opus) for *why/how* questions where fact-gathering can't be separated from reasoning. A scout `UNKNOWN` that survives one re-probe becomes a detective case, never a third scout mission.
 
-## The `codex` pack — Sol review and exceptional Sol execution
+## The `codex` pack — Sol review and the Astra principal rung
 
-The `codex` pack (`--packs codex`) is the harness's optional cross-vendor surface — everything that talks to OpenAI, in one bundle:
+The `codex` pack (`--packs codex`) is the harness's optional cross-vendor surface — everything that talks to OpenAI, in one bundle. Since 3.2.0 it is **not purely additive**: its Astra executor is the top rung of the default ladder, so installing or removing the pack changes where escalated work goes.
 
 - **`reviewer-codex` (Sol) is the default reviewer for Claude-authored campaign work.** Codex-authored work goes to the fresh-context Opus `reviewer` instead, so author and reviewer always sit on different vendors — there is no `reviewEngine` switch to configure. Docs-only work is the exception — a prose-only diff routes to `reviewer` either way (see below).
-- **`executor-codex-heavy` (Sol, high effort) is the one Codex executor, and it's exceptional-only** — a Director routing decision made at PLAN time for a problem with concrete prior evidence that Anthropic models struggled on it, never routine work. The Claude executors remain the default path for everything else.
+- **`executor-codex-principal` (GPT-6 Astra, xhigh) is the top rung of the default executor ladder** — not a side lane. `executor` → `executor-heavy` → Astra, one rung per double bounce, so escalation crosses the vendor line at the top. `executor-codex-heavy` (Sol, high) is the cheaper cross-vendor executor and is **user request only**; no routing rule reaches it. See "Executor steering" below.
 - **`/cross-compare-plan`** runs a two-architect planning session — a fresh-context Claude architect and the GPT lane (Sol, high effort, read-only) draft independently from one shared brief, cross-critique, revise, and a blind Opus synthesizer merges the strongest final plan, with a default post-synthesis cross-family audit. See [`packs/codex/skills/cross-compare-plan/SKILL.md`](packs/codex/skills/cross-compare-plan/SKILL.md).
 
 **Prerequisites.** Install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it (`codex login` or `OPENAI_API_KEY`). Approve the project's `orchestra-engine` MCP server on first launch — until then every cross-vendor lane reports unavailable. Check the install any time, without running a review:
@@ -147,9 +151,26 @@ Then it runs `reviewer` in fresh context, repeats the alarm in the campaign's fi
 
 ## Executor steering
 
-Claude is the default. `executor` handles routine orders; the Opus heavy profiles (`executor-heavy`, `executor-heavy-xhigh`) are for hard or already-escalated work; the Fable principal profiles (`executor-principal`, `executor-principal-xhigh`) are for exceptional work only — many coupled moving parts that resist splitting, an approach or outcome the plan cannot settle in advance, or an order that has already bounced twice at the heavy tier. All of it is chosen at PLAN time, never self-promoted; the escalation ladder is `executor` → `executor-heavy` → `executor-principal`, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS and, on escalated orders, sweeps the whole class of each reviewer finding rather than the cited instance. The optional Codex lane has exactly one executor, `executor-codex-heavy` (Sol, high) — route to it only when concrete prior evidence says Anthropic models have struggled with that specific problem.
+`executor` (Opus, medium) is the default: an order lands there unless the plan has a specific reason to put it elsewhere. From there it moves in one of three directions, all decided at PLAN time and never self-promoted.
 
-`executorEngine: "codex"` in `.claude/orchestra.json` is the durable, project-level choice; an in-conversation instruction ("run this order through codex") overrides it for the named session or order without a reinstall. A Codex executor's `STATUS: EXEC_UNAVAILABLE` is not a completed order — read its `TREE AUDIT`, have a scout confirm the tree, then route the order to the appropriate Claude executor and say so.
+| Route | Agent | Model | When |
+|---|---|---|---|
+| down | `executor-mechanical` | Sonnet, high | routine mechanical orders, or orders whose goal and instructions are airtight — a rename ripple, a codemod, a spelled-out patch, a well-trodden test addition |
+| **default** | `executor` | Opus, medium | **everything else** |
+| up (effort) | `executor-heavy` → `executor-heavy-xhigh` | Opus high → xhigh | the thinking is hard — algorithmically hard cores, coupled cross-subsystem changes, risk-first probes, or a bounce at the rung below |
+| up (vendor) | `executor-codex-principal` † | GPT-6 Astra, xhigh | long-winded or highly detailed work worth spinning up the Codex lane for — many coupled moving parts that resist splitting, an approach the plan cannot settle in advance, or a second bounce at the heavy tier |
+
+**Route by how hard the thinking is, not by how big the diff is.** Sonnet is not the small-task rung, it's the tight-spec rung: an order goes to `executor-mechanical` only because nothing about its *meaning* is still open. A two-line change with an unresolved question belongs on `executor`; a thousand-line codemod with an airtight spec does not. Between `executor` and `executor-heavy` the model doesn't change at all — only the effort — so scale up when the reasoning is hard, not when the output is long.
+
+The ladder crosses the vendor line at the top rung: a double bounce at the heavy tier escalates straight to Astra, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS and, on escalated orders, sweeps the whole class of each reviewer finding rather than the cited instance.
+
+**Everything else on the bench is user request only.** The Fable principal profiles (`executor-principal`, `executor-principal-xhigh`) and the Sol executor (`executor-codex-heavy`) are installed and fully functional, but no routing rule reaches them. They run when you name them in conversation, or when `executorEngine: "codex"` in `.claude/orchestra.json` makes the Codex lane this project's executor lane — the durable form of the same request. The Director never promotes an order into them on its own judgment.
+
+**If the Astra rung is unavailable** — the `codex` pack isn't installed, or the lane can't run — the Director says so in one line, escalates to `executor-principal` (Fable) instead, and names the substitution in the REPORT. Announced, never silent: the campaign was not executed by Astra, and you can see that it wasn't.
+
+**Escalating past the heavy tier flips the review lane.** An Astra-executed order is Codex-authored, so its review goes to the fresh-context Opus `reviewer` rather than to `reviewer-codex` — the cross-family rule (ORCHESTRA.md §5) working as intended, not a fallback, and it carries no alarm.
+
+A Codex executor's `STATUS: EXEC_UNAVAILABLE` is not a completed order — read its `TREE AUDIT`, have a scout confirm the tree, then route the order to the appropriate Claude executor and say so.
 
 ## `.claude/orchestra.json` schema
 
@@ -157,7 +178,7 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `executorEngine` | `"claude"` \| `"codex"` | `"claude"` | Durable executor choice; `codex` selects the one Sol executor. |
+| `executorEngine` | `"claude"` \| `"codex"` | `"claude"` | Durable form of the user request that makes the Codex lane this project's executor lane (the only routing-free way to reach `executor-codex-heavy`). Does not affect the default ladder's Astra rung, which is always live when the pack is installed. |
 | `verification` | object | absent | Optional canonical verification manifest (below). |
 | `verification.full` / `.lint` | string \| `null` | `null` | Full-suite / lint command. |
 | `verification.shards` | string[] | `[]` | Independent suite commands. |
@@ -173,8 +194,10 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex.reviewModel` | string | `"gpt-5.6-sol"` | Sol review model. |
 | `codex.reviewSandbox` | string | `"workspace-write"` | Codex sandbox for review. |
 | `codex.reviewTimeoutMs` | integer | `1800000` | Per-attempt review wall-clock cap — Sol reviews at high effort commonly run 12–33 minutes. |
-| `codex.execHeavyModel` | string | `"gpt-5.6-sol"` | The sole Codex executor model. |
-| `codex.execHeavyEffort` | string | `"high"` | Sol executor reasoning effort. |
+| `codex.execHeavyModel` | string | `"gpt-5.6-sol"` | Heavy-rung model — the user-request-only Sol executor. |
+| `codex.execHeavyEffort` | string | `"high"` | Heavy-rung reasoning effort. |
+| `codex.execPrincipalModel` | string | `"gpt-6-astra"` | Principal-rung model — the default ladder's top rung. |
+| `codex.execPrincipalEffort` | string | `"xhigh"` | Principal-rung reasoning effort. Astra's ladder is `low`/`medium`/`high`/`xhigh`/`max` — it has no `none`. |
 | `codex.execSandbox` | string | `"workspace-write"` | Codex sandbox for execution. |
 | `codex.execTimeoutMs` | integer | `1800000` | Execution wall-clock cap. |
 | `codex.idleMs` | integer | `1500` | Live-tree settle window shared by both lanes; `0` disables. |
@@ -234,7 +257,7 @@ Keep a visible task list for multi-step work, and keep `.claude/plans/ledger.md`
 | Hook seems inactive | Approve project hooks at first launch (`/hooks` in Claude Code); confirm `.claude/settings.json` has the `orchestra-guard` entry. |
 | Executor denied on `git commit` | Re-run the installer — it merges the git grants into `permissions.allow`. Check they survived a hand-edit of settings. |
 | Executor denied on `git push` | Push is opt-in: `node install.js <project> --grant-push`. |
-| `reviewer-codex` / `executor-codex-heavy` / `/cross-compare-plan` don't exist | The `codex` pack isn't installed — `node install.js <project> --packs codex`. `/orchestra-status` reports which packs are present. |
+| `reviewer-codex` / `executor-codex-heavy` / `executor-codex-principal` / `/cross-compare-plan` don't exist | The `codex` pack isn't installed — `node install.js <project> --packs codex`. `/orchestra-status` reports which packs are present. |
 | Sol lane reports `UNAVAILABLE` | This is an **alarm condition under §5**, not a silent expected fallback — the Director shows the `⚠ CROSS-FAMILY REVIEW UNAVAILABLE` line and falls back to `reviewer`. Run `node .claude/hooks/orchestra-review.js --doctor` to check the Codex install; common cause on Windows is a helper file one directory too deep. |
 | Review times out exploring the tree | The change was committed but reviewed in a live (dirty) checkout. Name base/head SHAs in the review order so `--base-ref`/`--head-ref` land; check the verdict header for `checkout: live working tree`. |
 | Install refuses with "3.0 cannot safely upgrade a 2.0 roster:new install" | See "Migrating from 2.x" below — uninstall from the `v2.5.0-final` checkout first. |
@@ -262,7 +285,7 @@ The 3.0 installer refuses a `roster: "new"` target outright rather than attempti
 Orchestra/
 ├── README.md, CHANGELOG.md, VERSION, ORCHESTRA.md
 ├── install.js / install.ps1 / install.sh   ← idempotent installer/uninstaller
-├── agents/            ← the eight core Claude agents + specialists/
+├── agents/            ← the nine core Claude agents + specialists/
 ├── hooks/orchestra-guard.js  ← PreToolUse hook enforcing Director law
 ├── skills/             ← orchestra-status, orchestra-plan, orchestra-review
 ├── tests/               ← harness tests (master-only; never stamped into projects)
@@ -270,7 +293,8 @@ Orchestra/
     ├── README.md        ← the pack contract
     └── codex/            ← the OpenAI/Codex surface (optional, --packs codex)
         ├── pack.json, README.md, FIELD-VALIDATION.md
-        ├── agents/       ← reviewer-codex, executor-codex-heavy, architect-claude(+xhigh/max),
+        ├── agents/       ← reviewer-codex, executor-codex-heavy,
+        │                    executor-codex-principal, architect-claude(+xhigh/max),
         │                    architect-codex, plan-synthesizer
         ├── hooks/        ← orchestra-engine-mcp.js (MCP transport) + the three runners
         └── skills/cross-compare-plan/

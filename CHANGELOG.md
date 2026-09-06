@@ -21,9 +21,9 @@ went with it — the credential helper (`git fetch origin` inside the sandbox
 died on "could not read Username for 'https://github.com'"), the LFS filters
 (15 untouched PNGs under `docs/art/**` read as modified, and Astra, correctly,
 refused a "clean tree" precondition twice), URL rewrites. The scratch config
-now includes the real global config first — git skips an include it cannot
-read, silently, so the sandbox that motivated the isolation loses nothing —
-and copies `filter.lfs.*` across explicitly for the case where it can't.
+now starts with a copy of the real global config (read by the runner as the
+host user, so the sandbox that motivated the isolation never opens the user's
+file) and copies `filter.lfs.*` across explicitly as well.
 
 **Cross-family review is the first goal, and now the runner enforces it.**
 PR #435 round 3 came back with an inner `REVIEW ENGINE: Claude CLI (opus …)`
@@ -118,7 +118,16 @@ scratch config by the runner and the sandbox never opens the user's file
 (relative includes inside the copy are resolved against the file they came
 from); `[mcp_servers."claude"]` decodes to the same key as `claude` and is
 addressable after all; and a `"""` inside a `#` comment opened a phantom
-multi-line string that hid the next server.
+multi-line string that hid the next server. Round 4 found five, and settled
+the pattern: every round had found a TOML shape the hand-written reader
+missed (this time a `'''` inside an ordinary string and an escaped key), so
+the runners now ask Codex itself — `codex mcp list --json` names every server
+it loaded, decoded, with its enabled state, from every config layer it
+applied — and the TOML reader is only the fallback for a Codex that lacks the
+command, said so in preflight. The copied-config rewrite also learned to stop
+a quoted `path` at its closing quote instead of folding a trailing comment
+into the filename, and to rebase a relative `[includeIf "gitdir:./…"]`
+condition along with the paths.
 
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 

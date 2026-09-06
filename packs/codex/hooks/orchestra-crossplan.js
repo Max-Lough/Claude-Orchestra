@@ -337,20 +337,46 @@ function gitIncludeSection(files) {
       continue; // unreadable even to the runner: nothing to carry
     }
     const dir = path.dirname(f).replace(/\\/g, '/');
+    const isRel = (v) => !/^(~|\/|[A-Za-z]:[\\/]|\\\\)/.test(v);
+    const gitQuote = (v) => '"' + v.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
     let inInclude = false;
     const lines = text.split('\n').map((raw) => {
       const line = raw.replace(/\r$/, '');
       const t = line.trim();
-      if (/^\[/.test(t)) inInclude = /^\[\s*include(If\b|\s*\])/i.test(t);
+      if (/^\[/.test(t)) {
+        inInclude = /^\[\s*include(If\b|\s*\])/i.test(t);
+        // `[includeIf "gitdir:./x"]` — a condition starting with "./" is
+        // relative to the config file it sits in (Astra, round 4), so it is
+        // rebased the same way a relative path is.
+        const c = /^(\s*\[\s*includeIf\s+")(gitdir(?:\/i)?:)(\.\/[^"]*)("\s*\].*)$/i.exec(line);
+        if (c) return c[1] + c[2] + dir + c[3].slice(1) + c[4];
+        return line;
+      }
       if (!inInclude) return line;
-      const m = /^(\s*path\s*=\s*)(.+?)\s*$/i.exec(line);
+      const m = /^(\s*path\s*=\s*)(.*)$/i.exec(line);
       if (!m) return line;
-      let v = m[2];
-      const quoted = v.length > 1 && v[0] === '"' && v[v.length - 1] === '"';
-      if (quoted) v = v.slice(1, -1);
-      if (/^(~|\/|[A-Za-z]:[\\/]|\\\\)/.test(v)) return line;
-      const abs = dir + '/' + v;
-      return m[1] + '"' + abs.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
+      // The value ends at the closing quote when quoted, else at the first
+      // comment character; a trailing comment is kept, never folded into the
+      // path (Astra, round 4: `path = "extra.inc" # shared` became a filename).
+      const rest = m[2];
+      let v;
+      let tail;
+      if (rest[0] === '"') {
+        let i = 1;
+        let val = '';
+        for (; i < rest.length && rest[i] !== '"'; i++) {
+          if (rest[i] === '\\' && i + 1 < rest.length) val += rest[++i];
+          else val += rest[i];
+        }
+        v = val;
+        tail = rest.slice(i + 1);
+      } else {
+        const stop = rest.search(/[#;]/);
+        v = (stop === -1 ? rest : rest.slice(0, stop)).trim();
+        tail = stop === -1 ? '' : ' ' + rest.slice(stop);
+      }
+      if (!v || !isRel(v)) return line;
+      return m[1] + gitQuote(dir + '/' + v) + tail;
     });
     out += '# ---- copied from ' + f.replace(/\\/g, '/') + '\n' + lines.join('\n') + '\n';
   }
@@ -397,38 +423,50 @@ function mcpServerNames(file) {
   const bare = [];
   const quoted = [];
   const KEY = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)';
+  // TOML basic-string escapes (`"clau\u0064e"` is `claude` — Astra, round 4).
+  const decodeTomlBasic = (s) =>
+    s.replace(/\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[btnfr"\\])/g, (_, e) => {
+      if (e[0] === 'u' || e[0] === 'U') return String.fromCodePoint(parseInt(e.slice(1), 16));
+      return { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' }[e];
+    });
   const add = (raw) => {
     let k = String(raw || '').trim();
     if (!k) return;
     // TOML decodes `"claude"` and `claude` to the same key, so a quoted name
     // that is bare-safe is addressable through -c like any other (Astra,
     // round 3). Only a name that NEEDS quoting is unaddressable.
-    if (k[0] === '"' || k[0] === "'") k = k.slice(1, -1);
+    // A basic-string key carries TOML escapes (`"claude"` is `claude`);
+    // a literal-string key carries none.
+    if (k[0] === '"') k = decodeTomlBasic(k.slice(1, -1));
+    else if (k[0] === "'") k = k.slice(1, -1);
     if (/^[A-Za-z0-9_-]+$/.test(k)) {
       if (!bare.includes(k)) bare.push(k);
     } else if (!quoted.includes(k)) quoted.push(k);
   };
-  // A `#` outside a string starts a comment; a `"""` inside one is not a
-  // multi-line string opening (Astra, round 3: `command = "x" # """` put the
-  // reader into string mode and hid the next server).
-  const stripComment = (s) => {
-    let out = '';
+  // Walks one line OUTSIDE of strings: a `#` ends it; a `"""`/`'''` that does
+  // not close on the same line opens a multi-line string, which is returned;
+  // a `'''` inside an ordinary "…" string is content (Astra, rounds 3–4:
+  // `# """` and `"Use ''' as the example"` both hid the next server).
+  const openMultiline = (s) => {
     let q = '';
     for (let i = 0; i < s.length; i++) {
       const ch = s[i];
       if (q) {
-        out += ch;
-        if (ch === '\\' && q === '"') {
-          i++;
-          if (i < s.length) out += s[i];
-        } else if (ch === q) q = '';
+        if (ch === '\\' && q === '"') i++;
+        else if (ch === q) q = '';
         continue;
       }
-      if (ch === '#') break;
+      if (ch === '#') return '';
+      if (s.startsWith('"""', i) || s.startsWith("'''", i)) {
+        const d = s.slice(i, i + 3);
+        const close = s.indexOf(d, i + 3);
+        if (close === -1) return d;
+        i = close + 2;
+        continue;
+      }
       if (ch === '"' || ch === "'") q = ch;
-      out += ch;
     }
-    return out;
+    return '';
   };
   // Keys at depth 1 of an inline table. Returns whether the table closed, so
   // a table spread over several lines can be accumulated and re-scanned.
@@ -499,11 +537,8 @@ function mcpServerNames(file) {
     }
     const t = line.trim();
     if (!t || t[0] === '#') continue;
-    const code = stripComment(t);
-    for (const d of ['"""', "'''"]) {
-      const n = code.split(d).length - 1;
-      if (n % 2 === 1) multi = d;
-    }
+    const opened = openMultiline(t);
+    if (opened) multi = opened;
     let m;
     if ((m = new RegExp('^\\[\\s*' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
       add(m[1]);
@@ -537,14 +572,61 @@ function mcpServerNames(file) {
   return { bare, quoted, opaque };
 }
 
+// The servers Codex has actually loaded, asked of Codex itself: `codex mcp
+// list --json` reports every server by its decoded name with its enabled
+// state, from every config layer Codex applied (a trusted project's own
+// .codex/config.toml included). Four review rounds of hand-reading
+// config.toml each found a TOML shape the reader missed; the authority is the
+// binary that loads the file. Returns null when the command is unavailable
+// (an older Codex, or the stub engine), and the TOML reader is the fallback.
+function mcpServersFromCodex(dir) {
+  try {
+    const r = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, ['mcp', 'list', '--json'], {
+      cwd: dir || process.cwd(),
+      encoding: 'utf8',
+      input: '',
+      timeout: 30000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: childEnv(),
+      windowsHide: true,
+    });
+    if (r.error || r.status !== 0) return null;
+    const out = String(r.stdout || '');
+    const start = out.indexOf('[');
+    if (start === -1) return null;
+    const parsed = JSON.parse(out.slice(start));
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .filter((e) => e && typeof e.name === 'string' && e.enabled !== false)
+      .map((e) => e.name);
+  } catch (_) {
+    return null;
+  }
+}
+
 function mcpIsolation(dir) {
   if (CONFIG.engineMcp === 'inherit') return { args: [], label: 'inherited (engineMcp: inherit)', notes: [] };
-  const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '';
+  const home = (process.env.HOME || '').trim() || os.homedir() || '';
   const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
-  const user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [] };
+  const notes = [];
+  let user;
+  const live = mcpServersFromCodex(dir);
+  if (live) {
+    user = { bare: [], quoted: [], opaque: false };
+    for (const n of live) {
+      if (/^[A-Za-z0-9_-]+$/.test(n)) user.bare.push(n);
+      else user.quoted.push(n);
+    }
+  } else {
+    user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [], opaque: false };
+    notes.push(
+      'mcp: `codex mcp list --json` was unavailable, so the server names were read from ' +
+        (codexHome ? path.join(codexHome, 'config.toml') : '(no CODEX_HOME)') +
+        ' by the runner\'s own TOML reader — a project-level .codex/config.toml is not read that way'
+    );
+  }
   const args = ['-c', 'features.apps=false'];
   for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
-  const notes = [];
   if (user.opaque) {
     notes.push(
       'mcp: the Codex config declares mcp_servers in a shape this runner could not read — nothing was ' +
@@ -557,7 +639,7 @@ function mcpIsolation(dir) {
         'name cannot be addressed through -c: ' + user.quoted.map((n) => JSON.stringify(n)).join(', ')
     );
   }
-  const project = dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
+  const project = !live && dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
   const projectNames = project.bare.concat(project.quoted);
   if (projectNames.length) {
     notes.push(

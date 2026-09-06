@@ -1335,6 +1335,12 @@ function case21() {
     ['a quoted but bare-safe name', '[mcp_servers."plain"]\ncommand = "node"\n', ['plain'], []],
     ['a triple quote inside a comment', '[mcp_servers.first]\ncommand = "first" # """\n[mcp_servers.second]\ncommand = "node"\n',
       ['first', 'second'], []],
+    // Astra, round 4: a `'''` inside an ordinary string is content, and a
+    // basic-string key carries TOML escapes.
+    ['a triple quote inside an ordinary string',
+      '[mcp_servers.other]\ncommand = "x"\ndeveloper_instructions = "Use \'\'\' as the SQL example"\n[mcp_servers.claude]\ncommand = "node"\n',
+      ['other', 'claude'], []],
+    ['an escaped basic-string key', '[mcp_servers."clau\\u0064e"]\ncommand = "node"\n', ['claude'], []],
   ];
   for (const [label, toml, wantBare, wantQuoted] of shapes) {
     const h = path.join(fx.root, 'codex-home-' + wantBare[0]);
@@ -1382,14 +1388,27 @@ function case21() {
   const gdir = path.join(fx.root, 'gcopy');
   fs.mkdirSync(gdir, { recursive: true });
   fs.writeFileSync(path.join(gdir, 'extra.inc'), '[credential]\n\thelper = included-helper\n');
-  fs.writeFileSync(path.join(gdir, 'gitconfig'), '[include]\n\tpath = extra.inc\n');
+  // Astra, round 4: the value ends at the closing quote, and a trailing
+  // comment is never folded into the path.
+  fs.writeFileSync(path.join(gdir, 'gitconfig'), '[include]\n\tpath = "extra.inc" # shared credentials\n');
   const cp = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(gdir, 'gitconfig'), CODEX_HOME: quotedHome }).stdout || '';
   const scratchCfg = field(cp, 'GIT_CONFIG_GLOBAL');
   check(
-    'the global config is copied, not included, and a relative include inside it still resolves',
+    'the global config is copied, and a quoted relative include with a trailing comment still resolves',
     field(cp, 'GIT_CREDENTIAL_HELPER') === 'included-helper' &&
       path.resolve(scratchCfg) !== path.resolve(path.join(gdir, 'gitconfig')),
     'GIT_CREDENTIAL_HELPER: ' + field(cp, 'GIT_CREDENTIAL_HELPER') + ' GIT_CONFIG_GLOBAL: ' + scratchCfg
+  );
+  // Astra, round 4: `[includeIf "gitdir:./x/"]` is relative to the config
+  // file it sits in; copied elsewhere, the condition must be rebased too.
+  // The global config sits in fx.root and the fixture repo is <root>/project.
+  fs.writeFileSync(path.join(fx.root, 'cond.inc'), '[credential]\n\thelper = cond-helper\n');
+  fs.writeFileSync(path.join(fx.root, 'gitconfig-cond'), '[includeIf "gitdir:./project/"]\n\tpath = cond.inc\n');
+  const ci = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(fx.root, 'gitconfig-cond'), CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'a relative includeIf gitdir condition is rebased with the copy',
+    field(ci, 'GIT_CREDENTIAL_HELPER') === 'cond-helper',
+    'GIT_CREDENTIAL_HELPER: ' + field(ci, 'GIT_CREDENTIAL_HELPER')
   );
 
   const opaqueHome = path.join(fx.root, 'codex-home-opaque');
@@ -1400,6 +1419,28 @@ function case21() {
     'a config that mentions mcp_servers in an unreadable shape is reported, not claimed clean',
     /mcp: stripped \(0 server\(s\) disabled/.test(op.split('\n')[0]) && /could not read/.test(op),
     op.slice(0, 1200)
+  );
+  check(
+    'without `codex mcp list --json` the runner says the names came from its own TOML reader',
+    /own TOML reader/.test(op),
+    op.slice(0, 1200)
+  );
+
+  // The authority is Codex itself: `codex mcp list --json` names every server
+  // it loaded, decoded, with its enabled state. Enabled ones are disabled by
+  // name; an already-disabled one is left alone; a name that needs quoting is
+  // still unaddressable; and the TOML reader is not consulted at all.
+  const live = runExec(fx, [], {
+    CODEX_HOME: opaqueHome,
+    STUB_CODEX_MCP_JSON: '[{"name":"live_one","enabled":true},{"name":"off","enabled":false},{"name":"odd name","enabled":true}]',
+  }).stdout || '';
+  const lov = field(live, 'CONFIG_OVERRIDES');
+  check(
+    'server names come from `codex mcp list --json` when Codex answers',
+    lov.includes('mcp_servers.live_one.enabled=false') && !/mcp_servers\.off\./.test(lov) &&
+      /mcp: stripped \(1 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
+      !/own TOML reader/.test(live) && !/could not read/.test(live),
+    live.split('\n')[0] + ' — ' + lov
   );
 
   // Astra, same review: git resolves its global config from HOME first, and

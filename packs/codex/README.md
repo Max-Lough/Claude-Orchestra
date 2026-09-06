@@ -265,9 +265,13 @@ despite the blanket, exempt from `--no-tests` and from any restriction written
 into the order — the field case was a Python self-test the brief allowed and
 `--no-tests` then barred. The header reports `allowed commands: N`.
 
-**MCP isolation.** The engine child runs with every MCP server declared in the
-user's Codex config disabled by name and the Codex apps connector off, in every
-lane (`codex.engineMcp`, default `strip`; `inherit` leaves the config alone).
+**MCP isolation.** The engine child runs with every MCP server Codex has
+loaded disabled by name and the Codex apps connector off, in every lane
+(`codex.engineMcp`, default `strip`; `inherit` leaves the config alone). The
+names come from `codex mcp list --json` — Codex's own account of what it
+loaded, from every config layer it applied — and only a Codex that lacks the
+command falls back to the runner reading `config.toml` itself, which the
+preflight says when it happens.
 A Sol review once delegated itself to a Claude review MCP it found in the
 config and came back same-family under a Sol header; an executor with a GitHub
 connector can write past the workspace sandbox. The header's `mcp:` line says

@@ -67,6 +67,20 @@ function flag(name) {
   return i === -1 ? '' : argv[i + 1] || '';
 }
 
+// `codex mcp list --json` — the runners ask Codex for its loaded MCP servers
+// before every run. STUB_CODEX_MCP_JSON is the answer; without it the stub
+// declines (exit 2) and the runner falls back to reading config.toml itself.
+// Decided before any attempt bookkeeping so the call never counts as a run.
+if (argv[0] === 'mcp') {
+  const j = process.env.STUB_CODEX_MCP_JSON || '';
+  if (j) {
+    process.stdout.write(j + '\n');
+    process.exit(0);
+  }
+  process.stderr.write('stub: mcp subcommand not modelled\n');
+  process.exit(2);
+}
+
 const cd = flag('--cd') || process.cwd();
 const outFile = flag('--output-last-message');
 const model = flag('--model');

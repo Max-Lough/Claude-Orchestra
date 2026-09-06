@@ -223,12 +223,17 @@ function sleep(ms) {
 // freezes a worktree single-`--force` can never reclaim). `git worktree
 // add` holds the lock for the whole checkout while the entry is already
 // list-visible, so list-visibility alone is not "finished registering".
-async function waitWorktreesUnlocked(repo, timeoutMs) {
+// The runner LOCKS its pinned worktree the moment `worktree add` returns, with
+// a reason naming its pid, so a concurrent review's prune cannot unhook it
+// mid-review. That lock is therefore the signal that the checkout finished
+// registering: git holds its own transient lock ("initializing") for the
+// duration of the add, and the runner's replaces it. Waiting for "no lock at
+// all" would now wait forever.
+async function waitOrchestraLock(repo, timeoutMs) {
   const deadline = Date.now() + (timeoutMs || 30000);
   for (;;) {
     const blocks = git(['worktree', 'list', '--porcelain'], repo).split(/\n\n+/);
-    const lockedLinked = blocks.slice(1).some((b) => /^locked/m.test(b));
-    if (!lockedLinked) return true;
+    if (blocks.slice(1).some((b) => /^locked orchestra review pid \d+/m.test(b))) return true;
     if (Date.now() > deadline) return false;
     await sleep(100);
   }
@@ -425,19 +430,17 @@ async function case4() {
   // machine, which showed "locked" on every sample until the checkout
   // finished. `runGit`'s worktree-add is a direct (non-shell) child of the
   // runner, so it dies with it; kill during that window freezes the entry
-  // mid-checkout, still locked, forever. And a LOCKED worktree cannot be
-  // swept by anything downstream: sweepStaleScratch and teardownScratch both
-  // remove with a single `--force`, which git flatly refuses on a locked
-  // worktree ("cannot remove a locked working tree ... use 'remove -f -f' to
-  // override") — no amount of waiting or re-running the sweep changes that.
-  // So this wait is not pacing a flaky assertion; it is the difference
-  // between "killed mid-review" (recoverable, what this case tests) and
-  // "killed mid-registration" (unrecoverable by design, a different case).
+  // mid-checkout, still locked by GIT (reason "initializing"), and nothing
+  // downstream unlocks that: the sweep only releases locks whose reason names
+  // a dead Orchestra pid. So this wait is not pacing a flaky assertion; it is
+  // the difference between "killed mid-review" (recoverable, what this case
+  // tests) and "killed mid-registration" (a different, much rarer shape).
   // R0-EX8: wait on the LOCK CONDITION itself, never a fixed duration — a
-  // slow checkout stays locked long past any sleep.
-  const unlockedBeforeTerm = await waitWorktreesUnlocked(fx.repo, 30000);
-  check('checkout finished registering (lock cleared) before the SIGTERM', unlockedBeforeTerm);
-  if (!unlockedBeforeTerm) {
+  // slow checkout stays locked long past any sleep. The condition is now the
+  // runner's OWN lock appearing, which happens the instant the add returns.
+  const lockedBeforeTerm = await waitOrchestraLock(fx.repo, 30000);
+  check('checkout finished registering (the runner took its lock) before the SIGTERM', lockedBeforeTerm);
+  if (!lockedBeforeTerm) {
     // R0-EX9: a timed-out guard has already failed the suite — do NOT also
     // kill into the explicitly unreclaimable mid-registration state and let
     // its wreckage cascade through the remaining assertions. Put the child
@@ -504,8 +507,8 @@ async function case4() {
   // latter is a different (and much rarer) shape, and testing it by accident
   // makes this case flaky rather than strict. R0-EX8: wait on the lock
   // condition itself, never a fixed duration.
-  const unlockedBeforeKill = await waitWorktreesUnlocked(fx2.repo, 30000);
-  check('checkout finished registering (lock cleared) before the SIGKILL', unlockedBeforeKill);
+  const lockedBeforeKill = await waitOrchestraLock(fx2.repo, 30000);
+  check('checkout finished registering (the runner took its lock) before the SIGKILL', lockedBeforeKill);
   check('SIGKILL: the worktree was live before the kill', registered2, 'never registered within 30s');
   c2.kill('SIGKILL');
   await new Promise((res) => c2.on('exit', res));
@@ -513,7 +516,7 @@ async function case4() {
   // R0-EX9: when the lock guard timed out, the guard check above already
   // failed the suite; the orphan is mid-registration (locked, unreclaimable
   // by design), so the sweep sub-checks below would only compound the noise.
-  if (unlockedBeforeKill) {
+  if (lockedBeforeKill) {
   check(
     'SIGKILL leaves an orphan (so the sweep has something to prove)',
     worktreeLines(fx2.repo).length > 1,
@@ -1664,6 +1667,310 @@ function case22() {
 
 // ------------------------------------------------------------------ driver
 
+// The path of the one LINKED worktree in this repo (the review's checkout).
+function linkedWorktreePath(repo) {
+  const blocks = git(['worktree', 'list', '--porcelain'], repo).split(/\n\n+/);
+  for (const b of blocks.slice(1)) {
+    const m = /^worktree (.+)$/m.exec(b);
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
+// A pid that is definitely NOT running: spawn a process that does nothing and
+// wait for it to exit. Reused pids are the only way this can lie, and the
+// runner's own liveness check errs the same way (a live-looking pid defers a
+// cleanup; it never deletes a live worktree).
+function deadPid() {
+  const r = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { encoding: 'utf8' });
+  return r.pid;
+}
+
+async function case23() {
+  section('23. A concurrent `git worktree prune` cannot unhook a live review');
+
+  // CONTROL — the hazard is real, and this is what cost a review in the field
+  // (2026-09-03): two reviews ran against one repository, and the second spent
+  // its whole budget on `fatal: not a git repository` from every git command.
+  // A linked worktree keeps its metadata in the SHARED repo, and prune deletes
+  // the entry of any worktree whose directory it cannot see — a rename here,
+  // an unreadable directory (a sandbox ACL) in the field.
+  const ctl = makeDirtyRepo();
+  const loose = path.join(ctl.root, 'loose-wt');
+  git(['worktree', 'add', '--detach', loose, ctl.head], ctl.repo);
+  fs.renameSync(loose, loose + '-away');
+  git(['worktree', 'prune'], ctl.repo);
+  fs.renameSync(loose + '-away', loose);
+  const looseGit = spawnSync('git', ['-C', loose, 'rev-parse', '--git-dir'], { encoding: 'utf8' });
+  check(
+    'control: an UNLOCKED worktree is unhooked by someone else\'s prune',
+    looseGit.status !== 0 && /not a git repository/i.test(looseGit.stderr || ''),
+    'exit ' + looseGit.status + ': ' + (looseGit.stderr || looseGit.stdout || '')
+  );
+
+  // THE FIX — the runner locks its checkout for the life of the review, and a
+  // locked worktree is precisely what prune leaves alone.
+  const fx = makeDirtyRepo();
+  const child = spawn(
+    process.execPath,
+    [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er, '--head-ref', fx.head],
+    {
+      cwd: fx.repo,
+      env: Object.assign({}, process.env, {
+        CLAUDE_PROJECT_DIR: fx.repo,
+        CODEX_BIN: STUB_BIN,
+        ORCHESTRA_REVIEW_IDLE_MS: '0',
+        STUB_CODEX_SLEEP_MS: '60000',
+        ORCHESTRA_ALLOW_STUB_ENGINE: '1',
+      }),
+      stdio: 'ignore',
+    }
+  );
+  const locked = await waitOrchestraLock(fx.repo, 30000);
+  check('the runner locks its pinned worktree, naming its pid', locked, worktreeLines(fx.repo).join('\n'));
+  if (locked) {
+    const wt = linkedWorktreePath(fx.repo);
+    // Exactly what a second review's teardown, sweep, or a user's own tidy-up
+    // runs against the shared repository while this review is mid-flight.
+    git(['worktree', 'prune'], fx.repo);
+    check(
+      'a concurrent prune leaves the live review registered',
+      worktreeLines(fx.repo).length > 1,
+      worktreeLines(fx.repo).join('\n')
+    );
+    const inWt = spawnSync('git', ['-C', wt, 'rev-parse', '--git-dir'], { encoding: 'utf8' });
+    check(
+      'and git still resolves inside the checkout the engine is reading',
+      inWt.status === 0,
+      'exit ' + inWt.status + ': ' + (inWt.stderr || '')
+    );
+  }
+  child.kill('SIGKILL');
+  await new Promise((res) => child.on('exit', res));
+  await sleep(200);
+}
+
+function case24() {
+  section('24. A lock outlives its owner exactly once — the next run releases it');
+
+  // A locked worktree is invisible to prune BY DESIGN, so a run killed hard
+  // leaves an entry no prune will ever reclaim. The lock reason carries the
+  // owning pid for this: dead owner, released lock.
+  const fx = makeDirtyRepo();
+  const orphan = path.join(fx.root, 'orphan-wt');
+  git(['worktree', 'add', '--detach', orphan, fx.head], fx.repo);
+  git(['worktree', 'lock', '--reason', 'orchestra review pid ' + deadPid(), orphan], fx.repo);
+  fs.rmSync(orphan, { recursive: true, force: true });
+  check(
+    'the abandoned lock survives a plain prune (the leak this reclaims)',
+    (git(['worktree', 'prune'], fx.repo), worktreeLines(fx.repo).length > 1),
+    worktreeLines(fx.repo).join('\n')
+  );
+
+  const r = runReview(fx, ['--head-ref', fx.head]);
+  check(
+    'a later run releases the dead owner\'s lock and the entry goes',
+    worktreeLines(fx.repo).length === 1,
+    (r.stdout || '').split('\n').slice(0, 6).join('\n') + '\n' + worktreeLines(fx.repo).join('\n')
+  );
+
+  // ...and never anyone else's. A lock this harness did not take is a user
+  // protecting a worktree on removable media, or another tool's business.
+  const fx2 = makeDirtyRepo();
+  const theirs = path.join(fx2.root, 'their-wt');
+  git(['worktree', 'add', '--detach', theirs, fx2.head], fx2.repo);
+  git(['worktree', 'lock', '--reason', 'my external drive is unplugged', theirs], fx2.repo);
+  fs.rmSync(theirs, { recursive: true, force: true });
+  runReview(fx2, ['--head-ref', fx2.head]);
+  const still = git(['worktree', 'list', '--porcelain'], fx2.repo);
+  check(
+    'a lock the harness did not take is never released',
+    /my external drive is unplugged/.test(still),
+    still
+  );
+}
+
+function case25() {
+  section('25. A prohibition the order only WROTE still binds the reviewer');
+
+  // Field failure (2026-09-03): orders said "do not run the full ci.sh"; the
+  // launcher passed no --forbid; the engine ran it anyway and four reviews
+  // died on the clock. Prose reaches the engine only inside the WORK ORDER
+  // block, which is framed as the AUTHOR's intent — so the brief now says, in
+  // its own voice, that a restriction written there binds the reviewer too.
+  const fx = makeDirtyRepo();
+  const out = (runReview(fx, ['--base-ref', fx.base, '--head-ref', fx.head]).stdout || '');
+  check(
+    'the brief carries the order-restriction rule even with no --forbid flags',
+    /A RESTRICTION WRITTEN INTO THE WORK ORDER IS BINDING ON YOU TOO/.test(
+      field(out, 'BRIEF_MARKERS')
+    ),
+    'BRIEF_MARKERS: ' + field(out, 'BRIEF_MARKERS')
+  );
+  check(
+    'and the header states the flag count even when it is zero',
+    /prohibited commands: 0/.test(out.split('\n').slice(0, 3).join('\n')),
+    out.split('\n').slice(0, 3).join('\n')
+  );
+
+  const forbidden = (runReview(fx, [
+    '--base-ref', fx.base, '--head-ref', fx.head, '--forbid', 'ci.sh', '--no-tests',
+  ]).stdout || '');
+  check(
+    'a real flag still raises the count the launcher checks',
+    /prohibited commands: 2/.test(forbidden.split('\n').slice(0, 3).join('\n')),
+    forbidden.split('\n').slice(0, 3).join('\n')
+  );
+}
+
+function case26() {
+  section('26. A project setting that did not land says so');
+
+  // Field report (2026-09-03): "orchestra.json's reviewTimeoutMs is not
+  // consulted". It is — but a file that fails to parse, and a key written at
+  // the top level instead of under "codex", both used to look exactly like an
+  // absent config, and the review then ran a default-length clock with nothing
+  // in the report to explain why.
+  const fx = makeDirtyRepo();
+  fs.mkdirSync(path.join(fx.repo, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(fx.repo, '.claude', 'orchestra.json'),
+    '{ "codex": { "reviewTimeoutMs": 2700000 },,, }'
+  );
+  const broken = runReview(fx, ['--head-ref', fx.head]).stdout || '';
+  check(
+    'an unparseable orchestra.json is named in the header, not swallowed',
+    /is not valid JSON/.test(broken) && /IGNORED/.test(broken),
+    broken.split('\n').slice(0, 12).join('\n')
+  );
+
+  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 });
+  // The classic typo: the key one level too high, where nothing reads it.
+  fs.writeFileSync(
+    path.join(fx.repo, '.claude', 'orchestra.json'),
+    JSON.stringify({ reviewTimeoutMs: 2700000, codex: {} }, null, 2)
+  );
+  const misplaced = runReview(fx, ['--head-ref', fx.head]).stdout || '';
+  check(
+    'a codex key at the top level is named as ignored',
+    /reviewTimeoutMs/.test(misplaced) && /TOP LEVEL/.test(misplaced),
+    misplaced.split('\n').slice(0, 12).join('\n')
+  );
+  check(
+    'and the header still reports the default it actually used',
+    /timeout: \d+ms \(default\)/.test(misplaced),
+    misplaced.split('\n').slice(0, 4).join('\n')
+  );
+
+  // Control: the key in the right place lands, and the header says where from.
+  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 });
+  const good = runReview(fx, ['--head-ref', fx.head]).stdout || '';
+  check(
+    'under "codex" it applies, sourced to the file',
+    /timeout: 2700000ms \(orchestra\.json\)/.test(good),
+    good.split('\n').slice(0, 4).join('\n')
+  );
+  check(
+    'and a config that applied leaves no complaint behind',
+    !/TOP LEVEL|is not valid JSON/.test(good),
+    good.split('\n').slice(0, 12).join('\n')
+  );
+}
+
+function case27() {
+  section('27. A killed attempt keeps the findings it had already written');
+
+  // Field failure (2026-09-03): a timed-out review had already streamed a real
+  // finding — the fallback reviewer later reproduced the same defect from
+  // scratch — and the runner kept ten lines of tail and threw the rest away.
+  const fx = makeDirtyRepo();
+  const partial = [
+    'thinking: reading the roster lifecycle',
+    'MARKER-EARLY-LINE',
+  ]
+    .concat(Array.from({ length: 40 }, (_, i) => 'step ' + i + ': exploring'))
+    .concat(['found a concrete lifecycle edge involving the final roster departure'])
+    .join('\\n');
+  const r = runReview(
+    fx,
+    ['--head-ref', fx.head, '--timeout-ms', '2500', '--no-retry', '--no-probe'],
+    { STUB_CODEX_SLEEP_MS: '30000', STUB_CODEX_PARTIAL: partial }
+  );
+  const out = r.stdout || '';
+  check('the attempt timed out as intended', /REVIEW_UNAVAILABLE/.test(out), out.slice(0, 400));
+  check(
+    'the partial stream survives into the report',
+    /found a concrete lifecycle edge involving the final roster departure/.test(out),
+    out.slice(-1200)
+  );
+  check(
+    'it is labelled as a lead, never as a verdict',
+    /PARTIAL ENGINE OUTPUT — NOT A VERDICT/.test(out) && /LEAD for the fallback reviewer/.test(out),
+    out.slice(-1200)
+  );
+  check(
+    'more than the old ten-line tail is kept',
+    /MARKER-EARLY-LINE/.test(out),
+    out.slice(-2000)
+  );
+  check(
+    'and the verdict line is still the unavailable one',
+    /^VERDICT: REVIEW_UNAVAILABLE$/m.test(out) && !/^VERDICT: (APPROVE|REVISE)$/m.test(out),
+    out.slice(0, 600)
+  );
+}
+
+function case28() {
+  section('28. A Codex sandbox-helper failure is diagnosed as an install fault');
+
+  // Field log (2026-09-03): "Failed to create unified exec process:
+  // helper_unknown_error: apply deny-read ACLs from codex-command-runner/
+  // codex-windows-sandbox-setup" — after which the engine could not read files
+  // it had just read. The old classifier called that "codex chose to exit"
+  // (non-retryable) and offered a list of causes it had not tested.
+  const fx = makeDirtyRepo();
+  const r = runReview(fx, ['--head-ref', fx.head, '--no-probe'], {
+    STUB_CODEX_SILENT: '1',
+    STUB_CODEX_EXIT: '1',
+    STUB_CODEX_STDERR:
+      'Failed to create unified exec process: helper_unknown_error: apply deny-read ACLs',
+  });
+  const out = r.stdout || '';
+  check(
+    'the failure is named as the sandbox helper, not as a mystery exit',
+    /sandbox helper failed to set the sandbox up/.test(out),
+    out.slice(-1500)
+  );
+  check(
+    'it is attributed to the install, not to the change under review',
+    /INSTALL fault, not a fault in the change/.test(out),
+    out.slice(-1500)
+  );
+  check(
+    'the report points at the doctor and the helper siblings',
+    /--doctor/.test(out) && /codex-windows-sandbox-setup\.exe/.test(out),
+    out.slice(-1500)
+  );
+  check(
+    'and it is retried, because a fresh sandbox setup often succeeds',
+    /ATTEMPT CHAIN: 2 attempts, ONE outcome/.test(out),
+    out.split('\n').slice(0, 12).join('\n')
+  );
+
+  // Control: the same non-zero exit WITHOUT that signature keeps the old,
+  // honest "codex chose to exit" diagnosis — and is not retried.
+  const plain = runReview(fx, ['--head-ref', fx.head, '--no-probe'], {
+    STUB_CODEX_SILENT: '1',
+    STUB_CODEX_EXIT: '1',
+    STUB_CODEX_STDERR: 'some unrelated engine complaint',
+  }).stdout || '';
+  check(
+    'an ordinary non-zero exit is still classified as codex\'s own choice',
+    /codex chose to exit with status 1/.test(plain) && !/sandbox helper failed/.test(plain),
+    plain.slice(-1200)
+  );
+}
+
 function finish() {
   for (const c of cleanups) {
     try {
@@ -1699,6 +2006,12 @@ async function main() {
   case20();
   case21();
   case22();
+  await case23();
+  case24();
+  case25();
+  case26();
+  case27();
+  case28();
 }
 
 main().then(finish, (e) => {

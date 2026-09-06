@@ -53,6 +53,15 @@
  *   exit path — normal, error, and signal — and a startup sweep reclaims
  *   worktrees orphaned by a hard kill that ran no handler.
  *
+ *   The pinned worktree is LOCKED (`git worktree lock`) for the life of the
+ *   review. A linked worktree keeps its metadata in the shared repository, and
+ *   `git worktree prune` deletes the entry of any worktree whose directory it
+ *   cannot see — so a second review's teardown, or a user's own tidy-up, used
+ *   to unhook a live checkout and leave every git command in it answering
+ *   `fatal: not a git repository`. Prune skips a locked worktree by design.
+ *   The lock reason carries the owning pid, and the sweep releases the locks
+ *   whose owner is gone; locks the harness did not take are never touched.
+ *
  * --tier inert (default: full) marks a round the Director declared as pure
  * docs/comments/formatting with zero behavior impact. The tier is a CLAIM the
  * reviewer must verify from the diff: any behavior-bearing line is itself a
@@ -394,6 +403,21 @@ function tail(text, n) {
   return boundedDiagnosticLines(text, n);
 }
 
+// How much of a killed attempt's stream is worth carrying into the report.
+// Big enough to hold a finding the engine had already articulated; small
+// enough that a REVIEW_UNAVAILABLE stays readable in a relayed message.
+const PARTIAL_TAIL_LINES = 80;
+const PARTIAL_TAIL_CHARS = 6000;
+
+// Keep the END of a string: with a stream, the last words are the ones that
+// were about to become the verdict.
+function clip(text, maxChars) {
+  if (!text) return '';
+  const t = String(text);
+  if (t.length <= maxChars) return t;
+  return '...(' + (t.length - maxChars) + ' earlier characters omitted)...\n' + t.slice(-maxChars);
+}
+
 function stringList(value) {
   return Array.isArray(value) ? value.filter((s) => typeof s === 'string' && s.trim()) : [];
 }
@@ -594,16 +618,64 @@ function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// Whole project config (.claude/orchestra.json). Fail-open like the guard's
-// config: a missing or broken file simply means no project settings.
+// Notes about the SETTINGS themselves, surfaced in the header's PREFLIGHT.
+// FIX: a project that set "reviewTimeoutMs" and still got the default had no
+// way to see why — the read was a silent try/catch, so an unparseable file and
+// a key written at the top level instead of under "codex" both looked exactly
+// like "no config at all". A setting that did not land must say so where the
+// reader already looks, or the next person edits the file again and waits out
+// another default-length review to find out it still did not take.
+const CONFIG_NOTES = [];
+
+// Keys that only ever mean something under "codex". Written at the top level
+// they are silently inert, which is the single most expensive typo this file
+// can absorb.
+const CODEX_ONLY_KEYS = [
+  'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'reviewRetries', 'doNotRun',
+  'worktreeRoot', 'worktreeWarmupCmd', 'worktreeWarmupTimeoutMs', 'helpersDir',
+  'idleMs', 'gitConfigIsolation', 'execHeavyModel', 'execHeavyEffort',
+  'crossplanModel', 'crossplanEffort',
+];
+
+// Whole project config (.claude/orchestra.json). Still fail-open — a missing or
+// broken file means no project settings, never a dead review — but a file that
+// exists and did not apply now leaves a note instead of a silence.
 function loadProjectConfig(projectDir) {
+  const file = path.join(projectDir, '.claude', 'orchestra.json');
+  let raw;
   try {
-    const raw = fs.readFileSync(path.join(projectDir, '.claude', 'orchestra.json'), 'utf8');
-    const cfg = JSON.parse(raw);
-    return cfg && typeof cfg === 'object' && !Array.isArray(cfg) ? cfg : {};
-  } catch (_) {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e && e.code !== 'ENOENT') {
+      CONFIG_NOTES.push(
+        file + ' could not be read (' + (e.code || e.message) + ') — every project setting ' +
+          'in it was IGNORED and built-in defaults applied'
+      );
+    }
     return {};
   }
+  let cfg;
+  try {
+    cfg = JSON.parse(raw);
+  } catch (e) {
+    CONFIG_NOTES.push(
+      file + ' is not valid JSON (' + ((e && e.message) || 'parse error') + ') — every ' +
+        'project setting in it was IGNORED and built-in defaults applied'
+    );
+    return {};
+  }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+    CONFIG_NOTES.push(file + ' is not a JSON object — every project setting in it was IGNORED');
+    return {};
+  }
+  const misplaced = CODEX_ONLY_KEYS.filter((k) => Object.prototype.hasOwnProperty.call(cfg, k));
+  if (misplaced.length) {
+    CONFIG_NOTES.push(
+      file + ': ' + misplaced.join(', ') + ' ' + (misplaced.length === 1 ? 'is' : 'are') +
+        ' at the TOP LEVEL and therefore ignored — these belong under "codex": { ... }'
+    );
+  }
+  return cfg;
 }
 
 function loadVerification(projectCfg) {
@@ -620,6 +692,25 @@ function loadVerification(projectCfg) {
 // repo cwd killed an earlier attempt at this fix outright).
 
 const SCRATCH_PREFIX = 'orchestra-review-';
+
+// Stamped into `git worktree lock --reason` so an abandoned lock can be told
+// from a live one by the only thing that settles it: whether the process that
+// took it still exists.
+const WORKTREE_LOCK_REASON = 'orchestra review pid ' + process.pid;
+const WORKTREE_LOCK_RE = /^orchestra review pid (\d+)$/;
+
+// Is this pid still around? EPERM means it exists and belongs to someone else,
+// which is still "alive". (pid reuse can make a dead owner look live; the cost
+// is one deferred cleanup, never a deleted live worktree — the safe direction.)
+function processAlive(pid) {
+  if (!(pid > 0)) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return !!(e && e.code === 'EPERM');
+  }
+}
 
 // One scratch directory per run, holding the isolated git config and one
 // subdirectory per ATTEMPT (its verdict file and, in pinned mode, its own
@@ -1098,14 +1189,7 @@ function sweepStaleScratch(root, repoTop) {
     } catch (_) {
       ownerPid = 0;
     }
-    if (ownerPid > 0) {
-      try {
-        process.kill(ownerPid, 0); // alive — a concurrent review owns this
-        continue;
-      } catch (e) {
-        if (e && e.code === 'EPERM') continue; // exists, someone else's — leave it
-      }
-    }
+    if (ownerPid > 0 && processAlive(ownerPid)) continue; // a concurrent review owns this
     // Worktrees live at <scratch>/attempt-<n>/wt; older runs put a single one
     // at <scratch>/wt, and an orphan from either shape has to be reclaimable.
     const stale = [path.join(dir, 'wt')];
@@ -1127,7 +1211,11 @@ function sweepStaleScratch(root, repoTop) {
     // reported separately rather than folded into silence.
     reclaimed++;
     for (const wt of stale) {
-      if (repoTop && fs.existsSync(wt)) runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
+      if (!repoTop || !fs.existsSync(wt)) continue;
+      // The dead owner locked this worktree (see createPinnedWorktree); a
+      // locked worktree refuses `remove --force`, so unlock first.
+      runGit(['-C', repoTop, 'worktree', 'unlock', wt]);
+      runGit(['-C', repoTop, 'worktree', 'remove', '--force', wt]);
     }
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1136,8 +1224,36 @@ function sweepStaleScratch(root, repoTop) {
     }
     if (fs.existsSync(dir)) stuck.push(dir);
   }
+  // A hard kill can leave the LOCK without leaving a scratch directory to find
+  // it by — and prune, correctly, will never touch a locked entry. Read the
+  // locks back and release the ones whose owning process is gone, so the next
+  // prune can do its job. Live owners are left strictly alone: that is the
+  // whole point of the lock.
+  if (repoTop) reclaimed += releaseAbandonedLocks(repoTop);
   if (repoTop) runGit(['-C', repoTop, 'worktree', 'prune']);
   return { reclaimed, stuck };
+}
+
+// Unlock every worktree this harness locked whose owner is no longer running.
+// Only OUR reason string is touched — a lock someone else took (a user
+// protecting a worktree on removable media, another tool) is never released.
+function releaseAbandonedLocks(repoTop) {
+  const out = gitOut(['-C', repoTop, 'worktree', 'list', '--porcelain']);
+  if (!out) return 0;
+  let released = 0;
+  let wt = '';
+  for (const line of out.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      wt = line.slice('worktree '.length).trim();
+      continue;
+    }
+    if (!line.startsWith('locked')) continue;
+    const m = WORKTREE_LOCK_RE.exec(line.slice('locked'.length).trim());
+    if (!m || !wt) continue;
+    if (processAlive(parseInt(m[1], 10))) continue;
+    if (runGit(['-C', repoTop, 'worktree', 'unlock', wt]).status === 0) released++;
+  }
+  return released;
 }
 
 // Materialize the pinned commit as a detached worktree. Worktrees share the
@@ -1158,6 +1274,26 @@ function createPinnedWorktree(repoTop, headRef, attemptDir) {
         (tail(add.stderr || '', 10) || 'exit ' + add.status),
     };
   }
+  // FIX (field, 2026-09-03): two reviews of the same repository ran at once,
+  // and the second spent its whole budget on `fatal: not a git repository:
+  // .../.git/worktrees/<name>` from every git command it issued. A linked
+  // worktree keeps its metadata in the SHARED repository, and `git worktree
+  // prune` deletes the entry of any worktree whose directory it cannot see —
+  // so one review's teardown (or sweep, or a user's own prune, or a moment
+  // where the sandbox made the directory unreadable) silently unhooks a LIVE
+  // review's checkout. Locking is git's own answer: prune skips a locked
+  // worktree by design. The reason carries this pid so a run killed hard can
+  // still be reclaimed by the next sweep — a lock nothing can unlock is a leak,
+  // not a fix.
+  const lock = runGit([
+    '-C', repoTop, 'worktree', 'lock', '--reason', WORKTREE_LOCK_REASON, dir,
+  ]);
+  if (lock.status !== 0) {
+    PREFLIGHT.push(
+      'could not lock the review worktree (' + (tail(lock.stderr || '', 1) || 'exit ' + lock.status) +
+        ') — a concurrent `git worktree prune` on this repository could unhook it mid-review'
+    );
+  }
   SCRATCH.worktrees.push(dir);
   SCRATCH.repoTop = repoTop;
   return { dir, sha: resolved };
@@ -1172,6 +1308,9 @@ function teardownScratch() {
   SCRATCH.torndown = true;
   if (SCRATCH.repoTop) {
     for (const wt of SCRATCH.worktrees) {
+      // Ours, and locked by us: unlock first or `remove --force` refuses it
+      // ("cannot remove a locked working tree").
+      runGit(['-C', SCRATCH.repoTop, 'worktree', 'unlock', wt]);
       runGit(['-C', SCRATCH.repoTop, 'worktree', 'remove', '--force', wt]);
     }
   }
@@ -1831,6 +1970,32 @@ function prohibitionLines(forbidden) {
   ];
 }
 
+// FIX (field, 2026-09-03): four reviews timed out running a suite their order
+// had told them not to run. The order said it in prose — "do not run the full
+// ci.sh", "no smoke tests" — and prose reaches the engine only inside the WORK
+// ORDER block, which is framed as the intent of the change being reviewed, not
+// as instructions to the reviewer. So the reviewer read "do not run ci.sh" as a
+// fact about the author's task, obeyed RULE 1 instead, and burned the clock.
+// The flags remain the precise mechanism; this is the backstop for the order
+// that never became one.
+function orderRestrictionLines() {
+  return [
+    'A RESTRICTION WRITTEN INTO THE WORK ORDER IS BINDING ON YOU TOO.',
+    'The order below was written by the owner of this change. Where it says not',
+    'to run something — "do not run the full suite", "no smoke tests", "do not',
+    'launch the app", "no mutations" — that is an absolute prohibition on YOU,',
+    'with the same force as any PROHIBITED COMMANDS list, even when no such list',
+    'appears above, and it overrides RULE 1. Do not run it "just to confirm",',
+    'and do not reach for an equivalent command that evades it. Record each',
+    'claim you could not check that way as',
+    '  UNVERIFIED (prohibited: <what you would have had to run>),',
+    'add one line under VERDICT saying verification was narrowed, and review',
+    'everything you CAN reach without it. Never invent a result for a command',
+    'you did not run.',
+    '',
+  ];
+}
+
 // FIX: an agentic reviewer handed a pinned SHA in a tree that has moved on
 // spends its whole budget trying to reconcile the two — every `git show
 // <sha>:<path>` on a file the session created after the commit comes back
@@ -1975,6 +2140,7 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
     '',
     ...scopeLines(scope.baseRef, scope.headRef, scope.pinned),
     ...prohibitionLines(forbidden),
+    ...orderRestrictionLines(),
     ...tierLines(tier),
     ...manifestLines(verification),
     '=== WORK ORDER (the intent — what should have happened) ===',
@@ -1995,6 +2161,26 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
 // it" — the runner could have answered with certainty and did not. A failure
 // report that lists causes it did not test is not a diagnosis; it is a shrug
 // with citations.
+
+// The Windows sandbox is set up by helper executables that must sit beside the
+// codex binary, and when that setup fails codex says so in one recognisable
+// breath — "Failed to create unified exec process: helper_unknown_error: apply
+// deny-read ACLs". Field evidence (2026-09-03): after that line the engine kept
+// running with a half-applied sandbox and could no longer read files it had
+// just read, so its later work was garbage. It is a broken INSTALL, not a
+// broken change, and it is worth retrying: the classifier that called it "codex
+// chose to exit" also called it non-retryable.
+// Only phrases that are themselves the failure. The helper FILENAMES are
+// deliberately absent: a review of a repository that talks about them (this
+// harness reviewing itself, for one) would otherwise diagnose the change under
+// review as a broken install.
+const SANDBOX_HELPER_RE =
+  /helper_unknown_error|apply deny-read ACLs|Failed to create unified exec process/i;
+
+function sandboxHelperFailed(run) {
+  return SANDBOX_HELPER_RE.test((run && run.stderr) || '') ||
+    SANDBOX_HELPER_RE.test(tail((run && run.stdout) || '', 40));
+}
 
 // Who ended the child, and may a second attempt plausibly go differently?
 //
@@ -2082,6 +2268,19 @@ function classifyExit(run, elapsedMs) {
       retryable: true,
     };
   }
+  if (st !== 0 && sandboxHelperFailed(run)) {
+    return {
+      kind: 'sandbox-helper',
+      headline:
+        'the Codex sandbox helper failed to set the sandbox up (codex exited ' + st + ')',
+      killedBy:
+        'codex itself — its sandbox setup step failed. This is an INSTALL fault, not a ' +
+        'fault in the change under review, and anything the engine did after that line ' +
+        'ran against a half-applied sandbox.',
+      ran,
+      retryable: true, // a fresh checkout and a fresh sandbox setup often succeeds
+    };
+  }
   if (st !== 0) {
     return {
       kind: 'exit',
@@ -2164,9 +2363,25 @@ function attemptDiagnostics(att) {
   const err = tail(att.stderr || '', 25);
   lines.push('  codex stderr (last 25 lines):');
   lines.push(err ? indent(err, '    ') : '    (codex wrote nothing to stderr)');
-  const out = tail(att.stdout || '', 10);
+  // FIX (field, 2026-09-03): a review that timed out had already written a real
+  // finding into its stream — "a concrete lifecycle edge involving the final
+  // roster departure" — and the runner threw it away, keeping ten lines of
+  // whatever happened to be last. The fallback reviewer rediscovered the same
+  // defect from scratch. Partial work is not a verdict and must never be read
+  // as one, but it is a LEAD, and leads are cheap to carry and expensive to
+  // re-derive.
+  const out = clip(tail(att.stdout || '', PARTIAL_TAIL_LINES), PARTIAL_TAIL_CHARS);
   if (out) {
-    lines.push('  codex stdout (last 10 lines):');
+    lines.push(
+      '  PARTIAL ENGINE OUTPUT — NOT A VERDICT. The engine was stopped before it wrote one;'
+    );
+    lines.push(
+      '  this is the last of what it had streamed. Unreviewed, unfinished, possibly'
+    );
+    lines.push(
+      '  mid-thought. Treat any finding here as a LEAD for the fallback reviewer to confirm'
+    );
+    lines.push('  or discard — never as a result this lane produced:');
     lines.push(indent(out, '    '));
   }
   for (const log of att.sessionLogs || []) {
@@ -2184,6 +2399,19 @@ function attemptDiagnostics(att) {
         'version (check `codex exec --help`, adjust ORCHESTRA_REVIEW_ARGS), a sandbox ' +
         'restriction, or an install missing files a self-update removed (see the ' +
         'helper-sibling preflight above).'
+    );
+  }
+  if (att.class.kind === 'sandbox-helper' || sandboxHelperFailed(att)) {
+    lines.push(
+      '  the Codex sandbox helper failed here. Run `node .claude/hooks/orchestra-review.js ' +
+        '--doctor`: on Windows codex-command-runner.exe, codex-resources AND ' +
+        'codex-windows-sandbox-setup.exe must sit DIRECTLY beside codex.exe, and a codex ' +
+        'self-update is the usual way one of them goes missing.'
+    );
+    lines.push(
+      '  if the doctor is clean and this recurs, the sandbox mode is the knob — "codex": ' +
+        '{ "reviewSandbox": "<mode>" } in .claude/orchestra.json. Loosening it is a real ' +
+        'trade: the engine runs with whatever access you grant it.'
     );
   }
   if (att.class.kind === 'runner-timeout') {
@@ -2373,7 +2601,11 @@ function settingsBits() {
     // spend before the outcome it reports is final.
     'attempts: up to ' + (1 + Math.max(0, CONFIG.retries)),
   ];
-  if (CONFIG.forbidden.length) bits.push('prohibited commands: ' + CONFIG.forbidden.length);
+  // Always, including zero: "prohibited commands: 0" on a review whose order
+  // named prohibitions is how the launcher and the Director see that the order's
+  // prose never became a flag — the failure that cost four reviews to a suite
+  // nobody wanted run.
+  bits.push('prohibited commands: ' + CONFIG.forbidden.length);
   if (CONFIG.reviewDirLabel) bits.push('checkout: ' + CONFIG.reviewDirLabel);
   return bits;
 }
@@ -2582,6 +2814,8 @@ function main() {
 
   // --- settings: project config, then env (already seeded), then flags.
   const projectCfg = loadProjectConfig(CONFIG.projectDir);
+  // A setting that did not land is a header fact, not a silence.
+  for (const note of CONFIG_NOTES) PREFLIGHT.push(note);
   const codexCfg =
     projectCfg.codex && typeof projectCfg.codex === 'object' && !Array.isArray(projectCfg.codex)
       ? projectCfg.codex

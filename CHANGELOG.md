@@ -9,6 +9,147 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.1.0 — a Fable principal-executor tier above the Opus heavy profiles
+
+**The failure.** In the PiratePartyPals Tug of War campaign (2026-09-02 →
+09-05) the longest review→fix chains all sat at the Opus heavy tier with
+nowhere to go: the result-latch order took nine Sol rounds at
+`executor-heavy`, the hit-query benchmark six, the grid benchmark four. §3.5
+escalated `executor` → `executor-heavy` after two bounces and then said "two
+bounces at the heavy tier is a plan problem", so the Director re-planned in
+place through warm resumes, and every extra round bought a cold-import Sol
+review (20–40 minutes) plus a fix round plus an audit. Where the owner
+improvised a rung above — `executor-heavy-xhigh` launched with a `model:
+fable` override on the grid benchmark's fourth round — it converged first
+time. Over the whole campaign, code orders routed to the Opus xhigh tier
+from the start averaged 1.5 review rounds; orders started at Opus high
+averaged 3.1 and orders started at Sonnet 2.3 (the heavy population is the
+harder one, so the comparison is directional, not controlled). Field record
+with the per-order chains and method:
+`plans/field-evidence-tug-review-rounds-2026-09-05.md`.
+
+**What the chains showed.** The rejections were not reviewer harshness in
+the calibration sense — 47 of 48 Sol REVISE verdicts carried at least one
+MAJOR BREACH, the Director recorded one hallucinated finding in roughly 90
+verdicts, and Sol reproduced its own numbers on the benchmark rounds. The
+dominant shape was whack-a-mole: the reviewer surfaced one blocking instance
+of a class per round (an unenforced guarantee stated only in a doc comment, a
+fixture that proved less than it claimed, one more hand-enumerated list left
+stale), the executor fixed exactly that instance under its own "nothing but
+the order" law, and the next fresh-context review found the sibling. Nine
+rounds of that on one order is a tier-and-order-shape problem, not a
+reviewer problem.
+
+**The tier.** `executor-principal` (Fable, high) and
+`executor-principal-xhigh` (Fable, xhigh) join the core roster — eight
+Claude agents now. Same executor law and report format as `executor-heavy`,
+plus the two duties the grinding chains showed were missing at the top rung:
+a principal may make a decision the order explicitly delegates, within the
+bounds the order states, and must record it under `DECISIONS`; and it treats
+every reviewer finding in its case file as one instance of a class —
+enumerate the siblings in scope, fix them all, list the sweep under
+`CLASS SWEEP` — so the next review checks rather than rediscovers. Routing is
+a PLAN-time decision, never self-promotion, for exceptional orders only:
+many coupled moving parts that resist splitting, an approach or outcome the
+plan cannot settle in advance, or a second bounce at the heavy tier. §3.5's
+ladder is now explicit — `executor` → `executor-heavy` → `executor-principal`,
+one rung per double bounce; two bounces at the principal tier is a plan
+problem. §8.3 pins the efforts; the installer, the install census test, and
+`/orchestra-status` know the two files.
+
+**What did not change.** `executor` is still the default and the Opus heavy
+profiles are still the hard tier; the Sol executor stays exceptional-only.
+Fable is priced above Opus per token, so the tier earns its place only where
+it removes rounds — which is exactly the population the field record names.
+
+## 3.0.3 — docs-only work skips the cross-family lane, and five review-lane field fixes
+
+**The failure.** Review routing keyed on the author's vendor alone, so a
+prose-only commit — a README rewording, a CHANGELOG entry, a stale comment —
+bought the same full Sol review as a subsystem change: a cross-vendor
+sub-process, a tree checkout, an exploration pass that does not shrink with the
+diff, and up to the 45-minute cap. Worse, when the Sol lane was down that
+commit raised `⚠ CROSS-FAMILY REVIEW UNAVAILABLE` and got a "fallback" banner
+on its verdict, reporting a degraded gate for work whose gate was never at
+risk. Cross-family review exists to de-correlate *error modes in behavior*; a
+diff that changes no behavior has none to de-correlate.
+
+**The rule (§5).** A campaign whose whole diff is prose — README, CHANGELOG,
+comments, user docs, plans, with no code, config, dependency, or
+agent/skill/protocol instruction file touched — routes to the fresh-context
+Opus `reviewer`. The gate is untouched: every campaign is still reviewed
+(§3.2), the inert verification tier is still a claim the reviewer proves from
+the diff first (§8.4), and the reviewer verifies the docs-only claim the same
+way before accepting it. Only the lane relaxes — no alarm, and `reviewer`
+omits its fallback banner because this review is the design, not a degradation.
+
+**Where the carve-out stops.** `ORCHESTRA.md`, agent files, and skill files are
+markdown, but they are the harness's behavior: an edit there changes what
+agents do, so it routes by author vendor like code. Same for anything that
+touches config, dependencies, or data. When unsure, it is not docs-only.
+
+**Five field failures from one campaign day (2026-09-03), fixed in the
+cross-vendor lanes.**
+
+- **A prohibition the order only wrote is now binding.** Four reviews timed out
+  running a suite their order had told them not to run. The order said it in
+  prose, and prose reaches the engine only inside the `WORK ORDER` block —
+  which the brief frames as the AUTHOR's intent, not as instructions to the
+  reviewer, so the reviewer read "do not run the full ci.sh" as a fact about
+  someone else's task and obeyed RULE 1 instead. The brief now carries a
+  standing rule that a restriction written into the work order binds the
+  reviewer with the same force as a `--forbid` flag, overrides RULE 1, and is
+  reported as `UNVERIFIED (prohibited: …)`. The flags remain the precise
+  mechanism: `reviewer-codex` is now told to lift prohibitions out of the
+  order's prose — wherever they appear, including inside the pasted work order
+  — into `no_tests`/`forbid`, and the header states `prohibited commands: N`
+  **always**, including `0`, so a prohibition that never became a flag is
+  visible in the report instead of being discovered in the burnt clock. Same
+  always-on count in the exec header.
+
+- **A project setting that did not land says so.** `codex.reviewTimeoutMs` was
+  always read (flag > env > `orchestra.json` > default), but the read was a
+  silent `try/catch`: an unparseable file and a key written at the top level
+  instead of under `"codex"` both looked exactly like "no config at all", and
+  the review then spent a default-length clock with nothing in the report to
+  explain why. Both now leave a `PREFLIGHT` note naming the file and what was
+  ignored, in the exec runner as well as the review runner. The header already stated the cap and its source (`(default)` vs
+  `(orchestra.json)`); that line plus the note is now enough to diagnose it
+  from the verdict alone.
+
+- **Concurrent reviews of one repository no longer sabotage each other.** Two
+  Sol reviews pinned worktrees off the same repository; the second spent its
+  whole budget on `fatal: not a git repository: .../.git/worktrees/<name>` from
+  every git command and timed out. A linked worktree keeps its metadata in the
+  SHARED repository, and `git worktree prune` deletes the entry of any worktree
+  whose directory it cannot see — so one review's teardown, sweep, or a user's
+  own tidy-up unhooks a live checkout, and a directory that is merely
+  unreadable for a moment (a sandbox ACL, a slow mount) counts as "cannot see".
+  The runner now LOCKS its pinned worktree for the life of the review, which is
+  exactly what prune is documented to skip. Because a lock survives its owner,
+  the reason names the owning pid and the startup sweep releases the locks
+  whose process is gone; a lock the harness did not take is never released.
+
+- **A Codex sandbox-helper failure is diagnosed instead of guessed at.** One
+  run logged `Failed to create unified exec process: helper_unknown_error:
+  apply deny-read ACLs`, after which the engine could not find lines in files
+  it had just read. The classifier called that "codex chose to exit"
+  (non-retryable) and offered a list of causes it had not tested. Both runners
+  now recognise the failure, name it as an INSTALL fault rather than a fault in
+  the work, point at `--doctor` and the Windows helper siblings, and — in the
+  review lane — retry it, because a fresh sandbox setup often succeeds. Only
+  phrases that ARE the failure are matched; the helper filenames deliberately
+  are not, so a change that merely talks about them is never misdiagnosed.
+
+- **A killed attempt keeps the findings it had already written.** A timed-out
+  review had already streamed a real defect — the fallback reviewer later
+  reproduced the same one from scratch — and the runner kept a ten-line tail
+  and discarded the rest. Failed attempts now carry up to 80 lines / 6000
+  characters of what the engine actually said, under a `PARTIAL ENGINE OUTPUT —
+  NOT A VERDICT` heading that says what it is: a LEAD for the fallback reviewer
+  to confirm or discard, never a result this lane produced. The `VERDICT:` line
+  is untouched — a partial is never promoted to a verdict.
+
 ## 3.0.2 — private relay inputs and bounded, credential-safe diagnostics
 
 **MCP relay hardening.** The Codex engine transport no longer serializes work

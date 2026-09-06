@@ -343,14 +343,56 @@ function sleepSync(msec) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, msec);
 }
 
+// Notes about the SETTINGS themselves, surfaced in the header's PREFLIGHT.
+// Same reason as the review runner: a file that exists and did not apply — bad
+// JSON, or a codex key written one level too high — used to be indistinguishable
+// from no config at all, and the run then used a default nobody chose.
+const CONFIG_NOTES = [];
+
+const CODEX_ONLY_KEYS = [
+  'execTimeoutMs', 'execHeavyModel', 'execHeavyEffort', 'execSandbox', 'doNotRun',
+  'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'helpersDir', 'gitConfigIsolation',
+  'crossplanModel', 'crossplanEffort',
+];
+
+// Still fail-open — a missing or broken file means no project settings, never a
+// dead run — but a setting that did not land now says so.
 function loadProjectConfig(projectDir) {
+  const file = path.join(projectDir, '.claude', 'orchestra.json');
+  let raw;
   try {
-    const raw = fs.readFileSync(path.join(projectDir, '.claude', 'orchestra.json'), 'utf8');
-    const cfg = JSON.parse(raw);
-    return cfg && typeof cfg === 'object' && !Array.isArray(cfg) ? cfg : {};
-  } catch (_) {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e && e.code !== 'ENOENT') {
+      CONFIG_NOTES.push(
+        file + ' could not be read (' + (e.code || e.message) + ') — every project setting ' +
+          'in it was IGNORED and built-in defaults applied'
+      );
+    }
     return {};
   }
+  let cfg;
+  try {
+    cfg = JSON.parse(raw);
+  } catch (e) {
+    CONFIG_NOTES.push(
+      file + ' is not valid JSON (' + ((e && e.message) || 'parse error') + ') — every ' +
+        'project setting in it was IGNORED and built-in defaults applied'
+    );
+    return {};
+  }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+    CONFIG_NOTES.push(file + ' is not a JSON object — every project setting in it was IGNORED');
+    return {};
+  }
+  const misplaced = CODEX_ONLY_KEYS.filter((k) => Object.prototype.hasOwnProperty.call(cfg, k));
+  if (misplaced.length) {
+    CONFIG_NOTES.push(
+      file + ': ' + misplaced.join(', ') + ' ' + (misplaced.length === 1 ? 'is' : 'are') +
+        ' at the TOP LEVEL and therefore ignored — these belong under "codex": { ... }'
+    );
+  }
+  return cfg;
 }
 
 function loadVerification(projectCfg) {
@@ -744,6 +786,23 @@ function buildBrief(workOrder, verification, forbidden) {
 // error.code ETIMEDOUT when ITS OWN timer fired, so the runner never guesses
 // about its own kill.
 
+// The Codex sandbox is set up by helper executables beside the binary, and when
+// that setup fails on Windows codex says so in one recognisable breath. Field
+// evidence (2026-09-03): after "Failed to create unified exec process:
+// helper_unknown_error: apply deny-read ACLs", the engine kept going with a
+// half-applied sandbox and apply_patch could no longer find lines it had just
+// read — an EXECUTION that reported failure for a reason that had nothing to do
+// with the order. Only phrases that are themselves the failure are matched: the
+// helper filenames are deliberately absent, so an order that talks about them
+// is never mistaken for one that hit this.
+const SANDBOX_HELPER_RE =
+  /helper_unknown_error|apply deny-read ACLs|Failed to create unified exec process/i;
+
+function sandboxHelperFailed(run) {
+  return SANDBOX_HELPER_RE.test((run && run.stderr) || '') ||
+    SANDBOX_HELPER_RE.test(tail((run && run.stdout) || '', 40));
+}
+
 function classifyExit(run, elapsedMs) {
   const cap = CONFIG.timeoutMs;
   const ran =
@@ -809,6 +868,17 @@ function classifyExit(run, elapsedMs) {
       ran,
     };
   }
+  if (st !== 0 && sandboxHelperFailed(run)) {
+    return {
+      kind: 'sandbox-helper',
+      headline: 'the Codex sandbox helper failed to set the sandbox up (codex exited ' + st + ')',
+      killedBy:
+        'codex itself — its sandbox setup step failed. This is an INSTALL fault, not a ' +
+        'fault in the order: anything the engine did after that line ran against a ' +
+        'half-applied sandbox, so read the TREE AUDIT before trusting any of it.',
+      ran,
+    };
+  }
   if (st !== 0) {
     return {
       kind: 'exit',
@@ -846,6 +916,15 @@ function failureDiagnostics(att) {
         'sandbox restriction — including an install missing a helper the sandbox ' +
         'needs. Both lanes share one Codex install; inspect and repair it with ' +
         '`node .claude/hooks/orchestra-review.js --doctor`.'
+    );
+  }
+  if (att.class.kind === 'sandbox-helper' || sandboxHelperFailed(att)) {
+    lines.push(
+      '  the Codex sandbox helper failed here — an install fault, not an order fault. Run ' +
+        '`node .claude/hooks/orchestra-review.js --doctor`: on Windows ' +
+        'codex-command-runner.exe, codex-resources AND codex-windows-sandbox-setup.exe ' +
+        'must sit DIRECTLY beside codex.exe, and a codex self-update is the usual way one ' +
+        'of them goes missing. Re-dispatch after the doctor is clean.'
     );
   }
   if (att.class.kind === 'runner-timeout') {
@@ -949,7 +1028,10 @@ function settingsBits() {
     'sandbox: ' + CONFIG.sandbox,
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (execution is never auto-retried)',
-  ].concat(CONFIG.forbidden.length ? ['prohibited commands: ' + CONFIG.forbidden.length] : [])
+  ]
+    // Always, including zero — "prohibited commands: 0" is how a Director sees
+    // that an order's prose prohibition never became a flag.
+    .concat(['prohibited commands: ' + CONFIG.forbidden.length])
     .concat(CONFIG.execDirLabel ? ['tree: ' + CONFIG.execDirLabel] : []);
 }
 
@@ -1119,6 +1201,8 @@ function main() {
 
   // --- settings: project config, then env (already seeded), then flags.
   const projectCfg = loadProjectConfig(CONFIG.projectDir);
+  // A setting that did not land is a header fact, not a silence.
+  for (const note of CONFIG_NOTES) PREFLIGHT.push(note);
   const codexCfg =
     projectCfg.codex && typeof projectCfg.codex === 'object' && !Array.isArray(projectCfg.codex)
       ? projectCfg.codex

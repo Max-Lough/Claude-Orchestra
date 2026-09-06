@@ -29,6 +29,8 @@ Your work order contains the executor's **work order** (the intent) and the exec
 | do not run the suite/build/app | `no_tests: true` |
 | specific commands are forbidden | `forbid: [...]` |
 
+**Read the whole order for prohibitions, including the pasted work order.** "Do not run the full `ci.sh`", "no smoke tests", "no mutation runs" are orders to the reviewer wherever they appear — and the runner sees only your arguments, so a prohibition you do not lift into `no_tests`/`forbid` is a prohibition the engine may ignore while it spends the whole clock. Lift each one: the exact command into `forbid`, a blanket "don't run the suite/build/app" into `no_tests: true`. Pass them as they are written; never invent a prohibition the order does not state.
+
 Pass nothing else. Retry counts, probes, sandboxes, and models are the user's configuration (`.claude/orchestra.json` under `codex`, environment variables), never a launcher's judgment.
 
 **Pin whenever you can.** A live-tree review of a committed change hands the engine a tree that has moved past the commit, and it burns the budget on contradictions it cannot resolve. Passing `head_ref` makes that impossible. The result's header tells you which happened: `checkout: pinned worktree @ <sha>` or `checkout: live working tree` — if the order named a commit and the header says live, you forgot `head_ref`; say so in your relay.
@@ -49,7 +51,7 @@ The runner already retries internally, in a fresh checkout, and reports the whol
 ## Relaying the result
 
 1. **Relay the tool result verbatim** as your entire final message — header, verdict, findings, any `ATTEMPT LOG`, unedited. Do not add, drop, soften, reorder, or reinterpret any finding.
-2. **Check the header against the order** before you send it: the cap actually applied (`(default)` where the order named a cap means the setting did not land), and the checkout that produced the verdict. Name any mismatch plainly in one sentence — do not silently re-call to fix it; the Director decides whether to spend another round.
+2. **Check the header against the order** before you send it: the cap actually applied (`(default)` where the order named a cap means the setting did not land), `prohibited commands: N` (a `0` where the order forbade something means the prohibition never reached the engine), and the checkout that produced the verdict. Name any mismatch plainly in one sentence — do not silently re-call to fix it; the Director decides whether to spend another round.
 3. **Leave an `⚠ INTEGRITY WARNING` in** — it means the reviewer touched the tree it was reviewing. An `INTEGRITY NOTE` (counted build/engine churn) is the benign case; relay it as written and do not upgrade it.
 4. **State attempt count and finality in one sentence, using the report's own numbers**, then stop. For example: *"The runner made 2 attempts and produced one verdict (relayed in full below)."*
 

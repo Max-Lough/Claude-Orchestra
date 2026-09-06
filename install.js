@@ -66,6 +66,8 @@ const AGENTS = [
   'executor.md',
   'executor-heavy.md',
   'executor-heavy-xhigh.md',
+  'executor-principal.md',
+  'executor-principal-xhigh.md',
   'reviewer.md',
 ];
 const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');

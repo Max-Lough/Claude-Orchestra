@@ -1406,10 +1406,31 @@ function case21() {
   fs.writeFileSync(path.join(fx.root, 'gitconfig-cond'), '[includeIf "gitdir:./project/"]\n\tpath = cond.inc\n');
   const ci = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(fx.root, 'gitconfig-cond'), CODEX_HOME: quotedHome }).stdout || '';
   check(
-    'a relative includeIf gitdir condition is rebased with the copy',
+    'a relative includeIf gitdir condition is resolved by git for the copy',
     field(ci, 'GIT_CREDENTIAL_HELPER') === 'cond-helper',
     'GIT_CREDENTIAL_HELPER: ' + field(ci, 'GIT_CREDENTIAL_HELPER')
   );
+  // Astra, round 6: a `hasconfig:remote.*.url:` condition needs the
+  // repository's own remotes, which a `--global`-only query never sees. The
+  // config is resolved across every scope in the engine's tree, and only the
+  // system + global entries are carried.
+  git(['remote', 'add', 'origin', 'https://example.com/team/repo.git'], fx.repo);
+  fs.writeFileSync(path.join(fx.root, 'remote.inc'), '[credential]\n\thelper = remote-helper\n');
+  fs.writeFileSync(
+    path.join(fx.root, 'gitconfig-remote'),
+    '[credential]\n\thelper = first\n[credential "https://x"]\n\thelper = ""\n[credential]\n\thelper = second\n' +
+      '[includeIf "hasconfig:remote.*.url:https://example.com/**"]\n\tpath = remote.inc\n'
+  );
+  const hc = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(fx.root, 'gitconfig-remote'), CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'a hasconfig:remote include resolves against the repository, and helper order survives the copy',
+    field(hc, 'GIT_CREDENTIAL_HELPER') === 'remote-helper' &&
+      // A system-scope helper (Git for Windows ships credential.helper = manager)
+      // may legitimately precede these: the system entries are carried too.
+      field(hc, 'GIT_CREDENTIAL_HELPERS').endsWith('first | second | remote-helper'),
+    'GIT_CREDENTIAL_HELPER: ' + field(hc, 'GIT_CREDENTIAL_HELPER') + ' GIT_CREDENTIAL_HELPERS: ' + field(hc, 'GIT_CREDENTIAL_HELPERS')
+  );
+  git(['remote', 'remove', 'origin'], fx.repo);
 
   const opaqueHome = path.join(fx.root, 'codex-home-opaque');
   fs.mkdirSync(opaqueHome, { recursive: true });

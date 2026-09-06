@@ -136,7 +136,14 @@ is ever copied. Two real holes closed with it: a user extra arg could re-enable
 a server the runner had skipped as already disabled (every known server now
 gets its override, after the user's args), and a pinned review discovered
 servers in the live project but launched in the throwaway worktree (discovery
-now runs where the engine runs, per attempt).
+now runs where the engine runs, per attempt). Round 6 refined the git
+rendering three ways: entries are written in git's reported order under
+repeated headers rather than grouped by section (a credential-helper reset
+between two generic helpers means something only in that order); the query
+covers every scope in the engine's tree and keeps the system and global
+entries, so a `hasconfig:remote.*.url:` condition sees the repository's own
+remotes; and a pinned review re-resolves the scratch config for its detached
+checkout, so an `onbranch:main` include no longer follows it there.
 
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 

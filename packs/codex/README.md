@@ -276,9 +276,11 @@ A Sol review once delegated itself to a Claude review MCP it found in the
 config and came back same-family under a Sol header; an executor with a GitHub
 connector can write past the workspace sandbox. The header's `mcp:` line says
 what was disabled. Limits, stated: a server whose name needs TOML quoting cannot
-be addressed through `-c`, and a project-level `.codex/config.toml` is named
-in preflight rather than touched (Codex loads it only for a trusted project,
-and disabling a server it has not loaded kills the run on config validation).
+be addressed through `-c`; and only in the fallback (no `codex mcp list`) is a
+project-level `.codex/config.toml` named in preflight rather than touched —
+Codex loads it only for a trusted project, and disabling a server it has not
+loaded kills the run on config validation, which is exactly why the names are
+asked of Codex, in the directory the engine runs in, rather than read from files.
 A verdict that still names a Claude engine as its author is stamped
 `⚠ CROSS-FAMILY BREACH` and never counts as the cross-family gate.
 

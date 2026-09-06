@@ -222,6 +222,9 @@ const userName = git(['config', 'user.name']);
 // filter (without it every LFS-tracked file reads as modified). Both prove
 // whether the runner's scratch config carried the real global config across.
 const credentialHelper = git(['config', 'credential.helper']);
+// Every generic helper in config order — the order is the semantics (a
+// reset between two helpers means something), so a copy must keep it.
+const credentialHelpers = git(['config', '--get-all', 'credential.helper']);
 const lfsClean = git(['config', 'filter.lfs.clean']);
 
 // Which known brief sections reached the engine — checkable without dumping
@@ -312,6 +315,10 @@ const report = [
   'GIT_CREDENTIAL_HELPER: ' +
     (credentialHelper.status === 0 && credentialHelper.stdout ? credentialHelper.stdout : '(unset)'),
   'GIT_LFS_CLEAN: ' + (lfsClean.status === 0 && lfsClean.stdout ? lfsClean.stdout : '(unset)'),
+  'GIT_CREDENTIAL_HELPERS: ' +
+    (credentialHelpers.status === 0 && credentialHelpers.stdout
+      ? credentialHelpers.stdout.split(/\r?\n/).filter(Boolean).join(' | ')
+      : '(unset)'),
   'BRIEF_MARKERS: ' + (briefMarkers.join(' | ') || '(none)'),
   'HEAD: ' + head.stdout,
   'DIRTY_COUNT: ' + dirtyLines.length,

@@ -2126,6 +2126,21 @@ function case29() {
       !/mcp_servers\.in_project\./.test(field(where, 'CONFIG_OVERRIDES')),
     field(where, 'CONFIG_OVERRIDES')
   );
+
+  // Astra, round 6: git's conditional includes must be resolved for the
+  // checkout the engine reads. The live project is on main; the pinned
+  // worktree is detached, so an `onbranch:main` helper must NOT reach it.
+  fs.writeFileSync(path.join(fx.root, 'main.inc'), '[credential]\n\thelper = main-only-helper\n');
+  fs.writeFileSync(
+    path.join(fx.root, 'gitconfig-branch'),
+    '[credential]\n\thelper = default-helper\n[includeIf "onbranch:main"]\n\tpath = main.inc\n'
+  );
+  const ob = runReview(fx, ['--head-ref', fx.head], { GIT_CONFIG_GLOBAL: path.join(fx.root, 'gitconfig-branch') }).stdout || '';
+  check(
+    'a pinned (detached) review resolves git conditional includes for its own checkout, not the live branch',
+    field(ob, 'GIT_CREDENTIAL_HELPER') === 'default-helper' && !/main-only-helper/.test(field(ob, 'GIT_CREDENTIAL_HELPERS')),
+    'GIT_CREDENTIAL_HELPER: ' + field(ob, 'GIT_CREDENTIAL_HELPER') + ' GIT_CREDENTIAL_HELPERS: ' + field(ob, 'GIT_CREDENTIAL_HELPERS')
+  );
 }
 
 async function main() {

@@ -574,23 +574,25 @@ function mcpIsolation(dir) {
   return { args, label, notes };
 }
 
-// The user's global git config, RESOLVED by git itself and re-serialised into
-// (`--includes` is required: git follows include.* only by default when it
-// searches all config files, not when one file is named with --global)
-// the scratch config. `git config --global --list --null`, run in the tree the
-// engine will work in, evaluates every include and includeIf (a gitdir
-// condition against the config file, an onbranch condition against that
-// tree) exactly as git would for the engine — so no include text is ever
-// copied or rewritten (Astra, rounds 3–5: every hand rewrite of include
-// syntax missed a form; git's own resolver misses none). Keys are written
-// back as `[section "subsection"] key = "value"` with git's escaping;
-// multi-valued keys keep their order; include.* / includeIf.* keys are
-// dropped because their effect is already in the list. The runner reads all
-// of this as the host user — the sandbox never opens the user's files.
+// The user's git config as git itself resolves it for the tree the engine
+// will work in, re-serialised into the scratch config. `git config --list
+// --show-scope --includes --null`, run in that tree, evaluates every include
+// and includeIf — gitdir against the config file, onbranch against that
+// tree's HEAD, hasconfig against the repository's own remotes — exactly as
+// git would for the engine; the system and global entries are kept (the
+// scratch config replaces both: GIT_CONFIG_NOSYSTEM is set) and the local,
+// worktree and command entries are dropped, because the engine still reads
+// those from the repository. Each entry is written back under its own
+// `[section "subsection"]` header IN THE ORDER git reported it, never grouped
+// by section — a credential-helper reset (`helper = ""`) between two generic
+// helpers only means what it means in that order (Astra, round 6). include.*
+// and includeIf.* keys are dropped because their effect is already in the
+// list, so no include text is ever copied or rewritten. The runner reads all
+// of this as the host user; the sandbox never opens the user's files.
 function globalGitConfigCopy(cwd) {
   let r;
   try {
-    r = spawnSync('git', ['config', '--global', '--includes', '--list', '--null'], {
+    r = spawnSync('git', ['config', '--list', '--show-scope', '--includes', '--null'], {
       cwd: cwd || process.cwd(),
       encoding: 'utf8',
       windowsHide: true,
@@ -602,9 +604,13 @@ function globalGitConfigCopy(cwd) {
   if (r.error || r.status !== 0 || !r.stdout) return '';
   const esc = (v) =>
     '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
-  const sections = new Map();
-  for (const rec of r.stdout.split('\0')) {
-    if (!rec) continue;
+  // Records alternate: scope NUL key NL value NUL.
+  const parts = r.stdout.split('\0');
+  let out = '';
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const scope = parts[i];
+    const rec = parts[i + 1];
+    if (scope !== 'system' && scope !== 'global') continue;
     const nl = rec.indexOf('\n');
     const key = nl === -1 ? rec : rec.slice(0, nl);
     const val = nl === -1 ? null : rec.slice(nl + 1);
@@ -615,14 +621,11 @@ function globalGitConfigCopy(cwd) {
     if (section === 'include' || section === 'includeif') continue;
     const name = key.slice(last + 1);
     const sub = last > first ? key.slice(first + 1, last) : null;
-    const header = sub === null ? '[' + section + ']' : '[' + section + ' ' + esc(sub) + ']';
-    if (!sections.has(header)) sections.set(header, []);
-    sections.get(header).push('\t' + name + (val === null ? '' : ' = ' + esc(val)));
+    out += (sub === null ? '[' + section + ']' : '[' + section + ' ' + esc(sub) + ']') + '\n';
+    out += '\t' + name + (val === null ? '' : ' = ' + esc(val)) + '\n';
   }
-  if (!sections.size) return '';
-  let out = "# ---- the user's global git config, resolved by git (includes applied) and copied\n";
-  for (const [h, lines] of sections) out += h + '\n' + lines.join('\n') + '\n';
-  return out;
+  if (!out) return '';
+  return "# ---- the user's git config (system + global), resolved by git for this tree and copied\n" + out;
 }
 
 // Same isolation as the exec runner: silence the unreadable global

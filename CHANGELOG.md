@@ -127,6 +127,35 @@ work. `codexModelId` also learned the `GPT-6 Astra` → `gpt-6-astra`
 display-name mapping — the same shape defect that cost the lane a round on Sol
 in the 2026-09-02 shakedown.
 
+**A principal order is goal-shaped, and the engine is finally told so.**
+Harvested from PR #37, an independent parallel design for a principal executor
+that branched before 3.1.0 merged and was closed rather than merged (its
+`executor-principal` was a *different* agent from the one 3.1.0 shipped, and it
+predated this ladder). Its good idea survives here: the principal rung takes a
+goal, its observable done-criteria, the intent behind it and boundaries —
+**not a file list** — because the work reaching that rung is work that loses its
+value when cut into narrow orders. What that changed:
+
+- The exec runner's brief is now profile-aware. A `principal` run carries five
+  extra clauses (goal-shaped scope, decide-the-routine/ask-about-the-material,
+  recon-before-you-build, surface-the-coupling, minimal-coherent-change) and is
+  asked for a `DECISIONS` section. **This closes a real gap**: the launcher had
+  been telling the Director to expect DECISIONS from a model nothing had ever
+  asked to write one. A `heavy` run is unchanged and must not receive the
+  charter — a heavy order is step-shaped.
+- `/orchestra-plan` gains the principal branch in its decomposition gate and an
+  `Intent:` field in the order template, so a goal-shaped order can actually be
+  written down. Difficulty alone stays a heavy-tier reason, never a principal
+  one.
+- §8.1 exempts a principal order from the kind and subsystem caps — it is sized
+  by its done-criteria, always carries the cadence clauses, and still gets
+  exactly one review. §3.5 adds that one legitimate re-plan after a coherence
+  failure (each fragment passed alone, the seams failed) is a single principal
+  order, never a third try at the same fragment.
+- The Fable `executor-principal` carries the same charter, because it is the
+  announced substitute when the Astra rung is unavailable and must be able to
+  take the same order shape.
+
 **Coverage.** Exec-lane case 18 pins profile selection, both directions of
 env/config key isolation, the unknown-profile fallback and its PREFLIGHT line,
 and that an explicit `--model` still outranks a profile default. Case 19 pins
@@ -135,8 +164,9 @@ mechanical stops it drifting back: the demoted profiles must declare
 themselves user-request-only, the Astra launcher must claim the top rung and
 know nothing is above it, the heavy profiles must not claim to be the top tier,
 and ORCHESTRA.md must carry the three-rung ladder, the demotion, the §3.5
-escalation path and the announced-substitution rule. MCP-lane case 4b pins the
-enum, that `profile` stays optional, both rungs end to end, and the
+escalation path and the announced-substitution rule. Case 20 pins the principal charter to the rung that earns it and its
+ABSENCE on the heavy rung, plus the clauses the brief must state. MCP-lane case
+4b pins the enum, that `profile` stays optional, both rungs end to end, and the
 display-name mapping. Case 17's structural launcher checks cover the new agent.
 
 ## 3.1.0 — a Fable principal-executor tier above the Opus heavy profiles

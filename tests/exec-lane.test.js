@@ -1126,6 +1126,75 @@ function case19() {
   );
 }
 
+// The principal rung's charter has to reach the ENGINE, not just the launcher.
+// The Astra launcher tells the Director that the report will carry a DECISIONS
+// section and that the order is goal-shaped; before this, nothing in the brief
+// asked the engine for either, so the launcher was promising a section on
+// behalf of a model that had never been told to write it. These checks pin the
+// charter to the profile that earns it, and pin its ABSENCE on the rung that
+// does not — a heavy order is step-shaped and must not be told otherwise.
+function case20() {
+  section('20. The principal charter reaches the engine, and only on the principal rung');
+
+  const fx = makeRepo();
+
+  const heavy = runExec(fx, []);
+  const heavyMarkers = field(heavy.stdout || '', 'BRIEF_MARKERS');
+  check(
+    'a heavy order is NOT given the principal charter',
+    !/THIS IS A PRINCIPAL ORDER/.test(heavyMarkers),
+    'BRIEF_MARKERS: ' + heavyMarkers
+  );
+  check(
+    'a heavy order is NOT asked for a DECISIONS section',
+    !/DECISIONS/.test(heavyMarkers),
+    'BRIEF_MARKERS: ' + heavyMarkers
+  );
+  check(
+    'the heavy brief still carries the shared executor law and the work order',
+    /WORK ORDER/.test(heavyMarkers),
+    'BRIEF_MARKERS: ' + heavyMarkers
+  );
+
+  const principal = runExec(fx, ['--profile', 'principal']);
+  const pMarkers = field(principal.stdout || '', 'BRIEF_MARKERS');
+  check(
+    'a principal order IS given the goal-shaped charter',
+    /THIS IS A PRINCIPAL ORDER/.test(pMarkers),
+    'BRIEF_MARKERS: ' + pMarkers
+  );
+  check(
+    'a principal order IS asked for a DECISIONS section — the launcher promises it',
+    /DECISIONS/.test(pMarkers),
+    'BRIEF_MARKERS: ' + pMarkers
+  );
+  check(
+    'the principal brief still carries the shared executor law and the work order',
+    /WORK ORDER/.test(pMarkers),
+    'BRIEF_MARKERS: ' + pMarkers
+  );
+  check(
+    'the principal run still produces a normal report — the charter did not break the contract',
+    /STATUS: DONE/.test(principal.stdout || '') &&
+      /REPORT INTEGRITY: verified/.test(principal.stdout || ''),
+    (principal.stdout || '').slice(-400)
+  );
+
+  // The charter is text the engine reads, so pin its load-bearing clauses in
+  // the runner source rather than only its presence in the brief.
+  const runnerSrc = fs.readFileSync(RUNNER, 'utf8');
+  for (const [label, re] of [
+    ['goal-shaped, not step-shaped', /goal-shaped, not step-shaped/],
+    ['boundaries are the scope, not a file list', /not a file[\s\S]{0,40}list/],
+    ['decide the routine, ask about the material', /Decide the routine, ask about the material/],
+    ['recon before you build', /Recon before you build/],
+    ['surface the coupling', /Surface the coupling/],
+    ['a wrong goal is BLOCKED, never a silent substitution', /never a silent substitution/],
+  ]) {
+    check('principal charter states: ' + label, re.test(runnerSrc), 'clause missing from the brief');
+  }
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1159,6 +1228,7 @@ async function main() {
   case17();
   case18();
   case19();
+  case20();
 }
 
 main().then(finish, (e) => {

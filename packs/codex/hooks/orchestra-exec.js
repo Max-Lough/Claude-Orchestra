@@ -743,7 +743,50 @@ function manifestLines(verification) {
   return lines;
 }
 
-function buildBrief(workOrder, verification, forbidden) {
+// The PRINCIPAL rung takes a different SHAPE of order, not merely a harder
+// one. A principal order names a goal, its done-criteria, the intent behind
+// it and the boundaries — not a file list — because the work reaching this
+// rung is work that loses its value when cut into narrow orders: many coupled
+// seams that only stay correct if one mind holds them at once, or territory
+// that cannot be planned before it is explored. These lines say so to the
+// engine. Without them the launcher promises the Director a DECISIONS section
+// that nothing ever asked the engine to write.
+function principalLines(profile) {
+  if (profile !== 'principal') return [];
+  return [
+    'THIS IS A PRINCIPAL ORDER — read these before the rules above bite.',
+    'P1. The order is goal-shaped, not step-shaped. It names a goal, its',
+    '    done-criteria, the intent behind it, and boundaries — not a file',
+    '    list. Inside those boundaries you decide which files change; outside',
+    '    them you change nothing. Rule 1 still binds: the boundary is the',
+    '    scope. Latitude inside the goal is not licence to redesign it — if',
+    '    you believe the goal or a stated constraint is itself wrong, that is',
+    '    a BLOCKED report, never a silent substitution.',
+    'P2. Decide the routine, ask about the material. Make the ordinary calls',
+    '    yourself (a name, a default, which of two equivalent approaches) and',
+    '    record each under DECISIONS. Reserve BLOCKED for where different',
+    '    readings of the goal would lead to materially different work, a',
+    '    stated constraint cannot be met, or a done-criterion cannot be made',
+    '    observable. First do everything that does not depend on the answer.',
+    'P3. Recon before you build. You are expected to map the territory',
+    '    yourself: the code the goal touches, the tests protecting it, the',
+    '    conventions around it, and any case file this order carries (prior',
+    '    reports, reviewer findings). Absorb that history first and never',
+    '    repeat an approach it already rules out; say which dead ends you',
+    '    avoided and why.',
+    'P4. Surface the coupling. Orders reach this rung precisely because seams',
+    '    interact. Where your change touches one — an invariant another',
+    '    subsystem relies on, an ordering assumption, a data-shape contract —',
+    '    name it in CONCERNS even when everything passes, so the reviewer',
+    '    knows where to press.',
+    'P5. Prefer the minimal coherent change. Capability is not licence for',
+    '    cleverness: edit surgically rather than rewriting a file when the',
+    '    result is the same.',
+    '',
+  ];
+}
+
+function buildBrief(workOrder, verification, forbidden, profile) {
   return [
     'You are the EXECUTOR in a multi-agent engineering harness. A Director',
     '(who never touches the code) wrote the work order below; your edits and',
@@ -790,6 +833,7 @@ function buildBrief(workOrder, verification, forbidden) {
     '   progress file, append one status line there after each part, before',
     '   starting the next.',
     '',
+    ...principalLines(profile),
     'OUTPUT — end your final message with EXACTLY this structure (it is the',
     'report the Director will read; make it self-contained, no "see above").',
     'Do not wrap it in code fences.',
@@ -807,6 +851,14 @@ function buildBrief(workOrder, verification, forbidden) {
     '- <anything done beyond, short of, or differently than the order — or',
     '  "none">',
     '',
+    ...(profile === 'principal'
+      ? [
+          'DECISIONS',
+          '- <each judgment call the goal left to you, and why you chose it —',
+          '  or "none">',
+          '',
+        ]
+      : []),
     'CONCERNS',
     '- <risks, smells, or follow-ups the Director should weigh — or "none">',
     '',
@@ -1470,7 +1522,7 @@ function main() {
     if (settled !== null) before = settled;
   }
 
-  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden);
+  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden, CONFIG.profile);
 
   // --- the one attempt.
   const lastMsgFile = path.join(SCRATCH.dir, 'report.txt');

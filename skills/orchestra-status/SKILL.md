@@ -33,7 +33,7 @@ Mode:         DIRECTOR (Fable|Opus) | NORMAL (<model>)
 Enforcement:  active | paused (.claude/orchestra.pause) | paused (ORCHESTRA_PAUSE=1) | guard not wired
 Protocol:     .claude/ORCHESTRA.md <present (vX.Y.Z | unversioned)|MISSING> · CLAUDE.md import <present|MISSING>
 Company:      scout <✓|✗> detective <✓|✗> executor <✓|✗> executor-heavy <✓|✗> executor-heavy-xhigh <✓|✗> executor-principal <✓|✗> executor-principal-xhigh <✓|✗> reviewer <✓|✗> · specialists: <names | none>
-Packs:        <names | none> (codex roles: reviewer-codex <✓|✗> executor-codex-heavy <✓|✗> executor-codex-principal <✓|✗> architect-claude(+xhigh/max) <✓|✗> architect-codex <✓|✗> plan-synthesizer <✓|✗>)
+Packs:        <names | none> (codex roles: reviewer-codex <✓|✗> executor-codex-principal <✓|✗> executor-codex-heavy <✓|✗> architect-claude(+xhigh/max) <✓|✗> architect-codex <✓|✗> plan-synthesizer <✓|✗>)
 Skills:       <skill names | none>
 Executor:     claude (default) | claude (configured) | codex (Sol lane: available | UNAVAILABLE (<reason>))
 Sol lane:     available | UNAVAILABLE (<reason>) | pack not installed

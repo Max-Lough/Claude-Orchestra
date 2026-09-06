@@ -978,6 +978,105 @@ function case18() {
   );
 }
 
+// The executor ladder is doctrine, not code — it lives in prose the Director
+// reads at PLAN time, so nothing mechanical stops it from drifting back. These
+// checks pin the three claims that make the ladder work, in the files that
+// actually carry them. The failure they guard against is silent: a reworded
+// agent description that quietly re-promotes a demoted profile would change
+// where every escalated order goes, with no test red and no runtime error.
+function case19() {
+  section('19. Executor ladder doctrine: Astra on top, Fable and Sol demoted');
+
+  const read = (rel) => fs.readFileSync(path.join(MASTER, rel), 'utf8');
+  const frontmatter = (rel) => (/^description: (.*)$/m.exec(read(rel)) || [])[1] || '';
+
+  // 1. The demoted profiles must SAY they are demoted, in the description —
+  //    that string is what the Director's agent picker actually sees.
+  for (const rel of [
+    'agents/executor-principal.md',
+    'agents/executor-principal-xhigh.md',
+    'packs/codex/agents/executor-codex-heavy.md',
+  ]) {
+    const d = frontmatter(rel);
+    check(
+      rel + ': description declares USER REQUEST ONLY',
+      /USER REQUEST ONLY/.test(d),
+      d.slice(0, 200)
+    );
+    check(
+      rel + ': description does not claim to be the top rung of the ladder',
+      !/\bthe top rung of the default\b|\bTOP RUNG OF THE DEFAULT\b/.test(d),
+      d.slice(0, 200)
+    );
+  }
+
+  // 2. The Astra launcher must claim the top rung, and name the ladder that
+  //    reaches it. A launcher that does not know it is the escalation target
+  //    cannot tell the Director that a failure here is a plan problem.
+  const astra = read('packs/codex/agents/executor-codex-principal.md');
+  check(
+    'executor-codex-principal declares itself the default ladder\'s top rung',
+    /TOP RUNG OF THE DEFAULT EXECUTOR LADDER/.test(astra) &&
+      /top rung of the default executor ladder/i.test(astra),
+    astra.slice(0, 400)
+  );
+  check(
+    'executor-codex-principal names the full ladder that reaches it',
+    /`executor`[^\n]*`executor-heavy`[^\n]*you/.test(astra),
+    (astra.match(/^You are the \*\*top rung.*$/m) || ['no ladder line'])[0].slice(0, 200)
+  );
+  check(
+    'executor-codex-principal knows nothing is above it',
+    /There is no rung above you/.test(astra),
+    'the no-higher-rung line is missing'
+  );
+
+  // 3. The Opus heavy profiles must NOT claim to be the top tier: that stale
+  //    line (true before 3.1.0, false since) tells the rung directly below the
+  //    escalation target that there is nowhere to escalate to.
+  for (const rel of ['agents/executor-heavy.md', 'agents/executor-heavy-xhigh.md']) {
+    const t = read(rel);
+    check(
+      rel + ': does not claim to be the top execution tier',
+      !/You are the top execution tier/.test(t) &&
+        !/there is no higher tier to re-send the order to/.test(t),
+      (t.match(/^.*top execution tier.*$/m) || ['ok'])[0].slice(0, 200)
+    );
+    check(
+      rel + ': names the principal rung as where a dead end escalates',
+      /executor-codex-principal/.test(t),
+      'the heavy profile never names its escalation target'
+    );
+  }
+
+  // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the two
+  //    claims an order's routing actually turns on.
+  const protocol = read('ORCHESTRA.md');
+  check(
+    'ORCHESTRA.md steering names the three-rung ladder ending at Astra',
+    /One ladder, three rungs/.test(protocol) &&
+      /double bounce at Opus escalates straight to Astra/.test(protocol),
+    (protocol.match(/^\*\*Executor steering\.\*\*.*$/m) || ['no steering line'])[0].slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md marks the Fable and Sol executors user-request-only',
+    /\*\*Everything else on the bench is user request only\*\*/.test(protocol) &&
+      /`executor-principal`, `executor-principal-xhigh`\) and the Sol executor/.test(protocol),
+    'the user-request-only paragraph is missing or reworded'
+  );
+  check(
+    'ORCHESTRA.md 3.5 escalates executor -> executor-heavy -> executor-codex-principal',
+    /`executor` → `executor-heavy` → `executor-codex-principal`/.test(protocol),
+    (protocol.match(/^5\. \*\*Escalate.*$/m) || ['no rule 5'])[0].slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md requires the Astra-unavailable substitution to be announced',
+    /When the Astra rung is unavailable/.test(protocol) &&
+      /escalate to `executor-principal` instead/.test(protocol),
+    'the unavailable-rung fallback rule is missing'
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1010,6 +1109,7 @@ async function main() {
   case16();
   case17();
   case18();
+  case19();
 }
 
 main().then(finish, (e) => {

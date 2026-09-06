@@ -7,17 +7,23 @@ node install.js /path/to/project --packs codex
 ```
 
 Without it, the harness is Claude-only: reviews run on the fresh-context Opus
-`reviewer`, execution runs on the Claude executors, and `/cross-compare-plan`
-does not exist. Nothing degrades — the cross-vendor
-*layer* is simply absent.
+`reviewer`, and `/cross-compare-plan` does not exist.
+
+**This pack is no longer purely additive.** Since 3.2.0 its
+`executor-codex-principal` (GPT-6 Astra) is the top rung of the harness's
+default executor ladder, so installing or removing the pack changes where
+escalated work goes. Without the pack the ladder has no top rung: the Director
+says so in one line, escalates to the Fable `executor-principal` instead, and
+names the substitution in the REPORT — announced, never silent. Review and
+cross-compare still degrade to Claude-only exactly as before.
 
 ## What it installs
 
 | File | Role |
 |---|---|
 | `agents/reviewer-codex.md` | Thin Haiku launcher; calls the `orchestra_review` MCP tool once and relays the OpenAI verdict verbatim. The default independent reviewer for Claude-authored campaign work. Never reviews the code itself. |
-| `agents/executor-codex-heavy.md` | Thin Haiku launcher; calls the `orchestra_exec` MCP tool once with `profile: "heavy"` (OpenAI GPT-5.6 Sol, high reasoning effort by default) and relays the report + tree audit verbatim. Exceptional orders only — a problem with concrete prior evidence that Anthropic models struggled on it. Never edits anything itself. |
-| `agents/executor-codex-principal.md` | The rung above it. Thin Haiku launcher; calls the same tool once with `profile: "principal"` (OpenAI GPT-6 Astra, xhigh reasoning effort by default). For an exceptional order that has already bounced at the heavy rung, or whose shape is long-horizon agentic work in a live terminal. Never edits anything itself. |
+| `agents/executor-codex-principal.md` | **The top rung of the harness's default executor ladder.** Thin Haiku launcher; calls the `orchestra_exec` MCP tool once with `profile: "principal"` (OpenAI GPT-6 Astra, xhigh reasoning effort by default) and relays the report + tree audit verbatim. Exceptional orders only — many coupled moving parts, an approach the plan cannot settle, or a second bounce at the Opus heavy tier. Never edits anything itself. |
+| `agents/executor-codex-heavy.md` | The cheaper cross-vendor executor, **user request only** — no routing rule reaches it. Same launcher shape with `profile: "heavy"` (OpenAI GPT-5.6 Sol, high reasoning effort by default). Never edits anything itself. |
 | `agents/architect-codex.md` | Thin Haiku launcher for the `/cross-compare-plan` GPT lane; calls `orchestra_crossplan` once per phase and relays the document's provenance verbatim. Never drafts, critiques, or revises itself. |
 | `agents/architect-claude.md` | The `/cross-compare-plan` Claude architect (Fable, fresh context, high effort) — drafts, critiques the rival plan, revises under critique, anonymously, within the brief's ground-truth scope. |
 | `agents/architect-claude-xhigh.md` | The same architect at xhigh effort, dispatched when the session runs `effort=xhigh` (both lanes always run one identical effort level). |
@@ -82,20 +88,21 @@ own `git worktree prune` — can unhook a live checkout. A run killed hard
 leaves its lock behind by design; the next run releases it, because the lock
 reason names the owning process.
 
-**Execution** (`executor-codex-heavy`, `executor-codex-principal`): same Codex
-CLI + auth as review, and two rungs behind one runner:
+**Execution** (`executor-codex-principal`, `executor-codex-heavy`): same Codex
+CLI + auth as review, two rungs behind one runner, reached in very different
+ways:
 
-| Launcher | `--profile` | Default engine | Reach for it when |
+| Launcher | `--profile` | Default engine | How an order reaches it |
 |---|---|---|---|
-| `executor-codex-heavy` | `heavy` (the runner's default) | GPT-5.6 Sol, high effort | concrete prior evidence says Anthropic models struggled on this specific problem |
-| `executor-codex-principal` | `principal` | GPT-6 Astra, xhigh effort | that order then bounced at the heavy rung, or the work is long-horizon agentic work in a live terminal |
+| `executor-codex-principal` | `principal` | GPT-6 Astra, xhigh effort | **the default ladder's top rung** — `executor` → `executor-heavy` → here, one rung per double bounce. Exceptional orders only, declared at PLAN time |
+| `executor-codex-heavy` | `heavy` (the runner's default) | GPT-5.6 Sol, high effort | **user request only** — the user names it, or `executorEngine: "codex"` makes the Codex lane this project's executor lane. No routing rule reaches it |
 
-Both are exceptional-order executors only — a Director routing decision made at
-PLAN time, never routine work, and never a launcher's own escalation. Astra is
-priced well above Sol per token, so the principal rung earns its place only
-where the extra depth changes the outcome. The Claude executors (`executor`,
-`executor-heavy`, `executor-principal`) remain the default path for everything
-else.
+So the harness's escalation path crosses the vendor line at the top: a double
+bounce at the Opus heavy tier goes straight to Astra, past Sol. Neither
+launcher ever escalates itself, and neither is for routine work. The Fable
+principal profiles (`executor-principal`, `executor-principal-xhigh`) are
+likewise user-request-only, and stand in — announced, never silently — when
+this pack is absent and the ladder therefore has no top rung.
 
 The two rungs differ in model and effort and in nothing else: same sandbox,
 same idle precheck, same tree audit, same one-attempt law, same report

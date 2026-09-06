@@ -9,6 +9,142 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.3.0 — the Astra/Codex lane after its first campaign: eight field issues, one root for three of them
+
+**Why.** The ADR-0005 campaign (2026-09-06) was the first to run the 3.2.0
+ladder end to end — Astra executing, Sol reviewing, a Godot/Blender project
+with LFS assets — and its Director kept a running list of what broke
+(`plans/orchestra-codex-issues.md`). Three of the eight items had the same
+root: the scratch global git config each runner hands the engine used to
+REPLACE the user's global config, and everything the global config carried
+went with it — the credential helper (`git fetch origin` inside the sandbox
+died on "could not read Username for 'https://github.com'"), the LFS filters
+(15 untouched PNGs under `docs/art/**` read as modified, and Astra, correctly,
+refused a "clean tree" precondition twice), URL rewrites. The scratch config
+now starts with a copy of the real global config (read by the runner as the
+host user, so the sandbox that motivated the isolation never opens the user's
+file) and copies `filter.lfs.*` across explicitly as well.
+
+**Cross-family review is the first goal, and now the runner enforces it.**
+PR #435 round 3 came back with an inner `REVIEW ENGINE: Claude CLI (opus …)`
+header under the Sol header: the engine had found a Claude review MCP in the
+Codex config and delegated the whole review to it. "No MCP" in the brief did
+not stop it. Every runner now launches the engine with every MCP server in
+the user's Codex config disabled by name and the Codex apps connector off
+(`codex.engineMcp`, default `strip`; verified against codex-cli 0.153.2 — the
+engine reports no MCP tools at all), the header carries an `mcp:` line, and a
+verdict that still names a Claude engine as its author is stamped
+`⚠ CROSS-FAMILY BREACH` rather than relayed as OpenAI's own. Two limits are
+stated rather than hidden: a server name that needs TOML quoting cannot be
+addressed through `-c`, and a project-level `.codex/config.toml` is named in
+preflight, not touched — Codex loads it only for a trusted project, and
+disabling a server it has not loaded kills the run on config validation.
+`ORCHESTRA.md` §5 and the README now say the rule in one sentence: the
+reviewer never shares the author's vendor — Astra or Sol executed, Opus
+reviews; Claude executed, Sol reviews. Sol reviewing is the means, not the goal.
+
+**The rest, each a field failure:**
+
+- **`profile` is required on `orchestra_exec`.** The first
+  `executor-codex-principal` run of the campaign printed `profile: heavy,
+  model: gpt-5.6-sol (default)` — the launcher's rung never landed and the
+  runner's silent default ran a Sol order under an Astra launcher. A call
+  without a rung is now refused at the transport, in the transport's own
+  voice, before any runner launches; the launcher re-issues once with its
+  rung. Both launcher definitions say so.
+- **The engine is told what was dirty before it started.** The exec brief
+  carries a bounded `TREE STATE BEFORE YOU STARTED` block from the runner's
+  own fingerprint, and names harness-owned session files
+  (`.claude/settings.local.json`, the ledger and readings) as never counting
+  against a clean-tree precondition — a fresh Agent-tool worktree arrives
+  with that file untracked.
+- **The sandbox may carry no GitHub credentials, and the brief says so.**
+  Rule 7 now tells the engine to paste an auth failure under VERIFICATION and
+  continue from local refs, reserving BLOCKED for a ref that is not local.
+  The launcher definitions state the protocol: the Director fetches before
+  dispatch and pushes after.
+- **`--allow <cmd>` / `allow: [...]` on the review lane.** `--no-tests` is a
+  blanket, and a Python-only review was barred from the `--self-test` its
+  brief explicitly allowed. An allowed command is exempt from `--no-tests`
+  and from a restriction written into the order, and the header reports
+  `allowed commands: N` beside `prohibited commands: N`.
+- **Launchers relay a BLOCKED bare.** No "Option 1 / Option 2" from a
+  launcher; choosing is the Director's work.
+- **The 0.153.x install layout is known.** Codex now lives at
+  `<home>/.codex/packages/standalone/releases/<version-target>/bin/`; the
+  doctor names it `codex-standalone-releases`, and sibling release folders
+  are searched for helper repairs.
+- **An undeletable leftover worktree is reported once.** A directory the OS
+  would not release was re-reported as freshly reclaimed on every run for a
+  week; it now carries a marker and is retried quietly after the first report.
+- **Blender/Godot verification in review worktrees** is helped only as far as
+  the LFS fix reaches — assets now hydrate, so the project's own Python
+  checkers can run; Godot itself stays a Claude-lane verification.
+
+**Tests.** Exec case 21, review case 29, and the MCP suite's 4b cover every
+item above against the stub engine; the stub now reports the credential
+helper and LFS filter it sees. The suites point the runners at an empty
+`CODEX_HOME` by default so a developer's real Codex config never leaks into
+the exact override lists.
+
+**Reviewed by Astra, through the lane it fixes.** The first cut was sent
+through `orchestra-review.js` pinned to its own commit with `gpt-6-astra`
+as the engine — the local proof that the lane runs: the new install layout
+named, three MCP servers stripped, one verdict. It came back REVISE with
+five findings, all real and all fixed before merge: the MCP reader saw only
+`[mcp_servers.<name>]` headers and reported "0 server(s) disabled" for an
+inline table, a `[mcp_servers]` table, or top-level dotted keys (every shape
+is read now, and a config that mentions `mcp_servers` in a shape the reader
+cannot parse is said so in preflight); the global-config include resolved
+the home from `os.homedir()` (USERPROFILE on Windows) where git reads HOME
+first; the breach detector matched the header text anywhere in the verdict —
+and stamped Astra's own verdict, because a finding quoted it as evidence — so
+it now matches only a header line; the tree-state block forbade staging a
+pre-existing path even when the order said to finish and commit it; and the
+cross-plan runner lacked the explicit LFS copy. The suites also stop
+inheriting a running lane's `GIT_CONFIG_GLOBAL`, which had cost Astra two
+environment-dependent failures while re-running them inside the review.
+Round 2 found three more, also fixed: the explicit LFS copy wrote values
+bare, so a filter command with a quoted Windows path became a "bad config
+line" that broke every later git command (values are quoted and escaped now,
+and a git round-trip is in the suite); a quoted root key
+(`["mcp_servers".x]`) was missed; and a header inside a multi-line string
+(an example in `developer_instructions`) was taken for a server and would
+have been "disabled" into a transport-less half-entry. Round 3 found three
+more: the `[include]` of the user's global config was not the silent skip
+this entry first claimed — a locked or ACL-denied file made git exit 128
+before any fallback applied — so the global config is now COPIED into the
+scratch config by the runner and the sandbox never opens the user's file
+(relative includes inside the copy are resolved against the file they came
+from); `[mcp_servers."claude"]` decodes to the same key as `claude` and is
+addressable after all; and a `"""` inside a `#` comment opened a phantom
+multi-line string that hid the next server. Round 4 found five, and settled
+the pattern: every round had found a TOML shape the hand-written reader
+missed (this time a `'''` inside an ordinary string and an escaped key), so
+the runners now ask Codex itself — `codex mcp list --json` names every server
+it loaded, decoded, with its enabled state, from every config layer it
+applied — and the TOML reader is only the fallback for a Codex that lacks the
+command, said so in preflight. The copied-config rewrite also learned to stop
+a quoted `path` at its closing quote instead of folding a trailing comment
+into the filename, and to rebase a relative `[includeIf "gitdir:./…"]`
+condition along with the paths. Round 5 retired that rewrite the same way
+round 4 retired the TOML reader: the scratch config now carries the user's
+global config as git itself resolves it (`git config --global --list --null`,
+run in the tree the engine works in, re-serialised with git's own escaping),
+so includes and includeIf conditions are evaluated by git and no include text
+is ever copied. Two real holes closed with it: a user extra arg could re-enable
+a server the runner had skipped as already disabled (every known server now
+gets its override, after the user's args), and a pinned review discovered
+servers in the live project but launched in the throwaway worktree (discovery
+now runs where the engine runs, per attempt). Round 6 refined the git
+rendering three ways: entries are written in git's reported order under
+repeated headers rather than grouped by section (a credential-helper reset
+between two generic helpers means something only in that order); the query
+covers every scope in the engine's tree and keeps the system and global
+entries, so a `hasconfig:remote.*.url:` condition sees the repository's own
+remotes; and a pinned review re-resolves the scratch config for its detached
+checkout, so an `onbranch:main` include no longer follows it there.
+
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 
 **Why.** OpenAI shipped GPT-6 Astra on 2026-09-03. On Terminal-Bench 4.0 it

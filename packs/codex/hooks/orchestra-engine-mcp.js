@@ -558,6 +558,7 @@ const TOOLS = [
         timeout_ms: { type: 'number', description: 'Wall-clock cap per attempt, only when the order names one. Otherwise the project setting "codex": { "reviewTimeoutMs": <ms> } applies, else 2700000; inert floor 600000. The report header states the value and where it came from.' },
         no_tests: { type: 'boolean', description: 'Hard-forbid running the suite/build/app. Set it whenever the order says so ANYWHERE — including inside the work_order text; prose alone does not stop the engine. Affected claims come back UNVERIFIED (prohibited).' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the reviewer must not execute. Lift every command the order forbids into this list, wherever the order says it.' },
+        allow: { type: 'array', items: { type: 'string' }, description: 'Exact commands the order explicitly PERMITS despite no_tests or a restriction written into the order (e.g. a self-test the brief allows). Lift each one as written; the header reports "allowed commands: N".' },
         warmup_cmd: { type: 'string', description: 'Command run unsandboxed in the fresh pinned checkout before the integrity baseline (e.g. "pnpm install"). Pinned reviews only.' },
       },
       required: ['work_order', 'executor_report'],
@@ -588,6 +589,7 @@ const TOOLS = [
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       if (a.no_tests) args.push('--no-tests');
       pushForbids(args, a.forbid);
+      if (Array.isArray(a.allow)) for (const x of a.allow) if (typeof x === 'string' && x.trim()) args.push('--allow', x);
       if (typeof a.warmup_cmd === 'string' && a.warmup_cmd.trim()) args.push('--warmup-cmd', a.warmup_cmd);
       runRunner(id, 'review', args, progressToken, undefined, dir);
     },
@@ -607,14 +609,14 @@ const TOOLS = [
       type: 'object',
       properties: {
         work_order: { type: 'string', description: 'The FULL execution work order — goal, scope, constraints, context, verification expectations — verbatim.' },
-        profile: { type: 'string', enum: ['heavy', 'principal'], description: 'Which Codex executor rung runs the order. "heavy" (default) is GPT-5.6 Sol at high effort; "principal" is GPT-6 Astra at xhigh effort. Each launcher passes its own rung and never chooses between them.' },
+        profile: { type: 'string', enum: ['heavy', 'principal'], description: 'REQUIRED. Which Codex executor rung runs the order: "heavy" is GPT-5.6 Sol at high effort; "principal" is GPT-6 Astra at xhigh effort. Each launcher passes its own rung and never chooses between them. A call without it is refused before any runner launches — there is no default rung.' },
         timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one. Default 1800000 — budget a build plus a suite.' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the executor must not run.' },
         cd: { type: 'string', description: 'Isolated worktree directory to execute in, only when the order names one.' },
         model: { type: 'string', description: 'Pin a specific model for this run, only when the order names one.' },
         effort: { type: 'string', description: 'Reasoning effort override, only when the order names one.' },
       },
-      required: ['work_order'],
+      required: ['work_order', 'profile'],
     },
     handler(id, a, progressToken) {
       let workOrder;
@@ -622,6 +624,24 @@ const TOOLS = [
         workOrder = requireString(a, 'work_order');
       } catch (e) {
         textResult(id, boundedDiagnostic(e && e.message ? e.message : e, 2000), true);
+        return;
+      }
+      // FIX (field, 2026-09-06): the first executor-codex-principal run of a
+      // campaign came back `profile: heavy, model: gpt-5.6-sol (default)` —
+      // the launcher's profile never landed and the runner's silent default
+      // ran a Sol order under an Astra launcher. A missing rung is now refused
+      // here, before any runner launches, in the transport's own voice: the
+      // launcher re-issues the call with its rung instead of relaying a run
+      // on the wrong engine.
+      const profile = typeof a.profile === 'string' ? a.profile.trim().toLowerCase() : '';
+      if (profile !== 'heavy' && profile !== 'principal') {
+        transportError(id, [
+          'orchestra_exec refused the call: `profile` is required and must be "heavy" (GPT-5.6 Sol, ' +
+            'high) or "principal" (GPT-6 Astra, xhigh); received ' +
+            (a.profile === undefined ? 'nothing' : JSON.stringify(String(a.profile)).slice(0, 80)) + '.',
+          'The runner never launched, no engine ran, and the tree was not touched. Re-issue the same ' +
+            'call once with the rung your launcher definition names.',
+        ]);
         return;
       }
       const callerModel = typeof a.model === 'string' && a.model.trim() ? a.model.trim() : null;
@@ -637,7 +657,7 @@ const TOOLS = [
         removeRunDir(dir);
         throw e;
       }
-      if (typeof a.profile === 'string' && a.profile.trim()) args.push('--profile', a.profile.trim());
+      args.push('--profile', profile);
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
       pushForbids(args, a.forbid);
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);
@@ -760,7 +780,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.0.2' },
+          serverInfo: { name: 'orchestra-engine', version: '3.3.0' },
         },
       });
       return;

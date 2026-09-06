@@ -108,16 +108,21 @@ function writeProjectConfig(fx, cfg) {
 
 function runExec(fx, extraArgs, extraEnv, opts) {
   const args = [RUNNER, '--work-order', fx.wo].concat(extraArgs || []);
+  // A suite run INSIDE a review or exec lane inherits that runner's
+  // GIT_CONFIG_GLOBAL (Astra hit two environment-dependent failures this way
+  // while reviewing 3.3.0); a case that wants the variable sets it itself.
+  const base = Object.assign({}, process.env);
+  delete base.GIT_CONFIG_GLOBAL;
   return spawnSync(process.execPath, args, {
     cwd: (opts && opts.cwd) || fx.repo,
     encoding: 'utf8',
     timeout: 120000,
     env: Object.assign(
-      {},
-      process.env,
+      base,
       {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
+        CODEX_HOME: CLEAN_CODEX_HOME,
         ORCHESTRA_EXEC_IDLE_MS: '0',
         // The executor report shape, so the runner's missing-STATUS note is
         // exercised deliberately (case 8) rather than on every case.
@@ -159,6 +164,16 @@ const STUB_BIN = (() => {
   return makeStubBin(dir, 'codex');
 })();
 
+// An empty CODEX_HOME by default: the runner reads the user's Codex config to
+// decide which MCP servers to disable, and the developer's real ~/.codex must
+// never leak into the exact override lists asserted below. Case 21 points at
+// a fixture config on purpose.
+const CLEAN_CODEX_HOME = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-exec-codex-home-'));
+  cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+})();
+
 // ---------------------------------------------------------------- the tests
 
 function case1() {
@@ -181,7 +196,7 @@ function case1() {
   );
   check(
     'the default effort is high, pinned as a config value, not prose',
-    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0' &&
+    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
       /effort: high/.test(out.split('\n')[0]),
     'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES') + ' — ' + out.split('\n')[0]
   );
@@ -203,7 +218,7 @@ function case1() {
   const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
   check(
     'user-supplied executor args cannot undo the coexistence boundary',
-    hostileOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    hostileOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
     'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
   );
   check(
@@ -268,7 +283,7 @@ function case2() {
   const effortCfg = runExec(fx2, []);
   check(
     'orchestra.json (codex.execHeavyEffort) supplies the effort',
-    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0' &&
+    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
       /effort: medium/.test((effortCfg.stdout || '').split('\n')[0]),
     (effortCfg.stdout || '').split('\n')[0]
   );
@@ -887,7 +902,7 @@ function case18() {
   check(
     'the principal rung sends its effort to codex, not just to the header',
     field(pout, 'CONFIG_OVERRIDES') ===
-      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0',
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
     'CONFIG_OVERRIDES: ' + field(pout, 'CONFIG_OVERRIDES')
   );
 
@@ -1197,6 +1212,289 @@ function case20() {
 
 // ------------------------------------------------------------------ driver
 
+// 21. FIX (field, 2026-09-06): three failures with one root — the scratch git
+//     config REPLACED the user's global config, which dropped the credential
+//     helper (a sandboxed `git fetch` died on "could not read Username") and
+//     the LFS filters (15 untouched PNGs read as modified, and Astra refused a
+//     "clean tree" precondition twice). The same campaign found the engine
+//     could not tell pre-existing dirt from its own, and that a Codex config
+//     declaring a same-vendor MCP turned a cross-vendor run into delegation.
+function case21() {
+  section('21. Global git config carries across; tree state and MCP isolation reach the engine');
+  const fx = makeRepo();
+  const globalCfg = path.join(fx.root, 'global-gitconfig');
+  fs.writeFileSync(
+    globalCfg,
+    '[user]\n\tname = Global Person\n\temail = g@example.com\n' +
+      '[credential]\n\thelper = orchestra-test-helper\n' +
+      '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n' +
+      '\tprocess = git-lfs filter-process\n'
+  );
+  // Pre-existing dirt: a harness-owned untracked file and a modified tracked file.
+  fs.mkdirSync(path.join(fx.repo, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(fx.repo, '.claude', 'settings.local.json'), '{}\n');
+  fs.appendFileSync(path.join(fx.repo, 'app.js'), '// edited before the run\n');
+  // A Codex config with two bare-named servers (one declared only through a
+  // subsection) and one quoted name that -c cannot address.
+  const codexHome = path.join(fx.root, 'codex-home');
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, 'config.toml'),
+    'model = "gpt-5.6-sol"\n\n[mcp_servers.alpha]\ncommand = "node"\n\n' +
+      '[mcp_servers.beta.env]\nX = "1"\n\n[mcp_servers."odd name"]\ncommand = "node"\n'
+  );
+  const r = runExec(fx, [], { GIT_CONFIG_GLOBAL: globalCfg, CODEX_HOME: codexHome });
+  const out = r.stdout || '';
+  const head = out.split('\n')[0];
+  check(
+    'the engine sees the user\'s credential helper through the scratch config',
+    field(out, 'GIT_CREDENTIAL_HELPER') === 'orchestra-test-helper',
+    'GIT_CREDENTIAL_HELPER: ' + field(out, 'GIT_CREDENTIAL_HELPER')
+  );
+  check(
+    'the engine sees the LFS clean filter (an LFS-tracked tree no longer reads as modified)',
+    field(out, 'GIT_LFS_CLEAN') === 'git-lfs clean -- %f',
+    'GIT_LFS_CLEAN: ' + field(out, 'GIT_LFS_CLEAN')
+  );
+  check(
+    'identity still carries',
+    field(out, 'GIT_USER_NAME') === 'Global Person',
+    'GIT_USER_NAME: ' + field(out, 'GIT_USER_NAME')
+  );
+  check(
+    'isolation is still on: the engine reads a scratch config, not the real one',
+    field(out, 'GIT_CONFIG_GLOBAL') !== '(unset)' &&
+      path.resolve(field(out, 'GIT_CONFIG_GLOBAL')) !== path.resolve(globalCfg),
+    'GIT_CONFIG_GLOBAL: ' + field(out, 'GIT_CONFIG_GLOBAL')
+  );
+  const markers = field(out, 'BRIEF_MARKERS');
+  check('the pre-existing dirty set reaches the brief', /TREE STATE BEFORE YOU STARTED/.test(markers), markers);
+  check('harness-owned files are named as such', /harness-owned session files/.test(markers), markers);
+  check('the credential caveat is part of the git rule', /may carry no GitHub credentials/.test(markers), markers);
+  const overrides = field(out, 'CONFIG_OVERRIDES');
+  check(
+    'bare-named MCP servers are disabled by name, subsection-only declarations included',
+    overrides.includes('mcp_servers.alpha.enabled=false') &&
+      overrides.includes('mcp_servers.beta.enabled=false') &&
+      overrides.includes('features.apps=false'),
+    overrides
+  );
+  check('a quoted name is never addressed through -c (it would create a half-entry)', !/odd/.test(overrides), overrides);
+  check(
+    'the header states the MCP posture, including what could not be addressed',
+    /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(head),
+    head
+  );
+  check('the unaddressable name is reported in preflight', /"odd name"/.test(out), out.slice(0, 1500));
+
+  // A project-level .codex/config.toml is named, never touched: Codex loads it
+  // only for a trusted project, and disabling a server it has not loaded
+  // would kill the run on config validation.
+  fs.mkdirSync(path.join(fx.repo, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(fx.repo, '.codex', 'config.toml'), '[mcp_servers.proj]\ncommand = "node"\n');
+  const p = runExec(fx, [], { CODEX_HOME: codexHome }).stdout || '';
+  check(
+    'a project-level MCP server is named in preflight and not disabled',
+    /declares 1 MCP server\(s\) \(proj\)/.test(p) && !/mcp_servers\.proj/.test(field(p, 'CONFIG_OVERRIDES')),
+    p.slice(0, 1500)
+  );
+
+  // inherit, from config and outranked by env.
+  writeProjectConfig(fx, { codex: { engineMcp: 'inherit' } });
+  const inh = runExec(fx, [], { CODEX_HOME: codexHome }).stdout || '';
+  check(
+    'engineMcp: inherit leaves the engine\'s MCP config alone',
+    /mcp: inherited/.test(inh.split('\n')[0]) && !/features\.apps=false|mcp_servers\./.test(field(inh, 'CONFIG_OVERRIDES')),
+    inh.split('\n')[0] + ' — ' + field(inh, 'CONFIG_OVERRIDES')
+  );
+  const env = runExec(fx, [], { CODEX_HOME: codexHome, ORCHESTRA_EXEC_MCP: 'strip' }).stdout || '';
+  check('the env var outranks the config', /mcp: stripped/.test(env.split('\n')[0]), env.split('\n')[0]);
+
+  // Astra's review of the first cut (2026-09-06): every other TOML shape a
+  // server can be declared in went unseen and the header claimed a clean
+  // strip. Each shape is a fixture now.
+  writeProjectConfig(fx, { codex: {} });
+  const shapes = [
+    ['inline table', 'mcp_servers = { delta = { command = "node" }, "e f" = { url = "http://x" }, zeta.command = "y" }\n',
+      ['delta', 'zeta'], ['e f']],
+    ['[mcp_servers] table', 'x = 1\n[mcp_servers]\nclaude = { command = "node" }\ngamma.command = "node"\n[other]\nz = { a = 1 }\n',
+      ['claude', 'gamma'], []],
+    ['top-level dotted keys', 'mcp_servers.eps.command = "node"\nmcp_servers."q r".url = "http://x"\n',
+      ['eps'], ['q r']],
+    ['multi-line inline table', 'mcp_servers = {\n  multi = { command = "node" },\n  two = { command = "x" }\n}\n',
+      ['multi', 'two'], []],
+    // Astra, round 2: a quoted ROOT key is valid TOML too.
+    ['a quoted root key', '["mcp_servers".rooted]\ncommand = "node"\n', ['rooted'], []],
+    // Astra, round 2: a header inside a multi-line string is prose, not a
+    // server — disabling it would create a transport-less half-entry.
+    ['a real header beside a header quoted in a multi-line string',
+      'developer_instructions = """\nExample:\n[mcp_servers.example]\ncommand = "x"\n"""\n[mcp_servers.genuine]\ncommand = "node"\n',
+      ['genuine'], []],
+    // Astra, round 3: `"plain"` decodes to the same key as `plain`, so it is
+    // addressable; and a `"""` inside a comment opens no string.
+    ['a quoted but bare-safe name', '[mcp_servers."plain"]\ncommand = "node"\n', ['plain'], []],
+    ['a triple quote inside a comment', '[mcp_servers.first]\ncommand = "first" # """\n[mcp_servers.second]\ncommand = "node"\n',
+      ['first', 'second'], []],
+    // Astra, round 4: a `'''` inside an ordinary string is content, and a
+    // basic-string key carries TOML escapes.
+    ['a triple quote inside an ordinary string',
+      '[mcp_servers.other]\ncommand = "x"\ndeveloper_instructions = "Use \'\'\' as the SQL example"\n[mcp_servers.claude]\ncommand = "node"\n',
+      ['other', 'claude'], []],
+    ['an escaped basic-string key', '[mcp_servers."clau\\u0064e"]\ncommand = "node"\n', ['claude'], []],
+  ];
+  for (const [label, toml, wantBare, wantQuoted] of shapes) {
+    const h = path.join(fx.root, 'codex-home-' + wantBare[0]);
+    fs.mkdirSync(h, { recursive: true });
+    fs.writeFileSync(path.join(h, 'config.toml'), toml);
+    const o = runExec(fx, [], { CODEX_HOME: h }).stdout || '';
+    const ov = field(o, 'CONFIG_OVERRIDES');
+    check(
+      'servers declared as ' + label + ' are disabled by name',
+      wantBare.every((n) => ov.includes('mcp_servers.' + n + '.enabled=false')) &&
+        !/mcp_servers\.(command|url|env)\./.test(ov) &&
+        new RegExp('mcp: stripped \\(' + wantBare.length + ' server\\(s\\) disabled').test(o.split('\n')[0]) &&
+        wantQuoted.every((q) => o.includes(JSON.stringify(q))),
+      o.split('\n')[0] + ' — ' + ov
+    );
+  }
+  const quotedHome = path.join(fx.root, 'codex-home-genuine');
+  const qo = runExec(fx, [], { CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'the header quoted inside the multi-line string was NOT turned into a server',
+    !/mcp_servers\.example/.test(field(qo, 'CONFIG_OVERRIDES')) && /mcp: stripped \(1 server/.test(qo.split('\n')[0]),
+    qo.split('\n')[0] + ' — ' + field(qo, 'CONFIG_OVERRIDES')
+  );
+
+  // Astra, round 2: an LFS filter value with a quoted Windows path was copied
+  // bare into the scratch config — a "bad config line" that broke every
+  // later git command. Quoted and escaped, it survives the round trip.
+  const lfsCfg = path.join(fx.root, 'global-gitconfig-lfs');
+  fs.writeFileSync(
+    lfsCfg,
+    '[filter "lfs"]\n\tclean = "\\"C:\\\\Program Files\\\\Git LFS\\\\git-lfs.exe\\" clean -- %f"\n' +
+      '\tsmudge = git-lfs smudge -- %f\n'
+  );
+  const lq = runExec(fx, [], { GIT_CONFIG_GLOBAL: lfsCfg, CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'an LFS filter value with a quoted path survives the explicit copy (git still reads the scratch config)',
+    field(lq, 'GIT_LFS_CLEAN') === '"C:\\Program Files\\Git LFS\\git-lfs.exe" clean -- %f' &&
+      /^EXEC ENGINE: OpenAI/.test(lq),
+    'GIT_LFS_CLEAN: ' + field(lq, 'GIT_LFS_CLEAN') + ' — ' + lq.split('\n')[0]
+  );
+
+  // Astra, round 3: an `[include]` of the user's global config made git exit
+  // 128 when the sandbox could not open it. The config is COPIED now, and a
+  // relative include inside it still resolves against the file it came from.
+  const gdir = path.join(fx.root, 'gcopy');
+  fs.mkdirSync(gdir, { recursive: true });
+  fs.writeFileSync(path.join(gdir, 'extra.inc'), '[credential]\n\thelper = included-helper\n');
+  // Astra, round 4: the value ends at the closing quote, and a trailing
+  // comment is never folded into the path.
+  fs.writeFileSync(path.join(gdir, 'gitconfig'), '[include]\n\tpath = "extra.inc" # shared credentials\n');
+  const cp = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(gdir, 'gitconfig'), CODEX_HOME: quotedHome }).stdout || '';
+  const scratchCfg = field(cp, 'GIT_CONFIG_GLOBAL');
+  check(
+    'the global config is copied, and a quoted relative include with a trailing comment still resolves',
+    field(cp, 'GIT_CREDENTIAL_HELPER') === 'included-helper' &&
+      path.resolve(scratchCfg) !== path.resolve(path.join(gdir, 'gitconfig')),
+    'GIT_CREDENTIAL_HELPER: ' + field(cp, 'GIT_CREDENTIAL_HELPER') + ' GIT_CONFIG_GLOBAL: ' + scratchCfg
+  );
+  // Astra, round 4: `[includeIf "gitdir:./x/"]` is relative to the config
+  // file it sits in; copied elsewhere, the condition must be rebased too.
+  // The global config sits in fx.root and the fixture repo is <root>/project.
+  fs.writeFileSync(path.join(fx.root, 'cond.inc'), '[credential]\n\thelper = cond-helper\n');
+  fs.writeFileSync(path.join(fx.root, 'gitconfig-cond'), '[includeIf "gitdir:./project/"]\n\tpath = cond.inc\n');
+  const ci = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(fx.root, 'gitconfig-cond'), CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'a relative includeIf gitdir condition is resolved by git for the copy',
+    field(ci, 'GIT_CREDENTIAL_HELPER') === 'cond-helper',
+    'GIT_CREDENTIAL_HELPER: ' + field(ci, 'GIT_CREDENTIAL_HELPER')
+  );
+  // Astra, round 6: a `hasconfig:remote.*.url:` condition needs the
+  // repository's own remotes, which a `--global`-only query never sees. The
+  // config is resolved across every scope in the engine's tree, and only the
+  // system + global entries are carried.
+  git(['remote', 'add', 'origin', 'https://example.com/team/repo.git'], fx.repo);
+  fs.writeFileSync(path.join(fx.root, 'remote.inc'), '[credential]\n\thelper = remote-helper\n');
+  fs.writeFileSync(
+    path.join(fx.root, 'gitconfig-remote'),
+    '[credential]\n\thelper = first\n[credential "https://x"]\n\thelper = ""\n[credential]\n\thelper = second\n' +
+      '[includeIf "hasconfig:remote.*.url:https://example.com/**"]\n\tpath = remote.inc\n'
+  );
+  const hc = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(fx.root, 'gitconfig-remote'), CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'a hasconfig:remote include resolves against the repository, and helper order survives the copy',
+    field(hc, 'GIT_CREDENTIAL_HELPER') === 'remote-helper' &&
+      // A system-scope helper (Git for Windows ships credential.helper = manager)
+      // may legitimately precede these: the system entries are carried too.
+      field(hc, 'GIT_CREDENTIAL_HELPERS').endsWith('first | second | remote-helper'),
+    'GIT_CREDENTIAL_HELPER: ' + field(hc, 'GIT_CREDENTIAL_HELPER') + ' GIT_CREDENTIAL_HELPERS: ' + field(hc, 'GIT_CREDENTIAL_HELPERS')
+  );
+  git(['remote', 'remove', 'origin'], fx.repo);
+
+  const opaqueHome = path.join(fx.root, 'codex-home-opaque');
+  fs.mkdirSync(opaqueHome, { recursive: true });
+  fs.writeFileSync(path.join(opaqueHome, 'config.toml'), '[mcp_servers]\n# nothing this reader understands\n= broken\n');
+  const op = runExec(fx, [], { CODEX_HOME: opaqueHome }).stdout || '';
+  check(
+    'a config that mentions mcp_servers in an unreadable shape is reported, not claimed clean',
+    /mcp: stripped \(0 server\(s\) disabled/.test(op.split('\n')[0]) && /could not read/.test(op),
+    op.slice(0, 1200)
+  );
+  check(
+    'without `codex mcp list --json` the runner says the names came from its own TOML reader',
+    /own TOML reader/.test(op),
+    op.slice(0, 1200)
+  );
+
+  // The authority is Codex itself: `codex mcp list --json` names every server
+  // it loaded, decoded, with its enabled state. Enabled ones are disabled by
+  // name; an already-disabled one is left alone; a name that needs quoting is
+  // still unaddressable; and the TOML reader is not consulted at all.
+  const live = runExec(fx, [], {
+    CODEX_HOME: opaqueHome,
+    STUB_CODEX_MCP_JSON: '[{"name":"live_one","enabled":true},{"name":"off","enabled":false},{"name":"odd name","enabled":true}]',
+  }).stdout || '';
+  const lov = field(live, 'CONFIG_OVERRIDES');
+  check(
+    'server names come from `codex mcp list --json` when Codex answers, already-disabled ones included',
+    lov.includes('mcp_servers.live_one.enabled=false') && lov.includes('mcp_servers.off.enabled=false') &&
+      /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
+      !/own TOML reader/.test(live) && !/could not read/.test(live),
+    live.split('\n')[0] + ' — ' + lov
+  );
+  // Astra, round 5: a user extra arg re-enabling a server the runner had
+  // skipped as "already disabled" reached the engine unopposed. Every known
+  // server gets its override, and ours come last.
+  const hostileMcp = runExec(fx, [], {
+    CODEX_HOME: opaqueHome,
+    STUB_CODEX_MCP_JSON: '[{"name":"off","enabled":false}]',
+    ORCHESTRA_EXEC_ARGS: '-c mcp_servers.off.enabled=true',
+  }).stdout || '';
+  const hov = field(hostileMcp, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'a user extra arg cannot re-enable a server: the disabling override comes after it',
+    hov.lastIndexOf('mcp_servers.off.enabled=false') > hov.indexOf('mcp_servers.off.enabled=true'),
+    hov.join(' | ')
+  );
+
+  // Astra, same review: git resolves its global config from HOME first, and
+  // os.homedir() on Windows is USERPROFILE — with the two apart, the include
+  // pointed at the wrong file and the credential helper was gone again.
+  const homeDir = path.join(fx.root, 'home');
+  const profileDir = path.join(fx.root, 'profile');
+  fs.mkdirSync(homeDir, { recursive: true });
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.gitconfig'), '[credential]\n\thelper = home-test-helper\n');
+  fs.writeFileSync(path.join(profileDir, '.gitconfig'), '[credential]\n\thelper = profile-helper\n');
+  const hp = runExec(fx, [], { HOME: homeDir, USERPROFILE: profileDir }).stdout || '';
+  check(
+    'the include follows git\'s own precedence: HOME before USERPROFILE',
+    field(hp, 'GIT_CREDENTIAL_HELPER') === 'home-test-helper',
+    'GIT_CREDENTIAL_HELPER: ' + field(hp, 'GIT_CREDENTIAL_HELPER')
+  );
+}
+
 function finish() {
   for (const c of cleanups) {
     try {
@@ -1229,6 +1527,7 @@ async function main() {
   case18();
   case19();
   case20();
+  case21();
 }
 
 main().then(finish, (e) => {

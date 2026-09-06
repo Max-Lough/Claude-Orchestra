@@ -67,6 +67,26 @@ function flag(name) {
   return i === -1 ? '' : argv[i + 1] || '';
 }
 
+// `codex mcp list --json` — the runners ask Codex for its loaded MCP servers
+// before every run. STUB_CODEX_MCP_JSON is the answer; without it the stub
+// declines (exit 2) and the runner falls back to reading config.toml itself.
+// Decided before any attempt bookkeeping so the call never counts as a run.
+if (argv[0] === 'mcp') {
+  const j = process.env.STUB_CODEX_MCP_JSON || '';
+  if (j === 'CWD') {
+    // One server named after the directory the question was asked in — how a
+    // test proves discovery ran where the engine runs (a pinned worktree).
+    process.stdout.write(JSON.stringify([{ name: 'in_' + path.basename(process.cwd()), enabled: true }]) + '\n');
+    process.exit(0);
+  }
+  if (j) {
+    process.stdout.write(j + '\n');
+    process.exit(0);
+  }
+  process.stderr.write('stub: mcp subcommand not modelled\n');
+  process.exit(2);
+}
+
 const cd = flag('--cd') || process.cwd();
 const outFile = flag('--output-last-message');
 const model = flag('--model');
@@ -197,13 +217,26 @@ const diff = base ? git(['diff', '--stat', base[1] + '..HEAD']) : null;
 // points (an isolated GIT_CONFIG_GLOBAL included) — how the exec-lane tests
 // prove the runner's identity seeding without the stub actually committing.
 const userName = git(['config', 'user.name']);
+// Two more values that live ONLY in the user's global config: the credential
+// helper (a sandboxed `git fetch` is dead without it) and the LFS clean
+// filter (without it every LFS-tracked file reads as modified). Both prove
+// whether the runner's scratch config carried the real global config across.
+const credentialHelper = git(['config', 'credential.helper']);
+// Every generic helper in config order — the order is the semantics (a
+// reset between two helpers means something), so a copy must keep it.
+const credentialHelpers = git(['config', '--get-all', 'credential.helper']);
+const lfsClean = git(['config', 'filter.lfs.clean']);
 
 // Which known brief sections reached the engine — checkable without dumping
 // the whole brief into the report.
 const briefMarkers = [
   'PROHIBITED COMMANDS',
   'A RESTRICTION WRITTEN INTO THE WORK ORDER IS BINDING ON YOU TOO',
+  'ALLOWED DESPITE THE RESTRICTIONS',
   'VERIFICATION MANIFEST',
+  'TREE STATE BEFORE YOU STARTED',
+  'harness-owned session files',
+  'may carry no GitHub credentials',
   // The principal rung's goal-shaped charter, and the DECISIONS section the
   // launcher promises the Director on its behalf. Both must be checkable from
   // the engine's side: an agent file that claims a report section nothing ever
@@ -279,6 +312,13 @@ const report = [
   'CONFIG_OVERRIDES: ' + (configOverrides.join(' | ') || '(none)'),
   'ORCHESTRA_ROLE: ' + (process.env.ORCHESTRA_ROLE || '(unset)'),
   'GIT_USER_NAME: ' + (userName.status === 0 && userName.stdout ? userName.stdout : '(unset)'),
+  'GIT_CREDENTIAL_HELPER: ' +
+    (credentialHelper.status === 0 && credentialHelper.stdout ? credentialHelper.stdout : '(unset)'),
+  'GIT_LFS_CLEAN: ' + (lfsClean.status === 0 && lfsClean.stdout ? lfsClean.stdout : '(unset)'),
+  'GIT_CREDENTIAL_HELPERS: ' +
+    (credentialHelpers.status === 0 && credentialHelpers.stdout
+      ? credentialHelpers.stdout.split(/\r?\n/).filter(Boolean).join(' | ')
+      : '(unset)'),
   'BRIEF_MARKERS: ' + (briefMarkers.join(' | ') || '(none)'),
   'HEAD: ' + head.stdout,
   'DIRTY_COUNT: ' + dirtyLines.length,

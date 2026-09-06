@@ -116,6 +116,12 @@ const CONFIG = {
   installDir: '',
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   gitIsolation: process.env.ORCHESTRA_CROSSPLAN_GIT_ISOLATION !== '0',
+  // MCP isolation for the engine child: strip (default) or inherit — an
+  // architect that can delegate to a same-vendor MCP is not an independent
+  // draft. Same key as the other lanes ("codex": { "engineMcp": ... }).
+  engineMcp: (process.env.ORCHESTRA_CROSSPLAN_MCP || '').trim().toLowerCase(),
+  mcpLabel: '',
+  mcpArgs: [],
   probe: process.env.ORCHESTRA_CROSSPLAN_PROBE !== '0',
   web: true,
   webSource: 'default',
@@ -295,6 +301,333 @@ function teardownScratch() {
   }
 }
 
+// The explicit LFS-filter copy the exec and review runners carry, for the
+// sandbox that cannot read the included global config: without the filters
+// every LFS-tracked asset the architect reads is a pointer.
+function lfsFilterSection() {
+  const lfs = spawnSync('git', ['config', '--global', '--get-regexp', '^filter\\.lfs\\.'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (lfs.status !== 0 || !lfs.stdout) return '';
+  const entries = lfs.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const sp = l.indexOf(' ');
+      const key = sp === -1 ? l : l.slice(0, sp);
+      const val = sp === -1 ? '' : l.slice(sp + 1);
+      const m = /^filter\.lfs\.([A-Za-z]+)$/.exec(key);
+      // Quoted, with backslashes and quotes escaped: a bare Windows path with
+      // quotes is a "bad config line" that breaks every later git command.
+      return m ? '\t' + m[1] + ' = "' + val.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"\n' : '';
+    })
+    .join('');
+  return entries ? '[filter "lfs"]\n' + entries : '';
+}
+
+// MCP isolation — same mechanism and the same limits as the review and exec
+// runners (see orchestra-review.js): every server the user-level Codex config
+// declares is disabled by name, the apps connector is switched off, and a
+// project-level .codex/config.toml is named rather than touched.
+function mcpServerNames(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return { bare: [], quoted: [], opaque: false };
+  }
+  const bare = [];
+  const quoted = [];
+  const KEY = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)';
+  // TOML basic-string escapes (`"clau\u0064e"` is `claude` — Astra, round 4).
+  const decodeTomlBasic = (s) =>
+    s.replace(/\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[btnfr"\\])/g, (_, e) => {
+      if (e[0] === 'u' || e[0] === 'U') return String.fromCodePoint(parseInt(e.slice(1), 16));
+      return { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' }[e];
+    });
+  const add = (raw) => {
+    let k = String(raw || '').trim();
+    if (!k) return;
+    // TOML decodes `"claude"` and `claude` to the same key, so a quoted name
+    // that is bare-safe is addressable through -c like any other (Astra,
+    // round 3). Only a name that NEEDS quoting is unaddressable.
+    // A basic-string key carries TOML escapes (`"claude"` is `claude`);
+    // a literal-string key carries none.
+    if (k[0] === '"') k = decodeTomlBasic(k.slice(1, -1));
+    else if (k[0] === "'") k = k.slice(1, -1);
+    if (/^[A-Za-z0-9_-]+$/.test(k)) {
+      if (!bare.includes(k)) bare.push(k);
+    } else if (!quoted.includes(k)) quoted.push(k);
+  };
+  // Walks one line OUTSIDE of strings: a `#` ends it; a `"""`/`'''` that does
+  // not close on the same line opens a multi-line string, which is returned;
+  // a `'''` inside an ordinary "…" string is content (Astra, rounds 3–4:
+  // `# """` and `"Use ''' as the example"` both hid the next server).
+  const openMultiline = (s) => {
+    let q = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) {
+        if (ch === '\\' && q === '"') i++;
+        else if (ch === q) q = '';
+        continue;
+      }
+      if (ch === '#') return '';
+      if (s.startsWith('"""', i) || s.startsWith("'''", i)) {
+        const d = s.slice(i, i + 3);
+        const close = s.indexOf(d, i + 3);
+        if (close === -1) return d;
+        i = close + 2;
+        continue;
+      }
+      if (ch === '"' || ch === "'") q = ch;
+    }
+    return '';
+  };
+  // Keys at depth 1 of an inline table. Returns whether the table closed, so
+  // a table spread over several lines can be accumulated and re-scanned.
+  const scanInline = (src) => {
+    let depth = 0;
+    let str = '';
+    let key = '';
+    let skip = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (str) {
+        if (depth === 1) key += ch;
+        if (ch === '\\' && str === '"') {
+          i++;
+          if (depth === 1 && i < src.length) key += src[i];
+        } else if (ch === str) str = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        str = ch;
+        if (depth === 1) key += ch;
+        continue;
+      }
+      if (ch === '{') {
+        depth++;
+        if (depth === 1) {
+          key = '';
+          skip = false;
+        }
+        continue;
+      }
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) return true;
+        continue;
+      }
+      if (depth !== 1) continue;
+      if (ch === '=' || ch === '.') {
+        // `a.b = …` names server `a`; the rest of the dotted key is not a name.
+        if (!skip) add(key);
+        skip = true;
+        key = '';
+      } else if (ch === ',') {
+        skip = false;
+        key = '';
+      } else key += ch;
+    }
+    return false;
+  };
+  // The root key may itself be quoted: `["mcp_servers".claude]` is valid TOML
+  // (Astra, round 2). And a multi-line string (`"""…"""` / `'''…'''`, e.g.
+  // developer_instructions carrying an example header) is skipped wholesale
+  // — a header-shaped line inside it is prose, not a declaration.
+  const ROOT = '(?:"mcp_servers"|\'mcp_servers\'|mcp_servers)';
+  let section = '';
+  let pending = '';
+  let multi = '';
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (multi) {
+      if (line.includes(multi)) multi = '';
+      continue;
+    }
+    if (pending) {
+      pending += '\n' + line;
+      if (scanInline(pending)) pending = '';
+      continue;
+    }
+    const t = line.trim();
+    if (!t || t[0] === '#') continue;
+    const opened = openMultiline(t);
+    if (opened) multi = opened;
+    let m;
+    if ((m = new RegExp('^\\[\\s*' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
+      add(m[1]);
+      section = 'mcp_servers.x';
+      continue;
+    }
+    if (new RegExp('^\\[\\s*' + ROOT + '\\s*\\]').test(t)) {
+      section = 'mcp_servers';
+      continue;
+    }
+    if (t[0] === '[') {
+      section = 'other';
+      continue;
+    }
+    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
+    }
+    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*=\\s*(\\{[\\s\\S]*)$').exec(t))) {
+      if (!scanInline(m[1])) pending = m[1];
+      continue;
+    }
+    if (section === 'mcp_servers' && (m = new RegExp('^' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
+    }
+  }
+  const opaque =
+    new RegExp('^\\s*\\[?\\s*' + ROOT + '\\b', 'm').test(text.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, '')) &&
+    !bare.length && !quoted.length;
+  return { bare, quoted, opaque };
+}
+
+// The servers Codex has actually loaded, asked of Codex itself: `codex mcp
+// list --json` reports every server by its decoded name with its enabled
+// state, from every config layer Codex applied (a trusted project's own
+// .codex/config.toml included). Four review rounds of hand-reading
+// config.toml each found a TOML shape the reader missed; the authority is the
+// binary that loads the file. Returns null when the command is unavailable
+// (an older Codex, or the stub engine), and the TOML reader is the fallback.
+function mcpServersFromCodex(dir) {
+  try {
+    const r = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, ['mcp', 'list', '--json'], {
+      cwd: dir || process.cwd(),
+      encoding: 'utf8',
+      input: '',
+      timeout: 30000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: childEnv(),
+      windowsHide: true,
+    });
+    if (r.error || r.status !== 0) return null;
+    const out = String(r.stdout || '');
+    const start = out.indexOf('[');
+    if (start === -1) return null;
+    const parsed = JSON.parse(out.slice(start));
+    if (!Array.isArray(parsed)) return null;
+    // Every server Codex knows, the already-disabled ones included: the
+    // disabling override is written for each, because our -c flags come
+    // AFTER any user extra args and a `mcp_servers.x.enabled=true` there
+    // would otherwise win for a server we had skipped (Astra, round 5).
+    return parsed.filter((e) => e && typeof e.name === 'string').map((e) => e.name);
+  } catch (_) {
+    return null;
+  }
+}
+
+function mcpIsolation(dir) {
+  if (CONFIG.engineMcp === 'inherit') return { args: [], label: 'inherited (engineMcp: inherit)', notes: [] };
+  const home = (process.env.HOME || '').trim() || os.homedir() || '';
+  const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
+  const notes = [];
+  let user;
+  const live = mcpServersFromCodex(dir);
+  if (live) {
+    user = { bare: [], quoted: [], opaque: false };
+    for (const n of live) {
+      if (/^[A-Za-z0-9_-]+$/.test(n)) user.bare.push(n);
+      else user.quoted.push(n);
+    }
+  } else {
+    user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [], opaque: false };
+    notes.push(
+      'mcp: `codex mcp list --json` was unavailable, so the server names were read from ' +
+        (codexHome ? path.join(codexHome, 'config.toml') : '(no CODEX_HOME)') +
+        ' by the runner\'s own TOML reader — a project-level .codex/config.toml is not read that way'
+    );
+  }
+  const args = ['-c', 'features.apps=false'];
+  for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
+  if (user.opaque) {
+    notes.push(
+      'mcp: the Codex config declares mcp_servers in a shape this runner could not read — nothing was ' +
+        'disabled by name; check ' + path.join(codexHome, 'config.toml') + ' by hand before trusting this run as cross-vendor'
+    );
+  }
+  if (user.quoted.length) {
+    notes.push(
+      'mcp: ' + user.quoted.length + ' server(s) in the Codex config could not be disabled — a quoted ' +
+        'name cannot be addressed through -c: ' + user.quoted.map((n) => JSON.stringify(n)).join(', ')
+    );
+  }
+  const project = !live && dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
+  const projectNames = project.bare.concat(project.quoted);
+  if (projectNames.length) {
+    notes.push(
+      'mcp: the project\'s own .codex/config.toml declares ' + projectNames.length + ' MCP server(s) ' +
+        '(' + projectNames.join(', ') + ') — not disabled; Codex loads that file only for a trusted ' +
+        'project, and disabling a server it has not loaded would kill the run'
+    );
+  }
+  const label =
+    'stripped (' + user.bare.length + ' server(s) disabled, apps connector off' +
+    (user.quoted.length ? ', ' + user.quoted.length + ' not addressable' : '') + ')';
+  return { args, label, notes };
+}
+
+// The user's git config as git itself resolves it for the tree the engine
+// will work in, re-serialised into the scratch config. `git config --list
+// --show-scope --includes --null`, run in that tree, evaluates every include
+// and includeIf — gitdir against the config file, onbranch against that
+// tree's HEAD, hasconfig against the repository's own remotes — exactly as
+// git would for the engine; the system and global entries are kept (the
+// scratch config replaces both: GIT_CONFIG_NOSYSTEM is set) and the local,
+// worktree and command entries are dropped, because the engine still reads
+// those from the repository. Each entry is written back under its own
+// `[section "subsection"]` header IN THE ORDER git reported it, never grouped
+// by section — a credential-helper reset (`helper = ""`) between two generic
+// helpers only means what it means in that order (Astra, round 6). include.*
+// and includeIf.* keys are dropped because their effect is already in the
+// list, so no include text is ever copied or rewritten. The runner reads all
+// of this as the host user; the sandbox never opens the user's files.
+function globalGitConfigCopy(cwd) {
+  let r;
+  try {
+    r = spawnSync('git', ['config', '--list', '--show-scope', '--includes', '--null'], {
+      cwd: cwd || process.cwd(),
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch (_) {
+    return '';
+  }
+  if (r.error || r.status !== 0 || !r.stdout) return '';
+  const esc = (v) =>
+    '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
+  // Records alternate: scope NUL key NL value NUL.
+  const parts = r.stdout.split('\0');
+  let out = '';
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const scope = parts[i];
+    const rec = parts[i + 1];
+    if (scope !== 'system' && scope !== 'global') continue;
+    const nl = rec.indexOf('\n');
+    const key = nl === -1 ? rec : rec.slice(0, nl);
+    const val = nl === -1 ? null : rec.slice(nl + 1);
+    const first = key.indexOf('.');
+    const last = key.lastIndexOf('.');
+    if (first === -1) continue;
+    const section = key.slice(0, first);
+    if (section === 'include' || section === 'includeif') continue;
+    const name = key.slice(last + 1);
+    const sub = last > first ? key.slice(first + 1, last) : null;
+    out += (sub === null ? '[' + section + ']' : '[' + section + ' ' + esc(sub) + ']') + '\n';
+    out += '\t' + name + (val === null ? '' : ' = ' + esc(val)) + '\n';
+  }
+  if (!out) return '';
+  return "# ---- the user's git config (system + global), resolved by git for this tree and copied\n" + out;
+}
+
 // Same isolation as the exec runner: silence the unreadable global
 // excludes/attributes probing a sandboxed engine hits, while carrying the
 // user's identity forward (harmless here — the lane never commits — but
@@ -310,16 +643,22 @@ function setupGitIsolation() {
   const email = identity('user.email');
   const empty = path.join(SCRATCH.dir, 'git-empty');
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
+  // Include the real global config first (git skips an unreadable include
+  // silently), so LFS filters, credential helpers and URL rewrites carry
+  // across; the overrides below are written after it and win.
+  const includes = globalGitConfigCopy(CONFIG.projectDir);
   try {
     fs.writeFileSync(empty, '', 'utf8');
     fs.writeFileSync(
       cfg,
       '# Written by orchestra-crossplan.js for this run only.\n' +
+        includes +
         '[core]\n' +
         '\texcludesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '[safe]\n' +
         '\tdirectory = *\n' +
+        lfsFilterSection() +
         (name || email
           ? '[user]\n' +
             (name ? '\tname = ' + name + '\n' : '') +
@@ -695,6 +1034,7 @@ function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', 'read-only', '--cd', dir, '--output-last-message', outFile];
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -778,6 +1118,7 @@ function settingsBits() {
     'web search: ' + (CONFIG.web ? 'on' : 'off') + ' (' + CONFIG.webSource + ')',
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (re-dispatch is safe — the lane is read-only)',
+    'mcp: ' + (CONFIG.mcpLabel || 'not resolved'),
   ];
 }
 
@@ -1183,6 +1524,17 @@ function main() {
     if (restore.note) PREFLIGHT.push(restore.note);
   }
 
+  // MCP isolation: env > orchestra.json > strip; resolved once for the probe
+  // and the run alike.
+  if (!CONFIG.engineMcp && typeof codexCfg.engineMcp === 'string') {
+    CONFIG.engineMcp = codexCfg.engineMcp.trim().toLowerCase();
+  }
+  if (CONFIG.engineMcp !== 'inherit') CONFIG.engineMcp = 'strip';
+  const mcp = mcpIsolation(CONFIG.projectDir);
+  CONFIG.mcpArgs = mcp.args;
+  CONFIG.mcpLabel = mcp.label;
+  for (const n of mcp.notes) PREFLIGHT.push(n);
+
   if (CONFIG.probe) {
     const probe = runAuthProbe(CONFIG.projectDir);
     if (!probe.ok) {
@@ -1212,6 +1564,7 @@ function main() {
   // These last-value-wins overrides are the boundary with a co-installed
   // Codex-Orchestra. User extra args cannot turn project orchestration back on.
   codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  codexArgs.push(...CONFIG.mcpArgs);
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();

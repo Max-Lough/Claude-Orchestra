@@ -449,7 +449,7 @@ async function case4() {
   await s.start();
   const res = await s.rpc('tools/call', {
     name: 'orchestra_exec',
-    arguments: { work_order: 'Create hello-from-exec.txt.', timeout_ms: 60000 },
+    arguments: { work_order: 'Create hello-from-exec.txt.', profile: 'heavy', timeout_ms: 60000 },
   }, 180000);
   const text = resultText(res);
   check('call is not an error', !(res.result && res.result.isError), text.slice(0, 400));
@@ -484,10 +484,21 @@ async function case4b() {
       JSON.stringify((prop.enum || []).slice().sort()) === JSON.stringify(['heavy', 'principal']),
     JSON.stringify(prop)
   );
+  // FIX (field, 2026-09-06): profile used to be optional with a silent Sol
+  // default, and the first principal run of a campaign came back as a Sol
+  // run. A missing rung is now refused at the transport, before any runner
+  // launches, so a launcher re-issues with its rung instead of relaying the
+  // wrong engine's work.
   check(
-    'profile is optional: an existing launcher that omits it is still valid',
-    exec && !(exec.inputSchema.required || []).includes('profile'),
+    'profile is required: the schema says so',
+    exec && (exec.inputSchema.required || []).includes('profile'),
     JSON.stringify(exec && exec.inputSchema.required)
+  );
+  const reviewTool = ((list.result && list.result.tools) || []).find((t) => t.name === 'orchestra_review');
+  check(
+    'orchestra_review exposes an allow list alongside forbid',
+    reviewTool && reviewTool.inputSchema.properties.allow && reviewTool.inputSchema.properties.allow.type === 'array',
+    JSON.stringify(reviewTool && Object.keys(reviewTool.inputSchema.properties))
   );
 
   const principal = resultText(await s.rpc('tools/call', {
@@ -501,20 +512,32 @@ async function case4b() {
     principal.split('\n')[0]
   );
 
-  const dflt = resultText(await s.rpc('tools/call', {
+  const dfltRes = await s.rpc('tools/call', {
     name: 'orchestra_exec',
     arguments: { work_order: 'Report only.', timeout_ms: 60000 },
+  }, 180000);
+  const dflt = resultText(dfltRes);
+  check(
+    'omitting profile is refused by the transport — no engine, no default rung',
+    dfltRes.result && dfltRes.result.isError &&
+      /^MCP TRANSPORT ERROR/.test(dflt) && /`profile` is required/.test(dflt) &&
+      /never launched/.test(dflt) && !/EXEC ENGINE/.test(dflt),
+    dflt.slice(0, 400)
+  );
+  const heavy = resultText(await s.rpc('tools/call', {
+    name: 'orchestra_exec',
+    arguments: { work_order: 'Report only.', profile: 'heavy', timeout_ms: 60000 },
   }, 180000));
   check(
-    'omitting profile is still the heavy rung on Sol',
-    /profile: heavy/.test(dflt) && field(dflt, 'MODEL') === 'gpt-5.6-sol',
-    dflt.split('\n')[0]
+    'profile heavy is the Sol rung',
+    /profile: heavy/.test(heavy) && field(heavy, 'MODEL') === 'gpt-5.6-sol',
+    heavy.split('\n')[0]
   );
 
   // A display name still has to become an id; Astra joins Sol in that map.
   const named = resultText(await s.rpc('tools/call', {
     name: 'orchestra_exec',
-    arguments: { work_order: 'Report only.', model: 'GPT-6 Astra', timeout_ms: 60000 },
+    arguments: { work_order: 'Report only.', profile: 'heavy', model: 'GPT-6 Astra', timeout_ms: 60000 },
   }, 180000));
   check(
     'the roster display name "GPT-6 Astra" is sent to codex as gpt-6-astra',
@@ -685,7 +708,7 @@ async function case6() {
     abText.slice(0, 1000));
 
   const silent = await s3.rpc('tools/call', {
-    name: 'orchestra_exec', arguments: { work_order: 'w' },
+    name: 'orchestra_exec', arguments: { work_order: 'w', profile: 'heavy' },
   });
   check('exit-0-with-empty-stdout → transport error saying no report exists',
     silent.result && silent.result.isError && /wrote nothing to stdout/.test(resultText(silent)),
@@ -791,8 +814,10 @@ async function case8() {
     field(text, 'ORCHESTRA_ROLE') === 'planner-codex-external', field(text, 'ORCHESTRA_ROLE'));
   const crossplanOverrides = field(text, 'CONFIG_OVERRIDES').split(' | ');
   check('user-supplied crossplan args cannot undo the coexistence boundary',
-    crossplanOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    crossplanOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
     crossplanOverrides.join(' | '));
+  check('the crossplan engine runs with MCP stripped (header says so)',
+    /mcp: stripped \(0 server\(s\) disabled, apps connector off\)/.test(text), text.slice(0, 600));
   check('REPORT INTEGRITY verified the nonce', /REPORT INTEGRITY: verified/.test(text), text.slice(-400));
   const saved = fs.existsSync(path.join(fx.repo, OUT)) ? fs.readFileSync(path.join(fx.repo, OUT), 'utf8') : '';
   check('the document landed at out_path', !!saved.trim(), OUT + ' missing or empty');

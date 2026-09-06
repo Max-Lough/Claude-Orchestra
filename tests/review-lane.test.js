@@ -144,16 +144,23 @@ function writeProjectConfig(fx, codexCfg) {
 
 function runReview(fx, extraArgs, extraEnv, opts) {
   const args = [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er].concat(extraArgs || []);
+  // A suite run INSIDE a review lane inherits that runner's GIT_CONFIG_GLOBAL;
+  // a case that wants the variable sets it itself.
+  const base = Object.assign({}, process.env);
+  delete base.GIT_CONFIG_GLOBAL;
   return spawnSync(process.execPath, args, {
     cwd: (opts && opts.cwd) || fx.repo,
     encoding: 'utf8',
     timeout: 120000,
     env: Object.assign(
-      {},
-      process.env,
+      base,
       {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
+        // The runner reads the user's Codex config to decide which MCP servers
+        // to disable; an empty CODEX_HOME keeps the developer's real ~/.codex
+        // out of the exact override lists asserted below.
+        CODEX_HOME: CLEAN_CODEX_HOME,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
         // Expect no helper siblings unless a case says otherwise, so the same
@@ -372,7 +379,7 @@ function case2and3() {
   const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
   check(
     'user-supplied reviewer args cannot undo the coexistence boundary',
-    hostileOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    hostileOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
     'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
   );
   check(
@@ -1983,6 +1990,159 @@ function finish() {
   process.exit(failures ? 1 : 0);
 }
 
+// 29. FIX (field, 2026-09-06): five review-lane items from one campaign —
+//     --no-tests barred a self-test the order allowed; the 0.153.2 release
+//     folder read as an unknown install layout; an undeletable leftover
+//     worktree was re-reported on every run; the scratch git config dropped
+//     the credential helper and LFS filters; and a Sol verdict arrived wearing
+//     an inner Claude CLI header nobody flagged.
+function case29() {
+  section('29. --allow, the releases install layout, once-only stuck reporting, the global git include, and the cross-family breach stamp');
+  const fx = makeDirtyRepo();
+
+  // (a) --allow reaches the brief as an exemption and the header as a count.
+  const a = runReview(fx, ['--no-tests', '--allow', 'python checks/lint.py --self-test', '--head-ref', fx.head]);
+  const aout = a.stdout || '';
+  check(
+    'an allowed command reaches the brief as an exemption',
+    /ALLOWED DESPITE THE RESTRICTIONS/.test(field(aout, 'BRIEF_MARKERS')),
+    'BRIEF_MARKERS: ' + field(aout, 'BRIEF_MARKERS')
+  );
+  check(
+    'the header counts allowed commands next to prohibited ones',
+    /prohibited commands: 1/.test(aout.split('\n')[0]) && /allowed commands: 1/.test(aout.split('\n')[0]),
+    aout.split('\n')[0]
+  );
+  const none = runReview(fx, ['--head-ref', fx.head]).stdout || '';
+  check(
+    'zero allowed commands is stated, and no exemption block is emitted',
+    /allowed commands: 0/.test(none.split('\n')[0]) && !/ALLOWED DESPITE/.test(field(none, 'BRIEF_MARKERS')),
+    none.split('\n')[0] + ' — ' + field(none, 'BRIEF_MARKERS')
+  );
+
+  // (b) The 0.153.x standalone "releases" layout is known, not 'unknown'.
+  const relRoot = path.join(fx.root, '.codex', 'packages', 'standalone', 'releases');
+  const installDir = path.join(relRoot, '0.153.2-x86_64-pc-windows-msvc', 'bin');
+  const fakeBin = makeStubBin(installDir, 'codex-stub');
+  const iso = {
+    HOME: fx.root, USERPROFILE: fx.root, CODEX_HOME: path.join(fx.root, '.codex'),
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
+  };
+  const lay = runReview(fx, ['--head-ref', fx.head], Object.assign({ CODEX_BIN: fakeBin }, iso)).stdout || '';
+  check(
+    'the 0.153.x releases layout is detected and named',
+    /codex install layout: codex-standalone-releases/.test(lay),
+    lay.slice(0, 900)
+  );
+
+  // (c) An undeletable leftover is reported once, then retried quietly.
+  const wtRoot = path.join(fx.root, 'wt-root');
+  const stuckDir = path.join(wtRoot, 'orchestra-review-STUCK1');
+  const heldDir = path.join(stuckDir, 'wt');
+  fs.mkdirSync(heldDir, { recursive: true });
+  const heldFile = path.join(heldDir, 'held.txt');
+  fs.writeFileSync(heldFile, 'x');
+  // Windows: the field case exactly — a process whose cwd is the worktree
+  // pins the directory against deletion (an open handle does not: libuv opens
+  // with FILE_SHARE_DELETE). POSIX: a read-only directory refuses the unlink
+  // of its contents.
+  let holder = null;
+  if (process.platform === 'win32') {
+    holder = spawn(process.execPath, ['-e', 'setInterval(function () {}, 1000)'], {
+      cwd: heldDir, stdio: 'ignore', windowsHide: true,
+    });
+  } else fs.chmodSync(heldDir, 0o555);
+  const first = runReview(fx, ['--head-ref', fx.head, '--worktree-root', wtRoot]).stdout || '';
+  const second = runReview(fx, ['--head-ref', fx.head, '--worktree-root', wtRoot]).stdout || '';
+  const markerThere = fs.existsSync(path.join(stuckDir, 'reported.stuck'));
+  if (holder) holder.kill();
+  else fs.chmodSync(heldDir, 0o755);
+  check(
+    'the first run reports the undeletable leftover, once, by name',
+    /reclaimed 1 abandoned review worktree/.test(first) && /could not be deleted/.test(first) &&
+      first.includes('orchestra-review-STUCK1'),
+    first.slice(0, 1500)
+  );
+  check(
+    'the second run does not re-report it',
+    !/orchestra-review-STUCK1/.test(second) && !/reclaimed \d+ abandoned/.test(second),
+    second.slice(0, 1500)
+  );
+  check('the once-only marker was written inside the leftover', markerThere, stuckDir);
+
+  // (d) The engine child sees the user's global config through the include.
+  const globalCfg = path.join(fx.root, 'global-gitconfig');
+  fs.writeFileSync(
+    globalCfg,
+    '[credential]\n\thelper = orchestra-test-helper\n' +
+      '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n'
+  );
+  const g = runReview(fx, ['--head-ref', fx.head], { GIT_CONFIG_GLOBAL: globalCfg }).stdout || '';
+  check(
+    'the review engine sees the credential helper and LFS filter through the scratch config',
+    field(g, 'GIT_CREDENTIAL_HELPER') === 'orchestra-test-helper' &&
+      field(g, 'GIT_LFS_CLEAN') === 'git-lfs clean -- %f' &&
+      field(g, 'GIT_CONFIG_GLOBAL') !== '(unset)' &&
+      path.resolve(field(g, 'GIT_CONFIG_GLOBAL')) !== path.resolve(globalCfg),
+    'GIT_CREDENTIAL_HELPER: ' + field(g, 'GIT_CREDENTIAL_HELPER') + ' GIT_LFS_CLEAN: ' + field(g, 'GIT_LFS_CLEAN') +
+      ' GIT_CONFIG_GLOBAL: ' + field(g, 'GIT_CONFIG_GLOBAL')
+  );
+  check(
+    'MCP servers are stripped for the review engine by default (header + overrides)',
+    /mcp: stripped \(0 server\(s\) disabled, apps connector off\)/.test(g.split('\n')[0]) &&
+      /features\.apps=false/.test(field(g, 'CONFIG_OVERRIDES')),
+    g.split('\n')[0] + ' — ' + field(g, 'CONFIG_OVERRIDES')
+  );
+
+  // (e) A verdict that names a Claude engine as its author is stamped.
+  const del = runReview(fx, ['--head-ref', fx.head], {
+    STUB_CODEX_EXTRA_LINES: 'REVIEW ENGINE: Claude CLI (opus, effort: high, delegated)\\nVERDICT: APPROVE',
+  }).stdout || '';
+  check(
+    'a same-family delegation inside the verdict is stamped as a CROSS-FAMILY BREACH',
+    /⚠ CROSS-FAMILY BREACH/.test(del) && /delegated this review to a Claude engine/.test(del),
+    del.slice(-900)
+  );
+  check('an ordinary verdict carries no breach stamp', !/CROSS-FAMILY BREACH/.test(g), g.slice(-400));
+  // Astra's review of the first cut was itself stamped: a finding QUOTED the
+  // header text mid-sentence as evidence. Only a header line counts.
+  const quoted = runReview(fx, ['--head-ref', fx.head], {
+    STUB_CODEX_EXTRA_LINES:
+      'FINDINGS\\n- [MINOR] the executor report cites `REVIEW ENGINE: Claude CLI (opus)` as evidence of an earlier round',
+  }).stdout || '';
+  check(
+    'a finding that merely quotes the Claude header text is not a breach',
+    !/CROSS-FAMILY BREACH/.test(quoted) && /REVIEW ENGINE: Claude CLI \(opus\)/.test(quoted),
+    quoted.slice(-600)
+  );
+
+  // Astra, round 5: MCP discovery must run where the ENGINE runs. The stub
+  // names one server after the directory it was asked in; a pinned review
+  // asks in the throwaway worktree (…/attempt-1/wt), not the live project.
+  const where = runReview(fx, ['--head-ref', fx.head], { STUB_CODEX_MCP_JSON: 'CWD' }).stdout || '';
+  check(
+    'a pinned review discovers MCP servers in the worktree the engine runs in',
+    /mcp_servers\.in_wt\.enabled=false/.test(field(where, 'CONFIG_OVERRIDES')) &&
+      !/mcp_servers\.in_project\./.test(field(where, 'CONFIG_OVERRIDES')),
+    field(where, 'CONFIG_OVERRIDES')
+  );
+
+  // Astra, round 6: git's conditional includes must be resolved for the
+  // checkout the engine reads. The live project is on main; the pinned
+  // worktree is detached, so an `onbranch:main` helper must NOT reach it.
+  fs.writeFileSync(path.join(fx.root, 'main.inc'), '[credential]\n\thelper = main-only-helper\n');
+  fs.writeFileSync(
+    path.join(fx.root, 'gitconfig-branch'),
+    '[credential]\n\thelper = default-helper\n[includeIf "onbranch:main"]\n\tpath = main.inc\n'
+  );
+  const ob = runReview(fx, ['--head-ref', fx.head], { GIT_CONFIG_GLOBAL: path.join(fx.root, 'gitconfig-branch') }).stdout || '';
+  check(
+    'a pinned (detached) review resolves git conditional includes for its own checkout, not the live branch',
+    field(ob, 'GIT_CREDENTIAL_HELPER') === 'default-helper' && !/main-only-helper/.test(field(ob, 'GIT_CREDENTIAL_HELPERS')),
+    'GIT_CREDENTIAL_HELPER: ' + field(ob, 'GIT_CREDENTIAL_HELPER') + ' GIT_CREDENTIAL_HELPERS: ' + field(ob, 'GIT_CREDENTIAL_HELPERS')
+  );
+}
+
 async function main() {
   case1();
   case2and3();
@@ -2012,6 +2172,7 @@ async function main() {
   case26();
   case27();
   case28();
+  case29();
 }
 
 main().then(finish, (e) => {

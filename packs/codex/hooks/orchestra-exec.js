@@ -140,10 +140,23 @@
  *                               1 (default) runs every git the run touches
  *                               against a scratch global config (a sandboxed
  *                               process often cannot read the real one, and
- *                               git then warns on every command). The user's
- *                               global user.name/user.email are copied into
- *                               the scratch config so an order that says
- *                               "commit" still can. 0 disables.
+ *                               git then warns on every command). The scratch
+ *                               config carries a COPY of the user's real
+ *                               global config (credential helpers, LFS
+ *                               filters, URL rewrites — read by the runner,
+ *                               never opened by the sandbox) plus explicit
+ *                               user.name/user.email and filter.lfs.* copies,
+ *                               so an order that says "commit" still can and
+ *                               an LFS-tracked tree does not read as
+ *                               modified. 0 disables.
+ *   ORCHESTRA_EXEC_MCP          strip (default) disables every MCP server the
+ *                               user's Codex config declares, plus the Codex
+ *                               apps connector, for the engine child — an
+ *                               executor that can delegate to a same-vendor
+ *                               MCP or push through a GitHub connector is
+ *                               neither cross-vendor nor sandboxed. inherit
+ *                               leaves the engine's MCP config alone.
+ *                               ("codex": { "engineMcp": "strip"|"inherit" })
  *   ORCHESTRA_EXEC_PROBE        1 (default) runs a cheap `codex exec` echo
  *                               before the real attempt. 0 disables.
  *   ORCHESTRA_EXEC_PROBE_TIMEOUT_MS
@@ -249,6 +262,9 @@ const CONFIG = {
   execDirLabel: '',
   forbidden: [],
   gitIsolation: process.env.ORCHESTRA_EXEC_GIT_ISOLATION !== '0',
+  engineMcp: (process.env.ORCHESTRA_EXEC_MCP || '').trim().toLowerCase(),
+  mcpLabel: '',
+  mcpArgs: [],
   probe: process.env.ORCHESTRA_EXEC_PROBE !== '0',
   probeTimeoutMs: intOr(process.env.ORCHESTRA_EXEC_PROBE_TIMEOUT_MS, 90000),
   integrityIgnore: [],
@@ -399,7 +415,7 @@ const CODEX_ONLY_KEYS = [
   'execTimeoutMs', 'execHeavyModel', 'execHeavyEffort',
   'execPrincipalModel', 'execPrincipalEffort', 'execSandbox', 'doNotRun',
   'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'helpersDir', 'gitConfigIsolation',
-  'crossplanModel', 'crossplanEffort',
+  'crossplanModel', 'crossplanEffort', 'engineMcp',
 ];
 
 // Still fail-open — a missing or broken file means no project settings, never a
@@ -480,22 +496,115 @@ function teardownScratch() {
   }
 }
 
+// Git LFS registers its clean/smudge filters in the user's GLOBAL config
+// (`git lfs install`). The include above carries them where the sandbox can
+// read that file; this explicit copy is for where it cannot. Without the
+// filters, every LFS-tracked file compares against its pointer and reads as
+// MODIFIED — 15 untouched PNGs under docs/art/** looked dirty to Astra
+// (field, 2026-09-06), which correctly refused a "clean tree" precondition.
+function lfsFilterSection() {
+  const lfs = spawnSync('git', ['config', '--global', '--get-regexp', '^filter\\.lfs\\.'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (lfs.status !== 0 || !lfs.stdout) return '';
+  const entries = lfs.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const sp = l.indexOf(' ');
+      const key = sp === -1 ? l : l.slice(0, sp);
+      const val = sp === -1 ? '' : l.slice(sp + 1);
+      const m = /^filter\.lfs\.([A-Za-z]+)$/.exec(key);
+      // Quoted, with backslashes and quotes escaped: a value such as
+      // "C:\Program Files\Git LFS\git-lfs.exe" clean -- %f written bare is a
+      // "bad config line" that breaks every later git command (Astra, round 2).
+      return m ? '\t' + m[1] + ' = "' + val.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"\n' : '';
+    })
+    .join('');
+  return entries ? '[filter "lfs"]\n' + entries : '';
+}
+
+// The user's git config as git itself resolves it for the tree the engine
+// will work in, re-serialised into the scratch config. `git config --list
+// --show-scope --includes --null`, run in that tree, evaluates every include
+// and includeIf — gitdir against the config file, onbranch against that
+// tree's HEAD, hasconfig against the repository's own remotes — exactly as
+// git would for the engine; the system and global entries are kept (the
+// scratch config replaces both: GIT_CONFIG_NOSYSTEM is set) and the local,
+// worktree and command entries are dropped, because the engine still reads
+// those from the repository. Each entry is written back under its own
+// `[section "subsection"]` header IN THE ORDER git reported it, never grouped
+// by section — a credential-helper reset (`helper = ""`) between two generic
+// helpers only means what it means in that order (Astra, round 6). include.*
+// and includeIf.* keys are dropped because their effect is already in the
+// list, so no include text is ever copied or rewritten. The runner reads all
+// of this as the host user; the sandbox never opens the user's files.
+function globalGitConfigCopy(cwd) {
+  let r;
+  try {
+    r = spawnSync('git', ['config', '--list', '--show-scope', '--includes', '--null'], {
+      cwd: cwd || process.cwd(),
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch (_) {
+    return '';
+  }
+  if (r.error || r.status !== 0 || !r.stdout) return '';
+  const esc = (v) =>
+    '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
+  // Records alternate: scope NUL key NL value NUL.
+  const parts = r.stdout.split('\0');
+  let out = '';
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const scope = parts[i];
+    const rec = parts[i + 1];
+    if (scope !== 'system' && scope !== 'global') continue;
+    const nl = rec.indexOf('\n');
+    const key = nl === -1 ? rec : rec.slice(0, nl);
+    const val = nl === -1 ? null : rec.slice(nl + 1);
+    const first = key.indexOf('.');
+    const last = key.lastIndexOf('.');
+    if (first === -1) continue;
+    const section = key.slice(0, first);
+    if (section === 'include' || section === 'includeif') continue;
+    const name = key.slice(last + 1);
+    const sub = last > first ? key.slice(first + 1, last) : null;
+    out += (sub === null ? '[' + section + ']' : '[' + section + ' ' + esc(sub) + ']') + '\n';
+    out += '\t' + name + (val === null ? '' : ' = ' + esc(val)) + '\n';
+  }
+  if (!out) return '';
+  return "# ---- the user's git config (system + global), resolved by git for this tree and copied\n" + out;
+}
+
 // Same isolation as the review runner, with one executor-specific addition:
 // the user's global identity is COPIED IN. Dropping the global config also
 // drops user.name/user.email, and an executor whose order says "commit" would
 // then fail every commit with "Please tell me who you are" — so the scratch
 // config carries the identity forward while still silencing the unreadable
 // excludes/attributes probing that sandboxed reviewers and executors hit.
+//
+// FIX (field, 2026-09-06): the scratch config used to REPLACE the global one
+// outright, and that dropped everything else it carried — the credential
+// helper (`git fetch origin` inside the sandbox died with "could not read
+// Username for 'https://github.com'"), the LFS filters (see lfsFilterSection),
+// URL rewrites. The scratch config now includes the real global config first
+// and only overrides the probing that produced the noise.
 function setupGitIsolation() {
   if (!CONFIG.gitIsolation || !SCRATCH.dir) return;
+  // Read with the REAL environment — the point is to rescue values from the
+  // config the isolation is about to hide.
   const identity = (key) => {
-    // Read with the REAL environment — the point is to rescue values from the
-    // config the isolation is about to hide.
     const r = spawnSync('git', ['config', '--global', '--get', key], { encoding: 'utf8' });
     return r.status === 0 ? (r.stdout || '').trim() : '';
   };
   const name = identity('user.name');
   const email = identity('user.email');
+  const includes = globalGitConfigCopy(CONFIG.execDir);
+  const lfs = lfsFilterSection();
   const empty = path.join(SCRATCH.dir, 'git-empty');
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
   try {
@@ -503,11 +612,13 @@ function setupGitIsolation() {
     fs.writeFileSync(
       cfg,
       '# Written by orchestra-exec.js for this run only.\n' +
+        includes +
         '[core]\n' +
         '\texcludesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '[safe]\n' +
         '\tdirectory = *\n' +
+        lfs +
         (name || email
           ? '[user]\n' +
             (name ? '\tname = ' + name + '\n' : '') +
@@ -519,6 +630,278 @@ function setupGitIsolation() {
   } catch (e) {
     PREFLIGHT.push('git config isolation unavailable: ' + boundedDiagnostic((e && e.message) || e, 2000));
   }
+}
+
+// ------------------------------------------------------------ MCP isolation
+// FIX (field, 2026-09-06): a Sol review came back wearing an inner header
+// `REVIEW ENGINE: Claude CLI (opus …)` — the engine had found a Claude review
+// MCP in the Codex config and delegated to it, so the cross-family review
+// silently became same-family. The same config hands an executor a GitHub
+// connector that writes past the workspace sandbox. Codex applies
+// `-c mcp_servers.<name>.enabled=false` to a server it has loaded, so every
+// server the user config declares is disabled by name, and the apps connector
+// is switched off. Verified against codex-cli 0.153.2: with these overrides
+// the engine reports no MCP tools at all.
+//
+// Limits, stated rather than hidden: a name that needs TOML quoting cannot be
+// addressed through -c (Codex splits the key on dots without unquoting), and
+// a name that Codex has NOT loaded cannot be disabled either — the override
+// would create a half-entry that fails config validation and kills the run.
+// The names therefore come from Codex itself (`codex mcp list --json`, see
+// mcpServersFromCodex), which covers every layer it loaded, a trusted
+// project's own .codex/config.toml included. Only when that command is
+// unavailable does the reader below stand in, and then the user-level file
+// is the only one read: a project-level file is named in the header instead.
+// Every TOML shape a server declaration can take: `[mcp_servers.<name>]`
+// headers (and `[mcp_servers.<name>.env]` sub-headers), a `[mcp_servers]`
+// table with `<name> = { … }` or `<name>.command = …` lines, top-level dotted
+// keys `mcp_servers.<name>.command = …`, and an inline table
+// `mcp_servers = { <name> = { … }, … }` (Astra's review of 3.3.0 found the
+// first cut read only the header form and reported "0 server(s) disabled"
+// for the rest). `opaque` is set when the file mentions mcp_servers in a
+// shape none of these readers understood, so the header can say so instead
+// of claiming a clean strip.
+function mcpServerNames(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return { bare: [], quoted: [], opaque: false };
+  }
+  const bare = [];
+  const quoted = [];
+  const KEY = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)';
+  // TOML basic-string escapes (`"clau\u0064e"` is `claude` — Astra, round 4).
+  const decodeTomlBasic = (s) =>
+    s.replace(/\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[btnfr"\\])/g, (_, e) => {
+      if (e[0] === 'u' || e[0] === 'U') return String.fromCodePoint(parseInt(e.slice(1), 16));
+      return { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' }[e];
+    });
+  const add = (raw) => {
+    let k = String(raw || '').trim();
+    if (!k) return;
+    // TOML decodes `"claude"` and `claude` to the same key, so a quoted name
+    // that is bare-safe is addressable through -c like any other (Astra,
+    // round 3). Only a name that NEEDS quoting is unaddressable.
+    // A basic-string key carries TOML escapes (`"claude"` is `claude`);
+    // a literal-string key carries none.
+    if (k[0] === '"') k = decodeTomlBasic(k.slice(1, -1));
+    else if (k[0] === "'") k = k.slice(1, -1);
+    if (/^[A-Za-z0-9_-]+$/.test(k)) {
+      if (!bare.includes(k)) bare.push(k);
+    } else if (!quoted.includes(k)) quoted.push(k);
+  };
+  // Walks one line OUTSIDE of strings: a `#` ends it; a `"""`/`'''` that does
+  // not close on the same line opens a multi-line string, which is returned;
+  // a `'''` inside an ordinary "…" string is content (Astra, rounds 3–4:
+  // `# """` and `"Use ''' as the example"` both hid the next server).
+  const openMultiline = (s) => {
+    let q = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) {
+        if (ch === '\\' && q === '"') i++;
+        else if (ch === q) q = '';
+        continue;
+      }
+      if (ch === '#') return '';
+      if (s.startsWith('"""', i) || s.startsWith("'''", i)) {
+        const d = s.slice(i, i + 3);
+        const close = s.indexOf(d, i + 3);
+        if (close === -1) return d;
+        i = close + 2;
+        continue;
+      }
+      if (ch === '"' || ch === "'") q = ch;
+    }
+    return '';
+  };
+  // Keys at depth 1 of an inline table. Returns whether the table closed, so
+  // a table spread over several lines can be accumulated and re-scanned.
+  const scanInline = (src) => {
+    let depth = 0;
+    let str = '';
+    let key = '';
+    let skip = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (str) {
+        if (depth === 1) key += ch;
+        if (ch === '\\' && str === '"') {
+          i++;
+          if (depth === 1 && i < src.length) key += src[i];
+        } else if (ch === str) str = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        str = ch;
+        if (depth === 1) key += ch;
+        continue;
+      }
+      if (ch === '{') {
+        depth++;
+        if (depth === 1) {
+          key = '';
+          skip = false;
+        }
+        continue;
+      }
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) return true;
+        continue;
+      }
+      if (depth !== 1) continue;
+      if (ch === '=' || ch === '.') {
+        // `a.b = …` names server `a`; the rest of the dotted key is not a name.
+        if (!skip) add(key);
+        skip = true;
+        key = '';
+      } else if (ch === ',') {
+        skip = false;
+        key = '';
+      } else key += ch;
+    }
+    return false;
+  };
+  // The root key may itself be quoted: `["mcp_servers".claude]` is valid TOML
+  // (Astra, round 2). And a multi-line string (`"""…"""` / `'''…'''`, e.g.
+  // developer_instructions carrying an example header) is skipped wholesale
+  // — a header-shaped line inside it is prose, not a declaration.
+  const ROOT = '(?:"mcp_servers"|\'mcp_servers\'|mcp_servers)';
+  let section = '';
+  let pending = '';
+  let multi = '';
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (multi) {
+      if (line.includes(multi)) multi = '';
+      continue;
+    }
+    if (pending) {
+      pending += '\n' + line;
+      if (scanInline(pending)) pending = '';
+      continue;
+    }
+    const t = line.trim();
+    if (!t || t[0] === '#') continue;
+    const opened = openMultiline(t);
+    if (opened) multi = opened;
+    let m;
+    if ((m = new RegExp('^\\[\\s*' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
+      add(m[1]);
+      section = 'mcp_servers.x';
+      continue;
+    }
+    if (new RegExp('^\\[\\s*' + ROOT + '\\s*\\]').test(t)) {
+      section = 'mcp_servers';
+      continue;
+    }
+    if (t[0] === '[') {
+      section = 'other';
+      continue;
+    }
+    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
+    }
+    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*=\\s*(\\{[\\s\\S]*)$').exec(t))) {
+      if (!scanInline(m[1])) pending = m[1];
+      continue;
+    }
+    if (section === 'mcp_servers' && (m = new RegExp('^' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
+    }
+  }
+  const opaque =
+    new RegExp('^\\s*\\[?\\s*' + ROOT + '\\b', 'm').test(text.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, '')) &&
+    !bare.length && !quoted.length;
+  return { bare, quoted, opaque };
+}
+
+// The servers Codex has actually loaded, asked of Codex itself: `codex mcp
+// list --json` reports every server by its decoded name with its enabled
+// state, from every config layer Codex applied (a trusted project's own
+// .codex/config.toml included). Four review rounds of hand-reading
+// config.toml each found a TOML shape the reader missed; the authority is the
+// binary that loads the file. Returns null when the command is unavailable
+// (an older Codex, or the stub engine), and the TOML reader is the fallback.
+function mcpServersFromCodex(dir) {
+  try {
+    const r = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, ['mcp', 'list', '--json'], {
+      cwd: dir || process.cwd(),
+      encoding: 'utf8',
+      input: '',
+      timeout: 30000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: childEnv(),
+      windowsHide: true,
+    });
+    if (r.error || r.status !== 0) return null;
+    const out = String(r.stdout || '');
+    const start = out.indexOf('[');
+    if (start === -1) return null;
+    const parsed = JSON.parse(out.slice(start));
+    if (!Array.isArray(parsed)) return null;
+    // Every server Codex knows, the already-disabled ones included: the
+    // disabling override is written for each, because our -c flags come
+    // AFTER any user extra args and a `mcp_servers.x.enabled=true` there
+    // would otherwise win for a server we had skipped (Astra, round 5).
+    return parsed.filter((e) => e && typeof e.name === 'string').map((e) => e.name);
+  } catch (_) {
+    return null;
+  }
+}
+
+function mcpIsolation(dir) {
+  if (CONFIG.engineMcp === 'inherit') return { args: [], label: 'inherited (engineMcp: inherit)', notes: [] };
+  const home = (process.env.HOME || '').trim() || os.homedir() || '';
+  const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
+  const notes = [];
+  let user;
+  const live = mcpServersFromCodex(dir);
+  if (live) {
+    user = { bare: [], quoted: [], opaque: false };
+    for (const n of live) {
+      if (/^[A-Za-z0-9_-]+$/.test(n)) user.bare.push(n);
+      else user.quoted.push(n);
+    }
+  } else {
+    user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [], opaque: false };
+    notes.push(
+      'mcp: `codex mcp list --json` was unavailable, so the server names were read from ' +
+        (codexHome ? path.join(codexHome, 'config.toml') : '(no CODEX_HOME)') +
+        ' by the runner\'s own TOML reader — a project-level .codex/config.toml is not read that way'
+    );
+  }
+  const args = ['-c', 'features.apps=false'];
+  for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
+  if (user.opaque) {
+    notes.push(
+      'mcp: the Codex config declares mcp_servers in a shape this runner could not read — nothing was ' +
+        'disabled by name; check ' + path.join(codexHome, 'config.toml') + ' by hand before trusting this run as cross-vendor'
+    );
+  }
+  if (user.quoted.length) {
+    notes.push(
+      'mcp: ' + user.quoted.length + ' server(s) in the Codex config could not be disabled — a quoted ' +
+        'name cannot be addressed through -c: ' + user.quoted.map((n) => JSON.stringify(n)).join(', ')
+    );
+  }
+  const project = !live && dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
+  const projectNames = project.bare.concat(project.quoted);
+  if (projectNames.length) {
+    notes.push(
+      'mcp: the project\'s own .codex/config.toml declares ' + projectNames.length + ' MCP server(s) ' +
+        '(' + projectNames.join(', ') + ') — not disabled; Codex loads that file only for a trusted ' +
+        'project, and disabling a server it has not loaded would kill the run'
+    );
+  }
+  const label =
+    'stripped (' + user.bare.length + ' server(s) disabled, apps connector off' +
+    (user.quoted.length ? ', ' + user.quoted.length + ' not addressable' : '') + ')';
+  return { args, label, notes };
 }
 
 function childEnv(extra) {
@@ -786,7 +1169,62 @@ function principalLines(profile) {
   ];
 }
 
-function buildBrief(workOrder, verification, forbidden, profile) {
+// Paths the Claude Code harness itself writes into a project — session
+// state, not project files. A fresh Agent-tool worktree arrives with
+// .claude/settings.local.json already untracked, and an engine holding a
+// "clean tree" precondition against it has been handed a false failure
+// (field, 2026-09-06: two BLOCKED rounds on exactly this).
+const HARNESS_OWNED = [
+  '.claude/settings.local.json',
+  '.claude/orchestra-ledger.jsonl',
+  '.claude/orchestra-pool-readings.jsonl',
+  '.claude/orchestra-manual-readings.md',
+  '.claude/orchestra/',
+];
+
+function isHarnessOwned(rel) {
+  const p = String(rel || '').replace(/\\/g, '/');
+  return HARNESS_OWNED.some((h) => (h.endsWith('/') ? p.startsWith(h) : p === h));
+}
+
+// What the tree looked like BEFORE the engine started, measured by the runner.
+// An engine that cannot tell pre-existing dirt from its own edits either
+// refuses a precondition the Director did not intend or reports someone
+// else's changes as its own; the list settles both. Bounded, like the audit.
+function treeStateLines(before) {
+  if (!before) return [];
+  // The fingerprint annotates each porcelain line with " [size@mtime]" for
+  // its own comparison; the engine gets the plain porcelain line.
+  const lines = (before.text || '')
+    .split('\n')
+    .filter((l) => l.trim())
+    .map((l) => l.replace(/ \[\d+@[\d.]+\]$/, ''));
+  if (!lines.length) {
+    return ['TREE STATE BEFORE YOU STARTED: clean (git status was empty).', ''];
+  }
+  const shown = lines.slice(0, 40);
+  const harness = lines.map((l) => porcelainPath(l)).filter(isHarnessOwned);
+  return [
+    'TREE STATE BEFORE YOU STARTED (measured by the runner, not by you):',
+    lines.length + ' path(s) were already dirty. The work order governs them: where',
+    'it names one of these paths (finish it, commit it, build on it), do as it',
+    'says. Where it does not, they are not yours — never revert, stage, or',
+    '"clean up" an unnamed one, and never report it as your change.',
+    ...shown.map((l) => '  ' + l),
+    ...(lines.length > shown.length ? ['  …and ' + (lines.length - shown.length) + ' more'] : []),
+    ...(harness.length
+      ? [
+          'Of these, ' + harness.length + ' are harness-owned session files (' +
+            harness.slice(0, 5).join(', ') + (harness.length > 5 ? ', …' : '') + ') — the',
+          'Director\'s tooling writes them; they never count against a "clean tree"',
+          'precondition and are never project files.',
+        ]
+      : []),
+    '',
+  ];
+}
+
+function buildBrief(workOrder, verification, forbidden, profile, treeBefore) {
   return [
     'You are the EXECUTOR in a multi-agent engineering harness. A Director',
     '(who never touches the code) wrote the work order below; your edits and',
@@ -828,7 +1266,12 @@ function buildBrief(workOrder, verification, forbidden, profile) {
     '7. Git is scoped like everything else: stage, commit, or push ONLY when',
     '   the work order explicitly says to (checkpoint-commit clauses included),',
     '   and never rewrite history. No order = leave the changes uncommitted in',
-    '   the working tree.',
+    '   the working tree. This sandbox may carry no GitHub credentials: if a',
+    '   fetch, push, or `gh` call fails on authentication, do not retry it or',
+    '   work around it — paste the exact error under VERIFICATION, finish what',
+    '   the refs already local allow, and leave the push to the Director. Only',
+    '   when the order cannot proceed without a ref that is not local is that',
+    '   a BLOCKED, and then name the ref.',
     '8. Follow the order\'s cadence clauses. If it numbers parts and names a',
     '   progress file, append one status line there after each part, before',
     '   starting the next.',
@@ -873,6 +1316,7 @@ function buildBrief(workOrder, verification, forbidden, profile) {
     '',
     ...prohibitionLines(forbidden),
     ...manifestLines(verification),
+    ...treeStateLines(treeBefore),
     '=== WORK ORDER (from the Director — execute exactly this) ===',
     workOrder.trim() || '(none provided)',
     '',
@@ -1046,6 +1490,7 @@ function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -1128,6 +1573,7 @@ function settingsBits() {
     'sandbox: ' + CONFIG.sandbox,
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (execution is never auto-retried)',
+    'mcp: ' + (CONFIG.mcpLabel || 'not resolved'),
   ]
     // Always, including zero — "prohibited commands: 0" is how a Director sees
     // that an order's prose prohibition never became a flag.
@@ -1386,6 +1832,12 @@ function main() {
   if (!process.env.ORCHESTRA_EXEC_GIT_ISOLATION && codexCfg.gitConfigIsolation != null) {
     CONFIG.gitIsolation = codexCfg.gitConfigIsolation !== false;
   }
+  // MCP isolation: env > orchestra.json > strip. Anything but an explicit
+  // "inherit" strips — the safe direction for a typo.
+  if (!CONFIG.engineMcp && typeof codexCfg.engineMcp === 'string') {
+    CONFIG.engineMcp = codexCfg.engineMcp.trim().toLowerCase();
+  }
+  if (CONFIG.engineMcp !== 'inherit') CONFIG.engineMcp = 'strip';
   if (!process.env.ORCHESTRA_EXEC_PROBE && codexCfg.authProbe != null) {
     CONFIG.probe = codexCfg.authProbe !== false;
   }
@@ -1488,6 +1940,13 @@ function main() {
     if (restore.note) PREFLIGHT.push(restore.note);
   }
 
+  // --- MCP isolation, resolved once and applied to the probe and the run
+  // alike: the probe must launch under the same overrides the run will.
+  const mcp = mcpIsolation(CONFIG.execDir);
+  CONFIG.mcpArgs = mcp.args;
+  CONFIG.mcpLabel = mcp.label;
+  for (const n of mcp.notes) PREFLIGHT.push(n);
+
   // --- stage-a probe: can this install run codex at all? Costs seconds,
   // runs before the tree is touched.
   if (CONFIG.probe) {
@@ -1522,7 +1981,7 @@ function main() {
     if (settled !== null) before = settled;
   }
 
-  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden, CONFIG.profile);
+  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden, CONFIG.profile, before);
 
   // --- the one attempt.
   const lastMsgFile = path.join(SCRATCH.dir, 'report.txt');
@@ -1533,8 +1992,9 @@ function main() {
   if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
   // Keep the coexistence boundary last: Codex resolves repeated -c values in
   // order, so ORCHESTRA_EXEC_ARGS must not be able to re-enable a co-installed
-  // Codex-Orchestra's project instructions or hooks.
+  // Codex-Orchestra's project instructions, hooks, or MCP servers.
   codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  codexArgs.push(...CONFIG.mcpArgs);
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();

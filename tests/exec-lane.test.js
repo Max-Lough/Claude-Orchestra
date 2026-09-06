@@ -1323,6 +1323,13 @@ function case21() {
       ['eps'], ['q r']],
     ['multi-line inline table', 'mcp_servers = {\n  multi = { command = "node" },\n  two = { command = "x" }\n}\n',
       ['multi', 'two'], []],
+    // Astra, round 2: a quoted ROOT key is valid TOML too.
+    ['a quoted root key', '["mcp_servers".rooted]\ncommand = "node"\n', ['rooted'], []],
+    // Astra, round 2: a header inside a multi-line string is prose, not a
+    // server — disabling it would create a transport-less half-entry.
+    ['a real header beside a header quoted in a multi-line string',
+      'developer_instructions = """\nExample:\n[mcp_servers.example]\ncommand = "x"\n"""\n[mcp_servers.genuine]\ncommand = "node"\n',
+      ['genuine'], []],
   ];
   for (const [label, toml, wantBare, wantQuoted] of shapes) {
     const h = path.join(fx.root, 'codex-home-' + wantBare[0]);
@@ -1339,6 +1346,31 @@ function case21() {
       o.split('\n')[0] + ' — ' + ov
     );
   }
+  const quotedHome = path.join(fx.root, 'codex-home-genuine');
+  const qo = runExec(fx, [], { CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'the header quoted inside the multi-line string was NOT turned into a server',
+    !/mcp_servers\.example/.test(field(qo, 'CONFIG_OVERRIDES')) && /mcp: stripped \(1 server/.test(qo.split('\n')[0]),
+    qo.split('\n')[0] + ' — ' + field(qo, 'CONFIG_OVERRIDES')
+  );
+
+  // Astra, round 2: an LFS filter value with a quoted Windows path was copied
+  // bare into the scratch config — a "bad config line" that broke every
+  // later git command. Quoted and escaped, it survives the round trip.
+  const lfsCfg = path.join(fx.root, 'global-gitconfig-lfs');
+  fs.writeFileSync(
+    lfsCfg,
+    '[filter "lfs"]\n\tclean = "\\"C:\\\\Program Files\\\\Git LFS\\\\git-lfs.exe\\" clean -- %f"\n' +
+      '\tsmudge = git-lfs smudge -- %f\n'
+  );
+  const lq = runExec(fx, [], { GIT_CONFIG_GLOBAL: lfsCfg, CODEX_HOME: quotedHome }).stdout || '';
+  check(
+    'an LFS filter value with a quoted path survives the explicit copy (git still reads the scratch config)',
+    field(lq, 'GIT_LFS_CLEAN') === '"C:\\Program Files\\Git LFS\\git-lfs.exe" clean -- %f' &&
+      /^EXEC ENGINE: OpenAI/.test(lq),
+    'GIT_LFS_CLEAN: ' + field(lq, 'GIT_LFS_CLEAN') + ' — ' + lq.split('\n')[0]
+  );
+
   const opaqueHome = path.join(fx.root, 'codex-home-opaque');
   fs.mkdirSync(opaqueHome, { recursive: true });
   fs.writeFileSync(path.join(opaqueHome, 'config.toml'), '[mcp_servers]\n# nothing this reader understands\n= broken\n');

@@ -894,7 +894,9 @@ function setupGitIsolation() {
           const key = sp === -1 ? l : l.slice(0, sp);
           const val = sp === -1 ? '' : l.slice(sp + 1);
           const m = /^filter\.lfs\.([A-Za-z]+)$/.exec(key);
-          return m ? '\t' + m[1] + ' = ' + val + '\n' : '';
+          // Quoted, with backslashes and quotes escaped: a bare Windows path with
+          // quotes is a "bad config line" that breaks every later git command.
+          return m ? '\t' + m[1] + ' = "' + val.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"\n' : '';
         })
         .join('');
       if (entries) lfsSection = '[filter "lfs"]\n' + entries;
@@ -1001,10 +1003,20 @@ function mcpServerNames(file) {
     }
     return false;
   };
+  // The root key may itself be quoted: `["mcp_servers".claude]` is valid TOML
+  // (Astra, round 2). And a multi-line string (`"""…"""` / `'''…'''`, e.g.
+  // developer_instructions carrying an example header) is skipped wholesale
+  // — a header-shaped line inside it is prose, not a declaration.
+  const ROOT = '(?:"mcp_servers"|\'mcp_servers\'|mcp_servers)';
   let section = '';
   let pending = '';
+  let multi = '';
   for (const raw of text.split('\n')) {
     const line = raw.replace(/\r$/, '');
+    if (multi) {
+      if (line.includes(multi)) multi = '';
+      continue;
+    }
     if (pending) {
       pending += '\n' + line;
       if (scanInline(pending)) pending = '';
@@ -1012,13 +1024,17 @@ function mcpServerNames(file) {
     }
     const t = line.trim();
     if (!t || t[0] === '#') continue;
+    for (const d of ['"""', "'''"]) {
+      const n = t.split(d).length - 1;
+      if (n % 2 === 1) multi = d;
+    }
     let m;
-    if ((m = new RegExp('^\\[\\s*mcp_servers\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
+    if ((m = new RegExp('^\\[\\s*' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
       add(m[1]);
       section = 'mcp_servers.x';
       continue;
     }
-    if (/^\[\s*mcp_servers\s*\]/.test(t)) {
+    if (new RegExp('^\\[\\s*' + ROOT + '\\s*\\]').test(t)) {
       section = 'mcp_servers';
       continue;
     }
@@ -1026,11 +1042,11 @@ function mcpServerNames(file) {
       section = 'other';
       continue;
     }
-    if (section === '' && (m = new RegExp('^mcp_servers\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t))) {
+    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t))) {
       add(m[1]);
       continue;
     }
-    if (section === '' && (m = /^mcp_servers\s*=\s*(\{[\s\S]*)$/.exec(t))) {
+    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*=\\s*(\\{[\\s\\S]*)$').exec(t))) {
       if (!scanInline(m[1])) pending = m[1];
       continue;
     }
@@ -1039,7 +1055,9 @@ function mcpServerNames(file) {
       continue;
     }
   }
-  const opaque = /^\s*\[?\s*mcp_servers\b/m.test(text) && !bare.length && !quoted.length;
+  const opaque =
+    new RegExp('^\\s*\\[?\\s*' + ROOT + '\\b', 'm').test(text.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, '')) &&
+    !bare.length && !quoted.length;
   return { bare, quoted, opaque };
 }
 

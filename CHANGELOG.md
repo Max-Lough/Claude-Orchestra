@@ -104,6 +104,13 @@ pre-existing path even when the order said to finish and commit it; and the
 cross-plan runner lacked the explicit LFS copy. The suites also stop
 inheriting a running lane's `GIT_CONFIG_GLOBAL`, which had cost Astra two
 environment-dependent failures while re-running them inside the review.
+Round 2 found three more, also fixed: the explicit LFS copy wrote values
+bare, so a filter command with a quoted Windows path became a "bad config
+line" that broke every later git command (values are quoted and escaped now,
+and a git round-trip is in the suite); a quoted root key
+(`["mcp_servers".x]`) was missed; and a header inside a multi-line string
+(an example in `developer_instructions`) was taken for a server and would
+have been "disabled" into a transport-less half-entry.
 
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 

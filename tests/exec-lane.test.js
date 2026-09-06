@@ -823,6 +823,7 @@ function case17() {
   // impossible rather than merely discouraged.
   const launchers = [
     ['packs/codex/agents/executor-codex-heavy.md', 'mcp__orchestra-engine__orchestra_exec'],
+    ['packs/codex/agents/executor-codex-principal.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/reviewer-codex.md', 'mcp__orchestra-engine__orchestra_review'],
   ];
   for (const [rel, tool] of launchers) {
@@ -849,6 +850,132 @@ function case17() {
       'no one-call language found'
     );
   }
+}
+
+// The second Codex executor rung. The lane is now two profiles behind one
+// runner, and the whole safety story rests on three properties: the default is
+// unchanged (a run that names no profile is the run this file always made),
+// each rung reads only its OWN env vars and config keys (pinning one may never
+// move the other), and a profile that does not exist can never silently run
+// the other engine while a launcher relays the report as that engine's work.
+function case18() {
+  section('18. Two executor rungs: profile selection, key isolation, unknown-profile alarm');
+
+  const fx = makeRepo();
+
+  const dflt = runExec(fx, []);
+  check(
+    'no --profile is the heavy rung, unchanged: Sol at high effort',
+    field(dflt.stdout || '', 'MODEL') === 'gpt-5.6-sol' &&
+      /profile: heavy, model: gpt-5\.6-sol \(default\), effort: high/.test(dflt.stdout || ''),
+    (dflt.stdout || '').split('\n')[0]
+  );
+
+  const principal = runExec(fx, ['--profile', 'principal']);
+  const pout = principal.stdout || '';
+  check(
+    '--profile principal is GPT-6 Astra at xhigh effort',
+    field(pout, 'MODEL') === 'gpt-6-astra' &&
+      /profile: principal, model: gpt-6-astra \(default\), effort: xhigh/.test(pout),
+    pout.split('\n')[0]
+  );
+  check(
+    'the principal rung reaches the engine as a real run, not a refusal',
+    /STATUS: DONE/.test(pout) && /^EXEC ENGINE: OpenAI/m.test(pout),
+    pout.slice(0, 300)
+  );
+  check(
+    'the principal rung sends its effort to codex, not just to the header',
+    field(pout, 'CONFIG_OVERRIDES') ===
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0',
+    'CONFIG_OVERRIDES: ' + field(pout, 'CONFIG_OVERRIDES')
+  );
+
+  // Key isolation, both directions. A project that pins the heavy rung has
+  // said nothing about the principal rung, and vice versa.
+  const pinnedHeavy = makeRepo();
+  writeProjectConfig(pinnedHeavy, {
+    codex: { execHeavyModel: 'sol-pinned', execHeavyEffort: 'medium' },
+  });
+  const heavyKeysOnPrincipal = runExec(pinnedHeavy, ['--profile', 'principal']);
+  check(
+    'codex.execHeavyModel/Effort do not leak into the principal rung',
+    field(heavyKeysOnPrincipal.stdout || '', 'MODEL') === 'gpt-6-astra' &&
+      /effort: xhigh/.test((heavyKeysOnPrincipal.stdout || '').split('\n')[0]),
+    (heavyKeysOnPrincipal.stdout || '').split('\n')[0]
+  );
+
+  const pinnedPrincipal = makeRepo();
+  writeProjectConfig(pinnedPrincipal, {
+    codex: { execPrincipalModel: 'astra-pinned', execPrincipalEffort: 'max' },
+  });
+  const principalKeysOnHeavy = runExec(pinnedPrincipal, []);
+  check(
+    'codex.execPrincipalModel/Effort do not leak into the heavy rung',
+    field(principalKeysOnHeavy.stdout || '', 'MODEL') === 'gpt-5.6-sol' &&
+      /effort: high/.test((principalKeysOnHeavy.stdout || '').split('\n')[0]),
+    (principalKeysOnHeavy.stdout || '').split('\n')[0]
+  );
+  const principalPinned = runExec(pinnedPrincipal, ['--profile', 'principal']);
+  check(
+    'codex.execPrincipalModel/Effort DO supply the principal rung, and are credited',
+    field(principalPinned.stdout || '', 'MODEL') === 'astra-pinned' &&
+      /model: astra-pinned \(orchestra\.json\), effort: max/.test(principalPinned.stdout || ''),
+    (principalPinned.stdout || '').split('\n')[0]
+  );
+
+  // Same isolation for the environment.
+  const envCross = runExec(fx, ['--profile', 'principal'], {
+    ORCHESTRA_EXEC_HEAVY_MODEL: 'sol-from-env',
+  });
+  check(
+    'ORCHESTRA_EXEC_HEAVY_MODEL does not reach the principal rung',
+    field(envCross.stdout || '', 'MODEL') === 'gpt-6-astra',
+    (envCross.stdout || '').split('\n')[0]
+  );
+  const envPrincipal = runExec(fx, ['--profile', 'principal'], {
+    ORCHESTRA_EXEC_PRINCIPAL_MODEL: 'astra-from-env',
+    ORCHESTRA_EXEC_PRINCIPAL_EFFORT: 'high',
+  });
+  check(
+    'ORCHESTRA_EXEC_PRINCIPAL_* supply the principal rung and are credited',
+    field(envPrincipal.stdout || '', 'MODEL') === 'astra-from-env' &&
+      /model: astra-from-env \(env\), effort: high/.test(envPrincipal.stdout || ''),
+    (envPrincipal.stdout || '').split('\n')[0]
+  );
+  const envOnHeavy = runExec(fx, [], { ORCHESTRA_EXEC_PRINCIPAL_MODEL: 'astra-from-env' });
+  check(
+    'ORCHESTRA_EXEC_PRINCIPAL_MODEL does not reach the heavy rung',
+    field(envOnHeavy.stdout || '', 'MODEL') === 'gpt-5.6-sol',
+    (envOnHeavy.stdout || '').split('\n')[0]
+  );
+
+  // An unknown rung must never quietly become the other one. "astra" is the
+  // near-miss a human would actually type for the principal rung, so it is the
+  // one worth pinning.
+  const bogus = runExec(fx, ['--profile', 'astra']);
+  const bout = bogus.stdout || '';
+  check(
+    'an unknown --profile falls back to heavy rather than inventing an engine',
+    field(bout, 'MODEL') === 'gpt-5.6-sol' && /profile: heavy/.test(bout),
+    bout.split('\n')[0]
+  );
+  check(
+    'an unknown --profile is announced in PREFLIGHT, naming what did not exist',
+    /^PREFLIGHT: unknown --profile "astra"/m.test(bout) &&
+      /known profiles: heavy, principal/.test(bout),
+    (bout.match(/^PREFLIGHT:.*$/m) || ['no PREFLIGHT line'])[0]
+  );
+
+  // A profile is still only a pair of defaults: an explicit flag outranks it,
+  // exactly as it outranks env and config on the heavy rung (case 2).
+  const flagOverPrincipal = runExec(fx, ['--profile', 'principal', '--model', 'gpt-6-flag']);
+  check(
+    'an explicit --model still outranks the profile default',
+    field(flagOverPrincipal.stdout || '', 'MODEL') === 'gpt-6-flag' &&
+      /profile: principal, model: gpt-6-flag \(flag\)/.test(flagOverPrincipal.stdout || ''),
+    (flagOverPrincipal.stdout || '').split('\n')[0]
+  );
 }
 
 // ------------------------------------------------------------------ driver
@@ -882,6 +1009,7 @@ async function main() {
   case15();
   case16();
   case17();
+  case18();
 }
 
 main().then(finish, (e) => {

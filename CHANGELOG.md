@@ -9,6 +9,64 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.2.0 — a GPT-6 Astra principal rung above the Sol executor
+
+**Why.** OpenAI shipped GPT-6 Astra on 2026-09-03, and the Codex lane had
+nowhere to put it. The lane has run one executor since the 3.0.0 reverse-port —
+`executor-codex-heavy` on GPT-5.6 Sol at high effort — chosen precisely because
+a second rung had cost more than it returned when the rungs were only *effort*
+levels of one model. Astra is a different case: it is a different model with a
+measured lead on exactly the work this lane exists for. On Terminal-Bench 4.0
+it scores 57.7% against Sol's 37.3%, and the executor lane's whole job is
+long-horizon agentic work in a live terminal. It is also 2.5× Sol's token price
+($10/$50 per 1M against $4/$20), which is why it is a rung above rather than a
+replacement.
+
+This also closes an asymmetry 3.1.0 opened. The Claude lane got a principal
+tier above its heavy profiles, so its ladder reads `executor` →
+`executor-heavy` → `executor-principal`; the Codex lane stopped at one rung and
+an order that bounced there had nowhere to go but back across the vendor line.
+
+**The rung.** `executor-codex-principal` (GPT-6 Astra, xhigh effort) is a thin
+Haiku launcher shaped exactly like `executor-codex-heavy` — one blocking
+`orchestra_exec` MCP call, the report and TREE AUDIT relayed verbatim, no edits
+of its own. Both rungs are exceptional-only and both are a Director routing
+decision made at PLAN time. Enter the lane at the heavy rung, on concrete prior
+evidence that Anthropic models struggled with the problem; reach past it only
+when that order then bounces at the heavy rung, or when the work's shape is
+long-horizon agentic terminal work. A launcher never escalates itself.
+
+**One runner, two profiles.** `orchestra-exec.js` gains `--profile
+heavy|principal`, and the MCP tool a matching typed `profile` enum. The rungs
+differ in model and effort and in nothing else: same `workspace-write` sandbox,
+same idle precheck, same tree audit, same report-integrity nonce, same
+one-attempt-never-retried law, same report contract. Each rung reads only its
+own settings — `ORCHESTRA_EXEC_PRINCIPAL_MODEL` / `_EFFORT` and
+`codex.execPrincipalModel` / `execPrincipalEffort`, defaulting to `gpt-6-astra`
+/ `xhigh` — so pinning one rung can never move the other. `heavy` is the
+default, and its keys keep the names they shipped with, so a run that names no
+profile behaves exactly as it did in 3.1.0, down to the config it reads.
+
+This is not the `--tier` flag 3.0.0 removed. That flag selected *effort levels
+of one model* and earned its deletion; a profile names a model and its effort
+together, and there is still no effort ladder to select inside a rung.
+
+**An unknown profile is an alarm, not a substitution.** `--profile astra` — the
+near-miss a human would actually type — falls back to the heavy rung and says
+so on a `PREFLIGHT` line naming what did not exist and what ran instead. The
+principal launcher is told to check the header for `profile: heavy` and flag
+it, because the one unrecoverable failure here is a Sol run relayed as Astra's
+work. `codexModelId` also learned the `GPT-6 Astra` → `gpt-6-astra` display-name
+mapping, the same shape defect that cost the lane a round on Sol in the
+2026-09-02 shakedown.
+
+**Coverage.** Exec-lane case 18 pins profile selection, both directions of
+env/config key isolation, the unknown-profile fallback and its PREFLIGHT line,
+and that an explicit `--model` still outranks a profile default. MCP-lane case
+4b pins the enum, that `profile` stays optional, the end-to-end round trip for
+both rungs, and the display-name mapping. Case 17's structural launcher checks
+now cover the new agent.
+
 ## 3.1.0 — a Fable principal-executor tier above the Opus heavy profiles
 
 **The failure.** In the PiratePartyPals Tug of War campaign (2026-09-02 →

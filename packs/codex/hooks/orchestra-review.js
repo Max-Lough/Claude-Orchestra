@@ -634,7 +634,7 @@ const CODEX_ONLY_KEYS = [
   'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'reviewRetries', 'doNotRun',
   'worktreeRoot', 'worktreeWarmupCmd', 'worktreeWarmupTimeoutMs', 'helpersDir',
   'idleMs', 'gitConfigIsolation', 'execHeavyModel', 'execHeavyEffort',
-  'crossplanModel', 'crossplanEffort',
+  'execPrincipalModel', 'execPrincipalEffort', 'crossplanModel', 'crossplanEffort',
 ];
 
 // Whole project config (.claude/orchestra.json). Still fail-open — a missing or

@@ -9,6 +9,59 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.1.0 — a Fable principal-executor tier above the Opus heavy profiles
+
+**The failure.** In the PiratePartyPals Tug of War campaign (2026-09-02 →
+09-05) the longest review→fix chains all sat at the Opus heavy tier with
+nowhere to go: the result-latch order took nine Sol rounds at
+`executor-heavy`, the hit-query benchmark six, the grid benchmark four. §3.5
+escalated `executor` → `executor-heavy` after two bounces and then said "two
+bounces at the heavy tier is a plan problem", so the Director re-planned in
+place through warm resumes, and every extra round bought a cold-import Sol
+review (20–40 minutes) plus a fix round plus an audit. Where the owner
+improvised a rung above — `executor-heavy-xhigh` launched with a `model:
+fable` override on the grid benchmark's fourth round — it converged first
+time. Over the whole campaign, code orders routed to the Opus xhigh tier
+from the start averaged 1.5 review rounds; orders started at Opus high
+averaged 3.1 and orders started at Sonnet 2.3 (the heavy population is the
+harder one, so the comparison is directional, not controlled). Field record
+with the per-order chains and method:
+`plans/field-evidence-tug-review-rounds-2026-09-05.md`.
+
+**What the chains showed.** The rejections were not reviewer harshness in
+the calibration sense — 47 of 48 Sol REVISE verdicts carried at least one
+MAJOR BREACH, the Director recorded one hallucinated finding in roughly 90
+verdicts, and Sol reproduced its own numbers on the benchmark rounds. The
+dominant shape was whack-a-mole: the reviewer surfaced one blocking instance
+of a class per round (an unenforced guarantee stated only in a doc comment, a
+fixture that proved less than it claimed, one more hand-enumerated list left
+stale), the executor fixed exactly that instance under its own "nothing but
+the order" law, and the next fresh-context review found the sibling. Nine
+rounds of that on one order is a tier-and-order-shape problem, not a
+reviewer problem.
+
+**The tier.** `executor-principal` (Fable, high) and
+`executor-principal-xhigh` (Fable, xhigh) join the core roster — eight
+Claude agents now. Same executor law and report format as `executor-heavy`,
+plus the two duties the grinding chains showed were missing at the top rung:
+a principal may make a decision the order explicitly delegates, within the
+bounds the order states, and must record it under `DECISIONS`; and it treats
+every reviewer finding in its case file as one instance of a class —
+enumerate the siblings in scope, fix them all, list the sweep under
+`CLASS SWEEP` — so the next review checks rather than rediscovers. Routing is
+a PLAN-time decision, never self-promotion, for exceptional orders only:
+many coupled moving parts that resist splitting, an approach or outcome the
+plan cannot settle in advance, or a second bounce at the heavy tier. §3.5's
+ladder is now explicit — `executor` → `executor-heavy` → `executor-principal`,
+one rung per double bounce; two bounces at the principal tier is a plan
+problem. §8.3 pins the efforts; the installer, the install census test, and
+`/orchestra-status` know the two files.
+
+**What did not change.** `executor` is still the default and the Opus heavy
+profiles are still the hard tier; the Sol executor stays exceptional-only.
+Fable is priced above Opus per token, so the tier earns its place only where
+it removes rounds — which is exactly the population the field record names.
+
 ## 3.0.2 — docs-only work skips the cross-family lane, and five review-lane field fixes
 
 **The failure.** Review routing keyed on the author's vendor alone, so a

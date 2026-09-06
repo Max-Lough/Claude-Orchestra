@@ -108,6 +108,8 @@ const EXPECTED_LEGACY_CENSUS = [
   '.claude/agents/detective.md',
   '.claude/agents/executor-heavy-xhigh.md',
   '.claude/agents/executor-heavy.md',
+  '.claude/agents/executor-principal-xhigh.md',
+  '.claude/agents/executor-principal.md',
   '.claude/agents/executor.md',
   '.claude/agents/reviewer.md',
   '.claude/agents/scout.md',
@@ -275,7 +277,7 @@ function case6_specialists() {
   const target = tmpdir('orchestra-install-');
   const r = install(target, ['--specialists', 'modeler', '--no-packs']);
   check('install with --specialists modeler succeeds', ok(r), out(r));
-  check('specialist file installed alongside the core six', fs.existsSync(path.join(target, '.claude', 'agents', 'modeler.md')), '');
+  check('specialist file installed alongside the core eight', fs.existsSync(path.join(target, '.claude', 'agents', 'modeler.md')), '');
 
   const state = readJson(path.join(target, '.claude', 'orchestra-install.json'));
   check('orchestra-install.json records the specialist selection', Array.isArray(state.specialists) && state.specialists.includes('modeler'), JSON.stringify(state));

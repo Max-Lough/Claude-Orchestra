@@ -4,7 +4,7 @@ A transferable multi-agent harness for Claude Code. It casts the session model a
 
 The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: Director law binds only when it identifies a director model (Fable or Opus) at the helm; any other session model runs as plain Claude Code, with no denials. Two authoring carve-outs let the Director write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md`/`CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution — but the managed `<!-- ORCHESTRA:BEGIN/END -->` block inside `CLAUDE.md` stays off-limits even there.
 
-This is the **3.0 protocol**: a compact, legacy-only harness. The 2.0 control plane (tickets, a router, class registry, verifier, quartermaster, the `roster: "new"` project mode) is gone — see [`CHANGELOG.md`](CHANGELOG.md) and "Migrating from 2.x" below. What's left is `ORCHESTRA.md` (the protocol, ~90 lines), six Claude agents, three bundled skills, a session-model guard, and the optional `codex` pack.
+This is the **3.0 protocol**: a compact, legacy-only harness. The 2.0 control plane (tickets, a router, class registry, verifier, quartermaster, the `roster: "new"` project mode) is gone — see [`CHANGELOG.md`](CHANGELOG.md) and "Migrating from 2.x" below. What's left is `ORCHESTRA.md` (the protocol, ~90 lines), eight Claude agents, three bundled skills, a session-model guard, and the optional `codex` pack.
 
 ## Install, update, uninstall
 
@@ -102,6 +102,7 @@ The guard applies the same positive-evidence rule independently: it reads the se
 | Detective | `detective` | Opus | read-only *why/how* investigation; one question per case, evidence chains, confidence grade |
 | Executor | `executor` | Sonnet | routine edits, commands, builds, and tests |
 | Heavy executor | `executor-heavy` / `executor-heavy-xhigh` | Opus high / xhigh | hard, split-resistant, or escalated Claude work; chosen at PLAN time |
+| Principal executor | `executor-principal` / `executor-principal-xhigh` | Fable high / xhigh | exceptional Claude work — many coupled moving parts, an approach the plan cannot settle, or a second bounce at the heavy tier; the top rung, chosen at PLAN time |
 | Reviewer | `reviewer` | Opus, fresh context | fallback review; primary review of Codex-authored work |
 | Sol reviewer † | `reviewer-codex` | GPT-5.6 Sol | default independent review of Claude-authored campaign work |
 | Sol executor † | `executor-codex-heavy` | GPT-5.6 Sol, high | exceptional work that has given Anthropic models trouble; never routine work |
@@ -146,7 +147,7 @@ Then it runs `reviewer` in fresh context, repeats the alarm in the campaign's fi
 
 ## Executor steering
 
-Claude is the default. `executor` handles routine orders; the Opus heavy profiles (`executor-heavy`, `executor-heavy-xhigh`) are for hard or already-escalated work, chosen at PLAN time, never self-promoted. The optional Codex lane has exactly one executor, `executor-codex-heavy` (Sol, high) — route to it only when concrete prior evidence says Anthropic models have struggled with that specific problem.
+Claude is the default. `executor` handles routine orders; the Opus heavy profiles (`executor-heavy`, `executor-heavy-xhigh`) are for hard or already-escalated work; the Fable principal profiles (`executor-principal`, `executor-principal-xhigh`) are for exceptional work only — many coupled moving parts that resist splitting, an approach or outcome the plan cannot settle in advance, or an order that has already bounced twice at the heavy tier. All of it is chosen at PLAN time, never self-promoted; the escalation ladder is `executor` → `executor-heavy` → `executor-principal`, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS and, on escalated orders, sweeps the whole class of each reviewer finding rather than the cited instance. The optional Codex lane has exactly one executor, `executor-codex-heavy` (Sol, high) — route to it only when concrete prior evidence says Anthropic models have struggled with that specific problem.
 
 `executorEngine: "codex"` in `.claude/orchestra.json` is the durable, project-level choice; an in-conversation instruction ("run this order through codex") overrides it for the named session or order without a reinstall. A Codex executor's `STATUS: EXEC_UNAVAILABLE` is not a completed order — read its `TREE AUDIT`, have a scout confirm the tree, then route the order to the appropriate Claude executor and say so.
 
@@ -261,7 +262,7 @@ The 3.0 installer refuses a `roster: "new"` target outright rather than attempti
 Orchestra/
 ├── README.md, CHANGELOG.md, VERSION, ORCHESTRA.md
 ├── install.js / install.ps1 / install.sh   ← idempotent installer/uninstaller
-├── agents/            ← the six core Claude agents + specialists/
+├── agents/            ← the eight core Claude agents + specialists/
 ├── hooks/orchestra-guard.js  ← PreToolUse hook enforcing Director law
 ├── skills/             ← orchestra-status, orchestra-plan, orchestra-review
 ├── tests/               ← harness tests (master-only; never stamped into projects)

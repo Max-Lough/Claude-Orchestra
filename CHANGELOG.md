@@ -62,7 +62,7 @@ profiles are still the hard tier; the Sol executor stays exceptional-only.
 Fable is priced above Opus per token, so the tier earns its place only where
 it removes rounds — which is exactly the population the field record names.
 
-## 3.0.2 — docs-only work skips the cross-family lane, and five review-lane field fixes
+## 3.0.3 — docs-only work skips the cross-family lane, and five review-lane field fixes
 
 **The failure.** Review routing keyed on the author's vendor alone, so a
 prose-only commit — a README rewording, a CHANGELOG entry, a stale comment —
@@ -149,6 +149,34 @@ cross-vendor lanes.**
   NOT A VERDICT` heading that says what it is: a LEAD for the fallback reviewer
   to confirm or discard, never a result this lane produced. The `VERDICT:` line
   is untouched — a partial is never promoted to a verdict.
+
+## 3.0.2 — private relay inputs and bounded, credential-safe diagnostics
+
+**MCP relay hardening.** The Codex engine transport no longer serializes work
+orders and executor reports below the predictable project directory
+`.claude/scratch/mcp/`, where default POSIX permissions could expose them to
+other local users. Every call now receives an unpredictable directory under the
+OS temp root, explicitly mode `0700`, with exclusive `0600` input files; the
+directory is removed as soon as the runner closes. The transport tests inspect
+those permissions in the child process, prove the directory is outside the
+project, and prove cleanup occurred.
+
+**No stale process-group signal.** Cancellation and the MCP kill-backstop now
+terminate the detached POSIX process group immediately with `SIGKILL`. The old
+SIGTERM-then-timer escalation deliberately survived the runner's close, which
+meant its numeric process-group target could be reused before the delayed
+SIGKILL fired. Windows retains the measured `taskkill /T /F` path. The
+cancellation regression still proves both runner and grandchild are gone, and
+the server source is pinned against reintroducing a delayed kill timer.
+
+**Credential-safe diagnostics.** One shared redactor now covers quoted JSON
+credential keys, Basic and Bearer authorization, case variants of `sk-` tokens,
+and credential-bearing URLs for any URI scheme. Diagnostic handling refuses to
+scan inputs larger than 256 KiB and emits an omission marker instead, avoiding
+the prior redact-before-truncate full-buffer cost while preserving the safe
+ordering. The helper is used by the MCP transport, all three installed Codex
+lane runners, and the retained legacy Claude relay runners. Tests cover every
+credential shape and oversized diagnostics.
 
 ## 3.0.1 — coexistence with Codex-Orchestra, and a review cap that stops eating whole reviews
 

@@ -77,6 +77,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redact');
 
 // Per-run report-integrity token — same law as the exec runner's: the brief
 // requires the engine to echo it on a final REPORT INTEGRITY line, so a
@@ -161,9 +162,7 @@ function readFileOr(file, fallback) {
 }
 
 function tail(text, n) {
-  if (!text) return '';
-  const lines = text.replace(/\s+$/, '').split('\n');
-  return lines.slice(Math.max(0, lines.length - n)).join('\n');
+  return boundedDiagnosticLines(text, n);
 }
 
 function stringList(value) {
@@ -280,7 +279,7 @@ function makeScratchDir() {
     try {
       return { dir: fs.mkdtempSync(path.join(root, 'orchestra-crossplan-')), error: '' };
     } catch (e) {
-      tried.push(root + ' (' + ((e && e.message) || e) + ')');
+      tried.push(root + ' (' + boundedDiagnostic((e && e.message) || e, 2000) + ')');
     }
   }
   return { dir: '', error: 'no writable scratch root — tried: ' + tried.join('; ') };
@@ -330,7 +329,7 @@ function setupGitIsolation() {
     );
     SCRATCH.gitConfigFile = cfg;
   } catch (e) {
-    PREFLIGHT.push('git config isolation unavailable: ' + ((e && e.message) || e));
+    PREFLIGHT.push('git config isolation unavailable: ' + boundedDiagnostic((e && e.message) || e, 2000));
   }
 }
 
@@ -414,7 +413,7 @@ function restoreHelpers(helpersDir, installDir) {
   try {
     entries = fs.readdirSync(helpersDir);
   } catch (e) {
-    return { restored: [], note: 'helpersDir unreadable (' + ((e && e.message) || e) + ')' };
+    return { restored: [], note: 'helpersDir unreadable (' + boundedDiagnostic((e && e.message) || e, 2000) + ')' };
   }
   const restored = [];
   for (const entry of entries) {
@@ -426,7 +425,7 @@ function restoreHelpers(helpersDir, installDir) {
     } catch (e) {
       return {
         restored,
-        note: 'helper restore failed on ' + entry + ' (' + ((e && e.message) || e) + ')',
+        note: 'helper restore failed on ' + entry + ' (' + boundedDiagnostic((e && e.message) || e, 2000) + ')',
       };
     }
   }
@@ -735,7 +734,7 @@ function runAuthProbe(dir) {
       reason: 'the Codex CLI could not be launched (' + (r.error.code || 'spawn error') + ')',
       detail:
         'Launching ' + (CONFIG.resolvedBin || CONFIG.bin) + ' failed before any consultation ' +
-        'was attempted:\n  ' + String(r.error.message || r.error) + '\n' +
+        'was attempted:\n  ' + boundedDiagnostic(r.error.message || r.error, 2000) + '\n' +
         'This is the executable or the platform refusing the launch — not authentication, ' +
         'and not the model.',
     };
@@ -839,14 +838,16 @@ function printDocument(body, warning) {
 }
 
 function printUnavailable(reason, detail, att, suspectBody) {
+  const safeReason = boundedDiagnostic(reason, 4000);
+  const safeDetail = boundedDiagnostic(detail, 16000);
   const block = [
     'STATUS: CROSSPLAN_UNAVAILABLE',
     '',
     'REASON',
-    '- ' + reason,
+    '- ' + safeReason,
     '',
     'DETAIL',
-    detail ? detail.split('\n').map((l) => '  ' + l).join('\n') : '  (none)',
+    safeDetail ? safeDetail.split('\n').map((l) => '  ' + l).join('\n') : '  (none)',
     '',
     'FINALITY: this runner made ' + (att ? 'one' : 'no') + ' engine attempt and will make no',
     'more. The lane is read-only, so re-dispatching the same phase is safe once',
@@ -862,7 +863,7 @@ function printUnavailable(reason, detail, att, suspectBody) {
   const suspect = suspectBody
     ? '\n\n--- UNVERIFIED ENGINE OUTPUT (integrity check failed — possibly a replay of a\n' +
       '--- previous session; do not save or act on it as this run\'s document) ---\n' +
-      indent(suspectBody.replace(/\s+$/, ''), '  ')
+      indent(boundedDiagnostic(suspectBody, 16000), '  ')
     : '';
   process.stdout.write(unavailableHeader() + '\n\n' + block + suspect + diag + '\n');
 }
@@ -919,7 +920,7 @@ function classifyExit(run, elapsedMs) {
   if (run.error) {
     return {
       kind: 'spawn-error',
-      headline: 'failed to launch Codex: ' + String(run.error.message || run.error),
+      headline: 'failed to launch Codex: ' + boundedDiagnostic(run.error.message || run.error, 2000),
       killedBy: 'the launch itself failed (' + (run.error.code || 'no code') + ')',
       ran,
     };
@@ -1307,7 +1308,7 @@ function main() {
   } catch (e) {
     printUnavailable(
       'the document could not be saved',
-      'Writing ' + CONFIG.outPath + ' failed: ' + String((e && e.message) || e) + '\n' +
+      'Writing ' + CONFIG.outPath + ' failed: ' + boundedDiagnostic((e && e.message) || e, 2000) + '\n' +
         'The document was produced but not persisted; it is NOT relayed below to keep ' +
         'a failed save from masquerading as a saved plan. Fix the path and re-dispatch.',
       att
@@ -1324,7 +1325,7 @@ try {
   // Never throw an unhandled error back at the launcher — degrade to
   // CROSSPLAN_UNAVAILABLE so a crash cannot read as anything else.
   try {
-    printUnavailable('crossplan runner error', String((e && e.stack) || e));
+    printUnavailable('crossplan runner error', boundedDiagnostic((e && e.stack) || e, 16000));
   } catch (_) {
     process.stdout.write('STATUS: CROSSPLAN_UNAVAILABLE\n');
   }

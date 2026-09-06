@@ -127,7 +127,16 @@ applied — and the TOML reader is only the fallback for a Codex that lacks the
 command, said so in preflight. The copied-config rewrite also learned to stop
 a quoted `path` at its closing quote instead of folding a trailing comment
 into the filename, and to rebase a relative `[includeIf "gitdir:./…"]`
-condition along with the paths.
+condition along with the paths. Round 5 retired that rewrite the same way
+round 4 retired the TOML reader: the scratch config now carries the user's
+global config as git itself resolves it (`git config --global --list --null`,
+run in the tree the engine works in, re-serialised with git's own escaping),
+so includes and includeIf conditions are evaluated by git and no include text
+is ever copied. Two real holes closed with it: a user extra arg could re-enable
+a server the runner had skipped as already disabled (every known server now
+gets its override, after the user's args), and a pinned review discovered
+servers in the live project but launched in the throwaway worktree (discovery
+now runs where the engine runs, per attempt).
 
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 

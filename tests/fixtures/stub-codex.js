@@ -73,6 +73,12 @@ function flag(name) {
 // Decided before any attempt bookkeeping so the call never counts as a run.
 if (argv[0] === 'mcp') {
   const j = process.env.STUB_CODEX_MCP_JSON || '';
+  if (j === 'CWD') {
+    // One server named after the directory the question was asked in — how a
+    // test proves discovery ran where the engine runs (a pinned worktree).
+    process.stdout.write(JSON.stringify([{ name: 'in_' + path.basename(process.cwd()), enabled: true }]) + '\n');
+    process.exit(0);
+  }
   if (j) {
     process.stdout.write(j + '\n');
     process.exit(0);

@@ -2115,6 +2115,17 @@ function case29() {
     !/CROSS-FAMILY BREACH/.test(quoted) && /REVIEW ENGINE: Claude CLI \(opus\)/.test(quoted),
     quoted.slice(-600)
   );
+
+  // Astra, round 5: MCP discovery must run where the ENGINE runs. The stub
+  // names one server after the directory it was asked in; a pinned review
+  // asks in the throwaway worktree (…/attempt-1/wt), not the live project.
+  const where = runReview(fx, ['--head-ref', fx.head], { STUB_CODEX_MCP_JSON: 'CWD' }).stdout || '';
+  check(
+    'a pinned review discovers MCP servers in the worktree the engine runs in',
+    /mcp_servers\.in_wt\.enabled=false/.test(field(where, 'CONFIG_OVERRIDES')) &&
+      !/mcp_servers\.in_project\./.test(field(where, 'CONFIG_OVERRIDES')),
+    field(where, 'CONFIG_OVERRIDES')
+  );
 }
 
 async function main() {

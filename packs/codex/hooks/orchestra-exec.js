@@ -496,99 +496,6 @@ function teardownScratch() {
   }
 }
 
-// The files git itself reads as the "global" config, in git's own order:
-// $XDG_CONFIG_HOME/git/config (or ~/.config/git/config) and then ~/.gitconfig.
-// Resolved from the REAL environment, before GIT_CONFIG_GLOBAL is pointed at
-// the scratch file. Only files that exist are returned.
-function globalGitConfigFiles() {
-  // Git's own precedence, not os.homedir()'s: HOME first (on Windows too —
-  // Git for Windows honours a set HOME over USERPROFILE), then
-  // HOMEDRIVE+HOMEPATH, then the OS profile.
-  const home =
-    (process.env.HOME || '').trim() ||
-    ((process.env.HOMEDRIVE || '') && (process.env.HOMEPATH || '') ? process.env.HOMEDRIVE + process.env.HOMEPATH : '') ||
-    os.homedir();
-  const xdg = (process.env.XDG_CONFIG_HOME || '').trim() || (home ? path.join(home, '.config') : '');
-  const candidates = [];
-  if ((process.env.GIT_CONFIG_GLOBAL || '').trim()) candidates.push(process.env.GIT_CONFIG_GLOBAL.trim());
-  else {
-    if (xdg) candidates.push(path.join(xdg, 'git', 'config'));
-    if (home) candidates.push(path.join(home, '.gitconfig'));
-  }
-  return candidates.filter((f) => {
-    try {
-      return fs.statSync(f).isFile();
-    } catch (_) {
-      return false;
-    }
-  });
-}
-
-// The real global config, COPIED into the scratch config (read here, as the
-// host user, before GIT_CONFIG_GLOBAL is redirected). The first cut wrote an
-// `[include] path = …` instead, on the reading that git skips an include it
-// cannot read; Astra (round 3) showed a locked or ACL-denied include makes
-// git exit 128 ("unable to access … Permission denied", then "bad config
-// line") before any fallback applies — so the sandbox never opens the user's
-// file at all now. Relative `path =` values inside the copied text are
-// resolved against the file they came from, since git resolves them against
-// the file that contains them. Overrides written after the copy win.
-function gitIncludeSection(files) {
-  let out = '';
-  for (const f of files) {
-    let text;
-    try {
-      text = fs.readFileSync(f, 'utf8');
-    } catch (_) {
-      continue; // unreadable even to the runner: nothing to carry
-    }
-    const dir = path.dirname(f).replace(/\\/g, '/');
-    const isRel = (v) => !/^(~|\/|[A-Za-z]:[\\/]|\\\\)/.test(v);
-    const gitQuote = (v) => '"' + v.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
-    let inInclude = false;
-    const lines = text.split('\n').map((raw) => {
-      const line = raw.replace(/\r$/, '');
-      const t = line.trim();
-      if (/^\[/.test(t)) {
-        inInclude = /^\[\s*include(If\b|\s*\])/i.test(t);
-        // `[includeIf "gitdir:./x"]` — a condition starting with "./" is
-        // relative to the config file it sits in (Astra, round 4), so it is
-        // rebased the same way a relative path is.
-        const c = /^(\s*\[\s*includeIf\s+")(gitdir(?:\/i)?:)(\.\/[^"]*)("\s*\].*)$/i.exec(line);
-        if (c) return c[1] + c[2] + dir + c[3].slice(1) + c[4];
-        return line;
-      }
-      if (!inInclude) return line;
-      const m = /^(\s*path\s*=\s*)(.*)$/i.exec(line);
-      if (!m) return line;
-      // The value ends at the closing quote when quoted, else at the first
-      // comment character; a trailing comment is kept, never folded into the
-      // path (Astra, round 4: `path = "extra.inc" # shared` became a filename).
-      const rest = m[2];
-      let v;
-      let tail;
-      if (rest[0] === '"') {
-        let i = 1;
-        let val = '';
-        for (; i < rest.length && rest[i] !== '"'; i++) {
-          if (rest[i] === '\\' && i + 1 < rest.length) val += rest[++i];
-          else val += rest[i];
-        }
-        v = val;
-        tail = rest.slice(i + 1);
-      } else {
-        const stop = rest.search(/[#;]/);
-        v = (stop === -1 ? rest : rest.slice(0, stop)).trim();
-        tail = stop === -1 ? '' : ' ' + rest.slice(stop);
-      }
-      if (!v || !isRel(v)) return line;
-      return m[1] + gitQuote(dir + '/' + v) + tail;
-    });
-    out += '# ---- copied from ' + f.replace(/\\/g, '/') + '\n' + lines.join('\n') + '\n';
-  }
-  return out;
-}
-
 // Git LFS registers its clean/smudge filters in the user's GLOBAL config
 // (`git lfs install`). The include above carries them where the sandbox can
 // read that file; this explicit copy is for where it cannot. Without the
@@ -619,6 +526,57 @@ function lfsFilterSection() {
   return entries ? '[filter "lfs"]\n' + entries : '';
 }
 
+// The user's global git config, RESOLVED by git itself and re-serialised into
+// (`--includes` is required: git follows include.* only by default when it
+// searches all config files, not when one file is named with --global)
+// the scratch config. `git config --global --list --null`, run in the tree the
+// engine will work in, evaluates every include and includeIf (a gitdir
+// condition against the config file, an onbranch condition against that
+// tree) exactly as git would for the engine — so no include text is ever
+// copied or rewritten (Astra, rounds 3–5: every hand rewrite of include
+// syntax missed a form; git's own resolver misses none). Keys are written
+// back as `[section "subsection"] key = "value"` with git's escaping;
+// multi-valued keys keep their order; include.* / includeIf.* keys are
+// dropped because their effect is already in the list. The runner reads all
+// of this as the host user — the sandbox never opens the user's files.
+function globalGitConfigCopy(cwd) {
+  let r;
+  try {
+    r = spawnSync('git', ['config', '--global', '--includes', '--list', '--null'], {
+      cwd: cwd || process.cwd(),
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch (_) {
+    return '';
+  }
+  if (r.error || r.status !== 0 || !r.stdout) return '';
+  const esc = (v) =>
+    '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\t/g, '\\t') + '"';
+  const sections = new Map();
+  for (const rec of r.stdout.split('\0')) {
+    if (!rec) continue;
+    const nl = rec.indexOf('\n');
+    const key = nl === -1 ? rec : rec.slice(0, nl);
+    const val = nl === -1 ? null : rec.slice(nl + 1);
+    const first = key.indexOf('.');
+    const last = key.lastIndexOf('.');
+    if (first === -1) continue;
+    const section = key.slice(0, first);
+    if (section === 'include' || section === 'includeif') continue;
+    const name = key.slice(last + 1);
+    const sub = last > first ? key.slice(first + 1, last) : null;
+    const header = sub === null ? '[' + section + ']' : '[' + section + ' ' + esc(sub) + ']';
+    if (!sections.has(header)) sections.set(header, []);
+    sections.get(header).push('\t' + name + (val === null ? '' : ' = ' + esc(val)));
+  }
+  if (!sections.size) return '';
+  let out = "# ---- the user's global git config, resolved by git (includes applied) and copied\n";
+  for (const [h, lines] of sections) out += h + '\n' + lines.join('\n') + '\n';
+  return out;
+}
+
 // Same isolation as the review runner, with one executor-specific addition:
 // the user's global identity is COPIED IN. Dropping the global config also
 // drops user.name/user.email, and an executor whose order says "commit" would
@@ -642,7 +600,7 @@ function setupGitIsolation() {
   };
   const name = identity('user.name');
   const email = identity('user.email');
-  const includes = gitIncludeSection(globalGitConfigFiles());
+  const includes = globalGitConfigCopy(CONFIG.execDir);
   const lfs = lfsFilterSection();
   const empty = path.join(SCRATCH.dir, 'git-empty');
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
@@ -880,9 +838,11 @@ function mcpServersFromCodex(dir) {
     if (start === -1) return null;
     const parsed = JSON.parse(out.slice(start));
     if (!Array.isArray(parsed)) return null;
-    return parsed
-      .filter((e) => e && typeof e.name === 'string' && e.enabled !== false)
-      .map((e) => e.name);
+    // Every server Codex knows, the already-disabled ones included: the
+    // disabling override is written for each, because our -c flags come
+    // AFTER any user extra args and a `mcp_servers.x.enabled=true` there
+    // would otherwise win for a server we had skipped (Astra, round 5).
+    return parsed.filter((e) => e && typeof e.name === 'string').map((e) => e.name);
   } catch (_) {
     return null;
   }

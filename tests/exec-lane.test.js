@@ -1436,11 +1436,25 @@ function case21() {
   }).stdout || '';
   const lov = field(live, 'CONFIG_OVERRIDES');
   check(
-    'server names come from `codex mcp list --json` when Codex answers',
-    lov.includes('mcp_servers.live_one.enabled=false') && !/mcp_servers\.off\./.test(lov) &&
-      /mcp: stripped \(1 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
+    'server names come from `codex mcp list --json` when Codex answers, already-disabled ones included',
+    lov.includes('mcp_servers.live_one.enabled=false') && lov.includes('mcp_servers.off.enabled=false') &&
+      /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
       !/own TOML reader/.test(live) && !/could not read/.test(live),
     live.split('\n')[0] + ' — ' + lov
+  );
+  // Astra, round 5: a user extra arg re-enabling a server the runner had
+  // skipped as "already disabled" reached the engine unopposed. Every known
+  // server gets its override, and ours come last.
+  const hostileMcp = runExec(fx, [], {
+    CODEX_HOME: opaqueHome,
+    STUB_CODEX_MCP_JSON: '[{"name":"off","enabled":false}]',
+    ORCHESTRA_EXEC_ARGS: '-c mcp_servers.off.enabled=true',
+  }).stdout || '';
+  const hov = field(hostileMcp, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'a user extra arg cannot re-enable a server: the disabling override comes after it',
+    hov.lastIndexOf('mcp_servers.off.enabled=false') > hov.indexOf('mcp_servers.off.enabled=true'),
+    hov.join(' | ')
   );
 
   // Astra, same review: git resolves its global config from HOME first, and

@@ -501,7 +501,13 @@ function teardownScratch() {
 // Resolved from the REAL environment, before GIT_CONFIG_GLOBAL is pointed at
 // the scratch file. Only files that exist are returned.
 function globalGitConfigFiles() {
-  const home = os.homedir();
+  // Git's own precedence, not os.homedir()'s: HOME first (on Windows too —
+  // Git for Windows honours a set HOME over USERPROFILE), then
+  // HOMEDRIVE+HOMEPATH, then the OS profile.
+  const home =
+    (process.env.HOME || '').trim() ||
+    ((process.env.HOMEDRIVE || '') && (process.env.HOMEPATH || '') ? process.env.HOMEDRIVE + process.env.HOMEPATH : '') ||
+    os.homedir();
   const xdg = (process.env.XDG_CONFIG_HOME || '').trim() || (home ? path.join(home, '.config') : '');
   const candidates = [];
   if ((process.env.GIT_CONFIG_GLOBAL || '').trim()) candidates.push(process.env.GIT_CONFIG_GLOBAL.trim());
@@ -625,27 +631,121 @@ function setupGitIsolation() {
 // would create a half-entry that fails config validation and kills the run.
 // So only the user-level config is acted on; a project-level
 // .codex/config.toml that declares servers is named in the header instead.
+// Every TOML shape a server declaration can take: `[mcp_servers.<name>]`
+// headers (and `[mcp_servers.<name>.env]` sub-headers), a `[mcp_servers]`
+// table with `<name> = { … }` or `<name>.command = …` lines, top-level dotted
+// keys `mcp_servers.<name>.command = …`, and an inline table
+// `mcp_servers = { <name> = { … }, … }` (Astra's review of 3.3.0 found the
+// first cut read only the header form and reported "0 server(s) disabled"
+// for the rest). `opaque` is set when the file mentions mcp_servers in a
+// shape none of these readers understood, so the header can say so instead
+// of claiming a clean strip.
 function mcpServerNames(file) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (_) {
-    return { bare: [], quoted: [] };
+    return { bare: [], quoted: [], opaque: false };
   }
   const bare = [];
   const quoted = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    const m = /^\[\s*mcp_servers\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*(?:[\].])/.exec(line);
-    if (!m) continue;
-    if (m[3] !== undefined) {
-      if (!bare.includes(m[3])) bare.push(m[3]);
-    } else {
-      const q = m[1] !== undefined ? m[1] : m[2];
+  const KEY = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)';
+  const add = (raw) => {
+    const k = String(raw || '').trim();
+    if (!k) return;
+    if (k[0] === '"' || k[0] === "'") {
+      const q = k.slice(1, -1);
       if (!quoted.includes(q)) quoted.push(q);
+    } else if (/^[A-Za-z0-9_-]+$/.test(k) && !bare.includes(k)) bare.push(k);
+  };
+  // Keys at depth 1 of an inline table. Returns whether the table closed, so
+  // a table spread over several lines can be accumulated and re-scanned.
+  const scanInline = (src) => {
+    let depth = 0;
+    let str = '';
+    let key = '';
+    let skip = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (str) {
+        if (depth === 1) key += ch;
+        if (ch === '\\' && str === '"') {
+          i++;
+          if (depth === 1 && i < src.length) key += src[i];
+        } else if (ch === str) str = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        str = ch;
+        if (depth === 1) key += ch;
+        continue;
+      }
+      if (ch === '{') {
+        depth++;
+        if (depth === 1) {
+          key = '';
+          skip = false;
+        }
+        continue;
+      }
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) return true;
+        continue;
+      }
+      if (depth !== 1) continue;
+      if (ch === '=' || ch === '.') {
+        // `a.b = …` names server `a`; the rest of the dotted key is not a name.
+        if (!skip) add(key);
+        skip = true;
+        key = '';
+      } else if (ch === ',') {
+        skip = false;
+        key = '';
+      } else key += ch;
+    }
+    return false;
+  };
+  let section = '';
+  let pending = '';
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (pending) {
+      pending += '\n' + line;
+      if (scanInline(pending)) pending = '';
+      continue;
+    }
+    const t = line.trim();
+    if (!t || t[0] === '#') continue;
+    let m;
+    if ((m = new RegExp('^\\[\\s*mcp_servers\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
+      add(m[1]);
+      section = 'mcp_servers.x';
+      continue;
+    }
+    if (/^\[\s*mcp_servers\s*\]/.test(t)) {
+      section = 'mcp_servers';
+      continue;
+    }
+    if (t[0] === '[') {
+      section = 'other';
+      continue;
+    }
+    if (section === '' && (m = new RegExp('^mcp_servers\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
+    }
+    if (section === '' && (m = /^mcp_servers\s*=\s*(\{[\s\S]*)$/.exec(t))) {
+      if (!scanInline(m[1])) pending = m[1];
+      continue;
+    }
+    if (section === 'mcp_servers' && (m = new RegExp('^' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
     }
   }
-  return { bare, quoted };
+  const opaque = /^\s*\[?\s*mcp_servers\b/m.test(text) && !bare.length && !quoted.length;
+  return { bare, quoted, opaque };
 }
 
 function mcpIsolation(dir) {
@@ -656,6 +756,12 @@ function mcpIsolation(dir) {
   const args = ['-c', 'features.apps=false'];
   for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
   const notes = [];
+  if (user.opaque) {
+    notes.push(
+      'mcp: the Codex config declares mcp_servers in a shape this runner could not read — nothing was ' +
+        'disabled by name; check ' + path.join(codexHome, 'config.toml') + ' by hand before trusting this run as cross-vendor'
+    );
+  }
   if (user.quoted.length) {
     notes.push(
       'mcp: ' + user.quoted.length + ' server(s) in the Codex config could not be disabled — a quoted ' +
@@ -979,9 +1085,10 @@ function treeStateLines(before) {
   const harness = lines.map((l) => porcelainPath(l)).filter(isHarnessOwned);
   return [
     'TREE STATE BEFORE YOU STARTED (measured by the runner, not by you):',
-    lines.length + ' path(s) were already dirty. They are not yours, not part of',
-    'this order, and not evidence about it — never revert, stage, or "clean up"',
-    'any of them.',
+    lines.length + ' path(s) were already dirty. The work order governs them: where',
+    'it names one of these paths (finish it, commit it, build on it), do as it',
+    'says. Where it does not, they are not yours — never revert, stage, or',
+    '"clean up" an unnamed one, and never report it as your change.',
     ...shown.map((l) => '  ' + l),
     ...(lines.length > shown.length ? ['  …and ' + (lines.length - shown.length) + ' more'] : []),
     ...(harness.length

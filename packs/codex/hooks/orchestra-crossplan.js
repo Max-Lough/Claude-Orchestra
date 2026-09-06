@@ -304,7 +304,13 @@ function teardownScratch() {
 // The files git itself reads as the "global" config, in git's own order.
 // Resolved from the REAL environment, before GIT_CONFIG_GLOBAL is redirected.
 function globalGitConfigFiles() {
-  const home = os.homedir();
+  // Git's own precedence, not os.homedir()'s: HOME first (on Windows too —
+  // Git for Windows honours a set HOME over USERPROFILE), then
+  // HOMEDRIVE+HOMEPATH, then the OS profile.
+  const home =
+    (process.env.HOME || '').trim() ||
+    ((process.env.HOMEDRIVE || '') && (process.env.HOMEPATH || '') ? process.env.HOMEDRIVE + process.env.HOMEPATH : '') ||
+    os.homedir();
   const xdg = (process.env.XDG_CONFIG_HOME || '').trim() || (home ? path.join(home, '.config') : '');
   const candidates = [];
   if ((process.env.GIT_CONFIG_GLOBAL || '').trim()) candidates.push(process.env.GIT_CONFIG_GLOBAL.trim());
@@ -327,6 +333,30 @@ function gitIncludeSection(files) {
   return '[include]\n' + files.map((f) => '\tpath = ' + quote(f) + '\n').join('');
 }
 
+// The explicit LFS-filter copy the exec and review runners carry, for the
+// sandbox that cannot read the included global config: without the filters
+// every LFS-tracked asset the architect reads is a pointer.
+function lfsFilterSection() {
+  const lfs = spawnSync('git', ['config', '--global', '--get-regexp', '^filter\\.lfs\\.'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (lfs.status !== 0 || !lfs.stdout) return '';
+  const entries = lfs.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const sp = l.indexOf(' ');
+      const key = sp === -1 ? l : l.slice(0, sp);
+      const val = sp === -1 ? '' : l.slice(sp + 1);
+      const m = /^filter\.lfs\.([A-Za-z]+)$/.exec(key);
+      return m ? '\t' + m[1] + ' = ' + val + '\n' : '';
+    })
+    .join('');
+  return entries ? '[filter "lfs"]\n' + entries : '';
+}
+
 // MCP isolation — same mechanism and the same limits as the review and exec
 // runners (see orchestra-review.js): every server the user-level Codex config
 // declares is disabled by name, the apps connector is switched off, and a
@@ -336,22 +366,107 @@ function mcpServerNames(file) {
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (_) {
-    return { bare: [], quoted: [] };
+    return { bare: [], quoted: [], opaque: false };
   }
   const bare = [];
   const quoted = [];
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    const m = /^\[\s*mcp_servers\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*(?:[\].])/.exec(line);
-    if (!m) continue;
-    if (m[3] !== undefined) {
-      if (!bare.includes(m[3])) bare.push(m[3]);
-    } else {
-      const q = m[1] !== undefined ? m[1] : m[2];
+  const KEY = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)';
+  const add = (raw) => {
+    const k = String(raw || '').trim();
+    if (!k) return;
+    if (k[0] === '"' || k[0] === "'") {
+      const q = k.slice(1, -1);
       if (!quoted.includes(q)) quoted.push(q);
+    } else if (/^[A-Za-z0-9_-]+$/.test(k) && !bare.includes(k)) bare.push(k);
+  };
+  // Keys at depth 1 of an inline table. Returns whether the table closed, so
+  // a table spread over several lines can be accumulated and re-scanned.
+  const scanInline = (src) => {
+    let depth = 0;
+    let str = '';
+    let key = '';
+    let skip = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (str) {
+        if (depth === 1) key += ch;
+        if (ch === '\\' && str === '"') {
+          i++;
+          if (depth === 1 && i < src.length) key += src[i];
+        } else if (ch === str) str = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        str = ch;
+        if (depth === 1) key += ch;
+        continue;
+      }
+      if (ch === '{') {
+        depth++;
+        if (depth === 1) {
+          key = '';
+          skip = false;
+        }
+        continue;
+      }
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) return true;
+        continue;
+      }
+      if (depth !== 1) continue;
+      if (ch === '=' || ch === '.') {
+        // `a.b = …` names server `a`; the rest of the dotted key is not a name.
+        if (!skip) add(key);
+        skip = true;
+        key = '';
+      } else if (ch === ',') {
+        skip = false;
+        key = '';
+      } else key += ch;
+    }
+    return false;
+  };
+  let section = '';
+  let pending = '';
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (pending) {
+      pending += '\n' + line;
+      if (scanInline(pending)) pending = '';
+      continue;
+    }
+    const t = line.trim();
+    if (!t || t[0] === '#') continue;
+    let m;
+    if ((m = new RegExp('^\\[\\s*mcp_servers\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
+      add(m[1]);
+      section = 'mcp_servers.x';
+      continue;
+    }
+    if (/^\[\s*mcp_servers\s*\]/.test(t)) {
+      section = 'mcp_servers';
+      continue;
+    }
+    if (t[0] === '[') {
+      section = 'other';
+      continue;
+    }
+    if (section === '' && (m = new RegExp('^mcp_servers\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
+    }
+    if (section === '' && (m = /^mcp_servers\s*=\s*(\{[\s\S]*)$/.exec(t))) {
+      if (!scanInline(m[1])) pending = m[1];
+      continue;
+    }
+    if (section === 'mcp_servers' && (m = new RegExp('^' + KEY + '\\s*[.=]').exec(t))) {
+      add(m[1]);
+      continue;
     }
   }
-  return { bare, quoted };
+  const opaque = /^\s*\[?\s*mcp_servers\b/m.test(text) && !bare.length && !quoted.length;
+  return { bare, quoted, opaque };
 }
 
 function mcpIsolation(dir) {
@@ -362,6 +477,12 @@ function mcpIsolation(dir) {
   const args = ['-c', 'features.apps=false'];
   for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
   const notes = [];
+  if (user.opaque) {
+    notes.push(
+      'mcp: the Codex config declares mcp_servers in a shape this runner could not read — nothing was ' +
+        'disabled by name; check ' + path.join(codexHome, 'config.toml') + ' by hand before trusting this run as cross-vendor'
+    );
+  }
   if (user.quoted.length) {
     notes.push(
       'mcp: ' + user.quoted.length + ' server(s) in the Codex config could not be disabled — a quoted ' +
@@ -413,6 +534,7 @@ function setupGitIsolation() {
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '[safe]\n' +
         '\tdirectory = *\n' +
+        lfsFilterSection() +
         (name || email
           ? '[user]\n' +
             (name ? '\tname = ' + name + '\n' : '') +

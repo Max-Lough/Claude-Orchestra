@@ -144,13 +144,16 @@ function writeProjectConfig(fx, codexCfg) {
 
 function runReview(fx, extraArgs, extraEnv, opts) {
   const args = [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er].concat(extraArgs || []);
+  // A suite run INSIDE a review lane inherits that runner's GIT_CONFIG_GLOBAL;
+  // a case that wants the variable sets it itself.
+  const base = Object.assign({}, process.env);
+  delete base.GIT_CONFIG_GLOBAL;
   return spawnSync(process.execPath, args, {
     cwd: (opts && opts.cwd) || fx.repo,
     encoding: 'utf8',
     timeout: 120000,
     env: Object.assign(
-      {},
-      process.env,
+      base,
       {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
@@ -2101,6 +2104,17 @@ function case29() {
     del.slice(-900)
   );
   check('an ordinary verdict carries no breach stamp', !/CROSS-FAMILY BREACH/.test(g), g.slice(-400));
+  // Astra's review of the first cut was itself stamped: a finding QUOTED the
+  // header text mid-sentence as evidence. Only a header line counts.
+  const quoted = runReview(fx, ['--head-ref', fx.head], {
+    STUB_CODEX_EXTRA_LINES:
+      'FINDINGS\\n- [MINOR] the executor report cites `REVIEW ENGINE: Claude CLI (opus)` as evidence of an earlier round',
+  }).stdout || '';
+  check(
+    'a finding that merely quotes the Claude header text is not a breach',
+    !/CROSS-FAMILY BREACH/.test(quoted) && /REVIEW ENGINE: Claude CLI \(opus\)/.test(quoted),
+    quoted.slice(-600)
+  );
 }
 
 async function main() {

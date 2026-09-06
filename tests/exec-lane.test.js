@@ -108,13 +108,17 @@ function writeProjectConfig(fx, cfg) {
 
 function runExec(fx, extraArgs, extraEnv, opts) {
   const args = [RUNNER, '--work-order', fx.wo].concat(extraArgs || []);
+  // A suite run INSIDE a review or exec lane inherits that runner's
+  // GIT_CONFIG_GLOBAL (Astra hit two environment-dependent failures this way
+  // while reviewing 3.3.0); a case that wants the variable sets it itself.
+  const base = Object.assign({}, process.env);
+  delete base.GIT_CONFIG_GLOBAL;
   return spawnSync(process.execPath, args, {
     cwd: (opts && opts.cwd) || fx.repo,
     encoding: 'utf8',
     timeout: 120000,
     env: Object.assign(
-      {},
-      process.env,
+      base,
       {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
@@ -1305,6 +1309,61 @@ function case21() {
   );
   const env = runExec(fx, [], { CODEX_HOME: codexHome, ORCHESTRA_EXEC_MCP: 'strip' }).stdout || '';
   check('the env var outranks the config', /mcp: stripped/.test(env.split('\n')[0]), env.split('\n')[0]);
+
+  // Astra's review of the first cut (2026-09-06): every other TOML shape a
+  // server can be declared in went unseen and the header claimed a clean
+  // strip. Each shape is a fixture now.
+  writeProjectConfig(fx, { codex: {} });
+  const shapes = [
+    ['inline table', 'mcp_servers = { delta = { command = "node" }, "e f" = { url = "http://x" }, zeta.command = "y" }\n',
+      ['delta', 'zeta'], ['e f']],
+    ['[mcp_servers] table', 'x = 1\n[mcp_servers]\nclaude = { command = "node" }\ngamma.command = "node"\n[other]\nz = { a = 1 }\n',
+      ['claude', 'gamma'], []],
+    ['top-level dotted keys', 'mcp_servers.eps.command = "node"\nmcp_servers."q r".url = "http://x"\n',
+      ['eps'], ['q r']],
+    ['multi-line inline table', 'mcp_servers = {\n  multi = { command = "node" },\n  two = { command = "x" }\n}\n',
+      ['multi', 'two'], []],
+  ];
+  for (const [label, toml, wantBare, wantQuoted] of shapes) {
+    const h = path.join(fx.root, 'codex-home-' + wantBare[0]);
+    fs.mkdirSync(h, { recursive: true });
+    fs.writeFileSync(path.join(h, 'config.toml'), toml);
+    const o = runExec(fx, [], { CODEX_HOME: h }).stdout || '';
+    const ov = field(o, 'CONFIG_OVERRIDES');
+    check(
+      'servers declared as ' + label + ' are disabled by name',
+      wantBare.every((n) => ov.includes('mcp_servers.' + n + '.enabled=false')) &&
+        !/mcp_servers\.(command|url|env)\./.test(ov) &&
+        new RegExp('mcp: stripped \\(' + wantBare.length + ' server\\(s\\) disabled').test(o.split('\n')[0]) &&
+        wantQuoted.every((q) => o.includes(JSON.stringify(q))),
+      o.split('\n')[0] + ' — ' + ov
+    );
+  }
+  const opaqueHome = path.join(fx.root, 'codex-home-opaque');
+  fs.mkdirSync(opaqueHome, { recursive: true });
+  fs.writeFileSync(path.join(opaqueHome, 'config.toml'), '[mcp_servers]\n# nothing this reader understands\n= broken\n');
+  const op = runExec(fx, [], { CODEX_HOME: opaqueHome }).stdout || '';
+  check(
+    'a config that mentions mcp_servers in an unreadable shape is reported, not claimed clean',
+    /mcp: stripped \(0 server\(s\) disabled/.test(op.split('\n')[0]) && /could not read/.test(op),
+    op.slice(0, 1200)
+  );
+
+  // Astra, same review: git resolves its global config from HOME first, and
+  // os.homedir() on Windows is USERPROFILE — with the two apart, the include
+  // pointed at the wrong file and the credential helper was gone again.
+  const homeDir = path.join(fx.root, 'home');
+  const profileDir = path.join(fx.root, 'profile');
+  fs.mkdirSync(homeDir, { recursive: true });
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.gitconfig'), '[credential]\n\thelper = home-test-helper\n');
+  fs.writeFileSync(path.join(profileDir, '.gitconfig'), '[credential]\n\thelper = profile-helper\n');
+  const hp = runExec(fx, [], { HOME: homeDir, USERPROFILE: profileDir }).stdout || '';
+  check(
+    'the include follows git\'s own precedence: HOME before USERPROFILE',
+    field(hp, 'GIT_CREDENTIAL_HELPER') === 'home-test-helper',
+    'GIT_CREDENTIAL_HELPER: ' + field(hp, 'GIT_CREDENTIAL_HELPER')
+  );
 }
 
 function finish() {

@@ -87,6 +87,24 @@ helper and LFS filter it sees. The suites point the runners at an empty
 `CODEX_HOME` by default so a developer's real Codex config never leaks into
 the exact override lists.
 
+**Reviewed by Astra, through the lane it fixes.** The first cut was sent
+through `orchestra-review.js` pinned to its own commit with `gpt-6-astra`
+as the engine — the local proof that the lane runs: the new install layout
+named, three MCP servers stripped, one verdict. It came back REVISE with
+five findings, all real and all fixed before merge: the MCP reader saw only
+`[mcp_servers.<name>]` headers and reported "0 server(s) disabled" for an
+inline table, a `[mcp_servers]` table, or top-level dotted keys (every shape
+is read now, and a config that mentions `mcp_servers` in a shape the reader
+cannot parse is said so in preflight); the global-config include resolved
+the home from `os.homedir()` (USERPROFILE on Windows) where git reads HOME
+first; the breach detector matched the header text anywhere in the verdict —
+and stamped Astra's own verdict, because a finding quoted it as evidence — so
+it now matches only a header line; the tree-state block forbade staging a
+pre-existing path even when the order said to finish and commit it; and the
+cross-plan runner lacked the explicit LFS copy. The suites also stop
+inheriting a running lane's `GIT_CONFIG_GLOBAL`, which had cost Astra two
+environment-dependent failures while re-running them inside the review.
+
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 
 **Why.** OpenAI shipped GPT-6 Astra on 2026-09-03. On Terminal-Bench 4.0 it

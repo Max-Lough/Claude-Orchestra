@@ -118,6 +118,7 @@ function runExec(fx, extraArgs, extraEnv, opts) {
       {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
+        CODEX_HOME: CLEAN_CODEX_HOME,
         ORCHESTRA_EXEC_IDLE_MS: '0',
         // The executor report shape, so the runner's missing-STATUS note is
         // exercised deliberately (case 8) rather than on every case.
@@ -159,6 +160,16 @@ const STUB_BIN = (() => {
   return makeStubBin(dir, 'codex');
 })();
 
+// An empty CODEX_HOME by default: the runner reads the user's Codex config to
+// decide which MCP servers to disable, and the developer's real ~/.codex must
+// never leak into the exact override lists asserted below. Case 21 points at
+// a fixture config on purpose.
+const CLEAN_CODEX_HOME = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-exec-codex-home-'));
+  cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+})();
+
 // ---------------------------------------------------------------- the tests
 
 function case1() {
@@ -181,7 +192,7 @@ function case1() {
   );
   check(
     'the default effort is high, pinned as a config value, not prose',
-    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0' &&
+    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
       /effort: high/.test(out.split('\n')[0]),
     'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES') + ' — ' + out.split('\n')[0]
   );
@@ -203,7 +214,7 @@ function case1() {
   const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
   check(
     'user-supplied executor args cannot undo the coexistence boundary',
-    hostileOverrides.slice(-2).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0',
+    hostileOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
     'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
   );
   check(
@@ -268,7 +279,7 @@ function case2() {
   const effortCfg = runExec(fx2, []);
   check(
     'orchestra.json (codex.execHeavyEffort) supplies the effort',
-    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0' &&
+    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
       /effort: medium/.test((effortCfg.stdout || '').split('\n')[0]),
     (effortCfg.stdout || '').split('\n')[0]
   );
@@ -887,7 +898,7 @@ function case18() {
   check(
     'the principal rung sends its effort to codex, not just to the header',
     field(pout, 'CONFIG_OVERRIDES') ===
-      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0',
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
     'CONFIG_OVERRIDES: ' + field(pout, 'CONFIG_OVERRIDES')
   );
 
@@ -1197,6 +1208,105 @@ function case20() {
 
 // ------------------------------------------------------------------ driver
 
+// 21. FIX (field, 2026-09-06): three failures with one root — the scratch git
+//     config REPLACED the user's global config, which dropped the credential
+//     helper (a sandboxed `git fetch` died on "could not read Username") and
+//     the LFS filters (15 untouched PNGs read as modified, and Astra refused a
+//     "clean tree" precondition twice). The same campaign found the engine
+//     could not tell pre-existing dirt from its own, and that a Codex config
+//     declaring a same-vendor MCP turned a cross-vendor run into delegation.
+function case21() {
+  section('21. Global git config carries across; tree state and MCP isolation reach the engine');
+  const fx = makeRepo();
+  const globalCfg = path.join(fx.root, 'global-gitconfig');
+  fs.writeFileSync(
+    globalCfg,
+    '[user]\n\tname = Global Person\n\temail = g@example.com\n' +
+      '[credential]\n\thelper = orchestra-test-helper\n' +
+      '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n' +
+      '\tprocess = git-lfs filter-process\n'
+  );
+  // Pre-existing dirt: a harness-owned untracked file and a modified tracked file.
+  fs.mkdirSync(path.join(fx.repo, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(fx.repo, '.claude', 'settings.local.json'), '{}\n');
+  fs.appendFileSync(path.join(fx.repo, 'app.js'), '// edited before the run\n');
+  // A Codex config with two bare-named servers (one declared only through a
+  // subsection) and one quoted name that -c cannot address.
+  const codexHome = path.join(fx.root, 'codex-home');
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, 'config.toml'),
+    'model = "gpt-5.6-sol"\n\n[mcp_servers.alpha]\ncommand = "node"\n\n' +
+      '[mcp_servers.beta.env]\nX = "1"\n\n[mcp_servers."odd name"]\ncommand = "node"\n'
+  );
+  const r = runExec(fx, [], { GIT_CONFIG_GLOBAL: globalCfg, CODEX_HOME: codexHome });
+  const out = r.stdout || '';
+  const head = out.split('\n')[0];
+  check(
+    'the engine sees the user\'s credential helper through the scratch config',
+    field(out, 'GIT_CREDENTIAL_HELPER') === 'orchestra-test-helper',
+    'GIT_CREDENTIAL_HELPER: ' + field(out, 'GIT_CREDENTIAL_HELPER')
+  );
+  check(
+    'the engine sees the LFS clean filter (an LFS-tracked tree no longer reads as modified)',
+    field(out, 'GIT_LFS_CLEAN') === 'git-lfs clean -- %f',
+    'GIT_LFS_CLEAN: ' + field(out, 'GIT_LFS_CLEAN')
+  );
+  check(
+    'identity still carries',
+    field(out, 'GIT_USER_NAME') === 'Global Person',
+    'GIT_USER_NAME: ' + field(out, 'GIT_USER_NAME')
+  );
+  check(
+    'isolation is still on: the engine reads a scratch config, not the real one',
+    field(out, 'GIT_CONFIG_GLOBAL') !== '(unset)' &&
+      path.resolve(field(out, 'GIT_CONFIG_GLOBAL')) !== path.resolve(globalCfg),
+    'GIT_CONFIG_GLOBAL: ' + field(out, 'GIT_CONFIG_GLOBAL')
+  );
+  const markers = field(out, 'BRIEF_MARKERS');
+  check('the pre-existing dirty set reaches the brief', /TREE STATE BEFORE YOU STARTED/.test(markers), markers);
+  check('harness-owned files are named as such', /harness-owned session files/.test(markers), markers);
+  check('the credential caveat is part of the git rule', /may carry no GitHub credentials/.test(markers), markers);
+  const overrides = field(out, 'CONFIG_OVERRIDES');
+  check(
+    'bare-named MCP servers are disabled by name, subsection-only declarations included',
+    overrides.includes('mcp_servers.alpha.enabled=false') &&
+      overrides.includes('mcp_servers.beta.enabled=false') &&
+      overrides.includes('features.apps=false'),
+    overrides
+  );
+  check('a quoted name is never addressed through -c (it would create a half-entry)', !/odd/.test(overrides), overrides);
+  check(
+    'the header states the MCP posture, including what could not be addressed',
+    /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(head),
+    head
+  );
+  check('the unaddressable name is reported in preflight', /"odd name"/.test(out), out.slice(0, 1500));
+
+  // A project-level .codex/config.toml is named, never touched: Codex loads it
+  // only for a trusted project, and disabling a server it has not loaded
+  // would kill the run on config validation.
+  fs.mkdirSync(path.join(fx.repo, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(fx.repo, '.codex', 'config.toml'), '[mcp_servers.proj]\ncommand = "node"\n');
+  const p = runExec(fx, [], { CODEX_HOME: codexHome }).stdout || '';
+  check(
+    'a project-level MCP server is named in preflight and not disabled',
+    /declares 1 MCP server\(s\) \(proj\)/.test(p) && !/mcp_servers\.proj/.test(field(p, 'CONFIG_OVERRIDES')),
+    p.slice(0, 1500)
+  );
+
+  // inherit, from config and outranked by env.
+  writeProjectConfig(fx, { codex: { engineMcp: 'inherit' } });
+  const inh = runExec(fx, [], { CODEX_HOME: codexHome }).stdout || '';
+  check(
+    'engineMcp: inherit leaves the engine\'s MCP config alone',
+    /mcp: inherited/.test(inh.split('\n')[0]) && !/features\.apps=false|mcp_servers\./.test(field(inh, 'CONFIG_OVERRIDES')),
+    inh.split('\n')[0] + ' — ' + field(inh, 'CONFIG_OVERRIDES')
+  );
+  const env = runExec(fx, [], { CODEX_HOME: codexHome, ORCHESTRA_EXEC_MCP: 'strip' }).stdout || '';
+  check('the env var outranks the config', /mcp: stripped/.test(env.split('\n')[0]), env.split('\n')[0]);
+}
+
 function finish() {
   for (const c of cleanups) {
     try {
@@ -1229,6 +1339,7 @@ async function main() {
   case18();
   case19();
   case20();
+  case21();
 }
 
 main().then(finish, (e) => {

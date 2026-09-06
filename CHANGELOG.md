@@ -9,6 +9,84 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.3.0 — the Astra/Codex lane after its first campaign: eight field issues, one root for three of them
+
+**Why.** The ADR-0005 campaign (2026-09-06) was the first to run the 3.2.0
+ladder end to end — Astra executing, Sol reviewing, a Godot/Blender project
+with LFS assets — and its Director kept a running list of what broke
+(`plans/orchestra-codex-issues.md`). Three of the eight items had the same
+root: the scratch global git config each runner hands the engine used to
+REPLACE the user's global config, and everything the global config carried
+went with it — the credential helper (`git fetch origin` inside the sandbox
+died on "could not read Username for 'https://github.com'"), the LFS filters
+(15 untouched PNGs under `docs/art/**` read as modified, and Astra, correctly,
+refused a "clean tree" precondition twice), URL rewrites. The scratch config
+now includes the real global config first — git skips an include it cannot
+read, silently, so the sandbox that motivated the isolation loses nothing —
+and copies `filter.lfs.*` across explicitly for the case where it can't.
+
+**Cross-family review is the first goal, and now the runner enforces it.**
+PR #435 round 3 came back with an inner `REVIEW ENGINE: Claude CLI (opus …)`
+header under the Sol header: the engine had found a Claude review MCP in the
+Codex config and delegated the whole review to it. "No MCP" in the brief did
+not stop it. Every runner now launches the engine with every MCP server in
+the user's Codex config disabled by name and the Codex apps connector off
+(`codex.engineMcp`, default `strip`; verified against codex-cli 0.153.2 — the
+engine reports no MCP tools at all), the header carries an `mcp:` line, and a
+verdict that still names a Claude engine as its author is stamped
+`⚠ CROSS-FAMILY BREACH` rather than relayed as OpenAI's own. Two limits are
+stated rather than hidden: a server name that needs TOML quoting cannot be
+addressed through `-c`, and a project-level `.codex/config.toml` is named in
+preflight, not touched — Codex loads it only for a trusted project, and
+disabling a server it has not loaded kills the run on config validation.
+`ORCHESTRA.md` §5 and the README now say the rule in one sentence: the
+reviewer never shares the author's vendor — Astra or Sol executed, Opus
+reviews; Claude executed, Sol reviews. Sol reviewing is the means, not the goal.
+
+**The rest, each a field failure:**
+
+- **`profile` is required on `orchestra_exec`.** The first
+  `executor-codex-principal` run of the campaign printed `profile: heavy,
+  model: gpt-5.6-sol (default)` — the launcher's rung never landed and the
+  runner's silent default ran a Sol order under an Astra launcher. A call
+  without a rung is now refused at the transport, in the transport's own
+  voice, before any runner launches; the launcher re-issues once with its
+  rung. Both launcher definitions say so.
+- **The engine is told what was dirty before it started.** The exec brief
+  carries a bounded `TREE STATE BEFORE YOU STARTED` block from the runner's
+  own fingerprint, and names harness-owned session files
+  (`.claude/settings.local.json`, the ledger and readings) as never counting
+  against a clean-tree precondition — a fresh Agent-tool worktree arrives
+  with that file untracked.
+- **The sandbox may carry no GitHub credentials, and the brief says so.**
+  Rule 7 now tells the engine to paste an auth failure under VERIFICATION and
+  continue from local refs, reserving BLOCKED for a ref that is not local.
+  The launcher definitions state the protocol: the Director fetches before
+  dispatch and pushes after.
+- **`--allow <cmd>` / `allow: [...]` on the review lane.** `--no-tests` is a
+  blanket, and a Python-only review was barred from the `--self-test` its
+  brief explicitly allowed. An allowed command is exempt from `--no-tests`
+  and from a restriction written into the order, and the header reports
+  `allowed commands: N` beside `prohibited commands: N`.
+- **Launchers relay a BLOCKED bare.** No "Option 1 / Option 2" from a
+  launcher; choosing is the Director's work.
+- **The 0.153.x install layout is known.** Codex now lives at
+  `<home>/.codex/packages/standalone/releases/<version-target>/bin/`; the
+  doctor names it `codex-standalone-releases`, and sibling release folders
+  are searched for helper repairs.
+- **An undeletable leftover worktree is reported once.** A directory the OS
+  would not release was re-reported as freshly reclaimed on every run for a
+  week; it now carries a marker and is retried quietly after the first report.
+- **Blender/Godot verification in review worktrees** is helped only as far as
+  the LFS fix reaches — assets now hydrate, so the project's own Python
+  checkers can run; Godot itself stays a Claude-lane verification.
+
+**Tests.** Exec case 21, review case 29, and the MCP suite's 4b cover every
+item above against the stub engine; the stub now reports the credential
+helper and LFS filter it sees. The suites point the runners at an empty
+`CODEX_HOME` by default so a developer's real Codex config never leaks into
+the exact override lists.
+
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 
 **Why.** OpenAI shipped GPT-6 Astra on 2026-09-03. On Terminal-Bench 4.0 it

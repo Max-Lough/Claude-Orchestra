@@ -16,7 +16,7 @@
  *
  * Usage:
  *   node orchestra-review.js --work-order <file> --executor-report <file> \
- *     [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]... \
+ *     [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]... [--allow <cmd>]... \
  *     [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]
  *
  * Both files are plain text the launcher wrote from what the Director handed
@@ -183,7 +183,23 @@
  *                               invocation ("unable to access
  *                               '<home>/.config/git/ignore': Permission
  *                               denied"), which the engine spends its clock
- *                               investigating. 0 disables.
+ *                               investigating. The scratch config INCLUDES
+ *                               the real global config (git skips the include
+ *                               silently where it is unreadable), so
+ *                               credential helpers, LFS filters and URL
+ *                               rewrites carry across; filter.lfs.* is also
+ *                               copied in explicitly. 0 disables.
+ *   ORCHESTRA_REVIEW_MCP        strip (default) disables every MCP server the
+ *                               user's Codex config declares, plus the Codex
+ *                               apps connector, for the engine child — a
+ *                               reviewer that can delegate to a same-vendor
+ *                               review MCP is not a cross-vendor reviewer.
+ *                               inherit leaves the engine's MCP config alone.
+ *                               ("codex": { "engineMcp": "strip"|"inherit" })
+ *   --allow <cmd>               (flag only) exact commands the order permits
+ *                               despite --no-tests or a restriction written
+ *                               into the order. Repeatable. The header
+ *                               reports "allowed commands: N".
  *   ORCHESTRA_CODEX_HELPERS     Directory of known-good files mirrored into the
  *                               Codex install directory before each run. A
  *                               Codex self-update can silently drop files a
@@ -326,6 +342,14 @@ const CONFIG = {
   installDir: '',
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   forbidden: [],
+  // Commands the order explicitly permits despite --no-tests / a written
+  // restriction (field, 2026-09-06: a Python-only review was barred from the
+  // `--self-test` its brief had allowed, and narrowed itself for nothing).
+  allowed: [],
+  // MCP isolation for the engine child: strip (default) or inherit.
+  engineMcp: (process.env.ORCHESTRA_REVIEW_MCP || '').trim().toLowerCase(),
+  mcpLabel: '',
+  mcpArgs: [],
   baseRef: '',
   headRef: '',
   worktreeRoot: (process.env.ORCHESTRA_REVIEW_WORKTREE_ROOT || '').trim(),
@@ -365,7 +389,7 @@ function intOr(raw, fallback) {
 
 // ------------------------------------------------------------------ helpers
 function parseArgs(argv) {
-  const out = { forbid: [] };
+  const out = { forbid: [], allow: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--work-order') out.workOrder = argv[++i];
@@ -374,6 +398,7 @@ function parseArgs(argv) {
     else if (a === '--timeout-ms') out.timeoutMs = argv[++i];
     else if (a === '--no-tests') out.noTests = true;
     else if (a === '--forbid') out.forbid.push(argv[++i]);
+    else if (a === '--allow') out.allow.push(argv[++i]);
     else if (a === '--base-ref') out.baseRef = argv[++i];
     else if (a === '--head-ref') out.headRef = argv[++i];
     else if (a === '--worktree-root') out.worktreeRoot = argv[++i];
@@ -635,6 +660,7 @@ const CODEX_ONLY_KEYS = [
   'worktreeRoot', 'worktreeWarmupCmd', 'worktreeWarmupTimeoutMs', 'helpersDir',
   'idleMs', 'gitConfigIsolation', 'execHeavyModel', 'execHeavyEffort',
   'execPrincipalModel', 'execPrincipalEffort', 'crossplanModel', 'crossplanEffort',
+  'engineMcp',
 ];
 
 // Whole project config (.claude/orchestra.json). Still fail-open — a missing or
@@ -800,10 +826,44 @@ function makeAttemptDir(n) {
 // safe.directory is re-granted because dropping the user's global config also
 // drops any ownership trust it carried, and a review that cannot run git at all
 // is worse than one that trusts a repo the user already works in daily.
+//
+// FIX (field, 2026-09-06): replacing the global config outright also dropped
+// the credential helper and every URL rewrite the user had — inside the
+// sandbox, `git fetch origin` died with "could not read Username for
+// 'https://github.com'". The scratch config now INCLUDES the real global
+// config first: git skips an include it cannot read (ENOENT or EACCES)
+// silently, so where the sandbox can read the user's home everything carries
+// across, and where it cannot the explicit copies below still apply. The
+// overrides are written after the include, so they win.
+function globalGitConfigFiles() {
+  const home = os.homedir();
+  const xdg = (process.env.XDG_CONFIG_HOME || '').trim() || (home ? path.join(home, '.config') : '');
+  const candidates = [];
+  if ((process.env.GIT_CONFIG_GLOBAL || '').trim()) candidates.push(process.env.GIT_CONFIG_GLOBAL.trim());
+  else {
+    if (xdg) candidates.push(path.join(xdg, 'git', 'config'));
+    if (home) candidates.push(path.join(home, '.gitconfig'));
+  }
+  return candidates.filter((f) => {
+    try {
+      return fs.statSync(f).isFile();
+    } catch (_) {
+      return false;
+    }
+  });
+}
+
+function gitIncludeSection(files) {
+  if (!files.length) return '';
+  const quote = (p) => '"' + p.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
+  return '[include]\n' + files.map((f) => '\tpath = ' + quote(f) + '\n').join('');
+}
+
 function setupGitIsolation() {
   if (!CONFIG.gitIsolation || !SCRATCH.dir) return;
   const empty = path.join(SCRATCH.dir, 'git-empty');
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
+  const includes = gitIncludeSection(globalGitConfigFiles());
   try {
     fs.writeFileSync(empty, '', 'utf8');
     // Git LFS registers its clean/smudge filters in the user's GLOBAL config
@@ -836,6 +896,7 @@ function setupGitIsolation() {
     fs.writeFileSync(
       cfg,
       '# Written by orchestra-review.js for this review only.\n' +
+        includes +
         '[core]\n' +
         '\texcludesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
@@ -848,6 +909,76 @@ function setupGitIsolation() {
   } catch (e) {
     PREFLIGHT.push('git config isolation unavailable: ' + boundedDiagnostic((e && e.message) || e, 2000));
   }
+}
+
+// ------------------------------------------------------------ MCP isolation
+// FIX (field, 2026-09-06): PR #435 round 3 came back with an inner header
+// `REVIEW ENGINE: Claude CLI (opus, effort: high …)` under the Sol header —
+// the engine had found a Claude review MCP in the Codex config and delegated
+// the review to it, so the cross-family review silently became same-family.
+// "no MCP" in the brief did not stop it; a runner boundary does. Codex honours
+// `-c mcp_servers.<name>.enabled=false` for a server it has loaded, so every
+// server the user-level config declares is disabled by name and the Codex
+// apps connector (GitHub write tools, among others) is switched off. Verified
+// against codex-cli 0.153.2: with these overrides the engine reports no MCP
+// tools at all.
+//
+// Limits, stated rather than hidden: a name that needs TOML quoting cannot be
+// addressed through -c (Codex splits the key on dots without unquoting), and
+// a server Codex has NOT loaded cannot be disabled either — the override
+// would create a half-entry that fails config validation and kills the run.
+// So only the user-level config is acted on; a project-level
+// .codex/config.toml that declares servers is named in the header instead.
+function mcpServerNames(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return { bare: [], quoted: [] };
+  }
+  const bare = [];
+  const quoted = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const m = /^\[\s*mcp_servers\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*(?:[\].])/.exec(line);
+    if (!m) continue;
+    if (m[3] !== undefined) {
+      if (!bare.includes(m[3])) bare.push(m[3]);
+    } else {
+      const q = m[1] !== undefined ? m[1] : m[2];
+      if (!quoted.includes(q)) quoted.push(q);
+    }
+  }
+  return { bare, quoted };
+}
+
+function mcpIsolation(dir) {
+  if (CONFIG.engineMcp === 'inherit') return { args: [], label: 'inherited (engineMcp: inherit)', notes: [] };
+  const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '';
+  const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
+  const user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [] };
+  const args = ['-c', 'features.apps=false'];
+  for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
+  const notes = [];
+  if (user.quoted.length) {
+    notes.push(
+      'mcp: ' + user.quoted.length + ' server(s) in the Codex config could not be disabled — a quoted ' +
+        'name cannot be addressed through -c: ' + user.quoted.map((n) => JSON.stringify(n)).join(', ')
+    );
+  }
+  const project = dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
+  const projectNames = project.bare.concat(project.quoted);
+  if (projectNames.length) {
+    notes.push(
+      'mcp: the project\'s own .codex/config.toml declares ' + projectNames.length + ' MCP server(s) ' +
+        '(' + projectNames.join(', ') + ') — not disabled; Codex loads that file only for a trusted ' +
+        'project, and disabling a server it has not loaded would kill the run'
+    );
+  }
+  const label =
+    'stripped (' + user.bare.length + ' server(s) disabled, apps connector off' +
+    (user.quoted.length ? ', ' + user.quoted.length + ' not addressable' : '') + ')';
+  return { args, label, notes };
 }
 
 // Stale-session hazards: the conditions under which a Codex run can hand back
@@ -1209,7 +1340,16 @@ function sweepStaleScratch(root, repoTop) {
     // is gone, so it is an abandoned review being reclaimed, whether or not the
     // filesystem lets go of it this second. What could not be deleted is
     // reported separately rather than folded into silence.
-    reclaimed++;
+    // FIX (field, 2026-09-06): a directory the OS would not release was
+    // re-reported on EVERY run as a freshly reclaimed leftover — the same
+    // orchestra-review-51hO4I line in every preflight for a week. A stuck
+    // directory is reclaimed (and reported) once; after that it is retried
+    // quietly and stays out of the count until something actually changes.
+    // The marker lives inside the directory, which the OS still lets us
+    // write even while a dead engine's cwd pins a subdirectory.
+    const marker = path.join(dir, 'reported.stuck');
+    const seenBefore = fs.existsSync(marker);
+    if (!seenBefore) reclaimed++;
     for (const wt of stale) {
       if (!repoTop || !fs.existsSync(wt)) continue;
       // The dead owner locked this worktree (see createPinnedWorktree); a
@@ -1222,7 +1362,16 @@ function sweepStaleScratch(root, repoTop) {
     } catch (_) {
       /* busy or not ours — the prune below still tidies git's records */
     }
-    if (fs.existsSync(dir)) stuck.push(dir);
+    if (fs.existsSync(dir)) {
+      if (!seenBefore) stuck.push(dir);
+      // (Re)write the marker every time the directory survives: a partial
+      // rmSync may have deleted the marker before failing on the held file.
+      try {
+        fs.writeFileSync(marker, String(Date.now()), 'utf8');
+      } catch (_) {
+        /* unwritable too — it will be reported again, which is the honest outcome */
+      }
+    }
   }
   // A hard kill can leave the LOCK without leaving a scratch directory to find
   // it by — and prune, correctly, will never touch a locked entry. Read the
@@ -1435,6 +1584,12 @@ function looksLikeFixtureEngine(binPath) {
 //                      (observed 2026-08-12, codex-cli >= 0.147.0)
 //   codex-standalone   <home>/.codex/packages/standalone/<version|current>/bin/codex
 //                      (the layout the documented helper repair was derived on)
+//   codex-standalone-releases
+//                      <home>/.codex/packages/standalone/releases/<version-target>/bin/codex
+//                      (observed 2026-09-06, codex-cli 0.153.2: the launcher
+//                      under <LOCALAPPDATA>/Programs/OpenAI/Codex/bin links
+//                      here; sibling release folders sit beside it, which is
+//                      where a self-update leaves the previous, complete copy)
 // Anything else is 'unknown', which is a fact worth printing rather than an
 // error: package managers, Homebrew, and hand-built installs are all legitimate.
 function detectInstallLayout(binPath) {
@@ -1442,6 +1597,9 @@ function detectInstallLayout(binPath) {
   const lower = p.toLowerCase();
   if (/\/openai\/codex\/bin\/[^/]+\/[^/]+$/.test(lower)) {
     return { id: 'appdata-versioned', binRoot: path.dirname(path.dirname(p)) };
+  }
+  if (/\/\.codex\/packages\/standalone\/releases\/[^/]+\/bin\/[^/]+$/.test(lower)) {
+    return { id: 'codex-standalone-releases', binRoot: path.dirname(path.dirname(path.dirname(p))) };
   }
   if (/\/\.codex\/packages\/standalone\/[^/]+\/bin\/[^/]+$/.test(lower)) {
     return { id: 'codex-standalone', binRoot: path.dirname(path.dirname(path.dirname(p))) };
@@ -1513,7 +1671,7 @@ function helperSourceCandidates(installDir, layout) {
     }
   }
 
-  // The other known layout, whichever one we are not in.
+  // The other known layouts, whichever ones we are not in.
   if (codexHome) {
     const standalone = path.join(codexHome, 'packages', 'standalone');
     dirs.push(path.join(standalone, 'current', 'bin'));
@@ -1523,6 +1681,14 @@ function helperSourceCandidates(installDir, layout) {
       }
     } catch (_) {
       /* not this layout */
+    }
+    try {
+      const releases = path.join(standalone, 'releases');
+      for (const e of fs.readdirSync(releases, { withFileTypes: true })) {
+        if (e.isDirectory()) dirs.push(path.join(releases, e.name, 'bin'));
+      }
+    } catch (_) {
+      /* not this layout either */
     }
     dirs.push(path.join(codexHome, 'bin'));
   }
@@ -1944,8 +2110,28 @@ function tierLines(tier) {
 // prohibition has to be stated as an absolute that explicitly outranks RULE 1,
 // and it has to come with somewhere honest to put the verification it could
 // not do, or the model will route around it to satisfy the output contract.
-function prohibitionLines(forbidden) {
-  if (!forbidden.length) return [];
+// FIX (field, 2026-09-06): --no-tests is a blanket, and a blanket covers the
+// one command the order meant to leave uncovered — a Python-only review was
+// barred from the `--self-test` its brief explicitly allowed, and narrowed
+// itself for no reason. An allowlist is the precise counterpart: exact
+// commands the order permits, exempt from --no-tests and from any restriction
+// written into the order, and nothing else.
+function allowedLines(allowed) {
+  if (!allowed.length) return [];
+  return [
+    'ALLOWED DESPITE THE RESTRICTIONS — the order explicitly permits these,',
+    'and they are exempt from every prohibition above and from any restriction',
+    'written into the WORK ORDER. Run them as written, exactly as listed:',
+    ...allowed.map((a) => '- ' + a),
+    'The exemption is for these commands only — not for the suite, the build,',
+    'or anything else a prohibition covers. Report their output like any other',
+    'verification.',
+    '',
+  ];
+}
+
+function prohibitionLines(forbidden, allowed) {
+  if (!forbidden.length) return allowedLines(allowed || []);
   return [
     'PROHIBITED COMMANDS — ABSOLUTE, AND THEY OVERRIDE RULE 1.',
     'You MUST NOT execute any of the following during this review, for any',
@@ -1967,6 +2153,7 @@ function prohibitionLines(forbidden) {
     'is useful. A review that quietly ran the prohibited command is not, and',
     'neither is one that invents test results it never observed.',
     '',
+    ...allowedLines(allowed || []),
   ];
 }
 
@@ -1978,14 +2165,18 @@ function prohibitionLines(forbidden) {
 // fact about the author's task, obeyed RULE 1 instead, and burned the clock.
 // The flags remain the precise mechanism; this is the backstop for the order
 // that never became one.
-function orderRestrictionLines() {
+function orderRestrictionLines(allowed) {
   return [
     'A RESTRICTION WRITTEN INTO THE WORK ORDER IS BINDING ON YOU TOO.',
     'The order below was written by the owner of this change. Where it says not',
     'to run something — "do not run the full suite", "no smoke tests", "do not',
     'launch the app", "no mutations" — that is an absolute prohibition on YOU,',
     'with the same force as any PROHIBITED COMMANDS list, even when no such list',
-    'appears above, and it overrides RULE 1. Do not run it "just to confirm",',
+    'appears above, and it overrides RULE 1' +
+      (allowed && allowed.length
+        ? ' (the ALLOWED commands listed above are the one exception)'
+        : '') +
+      '. Do not run it "just to confirm",',
     'and do not reach for an equivalent command that evades it. Record each',
     'claim you could not check that way as',
     '  UNVERIFIED (prohibited: <what you would have had to run>),',
@@ -2066,7 +2257,7 @@ function manifestLines(verification) {
   return lines;
 }
 
-function buildBrief(workOrder, executorReport, tier, verification, forbidden, scope) {
+function buildBrief(workOrder, executorReport, tier, verification, forbidden, scope, allowed) {
   const rule1 = forbidden.length
     ? [
         '1. Verify independently — trust nothing you were told. Read the actual diff',
@@ -2139,8 +2330,8 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
     'they are backlog for the dispatcher, not blockers for this change.',
     '',
     ...scopeLines(scope.baseRef, scope.headRef, scope.pinned),
-    ...prohibitionLines(forbidden),
-    ...orderRestrictionLines(),
+    ...prohibitionLines(forbidden, allowed || []),
+    ...orderRestrictionLines(allowed || []),
     ...tierLines(tier),
     ...manifestLines(verification),
     '=== WORK ORDER (the intent — what should have happened) ===',
@@ -2500,6 +2691,7 @@ function runAuthProbe(dir) {
   // conditions from the review would be answering a different question.
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -2606,6 +2798,10 @@ function settingsBits() {
   // prose never became a flag — the failure that cost four reviews to a suite
   // nobody wanted run.
   bits.push('prohibited commands: ' + CONFIG.forbidden.length);
+  // Same reason: "allowed commands: 0" on an order that permitted something
+  // is how the launcher sees the permission never became a flag.
+  bits.push('allowed commands: ' + CONFIG.allowed.length);
+  bits.push('mcp: ' + (CONFIG.mcpLabel || 'not resolved'));
   if (CONFIG.reviewDirLabel) bits.push('checkout: ' + CONFIG.reviewDirLabel);
   return bits;
 }
@@ -2777,7 +2973,7 @@ function main() {
     process.stdout.write(
       'Usage: node orchestra-review.js --work-order <file> --executor-report <file>\n' +
         '         [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]...\n' +
-        '         [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
+        '         [--allow <cmd>]... [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
         '         [--retries <n>|--no-retry] [--no-probe] [--warmup-cmd <cmd>]\n' +
         '       node orchestra-review.js --doctor [--no-repair] [--live]\n' +
         '\n' +
@@ -2855,6 +3051,12 @@ function main() {
   if (!process.env.ORCHESTRA_REVIEW_GIT_ISOLATION && codexCfg.gitConfigIsolation != null) {
     CONFIG.gitIsolation = codexCfg.gitConfigIsolation !== false;
   }
+  // MCP isolation: env > orchestra.json > strip. Anything but an explicit
+  // "inherit" strips — the safe direction for a typo.
+  if (!CONFIG.engineMcp && typeof codexCfg.engineMcp === 'string') {
+    CONFIG.engineMcp = codexCfg.engineMcp.trim().toLowerCase();
+  }
+  if (CONFIG.engineMcp !== 'inherit') CONFIG.engineMcp = 'strip';
   if (!process.env.ORCHESTRA_REVIEW_RETRIES && codexCfg.reviewRetries != null) {
     CONFIG.retries = Math.min(MAX_RETRIES, intOr(codexCfg.reviewRetries, CONFIG.retries));
   }
@@ -2916,6 +3118,9 @@ function main() {
     );
   }
   CONFIG.forbidden = forbidden.filter((f, i) => forbidden.indexOf(f) === i);
+  const allowed = [];
+  for (const a of args.allow) if (a && a.trim()) allowed.push(a.trim());
+  CONFIG.allowed = allowed.filter((a, i) => allowed.indexOf(a) === i);
 
   // Anything other than an explicit, exact 'inert' reviews at full depth —
   // the safe direction for a typo'd or invented tier value.
@@ -3093,13 +3298,21 @@ function main() {
     RESOLVED_TIER,
     loadVerification(projectCfg),
     CONFIG.forbidden,
-    { baseRef: CONFIG.baseRef, headRef: CONFIG.headRef, pinned: !!CONFIG.headRef }
+    { baseRef: CONFIG.baseRef, headRef: CONFIG.headRef, pinned: !!CONFIG.headRef },
+    CONFIG.allowed
   );
 
   // --- stage-a probe: can this install run codex at all? Cheap, and it runs
   // before any worktree is materialized, so a broken engine costs seconds
   // rather than the review budget. (Runs once for the whole chain — a retry
   // does not re-probe: the answer cannot have changed.)
+  // MCP isolation, resolved once for the probe and every attempt alike: the
+  // probe must launch under the same overrides the attempts will.
+  const mcp = mcpIsolation(CONFIG.projectDir);
+  CONFIG.mcpArgs = mcp.args;
+  CONFIG.mcpLabel = mcp.label;
+  for (const n of mcp.notes) PREFLIGHT.push(n);
+
   if (CONFIG.probe) {
     const probe = runAuthProbe(CONFIG.projectDir);
     if (!probe.ok) {
@@ -3209,6 +3422,7 @@ function main() {
     // order, so ORCHESTRA_REVIEW_ARGS must not be able to re-enable a
     // co-installed Codex-Orchestra's project instructions or hooks.
     codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+    codexArgs.push(...CONFIG.mcpArgs);
     codexArgs.push('-'); // read the prompt from stdin
 
     const startedAt = Date.now();
@@ -3360,6 +3574,23 @@ function main() {
         ') — generated artifacts, not source. Not flagged as a reviewer mutation. Tune with ' +
         '"codex": { "integrityIgnore": [...] } / "integrityIgnoreDefaults": false.';
     }
+  }
+
+  // FIX (field, 2026-09-06): a Sol verdict carried an inner header
+  // `REVIEW ENGINE: Claude CLI (opus …)` — the engine had delegated the whole
+  // review to a Claude MCP, and the cross-family review was same-family with
+  // nobody the wiser. The MCP isolation above closes the door; this is the
+  // alarm for the day it is opened again. Cross-family independence is the
+  // review lane's first goal, so a verdict that names the other vendor's
+  // engine as its author is stamped, never relayed as OpenAI's own.
+  const delegated = /REVIEW ENGINE:\s*(Claude|Anthropic)/i.exec(body) || /\bClaude CLI\s*\(/i.exec(body);
+  if (delegated) {
+    body +=
+      '\n\n⚠ CROSS-FAMILY BREACH: the engine\'s verdict carries "' + delegated[0].trim() + '" — the ' +
+      'OpenAI engine delegated this review to a Claude engine, so the verdict above is NOT a ' +
+      'cross-family review of Claude-authored work. Do not count it as one: run the fresh-context ' +
+      'Opus `reviewer` only if the author was Codex, otherwise re-run this lane after checking the ' +
+      'header\'s mcp: line (engineMcp must be "strip") and the Codex config for a Claude review MCP.';
   }
 
   printReview(body);

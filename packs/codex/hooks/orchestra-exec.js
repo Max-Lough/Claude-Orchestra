@@ -140,10 +140,23 @@
  *                               1 (default) runs every git the run touches
  *                               against a scratch global config (a sandboxed
  *                               process often cannot read the real one, and
- *                               git then warns on every command). The user's
- *                               global user.name/user.email are copied into
- *                               the scratch config so an order that says
- *                               "commit" still can. 0 disables.
+ *                               git then warns on every command). The scratch
+ *                               config INCLUDES the user's real global config
+ *                               (credential helpers, LFS filters, URL
+ *                               rewrites — git skips the include silently
+ *                               where the sandbox cannot read it) and carries
+ *                               user.name/user.email and filter.lfs.* across
+ *                               explicitly, so an order that says "commit"
+ *                               still can and an LFS-tracked tree does not
+ *                               read as modified. 0 disables.
+ *   ORCHESTRA_EXEC_MCP          strip (default) disables every MCP server the
+ *                               user's Codex config declares, plus the Codex
+ *                               apps connector, for the engine child — an
+ *                               executor that can delegate to a same-vendor
+ *                               MCP or push through a GitHub connector is
+ *                               neither cross-vendor nor sandboxed. inherit
+ *                               leaves the engine's MCP config alone.
+ *                               ("codex": { "engineMcp": "strip"|"inherit" })
  *   ORCHESTRA_EXEC_PROBE        1 (default) runs a cheap `codex exec` echo
  *                               before the real attempt. 0 disables.
  *   ORCHESTRA_EXEC_PROBE_TIMEOUT_MS
@@ -249,6 +262,9 @@ const CONFIG = {
   execDirLabel: '',
   forbidden: [],
   gitIsolation: process.env.ORCHESTRA_EXEC_GIT_ISOLATION !== '0',
+  engineMcp: (process.env.ORCHESTRA_EXEC_MCP || '').trim().toLowerCase(),
+  mcpLabel: '',
+  mcpArgs: [],
   probe: process.env.ORCHESTRA_EXEC_PROBE !== '0',
   probeTimeoutMs: intOr(process.env.ORCHESTRA_EXEC_PROBE_TIMEOUT_MS, 90000),
   integrityIgnore: [],
@@ -399,7 +415,7 @@ const CODEX_ONLY_KEYS = [
   'execTimeoutMs', 'execHeavyModel', 'execHeavyEffort',
   'execPrincipalModel', 'execPrincipalEffort', 'execSandbox', 'doNotRun',
   'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'helpersDir', 'gitConfigIsolation',
-  'crossplanModel', 'crossplanEffort',
+  'crossplanModel', 'crossplanEffort', 'engineMcp',
 ];
 
 // Still fail-open — a missing or broken file means no project settings, never a
@@ -480,22 +496,91 @@ function teardownScratch() {
   }
 }
 
+// The files git itself reads as the "global" config, in git's own order:
+// $XDG_CONFIG_HOME/git/config (or ~/.config/git/config) and then ~/.gitconfig.
+// Resolved from the REAL environment, before GIT_CONFIG_GLOBAL is pointed at
+// the scratch file. Only files that exist are returned.
+function globalGitConfigFiles() {
+  const home = os.homedir();
+  const xdg = (process.env.XDG_CONFIG_HOME || '').trim() || (home ? path.join(home, '.config') : '');
+  const candidates = [];
+  if ((process.env.GIT_CONFIG_GLOBAL || '').trim()) candidates.push(process.env.GIT_CONFIG_GLOBAL.trim());
+  else {
+    if (xdg) candidates.push(path.join(xdg, 'git', 'config'));
+    if (home) candidates.push(path.join(home, '.gitconfig'));
+  }
+  return candidates.filter((f) => {
+    try {
+      return fs.statSync(f).isFile();
+    } catch (_) {
+      return false;
+    }
+  });
+}
+
+// `[include] path = …` lines for the real global config. Git resolves an
+// include it cannot read (ENOENT or EACCES) by skipping it SILENTLY — so in a
+// sandbox that can read the user's home this carries credential helpers, LFS
+// filters, URL rewrites and identity across untouched, and in one that cannot
+// it costs nothing and warns nothing. Overrides written after the include win.
+function gitIncludeSection(files) {
+  if (!files.length) return '';
+  const quote = (p) => '"' + p.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
+  return '[include]\n' + files.map((f) => '\tpath = ' + quote(f) + '\n').join('');
+}
+
+// Git LFS registers its clean/smudge filters in the user's GLOBAL config
+// (`git lfs install`). The include above carries them where the sandbox can
+// read that file; this explicit copy is for where it cannot. Without the
+// filters, every LFS-tracked file compares against its pointer and reads as
+// MODIFIED — 15 untouched PNGs under docs/art/** looked dirty to Astra
+// (field, 2026-09-06), which correctly refused a "clean tree" precondition.
+function lfsFilterSection() {
+  const lfs = spawnSync('git', ['config', '--global', '--get-regexp', '^filter\\.lfs\\.'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (lfs.status !== 0 || !lfs.stdout) return '';
+  const entries = lfs.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const sp = l.indexOf(' ');
+      const key = sp === -1 ? l : l.slice(0, sp);
+      const val = sp === -1 ? '' : l.slice(sp + 1);
+      const m = /^filter\.lfs\.([A-Za-z]+)$/.exec(key);
+      return m ? '\t' + m[1] + ' = ' + val + '\n' : '';
+    })
+    .join('');
+  return entries ? '[filter "lfs"]\n' + entries : '';
+}
+
 // Same isolation as the review runner, with one executor-specific addition:
 // the user's global identity is COPIED IN. Dropping the global config also
 // drops user.name/user.email, and an executor whose order says "commit" would
 // then fail every commit with "Please tell me who you are" — so the scratch
 // config carries the identity forward while still silencing the unreadable
 // excludes/attributes probing that sandboxed reviewers and executors hit.
+//
+// FIX (field, 2026-09-06): the scratch config used to REPLACE the global one
+// outright, and that dropped everything else it carried — the credential
+// helper (`git fetch origin` inside the sandbox died with "could not read
+// Username for 'https://github.com'"), the LFS filters (see lfsFilterSection),
+// URL rewrites. The scratch config now includes the real global config first
+// and only overrides the probing that produced the noise.
 function setupGitIsolation() {
   if (!CONFIG.gitIsolation || !SCRATCH.dir) return;
+  // Read with the REAL environment — the point is to rescue values from the
+  // config the isolation is about to hide.
   const identity = (key) => {
-    // Read with the REAL environment — the point is to rescue values from the
-    // config the isolation is about to hide.
     const r = spawnSync('git', ['config', '--global', '--get', key], { encoding: 'utf8' });
     return r.status === 0 ? (r.stdout || '').trim() : '';
   };
   const name = identity('user.name');
   const email = identity('user.email');
+  const includes = gitIncludeSection(globalGitConfigFiles());
+  const lfs = lfsFilterSection();
   const empty = path.join(SCRATCH.dir, 'git-empty');
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
   try {
@@ -503,11 +588,13 @@ function setupGitIsolation() {
     fs.writeFileSync(
       cfg,
       '# Written by orchestra-exec.js for this run only.\n' +
+        includes +
         '[core]\n' +
         '\texcludesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '[safe]\n' +
         '\tdirectory = *\n' +
+        lfs +
         (name || email
           ? '[user]\n' +
             (name ? '\tname = ' + name + '\n' : '') +
@@ -519,6 +606,75 @@ function setupGitIsolation() {
   } catch (e) {
     PREFLIGHT.push('git config isolation unavailable: ' + boundedDiagnostic((e && e.message) || e, 2000));
   }
+}
+
+// ------------------------------------------------------------ MCP isolation
+// FIX (field, 2026-09-06): a Sol review came back wearing an inner header
+// `REVIEW ENGINE: Claude CLI (opus …)` — the engine had found a Claude review
+// MCP in the Codex config and delegated to it, so the cross-family review
+// silently became same-family. The same config hands an executor a GitHub
+// connector that writes past the workspace sandbox. Codex applies
+// `-c mcp_servers.<name>.enabled=false` to a server it has loaded, so every
+// server the user config declares is disabled by name, and the apps connector
+// is switched off. Verified against codex-cli 0.153.2: with these overrides
+// the engine reports no MCP tools at all.
+//
+// Limits, stated rather than hidden: a name that needs TOML quoting cannot be
+// addressed through -c (Codex splits the key on dots without unquoting), and
+// a name that Codex has NOT loaded cannot be disabled either — the override
+// would create a half-entry that fails config validation and kills the run.
+// So only the user-level config is acted on; a project-level
+// .codex/config.toml that declares servers is named in the header instead.
+function mcpServerNames(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return { bare: [], quoted: [] };
+  }
+  const bare = [];
+  const quoted = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const m = /^\[\s*mcp_servers\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*(?:[\].])/.exec(line);
+    if (!m) continue;
+    if (m[3] !== undefined) {
+      if (!bare.includes(m[3])) bare.push(m[3]);
+    } else {
+      const q = m[1] !== undefined ? m[1] : m[2];
+      if (!quoted.includes(q)) quoted.push(q);
+    }
+  }
+  return { bare, quoted };
+}
+
+function mcpIsolation(dir) {
+  if (CONFIG.engineMcp === 'inherit') return { args: [], label: 'inherited (engineMcp: inherit)', notes: [] };
+  const home = os.homedir();
+  const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
+  const user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [] };
+  const args = ['-c', 'features.apps=false'];
+  for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
+  const notes = [];
+  if (user.quoted.length) {
+    notes.push(
+      'mcp: ' + user.quoted.length + ' server(s) in the Codex config could not be disabled — a quoted ' +
+        'name cannot be addressed through -c: ' + user.quoted.map((n) => JSON.stringify(n)).join(', ')
+    );
+  }
+  const project = dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
+  const projectNames = project.bare.concat(project.quoted);
+  if (projectNames.length) {
+    notes.push(
+      'mcp: the project\'s own .codex/config.toml declares ' + projectNames.length + ' MCP server(s) ' +
+        '(' + projectNames.join(', ') + ') — not disabled; Codex loads that file only for a trusted ' +
+        'project, and disabling a server it has not loaded would kill the run'
+    );
+  }
+  const label =
+    'stripped (' + user.bare.length + ' server(s) disabled, apps connector off' +
+    (user.quoted.length ? ', ' + user.quoted.length + ' not addressable' : '') + ')';
+  return { args, label, notes };
 }
 
 function childEnv(extra) {
@@ -786,7 +942,61 @@ function principalLines(profile) {
   ];
 }
 
-function buildBrief(workOrder, verification, forbidden, profile) {
+// Paths the Claude Code harness itself writes into a project — session
+// state, not project files. A fresh Agent-tool worktree arrives with
+// .claude/settings.local.json already untracked, and an engine holding a
+// "clean tree" precondition against it has been handed a false failure
+// (field, 2026-09-06: two BLOCKED rounds on exactly this).
+const HARNESS_OWNED = [
+  '.claude/settings.local.json',
+  '.claude/orchestra-ledger.jsonl',
+  '.claude/orchestra-pool-readings.jsonl',
+  '.claude/orchestra-manual-readings.md',
+  '.claude/orchestra/',
+];
+
+function isHarnessOwned(rel) {
+  const p = String(rel || '').replace(/\\/g, '/');
+  return HARNESS_OWNED.some((h) => (h.endsWith('/') ? p.startsWith(h) : p === h));
+}
+
+// What the tree looked like BEFORE the engine started, measured by the runner.
+// An engine that cannot tell pre-existing dirt from its own edits either
+// refuses a precondition the Director did not intend or reports someone
+// else's changes as its own; the list settles both. Bounded, like the audit.
+function treeStateLines(before) {
+  if (!before) return [];
+  // The fingerprint annotates each porcelain line with " [size@mtime]" for
+  // its own comparison; the engine gets the plain porcelain line.
+  const lines = (before.text || '')
+    .split('\n')
+    .filter((l) => l.trim())
+    .map((l) => l.replace(/ \[\d+@[\d.]+\]$/, ''));
+  if (!lines.length) {
+    return ['TREE STATE BEFORE YOU STARTED: clean (git status was empty).', ''];
+  }
+  const shown = lines.slice(0, 40);
+  const harness = lines.map((l) => porcelainPath(l)).filter(isHarnessOwned);
+  return [
+    'TREE STATE BEFORE YOU STARTED (measured by the runner, not by you):',
+    lines.length + ' path(s) were already dirty. They are not yours, not part of',
+    'this order, and not evidence about it — never revert, stage, or "clean up"',
+    'any of them.',
+    ...shown.map((l) => '  ' + l),
+    ...(lines.length > shown.length ? ['  …and ' + (lines.length - shown.length) + ' more'] : []),
+    ...(harness.length
+      ? [
+          'Of these, ' + harness.length + ' are harness-owned session files (' +
+            harness.slice(0, 5).join(', ') + (harness.length > 5 ? ', …' : '') + ') — the',
+          'Director\'s tooling writes them; they never count against a "clean tree"',
+          'precondition and are never project files.',
+        ]
+      : []),
+    '',
+  ];
+}
+
+function buildBrief(workOrder, verification, forbidden, profile, treeBefore) {
   return [
     'You are the EXECUTOR in a multi-agent engineering harness. A Director',
     '(who never touches the code) wrote the work order below; your edits and',
@@ -828,7 +1038,12 @@ function buildBrief(workOrder, verification, forbidden, profile) {
     '7. Git is scoped like everything else: stage, commit, or push ONLY when',
     '   the work order explicitly says to (checkpoint-commit clauses included),',
     '   and never rewrite history. No order = leave the changes uncommitted in',
-    '   the working tree.',
+    '   the working tree. This sandbox may carry no GitHub credentials: if a',
+    '   fetch, push, or `gh` call fails on authentication, do not retry it or',
+    '   work around it — paste the exact error under VERIFICATION, finish what',
+    '   the refs already local allow, and leave the push to the Director. Only',
+    '   when the order cannot proceed without a ref that is not local is that',
+    '   a BLOCKED, and then name the ref.',
     '8. Follow the order\'s cadence clauses. If it numbers parts and names a',
     '   progress file, append one status line there after each part, before',
     '   starting the next.',
@@ -873,6 +1088,7 @@ function buildBrief(workOrder, verification, forbidden, profile) {
     '',
     ...prohibitionLines(forbidden),
     ...manifestLines(verification),
+    ...treeStateLines(treeBefore),
     '=== WORK ORDER (from the Director — execute exactly this) ===',
     workOrder.trim() || '(none provided)',
     '',
@@ -1046,6 +1262,7 @@ function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -1128,6 +1345,7 @@ function settingsBits() {
     'sandbox: ' + CONFIG.sandbox,
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (execution is never auto-retried)',
+    'mcp: ' + (CONFIG.mcpLabel || 'not resolved'),
   ]
     // Always, including zero — "prohibited commands: 0" is how a Director sees
     // that an order's prose prohibition never became a flag.
@@ -1386,6 +1604,12 @@ function main() {
   if (!process.env.ORCHESTRA_EXEC_GIT_ISOLATION && codexCfg.gitConfigIsolation != null) {
     CONFIG.gitIsolation = codexCfg.gitConfigIsolation !== false;
   }
+  // MCP isolation: env > orchestra.json > strip. Anything but an explicit
+  // "inherit" strips — the safe direction for a typo.
+  if (!CONFIG.engineMcp && typeof codexCfg.engineMcp === 'string') {
+    CONFIG.engineMcp = codexCfg.engineMcp.trim().toLowerCase();
+  }
+  if (CONFIG.engineMcp !== 'inherit') CONFIG.engineMcp = 'strip';
   if (!process.env.ORCHESTRA_EXEC_PROBE && codexCfg.authProbe != null) {
     CONFIG.probe = codexCfg.authProbe !== false;
   }
@@ -1488,6 +1712,13 @@ function main() {
     if (restore.note) PREFLIGHT.push(restore.note);
   }
 
+  // --- MCP isolation, resolved once and applied to the probe and the run
+  // alike: the probe must launch under the same overrides the run will.
+  const mcp = mcpIsolation(CONFIG.execDir);
+  CONFIG.mcpArgs = mcp.args;
+  CONFIG.mcpLabel = mcp.label;
+  for (const n of mcp.notes) PREFLIGHT.push(n);
+
   // --- stage-a probe: can this install run codex at all? Costs seconds,
   // runs before the tree is touched.
   if (CONFIG.probe) {
@@ -1522,7 +1753,7 @@ function main() {
     if (settled !== null) before = settled;
   }
 
-  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden, CONFIG.profile);
+  const brief = buildBrief(workOrder, loadVerification(projectCfg), CONFIG.forbidden, CONFIG.profile, before);
 
   // --- the one attempt.
   const lastMsgFile = path.join(SCRATCH.dir, 'report.txt');
@@ -1533,8 +1764,9 @@ function main() {
   if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
   // Keep the coexistence boundary last: Codex resolves repeated -c values in
   // order, so ORCHESTRA_EXEC_ARGS must not be able to re-enable a co-installed
-  // Codex-Orchestra's project instructions or hooks.
+  // Codex-Orchestra's project instructions, hooks, or MCP servers.
   codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  codexArgs.push(...CONFIG.mcpArgs);
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();

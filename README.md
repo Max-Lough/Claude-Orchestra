@@ -121,7 +121,7 @@ Recon has two deliberately-routed tiers: `scout` (Haiku) for cheap *where/what* 
 
 The `codex` pack (`--packs codex`) is the harness's optional cross-vendor surface — everything that talks to OpenAI, in one bundle. Since 3.2.0 it is **not purely additive**: its Astra executor is the top rung of the default ladder, so installing or removing the pack changes where escalated work goes.
 
-- **`reviewer-codex` (Sol) is the default reviewer for Claude-authored campaign work.** Codex-authored work goes to the fresh-context Opus `reviewer` instead, so author and reviewer always sit on different vendors — there is no `reviewEngine` switch to configure. Docs-only work is the exception — a prose-only diff routes to `reviewer` either way (see below).
+- **Review is cross-family by default — the first goal of the review lane.** `reviewer-codex` (Sol) reviews Claude-authored campaign work; Codex-authored work (an Astra or Sol executor's order) goes to the fresh-context Opus `reviewer`, so author and reviewer always sit on different vendors — there is no `reviewEngine` switch to configure. The runners enforce it mechanically: the engine child runs with every MCP server in the Codex config disabled and the apps connector off (`codex.engineMcp`, default `strip`), and a verdict that names a Claude engine as its author is stamped `⚠ CROSS-FAMILY BREACH` rather than relayed as cross-family. Docs-only work is the exception — a prose-only diff routes to `reviewer` either way (see below).
 - **`executor-codex-principal` (GPT-6 Astra, xhigh) is the top rung of the default executor ladder** — not a side lane. `executor` → `executor-heavy` → Astra, one rung per double bounce, so escalation crosses the vendor line at the top. `executor-codex-heavy` (Sol, high) is the cheaper cross-vendor executor and is **user request only**; no routing rule reaches it. See "Executor steering" below.
 - **`/cross-compare-plan`** runs a two-architect planning session — a fresh-context Claude architect and the GPT lane (Sol, high effort, read-only) draft independently from one shared brief, cross-critique, revise, and a blind Opus synthesizer merges the strongest final plan, with a default post-synthesis cross-family audit. See [`packs/codex/skills/cross-compare-plan/SKILL.md`](packs/codex/skills/cross-compare-plan/SKILL.md).
 
@@ -203,7 +203,7 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex.idleMs` | integer | `1500` | Live-tree settle window shared by both lanes; `0` disables. |
 | `codex.helpersDir` | string | `""` | Known-good Codex helper files, mirrored in before each run. |
 | `codex.worktreeRoot` | string | OS temp dir | Root for a pinned review's throwaway worktree; must be outside the repo. |
-| `codex.gitConfigIsolation` | boolean | `true` | Use a scratch global git config for the review/execution process. |
+| `codex.gitConfigIsolation` | boolean | `true` | Hand the review/execution process a scratch global git config that includes your real one (credential helpers, LFS filters, identity carry across) and overrides only the excludes/attributes probing. |
 | `codex.reviewRetries` | integer | `1` | Extra retryable review attempts (max 3). |
 | `codex.authProbe` | boolean | `true` | Run the fast Codex availability probe before the real attempt. |
 | `codex.probeTimeoutMs` | integer | `90000` | Cap for that probe. |
@@ -214,6 +214,7 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex.helperSiblings` | string[] | Windows: the three names above; else `[]` | Files the Codex install must carry directly beside its executable. |
 | `codex.requireHelperSiblings` | boolean | `false` | Fail availability checks if a configured sibling is still missing. |
 | `codex.doNotRun` | string[] | `[]` | Commands forbidden to the review and execution runners. |
+| `codex.engineMcp` | string | `"strip"` | `strip` disables every MCP server in the user's Codex config (plus the apps connector) for the engine child in every lane; `inherit` leaves it alone. |
 | `codex.crossplanModel` | string | `"gpt-5.6-sol"` | GPT cross-compare architect model. |
 | `codex.crossplanEffort` | string | `"high"` | GPT architect reasoning effort. |
 | `codex.crossplanTimeoutMs` | integer | `900000` | Wall-clock cap per cross-compare phase. |

@@ -201,7 +201,8 @@ Environment variables override the file; explicit runner flags override both.
 | `helpersDir` | A directory of known-good files mirrored into the Codex install directory before each run (see "Helper restore"). |
 | `doNotRun` | Commands the reviewer is forbidden to execute. Injected into the brief as a hard prohibition. |
 | `worktreeRoot` | Where a pinned review materializes its throwaway worktree (default: the OS temp dir). Must be writable and outside the repository — and if you set it and it is not writable, the review **fails** rather than quietly using somewhere else. |
-| `gitConfigIsolation` | `true` by default; set `false` to let the review use your real global git config. |
+| `gitConfigIsolation` | `true` by default: the engine reads a scratch global config that includes your real one and overrides only the excludes/attributes probing; set `false` to hand it your real global config directly. |
+| `engineMcp` | `strip` (default) disables every MCP server in the user's Codex config plus the apps connector for the engine child, in every lane; `inherit` leaves the engine's MCP config alone. |
 | `reviewRetries` | Extra attempts after a failure that might go differently (default `1`, max `3`). Each retry gets a fresh checkout; the chain reports as one outcome. |
 | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
 | `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
@@ -258,7 +259,34 @@ applied, so a prose-only instruction is visibly ignored instead of silently so.
 the reviewer's own judgment — it runs them anyway and burns the clock. `--no-tests`
 and `doNotRun` emit a PROHIBITED COMMANDS block that forbids execution outright
 and requires the affected claims to come back marked `UNVERIFIED (prohibited)`,
-so a narrowed review reports itself as narrowed.
+so a narrowed review reports itself as narrowed. `--allow <cmd>` (the tool's
+`allow: [...]`) is the precise counterpart: an exact command the order permits
+despite the blanket, exempt from `--no-tests` and from any restriction written
+into the order — the field case was a Python self-test the brief allowed and
+`--no-tests` then barred. The header reports `allowed commands: N`.
+
+**MCP isolation.** The engine child runs with every MCP server declared in the
+user's Codex config disabled by name and the Codex apps connector off, in every
+lane (`codex.engineMcp`, default `strip`; `inherit` leaves the config alone).
+A Sol review once delegated itself to a Claude review MCP it found in the
+config and came back same-family under a Sol header; an executor with a GitHub
+connector can write past the workspace sandbox. The header's `mcp:` line says
+what was disabled. Limits, stated: a server whose name needs TOML quoting cannot
+be addressed through `-c`, and a project-level `.codex/config.toml` is named
+in preflight rather than touched (Codex loads it only for a trusted project,
+and disabling a server it has not loaded kills the run on config validation).
+A verdict that still names a Claude engine as its author is stamped
+`⚠ CROSS-FAMILY BREACH` and never counts as the cross-family gate.
+
+**The global git config carries across.** The scratch global config each
+runner hands the engine now includes the user's real global config first
+(git skips an include it cannot read, silently) and copies `filter.lfs.*`
+across explicitly. Replacing the config outright dropped the credential helper
+(`git fetch` in the sandbox died on "could not read Username") and the LFS
+filters (every LFS-tracked file read as modified; Astra refused a "clean tree"
+precondition twice). The sandbox itself may still carry no GitHub credentials
+— the exec brief tells the engine to report an auth failure and continue from
+local refs, and the Director fetches before dispatch and pushes after.
 
 **Idle precheck.** A review of a tree that another agent is still writing is
 garbage. The runner samples the working tree twice before launching and refuses

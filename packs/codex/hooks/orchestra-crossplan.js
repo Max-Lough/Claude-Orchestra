@@ -116,6 +116,12 @@ const CONFIG = {
   installDir: '',
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   gitIsolation: process.env.ORCHESTRA_CROSSPLAN_GIT_ISOLATION !== '0',
+  // MCP isolation for the engine child: strip (default) or inherit — an
+  // architect that can delegate to a same-vendor MCP is not an independent
+  // draft. Same key as the other lanes ("codex": { "engineMcp": ... }).
+  engineMcp: (process.env.ORCHESTRA_CROSSPLAN_MCP || '').trim().toLowerCase(),
+  mcpLabel: '',
+  mcpArgs: [],
   probe: process.env.ORCHESTRA_CROSSPLAN_PROBE !== '0',
   web: true,
   webSource: 'default',
@@ -295,6 +301,88 @@ function teardownScratch() {
   }
 }
 
+// The files git itself reads as the "global" config, in git's own order.
+// Resolved from the REAL environment, before GIT_CONFIG_GLOBAL is redirected.
+function globalGitConfigFiles() {
+  const home = os.homedir();
+  const xdg = (process.env.XDG_CONFIG_HOME || '').trim() || (home ? path.join(home, '.config') : '');
+  const candidates = [];
+  if ((process.env.GIT_CONFIG_GLOBAL || '').trim()) candidates.push(process.env.GIT_CONFIG_GLOBAL.trim());
+  else {
+    if (xdg) candidates.push(path.join(xdg, 'git', 'config'));
+    if (home) candidates.push(path.join(home, '.gitconfig'));
+  }
+  return candidates.filter((f) => {
+    try {
+      return fs.statSync(f).isFile();
+    } catch (_) {
+      return false;
+    }
+  });
+}
+
+function gitIncludeSection(files) {
+  if (!files.length) return '';
+  const quote = (p) => '"' + p.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
+  return '[include]\n' + files.map((f) => '\tpath = ' + quote(f) + '\n').join('');
+}
+
+// MCP isolation — same mechanism and the same limits as the review and exec
+// runners (see orchestra-review.js): every server the user-level Codex config
+// declares is disabled by name, the apps connector is switched off, and a
+// project-level .codex/config.toml is named rather than touched.
+function mcpServerNames(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return { bare: [], quoted: [] };
+  }
+  const bare = [];
+  const quoted = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const m = /^\[\s*mcp_servers\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*(?:[\].])/.exec(line);
+    if (!m) continue;
+    if (m[3] !== undefined) {
+      if (!bare.includes(m[3])) bare.push(m[3]);
+    } else {
+      const q = m[1] !== undefined ? m[1] : m[2];
+      if (!quoted.includes(q)) quoted.push(q);
+    }
+  }
+  return { bare, quoted };
+}
+
+function mcpIsolation(dir) {
+  if (CONFIG.engineMcp === 'inherit') return { args: [], label: 'inherited (engineMcp: inherit)', notes: [] };
+  const home = process.env.HOME || process.env.USERPROFILE || os.homedir() || '';
+  const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
+  const user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [] };
+  const args = ['-c', 'features.apps=false'];
+  for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
+  const notes = [];
+  if (user.quoted.length) {
+    notes.push(
+      'mcp: ' + user.quoted.length + ' server(s) in the Codex config could not be disabled — a quoted ' +
+        'name cannot be addressed through -c: ' + user.quoted.map((n) => JSON.stringify(n)).join(', ')
+    );
+  }
+  const project = dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
+  const projectNames = project.bare.concat(project.quoted);
+  if (projectNames.length) {
+    notes.push(
+      'mcp: the project\'s own .codex/config.toml declares ' + projectNames.length + ' MCP server(s) ' +
+        '(' + projectNames.join(', ') + ') — not disabled; Codex loads that file only for a trusted ' +
+        'project, and disabling a server it has not loaded would kill the run'
+    );
+  }
+  const label =
+    'stripped (' + user.bare.length + ' server(s) disabled, apps connector off' +
+    (user.quoted.length ? ', ' + user.quoted.length + ' not addressable' : '') + ')';
+  return { args, label, notes };
+}
+
 // Same isolation as the exec runner: silence the unreadable global
 // excludes/attributes probing a sandboxed engine hits, while carrying the
 // user's identity forward (harmless here — the lane never commits — but
@@ -310,11 +398,16 @@ function setupGitIsolation() {
   const email = identity('user.email');
   const empty = path.join(SCRATCH.dir, 'git-empty');
   const cfg = path.join(SCRATCH.dir, 'gitconfig');
+  // Include the real global config first (git skips an unreadable include
+  // silently), so LFS filters, credential helpers and URL rewrites carry
+  // across; the overrides below are written after it and win.
+  const includes = gitIncludeSection(globalGitConfigFiles());
   try {
     fs.writeFileSync(empty, '', 'utf8');
     fs.writeFileSync(
       cfg,
       '# Written by orchestra-crossplan.js for this run only.\n' +
+        includes +
         '[core]\n' +
         '\texcludesFile = ' + empty.replace(/\\/g, '/') + '\n' +
         '\tattributesFile = ' + empty.replace(/\\/g, '/') + '\n' +
@@ -695,6 +788,7 @@ function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', 'read-only', '--cd', dir, '--output-last-message', outFile];
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
   args.push('-');
   const started = Date.now();
@@ -778,6 +872,7 @@ function settingsBits() {
     'web search: ' + (CONFIG.web ? 'on' : 'off') + ' (' + CONFIG.webSource + ')',
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (re-dispatch is safe — the lane is read-only)',
+    'mcp: ' + (CONFIG.mcpLabel || 'not resolved'),
   ];
 }
 
@@ -1183,6 +1278,17 @@ function main() {
     if (restore.note) PREFLIGHT.push(restore.note);
   }
 
+  // MCP isolation: env > orchestra.json > strip; resolved once for the probe
+  // and the run alike.
+  if (!CONFIG.engineMcp && typeof codexCfg.engineMcp === 'string') {
+    CONFIG.engineMcp = codexCfg.engineMcp.trim().toLowerCase();
+  }
+  if (CONFIG.engineMcp !== 'inherit') CONFIG.engineMcp = 'strip';
+  const mcp = mcpIsolation(CONFIG.projectDir);
+  CONFIG.mcpArgs = mcp.args;
+  CONFIG.mcpLabel = mcp.label;
+  for (const n of mcp.notes) PREFLIGHT.push(n);
+
   if (CONFIG.probe) {
     const probe = runAuthProbe(CONFIG.projectDir);
     if (!probe.ok) {
@@ -1212,6 +1318,7 @@ function main() {
   // These last-value-wins overrides are the boundary with a co-installed
   // Codex-Orchestra. User extra args cannot turn project orchestration back on.
   codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
+  codexArgs.push(...CONFIG.mcpArgs);
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();

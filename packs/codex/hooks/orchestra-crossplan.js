@@ -328,9 +328,33 @@ function globalGitConfigFiles() {
 }
 
 function gitIncludeSection(files) {
-  if (!files.length) return '';
-  const quote = (p) => '"' + p.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
-  return '[include]\n' + files.map((f) => '\tpath = ' + quote(f) + '\n').join('');
+  let out = '';
+  for (const f of files) {
+    let text;
+    try {
+      text = fs.readFileSync(f, 'utf8');
+    } catch (_) {
+      continue; // unreadable even to the runner: nothing to carry
+    }
+    const dir = path.dirname(f).replace(/\\/g, '/');
+    let inInclude = false;
+    const lines = text.split('\n').map((raw) => {
+      const line = raw.replace(/\r$/, '');
+      const t = line.trim();
+      if (/^\[/.test(t)) inInclude = /^\[\s*include(If\b|\s*\])/i.test(t);
+      if (!inInclude) return line;
+      const m = /^(\s*path\s*=\s*)(.+?)\s*$/i.exec(line);
+      if (!m) return line;
+      let v = m[2];
+      const quoted = v.length > 1 && v[0] === '"' && v[v.length - 1] === '"';
+      if (quoted) v = v.slice(1, -1);
+      if (/^(~|\/|[A-Za-z]:[\\/]|\\\\)/.test(v)) return line;
+      const abs = dir + '/' + v;
+      return m[1] + '"' + abs.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
+    });
+    out += '# ---- copied from ' + f.replace(/\\/g, '/') + '\n' + lines.join('\n') + '\n';
+  }
+  return out;
 }
 
 // The explicit LFS-filter copy the exec and review runners carry, for the
@@ -374,12 +398,37 @@ function mcpServerNames(file) {
   const quoted = [];
   const KEY = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)';
   const add = (raw) => {
-    const k = String(raw || '').trim();
+    let k = String(raw || '').trim();
     if (!k) return;
-    if (k[0] === '"' || k[0] === "'") {
-      const q = k.slice(1, -1);
-      if (!quoted.includes(q)) quoted.push(q);
-    } else if (/^[A-Za-z0-9_-]+$/.test(k) && !bare.includes(k)) bare.push(k);
+    // TOML decodes `"claude"` and `claude` to the same key, so a quoted name
+    // that is bare-safe is addressable through -c like any other (Astra,
+    // round 3). Only a name that NEEDS quoting is unaddressable.
+    if (k[0] === '"' || k[0] === "'") k = k.slice(1, -1);
+    if (/^[A-Za-z0-9_-]+$/.test(k)) {
+      if (!bare.includes(k)) bare.push(k);
+    } else if (!quoted.includes(k)) quoted.push(k);
+  };
+  // A `#` outside a string starts a comment; a `"""` inside one is not a
+  // multi-line string opening (Astra, round 3: `command = "x" # """` put the
+  // reader into string mode and hid the next server).
+  const stripComment = (s) => {
+    let out = '';
+    let q = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) {
+        out += ch;
+        if (ch === '\\' && q === '"') {
+          i++;
+          if (i < s.length) out += s[i];
+        } else if (ch === q) q = '';
+        continue;
+      }
+      if (ch === '#') break;
+      if (ch === '"' || ch === "'") q = ch;
+      out += ch;
+    }
+    return out;
   };
   // Keys at depth 1 of an inline table. Returns whether the table closed, so
   // a table spread over several lines can be accumulated and re-scanned.
@@ -450,8 +499,9 @@ function mcpServerNames(file) {
     }
     const t = line.trim();
     if (!t || t[0] === '#') continue;
+    const code = stripComment(t);
     for (const d of ['"""', "'''"]) {
-      const n = t.split(d).length - 1;
+      const n = code.split(d).length - 1;
       if (n % 2 === 1) multi = d;
     }
     let m;

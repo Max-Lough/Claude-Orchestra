@@ -110,7 +110,15 @@ line" that broke every later git command (values are quoted and escaped now,
 and a git round-trip is in the suite); a quoted root key
 (`["mcp_servers".x]`) was missed; and a header inside a multi-line string
 (an example in `developer_instructions`) was taken for a server and would
-have been "disabled" into a transport-less half-entry.
+have been "disabled" into a transport-less half-entry. Round 3 found three
+more: the `[include]` of the user's global config was not the silent skip
+this entry first claimed — a locked or ACL-denied file made git exit 128
+before any fallback applied — so the global config is now COPIED into the
+scratch config by the runner and the sandbox never opens the user's file
+(relative includes inside the copy are resolved against the file they came
+from); `[mcp_servers."claude"]` decodes to the same key as `claude` and is
+addressable after all; and a `"""` inside a `#` comment opened a phantom
+multi-line string that hid the next server.
 
 ## 3.2.0 — the executor ladder rebuilt: Opus medium by default, Astra on top, Sonnet reserved for tight specs
 

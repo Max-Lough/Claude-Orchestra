@@ -201,7 +201,7 @@ Environment variables override the file; explicit runner flags override both.
 | `helpersDir` | A directory of known-good files mirrored into the Codex install directory before each run (see "Helper restore"). |
 | `doNotRun` | Commands the reviewer is forbidden to execute. Injected into the brief as a hard prohibition. |
 | `worktreeRoot` | Where a pinned review materializes its throwaway worktree (default: the OS temp dir). Must be writable and outside the repository — and if you set it and it is not writable, the review **fails** rather than quietly using somewhere else. |
-| `gitConfigIsolation` | `true` by default: the engine reads a scratch global config that includes your real one and overrides only the excludes/attributes probing; set `false` to hand it your real global config directly. |
+| `gitConfigIsolation` | `true` by default: the engine reads a scratch global config that carries a copy of your real one and overrides only the excludes/attributes probing; set `false` to hand it your real global config directly. |
 | `engineMcp` | `strip` (default) disables every MCP server in the user's Codex config plus the apps connector for the engine child, in every lane; `inherit` leaves the engine's MCP config alone. |
 | `reviewRetries` | Extra attempts after a failure that might go differently (default `1`, max `3`). Each retry gets a fresh checkout; the chain reports as one outcome. |
 | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
@@ -279,9 +279,10 @@ A verdict that still names a Claude engine as its author is stamped
 `⚠ CROSS-FAMILY BREACH` and never counts as the cross-family gate.
 
 **The global git config carries across.** The scratch global config each
-runner hands the engine now includes the user's real global config first
-(git skips an include it cannot read, silently) and copies `filter.lfs.*`
-across explicitly. Replacing the config outright dropped the credential helper
+runner hands the engine now starts with a copy of the user's real global
+config (read by the runner as the host user — the sandbox never opens the
+user's file, so an unreadable one cannot make git fail) and copies
+`filter.lfs.*` across explicitly, quoted and escaped. Replacing the config outright dropped the credential helper
 (`git fetch` in the sandbox died on "could not read Username") and the LFS
 filters (every LFS-tracked file read as modified; Astra refused a "clean tree"
 precondition twice). The sandbox itself may still carry no GitHub credentials

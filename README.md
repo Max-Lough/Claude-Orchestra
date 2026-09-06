@@ -203,7 +203,7 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex.idleMs` | integer | `1500` | Live-tree settle window shared by both lanes; `0` disables. |
 | `codex.helpersDir` | string | `""` | Known-good Codex helper files, mirrored in before each run. |
 | `codex.worktreeRoot` | string | OS temp dir | Root for a pinned review's throwaway worktree; must be outside the repo. |
-| `codex.gitConfigIsolation` | boolean | `true` | Hand the review/execution process a scratch global git config that includes your real one (credential helpers, LFS filters, identity carry across) and overrides only the excludes/attributes probing. |
+| `codex.gitConfigIsolation` | boolean | `true` | Hand the review/execution process a scratch global git config that carries a copy of your real one (credential helpers, LFS filters, identity carry across) and overrides only the excludes/attributes probing. |
 | `codex.reviewRetries` | integer | `1` | Extra retryable review attempts (max 3). |
 | `codex.authProbe` | boolean | `true` | Run the fast Codex availability probe before the real attempt. |
 | `codex.probeTimeoutMs` | integer | `90000` | Cap for that probe. |

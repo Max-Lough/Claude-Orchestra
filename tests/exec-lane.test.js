@@ -1330,6 +1330,11 @@ function case21() {
     ['a real header beside a header quoted in a multi-line string',
       'developer_instructions = """\nExample:\n[mcp_servers.example]\ncommand = "x"\n"""\n[mcp_servers.genuine]\ncommand = "node"\n',
       ['genuine'], []],
+    // Astra, round 3: `"plain"` decodes to the same key as `plain`, so it is
+    // addressable; and a `"""` inside a comment opens no string.
+    ['a quoted but bare-safe name', '[mcp_servers."plain"]\ncommand = "node"\n', ['plain'], []],
+    ['a triple quote inside a comment', '[mcp_servers.first]\ncommand = "first" # """\n[mcp_servers.second]\ncommand = "node"\n',
+      ['first', 'second'], []],
   ];
   for (const [label, toml, wantBare, wantQuoted] of shapes) {
     const h = path.join(fx.root, 'codex-home-' + wantBare[0]);
@@ -1369,6 +1374,22 @@ function case21() {
     field(lq, 'GIT_LFS_CLEAN') === '"C:\\Program Files\\Git LFS\\git-lfs.exe" clean -- %f' &&
       /^EXEC ENGINE: OpenAI/.test(lq),
     'GIT_LFS_CLEAN: ' + field(lq, 'GIT_LFS_CLEAN') + ' — ' + lq.split('\n')[0]
+  );
+
+  // Astra, round 3: an `[include]` of the user's global config made git exit
+  // 128 when the sandbox could not open it. The config is COPIED now, and a
+  // relative include inside it still resolves against the file it came from.
+  const gdir = path.join(fx.root, 'gcopy');
+  fs.mkdirSync(gdir, { recursive: true });
+  fs.writeFileSync(path.join(gdir, 'extra.inc'), '[credential]\n\thelper = included-helper\n');
+  fs.writeFileSync(path.join(gdir, 'gitconfig'), '[include]\n\tpath = extra.inc\n');
+  const cp = runExec(fx, [], { GIT_CONFIG_GLOBAL: path.join(gdir, 'gitconfig'), CODEX_HOME: quotedHome }).stdout || '';
+  const scratchCfg = field(cp, 'GIT_CONFIG_GLOBAL');
+  check(
+    'the global config is copied, not included, and a relative include inside it still resolves',
+    field(cp, 'GIT_CREDENTIAL_HELPER') === 'included-helper' &&
+      path.resolve(scratchCfg) !== path.resolve(path.join(gdir, 'gitconfig')),
+    'GIT_CREDENTIAL_HELPER: ' + field(cp, 'GIT_CREDENTIAL_HELPER') + ' GIT_CONFIG_GLOBAL: ' + scratchCfg
   );
 
   const opaqueHome = path.join(fx.root, 'codex-home-opaque');

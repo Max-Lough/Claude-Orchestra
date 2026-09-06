@@ -183,9 +183,9 @@
  *                               invocation ("unable to access
  *                               '<home>/.config/git/ignore': Permission
  *                               denied"), which the engine spends its clock
- *                               investigating. The scratch config INCLUDES
- *                               the real global config (git skips the include
- *                               silently where it is unreadable), so
+ *                               investigating. The scratch config carries a
+ *                               COPY of the real global config (read by the
+ *                               runner, never opened by the sandbox), so
  *                               credential helpers, LFS filters and URL
  *                               rewrites carry across; filter.lfs.* is also
  *                               copied in explicitly. 0 disables.
@@ -830,11 +830,11 @@ function makeAttemptDir(n) {
 // FIX (field, 2026-09-06): replacing the global config outright also dropped
 // the credential helper and every URL rewrite the user had — inside the
 // sandbox, `git fetch origin` died with "could not read Username for
-// 'https://github.com'". The scratch config now INCLUDES the real global
-// config first: git skips an include it cannot read (ENOENT or EACCES)
-// silently, so where the sandbox can read the user's home everything carries
-// across, and where it cannot the explicit copies below still apply. The
-// overrides are written after the include, so they win.
+// 'https://github.com'". The scratch config now carries a COPY of the real
+// global config first (read by the runner as the host user — the sandbox
+// never opens the user's file, so an unreadable or locked one cannot make git
+// exit 128 the way an `[include]` did in Astra's round-3 reproduction). The
+// overrides are written after the copy, so they win.
 function globalGitConfigFiles() {
   // Git's own precedence, not os.homedir()'s: HOME first (on Windows too —
   // Git for Windows honours a set HOME over USERPROFILE), then
@@ -860,9 +860,33 @@ function globalGitConfigFiles() {
 }
 
 function gitIncludeSection(files) {
-  if (!files.length) return '';
-  const quote = (p) => '"' + p.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
-  return '[include]\n' + files.map((f) => '\tpath = ' + quote(f) + '\n').join('');
+  let out = '';
+  for (const f of files) {
+    let text;
+    try {
+      text = fs.readFileSync(f, 'utf8');
+    } catch (_) {
+      continue; // unreadable even to the runner: nothing to carry
+    }
+    const dir = path.dirname(f).replace(/\\/g, '/');
+    let inInclude = false;
+    const lines = text.split('\n').map((raw) => {
+      const line = raw.replace(/\r$/, '');
+      const t = line.trim();
+      if (/^\[/.test(t)) inInclude = /^\[\s*include(If\b|\s*\])/i.test(t);
+      if (!inInclude) return line;
+      const m = /^(\s*path\s*=\s*)(.+?)\s*$/i.exec(line);
+      if (!m) return line;
+      let v = m[2];
+      const quoted = v.length > 1 && v[0] === '"' && v[v.length - 1] === '"';
+      if (quoted) v = v.slice(1, -1);
+      if (/^(~|\/|[A-Za-z]:[\\/]|\\\\)/.test(v)) return line;
+      const abs = dir + '/' + v;
+      return m[1] + '"' + abs.replace(/\\/g, '/').replace(/"/g, '\\"') + '"';
+    });
+    out += '# ---- copied from ' + f.replace(/\\/g, '/') + '\n' + lines.join('\n') + '\n';
+  }
+  return out;
 }
 
 function setupGitIsolation() {
@@ -948,12 +972,37 @@ function mcpServerNames(file) {
   const quoted = [];
   const KEY = '("(?:[^"\\\\]|\\\\.)*"|\'[^\']*\'|[A-Za-z0-9_-]+)';
   const add = (raw) => {
-    const k = String(raw || '').trim();
+    let k = String(raw || '').trim();
     if (!k) return;
-    if (k[0] === '"' || k[0] === "'") {
-      const q = k.slice(1, -1);
-      if (!quoted.includes(q)) quoted.push(q);
-    } else if (/^[A-Za-z0-9_-]+$/.test(k) && !bare.includes(k)) bare.push(k);
+    // TOML decodes `"claude"` and `claude` to the same key, so a quoted name
+    // that is bare-safe is addressable through -c like any other (Astra,
+    // round 3). Only a name that NEEDS quoting is unaddressable.
+    if (k[0] === '"' || k[0] === "'") k = k.slice(1, -1);
+    if (/^[A-Za-z0-9_-]+$/.test(k)) {
+      if (!bare.includes(k)) bare.push(k);
+    } else if (!quoted.includes(k)) quoted.push(k);
+  };
+  // A `#` outside a string starts a comment; a `"""` inside one is not a
+  // multi-line string opening (Astra, round 3: `command = "x" # """` put the
+  // reader into string mode and hid the next server).
+  const stripComment = (s) => {
+    let out = '';
+    let q = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) {
+        out += ch;
+        if (ch === '\\' && q === '"') {
+          i++;
+          if (i < s.length) out += s[i];
+        } else if (ch === q) q = '';
+        continue;
+      }
+      if (ch === '#') break;
+      if (ch === '"' || ch === "'") q = ch;
+      out += ch;
+    }
+    return out;
   };
   // Keys at depth 1 of an inline table. Returns whether the table closed, so
   // a table spread over several lines can be accumulated and re-scanned.
@@ -1024,8 +1073,9 @@ function mcpServerNames(file) {
     }
     const t = line.trim();
     if (!t || t[0] === '#') continue;
+    const code = stripComment(t);
     for (const d of ['"""', "'''"]) {
-      const n = t.split(d).length - 1;
+      const n = code.split(d).length - 1;
       if (n % 2 === 1) multi = d;
     }
     let m;

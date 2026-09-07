@@ -181,6 +181,11 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redact');
+// FIX (field, 2026-09-07): shares the review runner's codex-package.json
+// manifest reader, so this runner's restoreHelpers() (below) knows what the
+// install's own manifest already carries before copying a helpersDir entry
+// over it. See orchestra-install.js for the failure this closes.
+const { packagedResourceDirs, carriedByPackage } = require('./orchestra-install');
 
 // Per-run report-integrity token, generated before anything else so every
 // output path — success, failure, early refusal — can carry it. The brief
@@ -995,16 +1000,30 @@ function resolveCodexBin(bin) {
   }
 }
 
-function restoreHelpers(helpersDir, installDir) {
-  if (!helpersDir || !installDir) return { restored: [], note: '' };
+// FIX (field, 2026-09-07): `packaged` (the caller's packagedResourceDirs()
+// result for this install) is consulted before anything is copied. A
+// top-level helpersDir entry carriedByPackage() reports on is SKIPPED,
+// subtree included — copyInto() below already recurses a directory whole, so
+// skipping it here before the copy is the whole fix. This is the runner the
+// 2026-09-07 15:48 re-injection actually happened in: a stale helpersDir kit
+// (0.147-era) copied its whole contents, including a bin\codex-resources\
+// subtree, into a live 0.153.4 install's bin\ while a review ran elsewhere.
+// See orchestra-install.js's carriedByPackage for the full account.
+function restoreHelpers(helpersDir, installDir, packaged) {
+  if (!helpersDir || !installDir) return { restored: [], skipped: [], note: '' };
   let entries;
   try {
     entries = fs.readdirSync(helpersDir);
   } catch (e) {
-    return { restored: [], note: 'helpersDir unreadable (' + boundedDiagnostic((e && e.message) || e, 2000) + ')' };
+    return { restored: [], skipped: [], note: 'helpersDir unreadable (' + boundedDiagnostic((e && e.message) || e, 2000) + ')' };
   }
   const restored = [];
+  const skipped = [];
   for (const entry of entries) {
+    if (carriedByPackage(entry, packaged)) {
+      skipped.push(entry);
+      continue;
+    }
     const dest = path.join(installDir, entry);
     if (fs.existsSync(dest)) continue;
     try {
@@ -1013,11 +1032,12 @@ function restoreHelpers(helpersDir, installDir) {
     } catch (e) {
       return {
         restored,
+        skipped,
         note: 'helper restore failed on ' + entry + ' (' + boundedDiagnostic((e && e.message) || e, 2000) + ')',
       };
     }
   }
-  return { restored, note: '' };
+  return { restored, skipped, note: '' };
 }
 
 // --------------------------------------------------------- tree fingerprint
@@ -1754,16 +1774,50 @@ function claimHead(item) {
   return (m ? m[1] : item).trim().replace(/^[`'"]+|[`'"]+$/g, '');
 }
 
+// FIX (Sol review, 2026-09-07): `isPathShaped` was extension/separator-only
+// and mistook two ref shapes for file edits. (a) The brief demands
+// `<path:line> — <what>`, so a head containing whitespace after claimHead's
+// separator strip is prose ("Created branch `feature/foo` at HEAD deadbeef"
+// has no ` — `/` - `/`: ` separator, so its head is the whole sentence) — not
+// a path, checked FIRST so an embedded `/` in that prose (e.g. `feature/foo`)
+// never short-circuits into a false path match. (b) A bare digit run is not
+// an extension: `v1.2.3` must not be path-shaped, so the extension itself
+// (not its optional `:line` suffix) must contain a letter — `foo.1` man pages
+// are an accepted loss.
 function isPathShaped(head) {
   if (!head) return false;
+  if (/\s/.test(head)) return false; // a path claim's head is a single token
   if (/[\\/]/.test(head)) return true; // contains a path separator
-  if (/\.[A-Za-z0-9]{1,8}(:\d+(-\d+)?)?$/.test(head)) return true; // file extension, optional :line[-line]
+  const ext = /\.([A-Za-z0-9]{1,8})(?::\d+(?:-\d+)?)?$/.exec(head); // extension, optional :line[-line]
+  if (ext && /[A-Za-z]/.test(ext[1])) return true;
   if (/^[^\s\\/:]+:\d+(-\d+)?$/.test(head)) return true; // bare filename:line
   return false;
 }
 
-function pathClaims(claims) {
-  return claims.filter((c) => isPathShaped(claimHead(c)));
+// FIX (Sol review, 2026-09-07): (c) a single-token head can be path-shaped by
+// the separator rule above yet still name no file — `feature/foo` (a branch
+// this run itself created) contains a `/` but is a ref, not a path. `refs` is
+// the run's `for-each-ref` set (read once, tolerating failure as empty); a
+// head in that set is excluded UNLESS a file of that exact name also exists
+// in the tree, so a real path that happens to collide with a ref name is
+// still counted as evidence of an edit.
+function pathClaims(claims, refs, dir) {
+  return claims.filter((c) => {
+    const head = claimHead(c);
+    if (!isPathShaped(head)) return false;
+    if (refs && refs.has(head) && !fs.existsSync(path.join(dir, head))) return false;
+    return true;
+  });
+}
+
+// FIX (Sol review, 2026-09-07): backs pathClaims' ref exclusion above. Read
+// once per run — a repo with no refs, or no git at all, yields an empty set
+// rather than blocking on an error, since the exclusion is a narrowing, never
+// a requirement.
+function refNames(dir) {
+  const r = runGit(['-C', dir, 'for-each-ref', '--format=%(refname:short)']);
+  if (r.error || r.status !== 0) return new Set();
+  return new Set((r.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean));
 }
 
 // ------------------------------------------------------------------ main
@@ -2001,11 +2055,23 @@ function main() {
   CONFIG.installDir = resolved.real ? path.dirname(resolved.path) : '';
   if (resolved.note) PREFLIGHT.push(resolved.note);
   if (CONFIG.helpersDir) {
-    const restore = restoreHelpers(CONFIG.helpersDir, CONFIG.installDir);
+    // FIX (field, 2026-09-07): computed here, once, and handed to
+    // restoreHelpers() so a helpersDir entry the manifest already carries is
+    // never copied over it — see orchestra-install.js's carriedByPackage.
+    const packagedForHelpers = packagedResourceDirs(CONFIG.installDir);
+    const restore = restoreHelpers(CONFIG.helpersDir, CONFIG.installDir, packagedForHelpers);
     if (restore.restored.length) {
       PREFLIGHT.push(
         'restored ' + restore.restored.length + ' file(s) into the Codex install from ' +
           CONFIG.helpersDir + ': ' + restore.restored.join(', ')
+      );
+    }
+    if (restore.skipped && restore.skipped.length) {
+      const dirs = Array.from(new Set(packagedForHelpers.map((d) => d.dir)));
+      PREFLIGHT.push(
+        'helpersDir: ' + restore.skipped.length + ' entr' + (restore.skipped.length === 1 ? 'y' : 'ies') +
+          ' not copied — the install carries them in its declared resources directory (' +
+          dirs.join(', ') + '): ' + restore.skipped.join(', ')
       );
     }
     if (restore.note) PREFLIGHT.push(restore.note);
@@ -2175,7 +2241,8 @@ function main() {
   // now part of what "untouched" means too, so a checkout that only moves the
   // branch (same commit) is caught as a measured change, not silently folded
   // into "the tree did not change at all".
-  const pathedClaims = claims ? pathClaims(claims) : claims;
+  const refs = claims && claims.length ? refNames(CONFIG.execDir) : new Set();
+  const pathedClaims = claims ? pathClaims(claims, refs, CONFIG.execDir) : claims;
   const treeUntouched =
     delta !== null &&
     delta.source.length === 0 &&

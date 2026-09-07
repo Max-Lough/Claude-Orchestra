@@ -1689,6 +1689,99 @@ function case22() {
     !/helper siblings repaired next to the resolved binary/.test(snrOut),
     snrOut.slice(0, 1600)
   );
+
+  // FIX (field, 2026-09-07): restoreHelpers() must not copy a helpersDir
+  // entry the install's own manifest already carries in its declared
+  // resources directory — the 2026-09-07 15:48 field failure (a stale
+  // helpersDir kit re-injecting old helpers into a live 0.153.4 install's
+  // bin\ behind the manifest-based doctor fix tested in case 30). Exercised
+  // through both paths that call restoreHelpers(): a normal review, and the
+  // repairing `--doctor`.
+  const helpersDirManifest = path.join(fx.root, 'helpers-kit-manifest');
+  fs.mkdirSync(helpersDirManifest, { recursive: true });
+  // The stale kit: both helper names (a version skew if copied in), a
+  // codex-resources\ subtree of junk (must never be walked into or copied —
+  // the declared resources directory IS codex-resources, whole), and one
+  // genuinely new file the manifest carries nowhere.
+  fs.writeFileSync(path.join(helpersDirManifest, 'codex-command-runner.exe'), 'MZ STALE-0147-ERA\n');
+  fs.writeFileSync(path.join(helpersDirManifest, 'codex-windows-sandbox-setup.exe'), 'MZ STALE-0147-ERA\n');
+  const helpersResourcesJunk = path.join(helpersDirManifest, 'codex-resources');
+  fs.mkdirSync(helpersResourcesJunk, { recursive: true });
+  fs.writeFileSync(path.join(helpersResourcesJunk, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDirManifest, 'known-good-extra.txt'), 'genuinely new\n');
+
+  const makeManifestInstall = (root) => {
+    const release = path.join(root, 'release');
+    const installDir = path.join(release, 'bin');
+    const bin = makeStubBin(installDir, 'codex-stub');
+    fs.writeFileSync(
+      path.join(release, 'codex-package.json'),
+      JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+    );
+    const resources = path.join(release, 'codex-resources');
+    fs.mkdirSync(resources, { recursive: true });
+    fs.writeFileSync(path.join(resources, 'codex-command-runner.exe'), 'MZ current\n');
+    fs.writeFileSync(path.join(resources, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+    return { installDir, bin };
+  };
+
+  // Normal review.
+  const fx4 = makeDirtyRepo();
+  const install4 = makeManifestInstall(fx4.root);
+  writeProjectConfig(fx4, { helpersDir: helpersDirManifest });
+  const iso4 = { HOME: fx4.root, USERPROFILE: fx4.root, CODEX_HOME: path.join(fx4.root, '.codex') };
+  const rv = runReview(fx4, [], Object.assign({ CODEX_BIN: install4.bin }, iso4));
+  const rvOut = rv.stdout || '';
+  check(
+    'a normal review does not copy the manifest-carried helper names or directory into the install',
+    !fs.existsSync(path.join(install4.installDir, 'codex-command-runner.exe')) &&
+      !fs.existsSync(path.join(install4.installDir, 'codex-windows-sandbox-setup.exe')) &&
+      !fs.existsSync(path.join(install4.installDir, 'codex-resources')),
+    fs.readdirSync(install4.installDir).join(', ')
+  );
+  check(
+    'a normal review still copies the genuinely new helpersDir file',
+    fs.existsSync(path.join(install4.installDir, 'known-good-extra.txt')),
+    fs.readdirSync(install4.installDir).join(', ')
+  );
+  check(
+    'the preflight names all three manifest-carried entries as not copied',
+    /helpersDir: 3 entries not copied/.test(rvOut) &&
+      /codex-command-runner\.exe/.test(rvOut) &&
+      /codex-windows-sandbox-setup\.exe/.test(rvOut) &&
+      /codex-resources/.test(rvOut) &&
+      /declared resources directory/.test(rvOut),
+    rvOut.slice(0, 2400)
+  );
+
+  // Repairing `--doctor` (own install: the review run above must not have
+  // already restored anything into a shared installDir).
+  const fx5 = makeDirtyRepo();
+  const install5 = makeManifestInstall(fx5.root);
+  writeProjectConfig(fx5, { helpersDir: helpersDirManifest });
+  const doc = runDoctor(fx5, { CODEX_BIN: install5.bin });
+  const docOut = doc.stdout || '';
+  check(
+    'the repairing doctor does not copy the manifest-carried helper names or directory into the install',
+    !fs.existsSync(path.join(install5.installDir, 'codex-command-runner.exe')) &&
+      !fs.existsSync(path.join(install5.installDir, 'codex-windows-sandbox-setup.exe')) &&
+      !fs.existsSync(path.join(install5.installDir, 'codex-resources')),
+    fs.readdirSync(install5.installDir).join(', ')
+  );
+  check(
+    'the repairing doctor still copies the genuinely new helpersDir file',
+    fs.existsSync(path.join(install5.installDir, 'known-good-extra.txt')),
+    fs.readdirSync(install5.installDir).join(', ')
+  );
+  check(
+    'the doctor output names all three manifest-carried entries as not copied',
+    /helpersDir: 3 entries not copied/.test(docOut) &&
+      /codex-command-runner\.exe/.test(docOut) &&
+      /codex-windows-sandbox-setup\.exe/.test(docOut) &&
+      /codex-resources/.test(docOut) &&
+      /declared resources directory/.test(docOut),
+    docOut.slice(0, 2400)
+  );
 }
 
 // ------------------------------------------------------------------ driver
@@ -2452,6 +2545,115 @@ function case30() {
   );
 }
 
+// FIX (field, 2026-09-07): a helper the manifest carries in its declared
+// resources directory can ALSO sit beside the binary — "not missing" (case 30
+// above already covers that half), but `bin\` is EARLIER in Codex's own
+// resolution order, so a stale copy planted there shadows the current,
+// packaged one. Observed 2026-09-07 15:48: a helpersDir repair kit built for a
+// 0.147-era release re-injected `codex-command-runner.exe` and a whole
+// `bin\codex-resources\` subtree into a live 0.153.4 install's `bin\` — the
+// exact version-skew route WO-11 traced to the intermittent sandbox fault. The
+// doctor calling that "present" hid precisely the state it exists to catch.
+function case31() {
+  section('31. A stale helper kit shadowing the packaged copies beside the binary is a HAZARD');
+
+  const wanted = 'codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe';
+
+  const makeHazardInstall = (root, withStaleKit) => {
+    const release = path.join(
+      root, '.codex', 'packages', 'standalone', 'releases', '0.153.4-x86_64-pc-windows-msvc'
+    );
+    const installDir = path.join(release, 'bin');
+    const bin = makeStubBin(installDir, 'codex-stub');
+    fs.writeFileSync(
+      path.join(release, 'codex-package.json'),
+      JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+    );
+    const resources = path.join(release, 'codex-resources');
+    fs.mkdirSync(resources, { recursive: true });
+    fs.writeFileSync(path.join(resources, 'codex-command-runner.exe'), 'MZ current\n');
+    fs.writeFileSync(path.join(resources, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+    if (withStaleKit) {
+      // The re-injected kit: a stale build of the exe, and a whole junk
+      // codex-resources\ subtree — both land DIRECTLY beside the binary.
+      fs.writeFileSync(path.join(installDir, 'codex-command-runner.exe'), 'MZ STALE-0147-ERA\n');
+      const staleResources = path.join(installDir, 'codex-resources');
+      fs.mkdirSync(staleResources, { recursive: true });
+      fs.writeFileSync(path.join(staleResources, 'junk.txt'), 'junk\n');
+    }
+    return { installDir, bin };
+  };
+
+  // The hazard install: `--doctor --no-repair` must fail and name both
+  // shadowed entries (the exe and the resources directory).
+  const fx = makeDirtyRepo();
+  const install = makeHazardInstall(fx.root, true);
+  const iso = {
+    HOME: fx.root, USERPROFILE: fx.root, CODEX_HOME: path.join(fx.root, '.codex'),
+    CODEX_BIN: install.bin, ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+  };
+  const doc = runDoctor(fx, iso, ['--no-repair']);
+  const dout = doc.stdout || '';
+  check(
+    '--doctor --no-repair exits non-zero when a stale kit shadows the packaged helpers',
+    doc.status !== 0,
+    'exit ' + doc.status + ' — ' + dout.slice(0, 1600)
+  );
+  check(
+    'the HAZARD line names both the shadowed exe and the shadowed directory',
+    /HAZARD: 2 helper\(s\) also sit beside the binary/.test(dout) &&
+      /codex-command-runner\.exe/.test(dout) &&
+      /codex-resources/.test(dout) &&
+      /never repair into bin\\/.test(dout),
+    dout.slice(0, 1600)
+  );
+
+  // Regression: the identical manifest-carried layout, but a CLEAN bin\ — no
+  // shadow, no HAZARD line, exit 0 (case 30 already covers this shape; this
+  // asserts the new line stays silent on it).
+  const fxClean = makeDirtyRepo();
+  const installClean = makeHazardInstall(fxClean.root, false);
+  const isoClean = {
+    HOME: fxClean.root, USERPROFILE: fxClean.root, CODEX_HOME: path.join(fxClean.root, '.codex'),
+    CODEX_BIN: installClean.bin, ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+  };
+  const docClean = runDoctor(fxClean, isoClean, ['--no-repair']);
+  const doutClean = docClean.stdout || '';
+  check(
+    'a clean bin\\ still passes the doctor',
+    docClean.status === 0,
+    'exit ' + docClean.status + ' — ' + doutClean.slice(0, 1200)
+  );
+  check(
+    'a clean bin\\ prints no HAZARD line',
+    !/HAZARD:/.test(doutClean),
+    doutClean.slice(0, 1200)
+  );
+
+  // A normal review against the hazard install prints the same HAZARD line in
+  // its preflight and still runs a real review — informational, not a stop.
+  const fxReview = makeDirtyRepo();
+  const installReview = makeHazardInstall(fxReview.root, true);
+  const rv = runReview(fxReview, ['--head-ref', fxReview.head], {
+    CODEX_BIN: installReview.bin,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+    HOME: fxReview.root,
+    USERPROFILE: fxReview.root,
+    CODEX_HOME: path.join(fxReview.root, '.codex'),
+  });
+  const rvOut = rv.stdout || '';
+  check(
+    'a normal review prints the HAZARD line in its preflight',
+    /HAZARD: 2 helper\(s\) also sit beside the binary/.test(rvOut),
+    rvOut.slice(0, 1600)
+  );
+  check(
+    'and still runs a real review instead of REVIEW_UNAVAILABLE',
+    !/VERDICT: REVIEW_UNAVAILABLE/.test(rvOut),
+    rvOut.slice(0, 1600)
+  );
+}
+
 async function main() {
   case1();
   case2and3();
@@ -2483,6 +2685,7 @@ async function main() {
   case28();
   case29();
   case30();
+  case31();
 }
 
 main().then(finish, (e) => {

@@ -103,4 +103,3 @@ Codex CLI 0.153.2, `.claude/orchestra.json` with `codex.worktreeRoot` + `helpers
     Status: fixed in 3.3.2 — the `tree: live working tree` label is a resolved-path compare
     (runner); both launcher definitions pass their own cwd as `cd` when launched in a
     worktree (launcher definitions).
-

@@ -1647,6 +1647,161 @@ function case22() {
       /claims edits the runner measured as never happening/.test(lout),
     lout.slice(0, 700)
   );
+
+  // FIX (Sol review, 2026-09-07), finding 1: a claim head with no separator
+  // is prose, not a path, even when the prose contains a `/` (from the
+  // branch name it names). Against an untouched tree, this must be relayed.
+  const fx6 = makeRepo();
+  const proseHead = runExec(fx6, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `feature/foo` at HEAD deadbeef',
+  });
+  const pOut = proseHead.stdout || '';
+  check(
+    'a whitespace-prose claim head naming a branch (with a slash inside it) is relayed, not misread as a path',
+    /STATUS: DONE/.test(pOut) &&
+      !/EXEC_UNAVAILABLE/.test(pOut) &&
+      /REPORT INTEGRITY: verified/.test(pOut),
+    pOut.slice(0, 500)
+  );
+
+  // FIX (Sol review, 2026-09-07), finding 1(c): a single-token head that IS
+  // path-shaped by the separator rule (`feature/foo` contains `/`) but names
+  // a ref the run actually created — WITHOUT checking it out, so HEAD and
+  // branch both stay put and only the ref-exclusion can save the report.
+  const fx7 = makeRepo();
+  const refHead = runExec(fx7, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'feature/foo',
+    STUB_CODEX_CLAIM_CHANGES: '`feature/foo` — created branch',
+  });
+  const rhOut = refHead.stdout || '';
+  check(
+    'a single-token claim head that names a real (uncheckedout) branch is excluded via the ref set, not treated as a path',
+    /STATUS: DONE/.test(rhOut) &&
+      !/EXEC_UNAVAILABLE/.test(rhOut) &&
+      /REPORT INTEGRITY: verified/.test(rhOut),
+    rhOut.slice(0, 500)
+  );
+
+  // FIX (Sol review, 2026-09-07), finding 1(b): a version-like tag head must
+  // not be misclassified as a path extension (the digit-only ".3" of
+  // "v1.2.3" has no letter). The stub also creates the tag for real, so the
+  // ref-exclusion path is exercised too.
+  const fx8 = makeRepo();
+  const tagHead = runExec(fx8, [], {
+    STUB_CODEX_TAG: 'v1.2.3',
+    STUB_CODEX_CLAIM_CHANGES: 'v1.2.3 — created tag',
+  });
+  const tOut = tagHead.stdout || '';
+  check(
+    'a version-like tag claim head is relayed, not misread as a file extension',
+    /STATUS: DONE/.test(tOut) &&
+      !/EXEC_UNAVAILABLE/.test(tOut) &&
+      /REPORT INTEGRITY: verified/.test(tOut),
+    tOut.slice(0, 500)
+  );
+
+  // Re-assert case 16's shape with the ref set populated (a real branch
+  // exists), so the ref-exclusion cannot go blind and swallow a genuine
+  // path-shaped claim just because refs happen to be present this run.
+  const fx9 = makeRepo();
+  const realPathStillLies = runExec(fx9, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'some-ref',
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag',
+  });
+  const rplOut = realPathStillLies.stdout || '';
+  check(
+    'a real path-shaped claim against an untouched tree is still EXEC_UNAVAILABLE even when a ref set is present',
+    /STATUS: EXEC_UNAVAILABLE/.test(rplOut) &&
+      /claims edits the runner measured as never happening/.test(rplOut),
+    rplOut.slice(0, 700)
+  );
+
+  // FIX (Sol review, 2026-09-07), finding 2: a real branch move (measured
+  // change) alongside an UNPROVEN path claim — no file was actually edited.
+  // The branch move alone disables the untouched-tree contradiction, exactly
+  // as HEAD moving would; this pins the `before.branch === after.branch`
+  // clause in treeUntouched (removing it makes this EXEC_UNAVAILABLE).
+  const fx10 = makeRepo();
+  const branchMoveWithFalsePathClaim = runExec(fx10, [], {
+    STUB_CODEX_BRANCH: 'wo7a',
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag',
+  });
+  const bmOut = branchMoveWithFalsePathClaim.stdout || '';
+  check(
+    'a real branch move relays the report even though the accompanying path claim was never made real (branch-equality clause pin)',
+    /STATUS: DONE/.test(bmOut) &&
+      !/EXEC_UNAVAILABLE/.test(bmOut) &&
+      /REPORT INTEGRITY: verified/.test(bmOut),
+    bmOut.slice(0, 500)
+  );
+  check(
+    'the TREE AUDIT names the branch move in the pin scenario',
+    /branch: main → wo7a/.test(bmOut),
+    bmOut.slice(0, 1500)
+  );
+}
+
+function case23() {
+  section('23. restoreHelpers() does not copy a helpersDir entry the install\'s manifest already carries');
+
+  // FIX (field, 2026-09-07): mirrors review-lane case 22's manifest
+  // sub-fixture. A stale helpersDir kit must never re-inject a helper name —
+  // or the codex-resources\ directory itself — that the install's own
+  // codex-package.json already declares a resources directory for; a size
+  // difference against helpersDir is not a reason to prefer the older kit.
+  // This runner (orchestra-exec.js) is the one the 2026-09-07 15:48 field
+  // failure actually happened in: a stale helpersDir kit copied its whole
+  // contents, codex-resources\ subtree included, into a live install's bin\.
+  const fx = makeRepo();
+  const release = path.join(fx.root, 'release');
+  const installDir = path.join(release, 'bin');
+  const bin = makeStubBin(installDir, 'codex-stub');
+  fs.writeFileSync(
+    path.join(release, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const resources = path.join(release, 'codex-resources');
+  fs.mkdirSync(resources, { recursive: true });
+  fs.writeFileSync(path.join(resources, 'codex-command-runner.exe'), 'MZ current\n');
+  fs.writeFileSync(path.join(resources, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+
+  // The stale kit: both helper names (a version skew if copied in), a
+  // codex-resources\ subtree of junk (must never be walked into or copied —
+  // the declared resources directory IS codex-resources, whole), and one
+  // genuinely new file the manifest carries nowhere.
+  const helpersDir = path.join(fx.root, 'helpers-kit-manifest');
+  fs.mkdirSync(helpersDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersDir, 'codex-command-runner.exe'), 'MZ STALE-0147-ERA\n');
+  fs.writeFileSync(path.join(helpersDir, 'codex-windows-sandbox-setup.exe'), 'MZ STALE-0147-ERA\n');
+  const helpersResources = path.join(helpersDir, 'codex-resources');
+  fs.mkdirSync(helpersResources, { recursive: true });
+  fs.writeFileSync(path.join(helpersResources, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDir, 'known-good-extra.txt'), 'genuinely new\n');
+  writeProjectConfig(fx, { codex: { helpersDir } });
+
+  const r = runExec(fx, [], { CODEX_BIN: bin });
+  const out = r.stdout || '';
+  check(
+    'the exec runner does not copy the manifest-carried helper names or directory into the install',
+    !fs.existsSync(path.join(installDir, 'codex-command-runner.exe')) &&
+      !fs.existsSync(path.join(installDir, 'codex-windows-sandbox-setup.exe')) &&
+      !fs.existsSync(path.join(installDir, 'codex-resources')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    'the exec runner still copies the genuinely new helpersDir file',
+    fs.existsSync(path.join(installDir, 'known-good-extra.txt')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    'the PREFLIGHT names all three manifest-carried entries as not copied',
+    /PREFLIGHT: helpersDir: 3 entries not copied/.test(out) &&
+      /codex-command-runner\.exe/.test(out) &&
+      /codex-windows-sandbox-setup\.exe/.test(out) &&
+      /codex-resources/.test(out) &&
+      /declared resources directory/.test(out),
+    (out.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
 }
 
 function finish() {
@@ -1683,6 +1838,7 @@ async function main() {
   case20();
   case21();
   case22();
+  case23();
 }
 
 main().then(finish, (e) => {

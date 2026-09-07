@@ -253,6 +253,11 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redact');
+// FIX (field, 2026-09-07): pathUnder/packagedResourceDirs/carriedByPackage
+// moved out to orchestra-install.js so orchestra-exec.js's restoreHelpers()
+// reads the same manifest this runner's doctor does, instead of only this
+// runner knowing about it. See that file for why carriedByPackage exists.
+const { pathUnder, packagedResourceDirs, carriedByPackage } = require('./orchestra-install');
 
 // ------------------------------------------------------------------ config
 
@@ -1353,6 +1358,11 @@ function runExecSelftest() {
 function runDoctor(live) {
   const install = inspectCodexInstall();
   const hazards = staleSessionHazards();
+  // FIX (field, 2026-09-07): a stale kit shadowing the packaged helpers is a
+  // broken install, not a note — it follows the same exit-code pattern as
+  // `install.missing.length` and `hazards.attention.length` below, not a
+  // softer one.
+  const hasShadow = !!(install.shadowed && install.shadowed.length);
   const out = [];
   out.push('ORCHESTRA — Codex install check');
   out.push('');
@@ -1388,7 +1398,7 @@ function runDoctor(live) {
   // findings under NEEDS ATTENTION below.
   for (const n of hazards.notes) out.push('  ' + n);
 
-  if (install.missing.length || hazards.attention.length) {
+  if (install.missing.length || hazards.attention.length || hasShadow) {
     out.push('');
     out.push('NEEDS ATTENTION');
     for (const a of hazards.attention) out.push('  ' + a);
@@ -1420,7 +1430,7 @@ function runDoctor(live) {
     out.push('  Then re-run this check. If your install legitimately does not carry these');
     out.push('  files, set ORCHESTRA_CODEX_HELPER_SIBLINGS (comma-separated, empty for none)');
     out.push('  or "codex": { "helperSiblings": [...] } in .claude/orchestra.json.');
-  } else if (!hazards.attention.length) {
+  } else if (!hazards.attention.length && !hasShadow) {
     out.push('');
     out.push('OK — a review would find this install complete.');
     out.push('  (Auth is not checked here: run `codex login`, or export OPENAI_API_KEY.');
@@ -1445,7 +1455,7 @@ function runDoctor(live) {
   // A non-zero exit is what lets a wrapper — the installer, CI, a shell script —
   // act on the result without parsing prose.
   process.exitCode =
-    install.missing.length || hazards.attention.length || liveFailed ? 1 : 0;
+    install.missing.length || hazards.attention.length || hasShadow || liveFailed ? 1 : 0;
 }
 
 // Environment for every git the review touches — the runner's own calls and the
@@ -1814,107 +1824,10 @@ function detectInstallLayout(binPath) {
   return { id: 'unknown', binRoot: '' };
 }
 
-// Is `child` inside `parent`? Hoisted out of verifyHelperSiblings so the
-// manifest reader below can share the one containment test rather than grow a
-// second, subtly different copy.
-function pathUnder(parent, child) {
-  try {
-    const rel = path.relative(path.resolve(parent), path.resolve(child));
-    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-  } catch (_) {
-    return false;
-  }
-}
-
-// FIX (2026-09-07, codex-cli 0.153.4): the helper-sibling check demanded these
-// files sit in `bin\` beside `codex.exe`, and every self-update was read as
-// "the update stripped them". It never did. Codex ships them in a resources
-// directory declared by the install's own manifest — `codex-package.json`
-// (`layoutVersion: 1`, present unchanged in every release on this machine back
-// to 0.145.0) carries `resourcesDir: "codex-resources"`, a SIBLING of `bin\`,
-// and 0.153.4 resolves them from there with nothing in `bin\` at all (verified:
-// a sandboxed `codex exec` established the workspace-write sandbox and ran its
-// command on a stock install whose `bin\` held only the two shipped exes).
-//
-// The stale expectation was not merely noisy, it was harmful. Every release
-// dir here whose `bin\` DOES hold these files got them from a past repair, and
-// those copies are byte-identical across 0.151.0/0.153.0/0.153.2 — frozen at
-// the 0.147.0-era build. So the repair the doctor recommended would have copied
-// a 0.147.0 `codex-command-runner.exe` into a 0.153.4 install: precisely the
-// version skew the WO-11 investigation traced to the "intermittent codex
-// sandbox fault" (that helper rejects the newer CLI's spawn protocol v6). The
-// check was manufacturing the bug it existed to catch.
-//
-// Read the manifest instead of assuming a location, so the NEXT relayout is
-// followed rather than fought. Returns `{ dir, name }` for each declared
-// resources directory that actually exists — `dir` canonical (what to read
-// files out of), `name` the DECLARED last segment (what the directory is called
-// inside the package). An install without a manifest yields none and the caller
-// falls back to the beside-the-binary rule unchanged.
-//
-// FIX (Sol review, round 2): an earlier version returned only the canonical
-// path, which silently renames the directory whenever it is reached through an
-// in-package link. A valid `codex-resources -> assets` junction canonicalises to
-// `assets`, the `codex-resources` helper entry then matched nothing, and the
-// doctor called a healthy install broken — worse, a repairing run copied the
-// whole resources tree into `bin\codex-resources` and reported a repair it had
-// no business making. Both names are load-bearing, so both are kept.
-function packagedResourceDirs(installDir) {
-  const out = [];
-  // The manifest sits at the package root: one level above `bin\`. Check the
-  // install dir itself too, for a layout that does not nest the binary.
-  for (const root of [path.dirname(installDir), installDir]) {
-    if (!root) continue;
-    let manifest;
-    try {
-      manifest = JSON.parse(fs.readFileSync(path.join(root, 'codex-package.json'), 'utf8'));
-    } catch (_) {
-      continue; // no manifest here, or unreadable/not JSON: not an error
-    }
-    const rel = manifest && typeof manifest.resourcesDir === 'string' ? manifest.resourcesDir.trim() : '';
-    if (!rel) continue;
-    const dir = path.resolve(root, rel);
-    // A manifest is a hint, not authority over the filesystem: only accept a
-    // path that stays inside the package and is really a directory.
-    //
-    // FIX (Sol review): `pathUnder` is LEXICAL, and a lexical test is not a
-    // containment test on a filesystem that has links. A `codex-resources`
-    // junction sitting inside the package can point anywhere on the disk —
-    // `path.resolve` never leaves the package, `statSync` follows the junction,
-    // and helpers from an arbitrary directory were accepted as the install's
-    // own. Resolve BOTH sides to their real paths first, so the check
-    // constrains where the files actually are rather than how they are named.
-    let realDir;
-    let realRoot;
-    try {
-      realDir = fs.realpathSync(dir);
-      realRoot = fs.realpathSync(root);
-    } catch (_) {
-      continue; // does not exist, or unreadable: not a candidate, not an error
-    }
-    if (!pathUnder(realRoot, realDir)) continue;
-    try {
-      if (!fs.statSync(realDir).isDirectory()) continue;
-    } catch (_) {
-      continue;
-    }
-    // `name` comes from the DECLARED path, not the canonical one: it is what
-    // the directory is called inside the package, which is the name a
-    // helperSiblings entry like `codex-resources` refers to.
-    //
-    // FIX (Sol review, round 3): de-duplicate on the PAIR, not the directory.
-    // Two manifests (package root and install dir) may declare different
-    // aliases that resolve to the same canonical directory; keying on the
-    // directory alone kept whichever was seen first and silently dropped the
-    // other alias — the very name a helper entry might refer to, which the
-    // doctor then called missing and the repairing path copied into `bin\`.
-    const declaredName = path.basename(dir);
-    if (!out.some((e) => e.dir === realDir && e.name === declaredName)) {
-      out.push({ dir: realDir, name: declaredName });
-    }
-  }
-  return out;
-}
+// FIX (field, 2026-09-07): pathUnder and packagedResourceDirs (the
+// codex-package.json manifest reader) moved to orchestra-install.js, required
+// above, so orchestra-exec.js's restoreHelpers() can read the same manifest
+// this runner's doctor does — see that file for the full history.
 
 // Directories INSIDE the install itself, which is where a hand repair puts a
 // helper when it guesses wrong: the 2026-08-18 failure was
@@ -2044,7 +1957,7 @@ function siblingPresent(dir, name) {
 function verifyHelperSiblings(installDir, layout, dryRun) {
   const wanted = CONFIG.helperSiblings;
   if (!wanted.length || !installDir) {
-    return { checked: false, missing: [], restored: [], packaged: [], packagedNames: [], searched: [], notRestored: [] };
+    return { checked: false, missing: [], restored: [], packaged: [], packagedNames: [], searched: [], notRestored: [], shadowed: [] };
   }
   // A helper the install's own manifest places in its resources directory is
   // where Codex ships it and where Codex finds it — present, not missing, and
@@ -2086,8 +1999,37 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
     }
     return true;
   });
+  // FIX (field, 2026-09-07): "not missing" is not the same claim as "healthy".
+  // A helper the manifest carries in its declared resources directory can ALSO
+  // sit beside the binary — the missing-filter above never flags it, since
+  // beside-presence alone satisfies it before the manifest is even consulted.
+  // But `bin\` is EARLIER in Codex's own resolution order than a resources
+  // directory next to it, so a stale copy planted there (a helpersDir repair
+  // kit built for an older release, most often — see carriedByPackage in
+  // orchestra-install.js) shadows the current, packaged build silently.
+  // Observed 2026-09-07 15:48: a 0.147-era kit re-injected
+  // `codex-command-runner.exe`, its `.bak-0147era` twin, and a whole
+  // `bin\codex-resources\` subtree into a live 0.153.4 install's `bin\` — the
+  // exact version-skew route WO-11 traced to the intermittent sandbox fault.
+  // Computed as its own pass, independent of the missing-filter above, so
+  // fixing this never risks the accounted-for/missing distinction that filter
+  // already gets right.
+  const shadowed = [];
+  if (packagedDirs.length) {
+    for (const name of wanted) {
+      if (!siblingPresent(installDir, name)) continue;
+      const isDeclaredDir =
+        !EXECUTABLE_NAME_RE.test(name) &&
+        packagedDirs.find((d) => d.name === name || path.basename(d.dir) === name);
+      const inPackage = isDeclaredDir ? null : packagedDirs.find((d) => siblingPresent(d.dir, name));
+      const packagedPath = isDeclaredDir ? isDeclaredDir.dir : inPackage && inPackage.dir;
+      if (packagedPath) {
+        shadowed.push({ name, besidePath: path.join(installDir, name), packagedPath });
+      }
+    }
+  }
   if (!missing.length) {
-    return { checked: true, missing: [], restored: [], packaged, packagedNames, searched: [], notRestored: [] };
+    return { checked: true, missing: [], restored: [], packaged, packagedNames, searched: [], notRestored: [], shadowed };
   }
 
   const searched = helperSourceCandidates(installDir, layout);
@@ -2133,7 +2075,25 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
       problems.push(name + ': ' + boundedDiagnostic((e && e.message) || e, 2000));
     }
   }
-  return { checked: true, missing: stillMissing, restored, packaged, packagedNames, searched, problems, notRestored };
+  return { checked: true, missing: stillMissing, restored, packaged, packagedNames, searched, problems, notRestored, shadowed };
+}
+
+// One preflight line, shared verbatim by `--doctor` and a normal review's
+// PREFLIGHT (see inspectCodexInstall, the only caller) — the two must never
+// say this differently, or a reader comparing them learns to trust whichever
+// one they saw first. Never deletes anything: naming the fix and leaving the
+// fix itself to a human is the same restraint restoreHelpers() takes with a
+// genuinely missing file.
+function shadowHazardLine(shadowed, installDir) {
+  const names = shadowed.map((s) => s.name);
+  const dirs = Array.from(new Set(shadowed.map((s) => s.packagedPath)));
+  return (
+    'HAZARD: ' + shadowed.length + ' helper(s) also sit beside the binary (' + installDir + '): ' +
+    names.join(', ') + ' — a stale kit from an earlier repair shadows the copies Codex ships in ' +
+    'its declared resources directory (' + dirs.join(', ') + ') and is the known cause of the ' +
+    'intermittent sandbox fault. Remove them from bin\\ (leave codex.exe and ' +
+    'codex-code-mode-host.exe); never repair into bin\\ on this layout.'
+  );
 }
 
 // FIX: a Codex self-update can silently remove files a working install needs.
@@ -2146,16 +2106,26 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
 // install: differences land in `missing` instead of being copied and
 // reported as `restored`. Used by `--doctor --no-repair`, which must be
 // able to name what it would fix without fixing it.
-function restoreHelpers(helpersDir, installDir, dryRun) {
-  if (!helpersDir) return { restored: [], missing: [], note: '' };
+//
+// FIX (field, 2026-09-07): `packaged` (the caller's packagedResourceDirs()
+// result for this install) is consulted BEFORE any missing/size-differs
+// check. A top-level helpersDir entry carriedByPackage() reports on is a
+// SKIP, subtree included when it is a directory — never copied, whatever its
+// size relative to what may already sit in `installDir`. See
+// orchestra-install.js for why: a stale helpersDir kit was re-injecting an
+// old build's helpers into a current install's `bin\` right behind the
+// manifest-based doctor fix that exists to stop exactly that.
+function restoreHelpers(helpersDir, installDir, dryRun, packaged) {
+  if (!helpersDir) return { restored: [], missing: [], skipped: [], note: '' };
   try {
     if (!fs.statSync(helpersDir).isDirectory()) {
-      return { restored: [], missing: [], note: 'helpers path is not a directory: ' + helpersDir };
+      return { restored: [], missing: [], skipped: [], note: 'helpers path is not a directory: ' + helpersDir };
     }
   } catch (e) {
     return {
       restored: [],
       missing: [],
+      skipped: [],
       note: 'helpers directory unreadable (' + helpersDir + '): ' + boundedDiagnostic((e && e.message) || e, 2000),
     };
   }
@@ -2163,6 +2133,7 @@ function restoreHelpers(helpersDir, installDir, dryRun) {
     return {
       restored: [],
       missing: [],
+      skipped: [],
       note:
         'helpers configured but the Codex install directory is unknown — set CODEX_BIN ' +
         'to the executable\'s path so its install directory can be resolved',
@@ -2171,6 +2142,7 @@ function restoreHelpers(helpersDir, installDir, dryRun) {
 
   const restored = [];
   const missing = [];
+  const skipped = [];
   const problems = [];
   const walk = (srcDir, destDir, rel) => {
     let list;
@@ -2181,9 +2153,16 @@ function restoreHelpers(helpersDir, installDir, dryRun) {
       return;
     }
     for (const entry of list) {
+      const relName = rel ? rel + '/' + entry.name : entry.name;
+      // Only a TOP-LEVEL name is something a manifest could declare — a path
+      // nested inside the helpersDir kit's own subtree is never itself the
+      // declared resources directory or one of its files.
+      if (rel === '' && carriedByPackage(entry.name, packaged)) {
+        skipped.push(entry.name);
+        continue;
+      }
       const src = path.join(srcDir, entry.name);
       const dest = path.join(destDir, entry.name);
-      const relName = rel ? rel + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
         walk(src, dest, relName);
         continue;
@@ -2220,6 +2199,7 @@ function restoreHelpers(helpersDir, installDir, dryRun) {
   return {
     restored,
     missing,
+    skipped,
     note: problems.length ? 'helper restore had problems — ' + problems.join('; ') : '',
   };
 }
@@ -2262,7 +2242,11 @@ function inspectCodexInstall() {
   }
 
   if (CONFIG.helpersDir) {
-    const restore = restoreHelpers(CONFIG.helpersDir, installDir, CONFIG.noRepair);
+    // FIX (field, 2026-09-07): computed here, once, and handed to
+    // restoreHelpers() so a helpersDir entry the manifest already carries is
+    // never copied over it — see orchestra-install.js's carriedByPackage.
+    const packagedForHelpers = packagedResourceDirs(installDir);
+    const restore = restoreHelpers(CONFIG.helpersDir, installDir, CONFIG.noRepair, packagedForHelpers);
     if (CONFIG.noRepair) {
       if (restore.missing && restore.missing.length) {
         lines.push(
@@ -2279,6 +2263,14 @@ function inspectCodexInstall() {
           CONFIG.helpersDir + ': ' + restore.restored.join(', ')
       );
     }
+    if (restore.skipped && restore.skipped.length) {
+      const dirs = Array.from(new Set(packagedForHelpers.map((d) => d.dir)));
+      lines.push(
+        'helpersDir: ' + restore.skipped.length + ' entr' + (restore.skipped.length === 1 ? 'y' : 'ies') +
+          ' not copied — the install carries them in its declared resources directory (' +
+          dirs.join(', ') + '): ' + restore.skipped.join(', ')
+      );
+    }
     if (restore.note) lines.push(restore.note);
   }
 
@@ -2286,6 +2278,13 @@ function inspectCodexInstall() {
   // the wrong place — verified next to the RESOLVED binary, or in the resources
   // directory the install's own manifest declares, rather than assumed.
   const siblings = verifyHelperSiblings(installDir, layout, CONFIG.noRepair);
+  // FIX (field, 2026-09-07): printed here, once, so `--doctor` and a normal
+  // review's preflight say the identical thing about a stale bin\ kit
+  // shadowing the packaged copies — see shadowHazardLine and the 15:48 field
+  // observation in verifyHelperSiblings above.
+  if (siblings.shadowed && siblings.shadowed.length) {
+    lines.push(shadowHazardLine(siblings.shadowed, installDir));
+  }
   // Say where they were found. Accepting the packaged location silently would
   // hide the next relayout exactly the way the old beside-the-binary assumption
   // hid this one.
@@ -2333,7 +2332,22 @@ function inspectCodexInstall() {
     // not where they are.
     const inPackage = new Set(siblings.packagedNames || []);
     const beside = CONFIG.helperSiblings.filter((n) => !inPackage.has(n));
-    if (beside.length) lines.push('helper siblings present: ' + beside.join(', '));
+    if (beside.length) {
+      // FIX (field, 2026-09-07): a name in this list can be one of
+      // `siblings.shadowed` above — plain "present" said nothing was wrong
+      // with it, while the HAZARD line said the opposite two lines up. Name
+      // the shadow here too, so the two lists agree instead of one reading as
+      // healthy and the other as broken.
+      const shadowedNames = new Set((siblings.shadowed || []).map((s) => s.name));
+      lines.push(
+        'helper siblings present: ' +
+          beside
+            .map((n) =>
+              shadowedNames.has(n) ? n + ' (present beside the binary — SHADOWS the packaged copy)' : n
+            )
+            .join(', ')
+      );
+    }
     lines.push('all ' + CONFIG.helperSiblings.length + ' expected helper sibling(s) accounted for.');
   }
 
@@ -2344,6 +2358,7 @@ function inspectCodexInstall() {
     layout,
     siblings,
     missing: siblings.missing,
+    shadowed: siblings.shadowed || [],
     detail,
   };
 }

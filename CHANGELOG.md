@@ -22,7 +22,19 @@ now reads the manifest, keeps the declared name beside the canonical
 directory (a junction alias must still match a helper entry), resolves real
 paths before the containment test, de-duplicates on the (dir, name) pair, and
 never lets a directory satisfy an executable entry. Four Sol review rounds
-through the lane; every finding fixed.
+through the lane; every finding fixed. The doctor fix alone left a hole:
+`restoreHelpers()` in both runners still copied every configured `helpersDir`
+entry into `bin\` before any manifest check, so a stale kit could re-inject
+an old build behind the doctor's back — observed 2026-09-07 15:48, when a
+sibling project's exec lane, `helpersDir` still pointed at a 0.147-era kit,
+copied that kit's helpers (a `codex-resources\` subtree included) into a
+live 0.153.4 install's `bin\` while a review ran here. `restoreHelpers()` in
+both runners now skips any top-level `helpersDir` entry the install's
+declared resources directory already carries, whatever their sizes, and the
+codex pack's Windows note (`pack.json`) now states the manifest layout
+rather than the old beside-the-binary rule. The doctor now names a helper
+that sits beside the binary while the manifest carries it as a HAZARD and
+exits non-zero, instead of reporting it present.
 
 **Three more field failures, from the ADR-0005 campaign's second batch**
 (`plans/orchestra-codex-issues.md` #9–12):
@@ -33,7 +45,11 @@ through the lane; every finding fixed.
   and declared `EXEC_UNAVAILABLE`, discarding a valid BLOCKED report that
   carried the real finding. The check now holds only path-shaped CHANGES
   claims against the audit, and the audit measures the current branch as
-  well as HEAD, so a `checkout -B` is a measured change.
+  well as HEAD, so a `checkout -B` is a measured change. Sol's review of the
+  first cut found the predicate still took `feature/foo` (a `/` in prose)
+  and `v1.2.3` (a digit "extension") for paths: a path claim's head is now
+  a single token, an extension must contain a letter, and a token that
+  names an existing ref is excluded unless a file of that name also exists.
 - **A principal launch off its default model is said out loud.** WO-4A round
   7 ran Sol/high under a principal launcher that asked for Astra/xhigh —
   the same wording that had worked on fifteen prior launches. `PREFLIGHT`

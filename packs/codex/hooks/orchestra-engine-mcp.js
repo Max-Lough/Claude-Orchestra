@@ -780,7 +780,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.3.2' },
+          serverInfo: { name: 'orchestra-engine', version: '3.3.3' },
         },
       });
       return;

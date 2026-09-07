@@ -1,6 +1,7 @@
 # Proposed Orchestra improvements — deferred backlog
 
-**Status:** proposed, not scheduled. Written 2026-08-28.
+**Status:** proposed, not scheduled. Written 2026-08-28 against the 2.x tree; every
+`path:line` below predates the 3.0 reverse-port and must be re-verified before work starts.
 **Provenance:** findings from a comparative investigation of `mini-swe-agent`
 (https://github.com/SWE-agent/mini-swe-agent) against this harness, plus a root-cause
 investigation into an orphaned Codex run during the 2026-08-27 `/cross-compare-plan` session.

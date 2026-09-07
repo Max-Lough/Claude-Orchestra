@@ -108,7 +108,7 @@ The guard applies the same positive-evidence rule independently: it reads the se
 | Sol executor †‡ | `executor-codex-heavy` | GPT-5.6 Sol, high | the cheaper cross-vendor executor; user request only |
 | Reviewer | `reviewer` | Opus, fresh context | fallback review; primary review of Codex-authored work |
 | Sol reviewer † | `reviewer-codex` | GPT-5.6 Sol | default independent review of Claude-authored campaign work |
-| Cross-compare architects † | `architect-claude` (+`-xhigh`/`-max`) / `architect-codex` | Fable / GPT-5.6 Sol | independent plans, cross-critique, revision (`/cross-compare-plan`) |
+| Cross-compare architects † | `architect-claude-xhigh`/`-max` / `architect-codex` | Fable / GPT-6 Astra (xhigh or max, matched) | independent plans, cross-critique, revision (`/cross-compare-plan`) |
 | Plan synthesizer † | `plan-synthesizer` | Opus, fresh/blind | adjudicate revised plans without lane identity |
 
 ‡ **User request only** — never chosen by a routing rule. These run when you name them, or when `executorEngine` selects the Codex lane; the Fable profiles additionally stand in, announced, for an unavailable Astra rung.
@@ -123,7 +123,7 @@ The `codex` pack (`--packs codex`) is the harness's optional cross-vendor surfac
 
 - **Review is cross-family by default — the first goal of the review lane.** `reviewer-codex` (Sol) reviews Claude-authored campaign work; Codex-authored work (an Astra or Sol executor's order) goes to the fresh-context Opus `reviewer`, so author and reviewer always sit on different vendors — there is no `reviewEngine` switch to configure. The runners enforce it mechanically: the engine child runs with every MCP server in the Codex config disabled and the apps connector off (`codex.engineMcp`, default `strip`), and a verdict that names a Claude engine as its author is stamped `⚠ CROSS-FAMILY BREACH` rather than relayed as cross-family. Docs-only work is the exception — a prose-only diff routes to `reviewer` either way (see below).
 - **`executor-codex-principal` (GPT-6 Astra, xhigh) is the top rung of the default executor ladder** — not a side lane. `executor` → `executor-heavy` → Astra, one rung per double bounce, so escalation crosses the vendor line at the top. `executor-codex-heavy` (Sol, high) is the cheaper cross-vendor executor and is **user request only**; no routing rule reaches it. See "Executor steering" below.
-- **`/cross-compare-plan`** runs a two-architect planning session — a fresh-context Claude architect and the GPT lane (Sol, high effort, read-only) draft independently from one shared brief, cross-critique, revise, and a blind Opus synthesizer merges the strongest final plan, with a default post-synthesis cross-family audit. See [`packs/codex/skills/cross-compare-plan/SKILL.md`](packs/codex/skills/cross-compare-plan/SKILL.md).
+- **`/cross-compare-plan`** runs a two-architect planning session — a fresh-context Claude architect and the GPT lane (Astra, xhigh effort, read-only) draft independently from one shared brief, cross-critique, revise, and a blind Opus synthesizer merges the strongest final plan, with a default post-synthesis cross-family audit. See [`packs/codex/skills/cross-compare-plan/SKILL.md`](packs/codex/skills/cross-compare-plan/SKILL.md).
 
 **Prerequisites.** Install the [Codex CLI](https://developers.openai.com/codex/) and authenticate it (`codex login` or `OPENAI_API_KEY`). Approve the project's `orchestra-engine` MCP server on first launch — until then every cross-vendor lane reports unavailable. Check the install any time, without running a review:
 
@@ -215,8 +215,8 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex.requireHelperSiblings` | boolean | `false` | Fail availability checks if a configured sibling is still missing. |
 | `codex.doNotRun` | string[] | `[]` | Commands forbidden to the review and execution runners. |
 | `codex.engineMcp` | string | `"strip"` | `strip` disables every MCP server in the user's Codex config (plus the apps connector) for the engine child in every lane; `inherit` leaves it alone. |
-| `codex.crossplanModel` | string | `"gpt-5.6-sol"` | GPT cross-compare architect model. |
-| `codex.crossplanEffort` | string | `"high"` | GPT architect reasoning effort. |
+| `codex.crossplanModel` | string | `"gpt-6-astra"` | GPT cross-compare architect model. |
+| `codex.crossplanEffort` | string | `"xhigh"` | GPT architect reasoning effort. |
 | `codex.crossplanTimeoutMs` | integer | `900000` | Wall-clock cap per cross-compare phase. |
 | `codex.crossplanWeb` | boolean | `true` | Permit web research in the GPT architect lane. |
 
@@ -295,7 +295,7 @@ Orchestra/
     └── codex/            ← the OpenAI/Codex surface (optional, --packs codex)
         ├── pack.json, README.md, FIELD-VALIDATION.md
         ├── agents/       ← reviewer-codex, executor-codex-heavy,
-        │                    executor-codex-principal, architect-claude(+xhigh/max),
+        │                    executor-codex-principal, architect-claude-xhigh/-max,
         │                    architect-codex, plan-synthesizer
         ├── hooks/        ← orchestra-engine-mcp.js (MCP transport) + the three runners
         └── skills/cross-compare-plan/

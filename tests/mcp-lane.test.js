@@ -809,7 +809,7 @@ async function case8() {
   check('header names the saved document', /DOCUMENT SAVED: /.test(text), text.slice(0, 600));
   check('the engine ran read-only', field(text, 'SANDBOX') === 'read-only', field(text, 'SANDBOX'));
   check('the default effort reached the engine as a config override',
-    /model_reasoning_effort=high/.test(field(text, 'CONFIG_OVERRIDES')), field(text, 'CONFIG_OVERRIDES'));
+    /model_reasoning_effort=xhigh/.test(field(text, 'CONFIG_OVERRIDES')), field(text, 'CONFIG_OVERRIDES'));
   check('a co-installed Codex-Orchestra cannot recast the external planner as its Director',
     field(text, 'ORCHESTRA_ROLE') === 'planner-codex-external', field(text, 'ORCHESTRA_ROLE'));
   const crossplanOverrides = field(text, 'CONFIG_OVERRIDES').split(' | ');

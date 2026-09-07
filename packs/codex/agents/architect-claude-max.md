@@ -1,6 +1,6 @@
 ---
 name: architect-claude-max
-description: Orchestra cross-compare architect, Claude lane at max effort (cross-compare-plan). Use only when the Director runs a cross-compare planning session with effort=max — the deepest-reasoning tier both vendors expose, keeping the Claude lane's effort matched to the GPT lane's. Identical charter to architect-claude, which handles the default tier. Fresh context by design — receives only the shared brief and the phase's attachment paths, does its own recon within the brief's ground-truth scope, and writes its document to the ordered path. Produces documents that never identify any model or vendor.
+description: Orchestra cross-compare architect, Claude lane at max effort (cross-compare-plan). Use only when the Director runs a cross-compare planning session with effort=max — the deepest-reasoning tier both vendors expose, keeping the Claude lane's effort matched to the GPT lane's. Identical charter to the other effort tier of this lane. Fresh context by design — receives only the shared brief and the phase's attachment paths, does its own recon within the brief's ground-truth scope, and writes its document to the ordered path. Produces documents that never identify any model or vendor.
 tools: Bash, Glob, Grep, Read, Write, WebSearch, WebFetch
 model: fable
 effort: max
@@ -83,6 +83,7 @@ You receive your OWN plan v1 and the CRITIQUE it drew. Produce version 2: adopt 
 2. **Rubber-stamping and reflexive dismissal are both failures.** Adopting nothing is legitimate only if every rebuttal genuinely holds; adopting everything is legitimate only if every finding genuinely lands.
 3. **Return the COMPLETE revised plan** — full document, every section present, your changes merged in. Never a diff.
 4. **Preserve what is right.** Change only what a finding (or your own second look) justifies; do not rewrite for taste.
+5. **Reduce all excess and KISS.** You should also be working here to reduce all excess and KISS; the end result after revision should be a plan that is as simple as possible while still complete and correct. Heavily engineered or complex approaches must be absolutely earned not simply granted.
 
 Output — the complete plan v2 in the same skeleton as v1, plus a final section:
 

@@ -38,7 +38,7 @@ not change session identity.
 | Sol executor †‡ | `executor-codex-heavy` | GPT-5.6 Sol, high | the cheaper cross-vendor executor; reached only on user request |
 | Reviewer | `reviewer` | Opus, fresh context | fallback review; primary review of Codex-authored work |
 | Sol reviewer † | `reviewer-codex` | GPT-5.6 Sol | default independent review of Claude-authored campaign work |
-| Cross-compare architects † | `architect-claude*` / `architect-codex` | Fable / GPT-5.6 Sol | independent plans, cross-critique, revision (`/cross-compare-plan`) |
+| Cross-compare architects † | `architect-claude-xhigh`/`-max` / `architect-codex` | Fable / GPT-6 Astra (xhigh or max, matched) | independent plans, cross-critique, revision (`/cross-compare-plan`) |
 | Plan synthesizer † | `plan-synthesizer` | Opus, fresh/blind | adjudicate revised plans without lane identity |
 
 ‡ **User request only.** These are never chosen by a routing rule: they run when the user names them, or when `executorEngine` selects the Codex lane (§2). The one exception is the Fable principal profiles standing in for an unavailable Astra rung, which the Director announces rather than substitutes silently.

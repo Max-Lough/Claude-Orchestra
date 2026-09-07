@@ -25,8 +25,7 @@ cross-compare still degrade to Claude-only exactly as before.
 | `agents/executor-codex-principal.md` | **The top rung of the harness's default executor ladder.** Thin Haiku launcher; calls the `orchestra_exec` MCP tool once with `profile: "principal"` (OpenAI GPT-6 Astra, xhigh reasoning effort by default) and relays the report + tree audit verbatim. Exceptional orders only — many coupled moving parts, an approach the plan cannot settle, or a second bounce at the Opus heavy tier. Never edits anything itself. |
 | `agents/executor-codex-heavy.md` | The cheaper cross-vendor executor, **user request only** — no routing rule reaches it. Same launcher shape with `profile: "heavy"` (OpenAI GPT-5.6 Sol, high reasoning effort by default). Never edits anything itself. |
 | `agents/architect-codex.md` | Thin Haiku launcher for the `/cross-compare-plan` GPT lane; calls `orchestra_crossplan` once per phase and relays the document's provenance verbatim. Never drafts, critiques, or revises itself. |
-| `agents/architect-claude.md` | The `/cross-compare-plan` Claude architect (Fable, fresh context, high effort) — drafts, critiques the rival plan, revises under critique, anonymously, within the brief's ground-truth scope. |
-| `agents/architect-claude-xhigh.md` | The same architect at xhigh effort, dispatched when the session runs `effort=xhigh` (both lanes always run one identical effort level). |
+| `agents/architect-claude-xhigh.md` | The `/cross-compare-plan` Claude architect (Fable, fresh context, xhigh effort — the default tier) — drafts, critiques the rival plan, revises under critique, anonymously, within the brief's ground-truth scope. Both lanes always run one identical effort level. |
 | `agents/architect-claude-max.md` | The same architect at max effort — the top rung both vendors expose — dispatched when the session runs `effort=max`. |
 | `agents/plan-synthesizer.md` | The `/cross-compare-plan` blind synthesizer (Opus, fresh context) — merges the two revised plans into the final plan, adjudicates disputes against the tree, escalates only genuine ties. |
 | `hooks/orchestra-engine-mcp.js` | **The MCP transport** — a zero-dependency stdio MCP server exposing the three runners plus the doctor as typed tools (`orchestra_review`, `orchestra_exec`, `orchestra_crossplan`, `orchestra_doctor`). Registered in the project's root `.mcp.json` by the installer. |
@@ -110,7 +109,7 @@ contract. Each reads only its own env vars and config keys, so pinning one
 never moves the other, and a run that names no profile behaves exactly as the
 lane did before the principal rung existed.
 
-**Cross-compare** (`architect-codex` + `architect-claude` + `plan-synthesizer`):
+**Cross-compare** (`architect-codex` + `architect-claude-xhigh`/`-max` + `plan-synthesizer`):
 same Codex CLI + auth as review — the GPT architect runs through `codex exec`
 in a `read-only` sandbox (hard-pinned; the lane never writes the tree), with
 web search enabled by default to match the Claude architects' web tools
@@ -120,9 +119,9 @@ for both lanes). No engine selection needed: `/cross-compare-plan` dispatches
 all three roles itself, including the default post-synthesis audit — one extra
 GPT-lane critique of the finished `final-plan.md`.
 
-The Sol reviewer, the heavy executor rung, and the Sol cross-compare architect
-all default to `gpt-5.6-sol` at `high` effort. The principal executor rung
-defaults to `gpt-6-astra` at `xhigh` effort — Astra's ladder is
+The Sol reviewer and the heavy executor rung default to `gpt-5.6-sol` at
+`high` effort. The principal executor rung and the GPT cross-compare architect
+default to `gpt-6-astra` at `xhigh` effort — Astra's ladder is
 `low|medium|high|xhigh|max` and has no `none` level.
 
 ## Checking the install — `--doctor`
@@ -395,8 +394,8 @@ loudly when it does.
 | `ORCHESTRA_EXEC_PROBE` | `1` | Stage-a echo before the real attempt (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_EXEC_PROBE_TIMEOUT_MS` caps it. |
 | `ORCHESTRA_EXEC_ARGS` | — | Extra args appended to the execution `codex exec`. |
 | `CODEX_BIN` | `codex` | Codex executable path (shared by all runners). |
-| `ORCHESTRA_CROSSPLAN_MODEL` | `gpt-5.6-sol` | Cross-compare GPT-architect model (`codex.crossplanModel`; also the skill's `model=`). |
-| `ORCHESTRA_CROSSPLAN_EFFORT` | `high` | Cross-compare GPT-architect reasoning effort (`codex.crossplanEffort`), sent as `-c model_reasoning_effort=`. The skill's `effort=` overrides per session and routes the Claude lane to the matching tier. |
+| `ORCHESTRA_CROSSPLAN_MODEL` | `gpt-6-astra` | Cross-compare GPT-architect model (`codex.crossplanModel`; also the skill's `model=`). |
+| `ORCHESTRA_CROSSPLAN_EFFORT` | `xhigh` | Cross-compare GPT-architect reasoning effort (`codex.crossplanEffort`), sent as `-c model_reasoning_effort=`. The skill's `effort=` overrides per session and routes the Claude lane to the matching tier. |
 | `ORCHESTRA_CROSSPLAN_TIMEOUT_MS` | `900000` | Wall-clock cap per cross-compare phase (`codex.crossplanTimeoutMs`; also `--timeout-ms`). |
 | `ORCHESTRA_CROSSPLAN_WEB` | `1` | GPT-lane web search, sent as `-c tools.web_search=true` (`codex.crossplanWeb`; also `--no-web`; flag > env > config > default). On by default so both lanes carry the same research capability; whether either lane USES it is governed by the brief's GROUND TRUTH grant. The provenance header prints the setting. |
 | `ORCHESTRA_CROSSPLAN_PROBE` | `1` | Stage-a echo before each phase (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS` caps it. |

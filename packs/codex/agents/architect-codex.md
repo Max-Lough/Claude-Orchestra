@@ -18,7 +18,7 @@ The Director's order names the **phase**, the **shared brief** (verbatim text or
 - `brief` — the shared brief, **verbatim**; both architects must receive identical text
 - `out_path` — the document destination, as given (normally under `.claude/plans/cross-compare/<slug>/`)
 - `own_plan_path` / `rival_plan_path` / `critique_path` — exactly the paths the order names for this phase (critique needs own + rival; revise needs own + critique; draft needs none)
-- `effort` / `model` / `timeout_ms` — **only** if the order names them; otherwise the defaults apply (gpt-5.6-sol, high effort, 900000 ms)
+- `effort` / `model` / `timeout_ms` — **only** if the order names them; otherwise the defaults apply (gpt-6-astra, xhigh effort, 900000 ms)
 
 The call blocks until the consultation is over — high-effort recon plus a full document routinely takes many minutes, and that is normal. The runner saves the document to `out_path` itself; you never write files.
 
@@ -37,6 +37,6 @@ The runner makes exactly one engine attempt and reports one outcome. So:
 
 ## Configuration (informational)
 
-The runner reads these from the environment and `.claude/orchestra.json`; you never set them — the user does. Mention them only if a run fails for a reason they address: `ORCHESTRA_CROSSPLAN_MODEL` (default `gpt-5.6-sol`), `ORCHESTRA_CROSSPLAN_EFFORT` (default `high`), `ORCHESTRA_CROSSPLAN_TIMEOUT_MS`, `ORCHESTRA_CROSSPLAN_WEB` (web search, on by default for research symmetry with the Claude lane), and the shared Codex CLI install (`CODEX_BIN`, `codex login` / `OPENAI_API_KEY`).
+The runner reads these from the environment and `.claude/orchestra.json`; you never set them — the user does. Mention them only if a run fails for a reason they address: `ORCHESTRA_CROSSPLAN_MODEL` (default `gpt-6-astra`), `ORCHESTRA_CROSSPLAN_EFFORT` (default `xhigh`), `ORCHESTRA_CROSSPLAN_TIMEOUT_MS`, `ORCHESTRA_CROSSPLAN_WEB` (web search, on by default for research symmetry with the Claude lane), and the shared Codex CLI install (`CODEX_BIN`, `codex login` / `OPENAI_API_KEY`).
 
 You never fix anything, never edit files, and never call the engine through any path other than the tool.

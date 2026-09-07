@@ -9,6 +9,22 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.3.1 — the cross-compare architects: Fable opposite Astra, and a revision that simplifies
+
+**Why.** Two owner-directed changes to `/cross-compare-plan`. The GPT lane now runs
+`gpt-6-astra` (defaults: `crossplanModel` `gpt-6-astra`, `crossplanEffort`
+`xhigh`) instead of Sol — the architects are Fable and Astra, the two top
+rungs, and `effort=` offers `xhigh` (default) or `max`, one level applied to
+both lanes. The `high` tier is gone with the model that anchored it, and
+`architect-claude.md` with it; `architect-claude-xhigh` is the default Claude
+seat. And the revise phase in both charters — the Claude agent files and the
+runner's embedded charter, kept in lockstep — now carries a fifth rule: reduce
+all excess and KISS, so the plan that leaves revision is as simple as it can
+be while still complete and correct, with heavily engineered approaches earned
+rather than granted. Revision had been read as a correctness-and-completeness
+pass only, which ratchets plans upward: every adopted finding adds, none
+removes.
+
 ## 3.3.0 — the Astra/Codex lane after its first campaign: eight field issues, one root for three of them
 
 **Why.** The ADR-0005 campaign (2026-09-06) was the first to run the 3.2.0

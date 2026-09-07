@@ -54,10 +54,10 @@
  * always 0: the status lives in the header and STATUS lines.
  *
  * Configuration (env; flags win over env; orchestra.json "codex" key between):
- *   ORCHESTRA_CROSSPLAN_MODEL       model id (default "gpt-5.6-sol")
+ *   ORCHESTRA_CROSSPLAN_MODEL       model id (default "gpt-6-astra")
  *   ORCHESTRA_CROSSPLAN_EFFORT      reasoning effort, passed to codex as
  *                                    `-c model_reasoning_effort=<v>`
- *                                    (default "high"; the skill offers xhigh and max)
+ *                                    (default "xhigh"; the skill offers xhigh and max)
  *   ORCHESTRA_CROSSPLAN_TIMEOUT_MS  wall-clock cap (default 900000)
  *   ORCHESTRA_CROSSPLAN_WEB         0 disables the engine's web search
  *                                    (default on — research symmetry with
@@ -832,7 +832,7 @@ function fingerprintDelta(before, after, ignore) {
 // Each phase's discipline lives HERE, in one place, so every consultation
 // carries it identically regardless of how the launcher phrased the order.
 // KEEP IN LOCKSTEP with the Claude architect profile
-// (packs/codex/agents/architect-claude.md) — the two lanes must receive the
+// (packs/codex/agents/architect-claude-xhigh.md) — the two lanes must receive the
 // same charter or the comparison measures instructions, not judgment.
 
 const COMMON_RULES = [
@@ -980,6 +980,11 @@ function reviseCharter() {
     '   critique yourself".',
     '4. Preserve what is right. Change only what a finding (or your own second',
     '   look) justifies; do not rewrite for taste.',
+    '5. Reduce all excess and KISS. You should also be working here to reduce',
+    '   all excess and KISS; the end result after revision should be a plan',
+    '   that is as simple as possible while still complete and correct.',
+    '   Heavily engineered or complex approaches must be absolutely earned',
+    '   not simply granted.',
     '',
     'OUTPUT — the complete plan v2 in the same skeleton as v1:',
     '',
@@ -1363,7 +1368,7 @@ function main() {
     CONFIG.model = codexCfg.crossplanModel.trim();
     CONFIG.modelSource = 'orchestra.json';
   } else {
-    CONFIG.model = 'gpt-5.6-sol';
+    CONFIG.model = 'gpt-6-astra';
     CONFIG.modelSource = 'default';
   }
 
@@ -1377,7 +1382,7 @@ function main() {
     CONFIG.effort = codexCfg.crossplanEffort.trim();
     CONFIG.effortSource = 'orchestra.json';
   } else {
-    CONFIG.effort = 'high';
+    CONFIG.effort = 'xhigh';
     CONFIG.effortSource = 'default';
   }
 

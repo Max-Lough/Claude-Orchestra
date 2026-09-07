@@ -686,8 +686,8 @@ const TOOLS = [
         own_plan_path: { type: 'string', description: 'This architect\'s own current plan file. Required for critique and revise.' },
         rival_plan_path: { type: 'string', description: 'The rival architect\'s plan file under critique. Required for critique only.' },
         critique_path: { type: 'string', description: 'The critique this architect\'s plan received. Required for revise only.' },
-        effort: { type: 'string', description: 'Reasoning effort, only when the order names one (default high).' },
-        model: { type: 'string', description: 'Model id, only when the order names one (default gpt-5.6-sol).' },
+        effort: { type: 'string', description: 'Reasoning effort, only when the order names one (default xhigh).' },
+        model: { type: 'string', description: 'Model id, only when the order names one (default gpt-6-astra).' },
         timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one (default 900000).' },
       },
       required: ['phase', 'brief', 'out_path'],
@@ -780,7 +780,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.3.0' },
+          serverInfo: { name: 'orchestra-engine', version: '3.3.1' },
         },
       });
       return;

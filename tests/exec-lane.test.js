@@ -632,6 +632,29 @@ function case12() {
       /tree: directed worktree/.test((cd.stdout || '').split('\n')[0]),
     'CWD: ' + field(cd.stdout || '', 'CWD') + ' — ' + (cd.stdout || '').split('\n')[0]
   );
+
+  // FIX (field, 2026-09-07): the Agent tool's `isolation: "worktree"` put the
+  // launcher in a worktree the runner cannot see (the MCP server runs at the
+  // repo root), so launchers now pass their own cwd as `cd` on every call —
+  // including when that cwd IS the live tree. `cd` pointing at the project
+  // dir, spelled with forward slashes and (on win32) different case, must
+  // still resolve to "live working tree", not read as a second, directed one.
+  const slashVariant = fx.repo.split(path.sep).join('/');
+  const cdSlash = runExec(fx, ['--cd', slashVariant]);
+  check(
+    '`cd` equal to the live tree (forward slashes) is labelled live, not directed',
+    /tree: live working tree/.test((cdSlash.stdout || '').split('\n')[0]),
+    (cdSlash.stdout || '').split('\n')[0]
+  );
+  if (process.platform === 'win32') {
+    const caseVariant = fx.repo.toUpperCase();
+    const cdCase = runExec(fx, ['--cd', caseVariant]);
+    check(
+      '`cd` equal to the live tree (different case, win32) is labelled live, not directed',
+      /tree: live working tree/.test((cdCase.stdout || '').split('\n')[0]),
+      (cdCase.stdout || '').split('\n')[0]
+    );
+  }
 }
 
 function case13() {
@@ -900,6 +923,11 @@ function case18() {
     pout.slice(0, 300)
   );
   check(
+    'no model/effort override: no PREFLIGHT note about running off-default',
+    !/PREFLIGHT:.*is running (model|effort)/.test(pout),
+    (pout.match(/^PREFLIGHT:.*$/gm) || []).join(' | ') || '(no PREFLIGHT lines)'
+  );
+  check(
     'the principal rung sends its effort to codex, not just to the header',
     field(pout, 'CONFIG_OVERRIDES') ===
       'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
@@ -985,11 +1013,35 @@ function case18() {
   // A profile is still only a pair of defaults: an explicit flag outranks it,
   // exactly as it outranks env and config on the heavy rung (case 2).
   const flagOverPrincipal = runExec(fx, ['--profile', 'principal', '--model', 'gpt-6-flag']);
+  const fopOut = flagOverPrincipal.stdout || '';
   check(
     'an explicit --model still outranks the profile default',
-    field(flagOverPrincipal.stdout || '', 'MODEL') === 'gpt-6-flag' &&
-      /profile: principal, model: gpt-6-flag \(flag\)/.test(flagOverPrincipal.stdout || ''),
-    (flagOverPrincipal.stdout || '').split('\n')[0]
+    field(fopOut, 'MODEL') === 'gpt-6-flag' &&
+      /profile: principal, model: gpt-6-flag \(flag\)/.test(fopOut),
+    fopOut.split('\n')[0]
+  );
+  // FIX (field, 2026-09-07): WO-4A round 7 ran gpt-5.6-sol (default) at high
+  // effort under an Astra launcher because the launcher dropped its fields —
+  // a PREFLIGHT note now flags a principal run on a non-default model/effort,
+  // so a pin and a dropped field never look the same from the header.
+  check(
+    'a principal launch on a non-default model gets a PREFLIGHT note naming the pin',
+    /PREFLIGHT: profile principal is running model "gpt-6-flag" \(flag\), not its default gpt-6-astra/.test(fopOut),
+    (fopOut.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+  check(
+    'the same run\'s effort is still the default, so no effort PREFLIGHT note fires',
+    !/PREFLIGHT:.*is running effort/.test(fopOut),
+    (fopOut.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+
+  // The note is specific to the principal profile: an override on the heavy
+  // rung must never trigger it.
+  const flagOverHeavy = runExec(fx, ['--model', 'gpt-6-flag']);
+  check(
+    'the same override on the heavy profile gets no PREFLIGHT note',
+    !/PREFLIGHT:.*is running (model|effort)/.test(flagOverHeavy.stdout || ''),
+    (flagOverHeavy.stdout || '').match(/^PREFLIGHT:.*$/gm) || []
   );
 }
 
@@ -1495,6 +1547,108 @@ function case21() {
   );
 }
 
+// 22. FIX (field, 2026-09-07): WO-7A round 1 — the engine's CHANGES section
+//     named a `git checkout -B` (a ref/branch op, no file edit) in an
+//     otherwise valid BLOCKED report, and the report/audit contradiction
+//     check (case 16) discarded the whole report over it. A claim whose head
+//     names no file must never be held against the tree audit, and the audit
+//     now measures the branch alongside HEAD so a checkout that only moves
+//     the branch reads as a measured change, not "nothing happened".
+function case22() {
+  section('22. Ref/branch claims are not edits; the audit measures the branch too');
+
+  // The field shape exactly: a branch/ref claim, nothing else, tree untouched.
+  const fx = makeRepo();
+  const branchOnly = runExec(fx, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `wo7a` at HEAD daf549ba',
+  });
+  const bOut = branchOnly.stdout || '';
+  check(
+    'a branch/ref claim alone is relayed, not discarded as a contradiction',
+    /STATUS: DONE/.test(bOut) &&
+      !/EXEC_UNAVAILABLE/.test(bOut) &&
+      /REPORT INTEGRITY: verified/.test(bOut),
+    bOut.slice(0, 500)
+  );
+
+  // Same claim, but the status is BLOCKED — the actual field shape, where
+  // discarding the report also discarded the real finding.
+  const fx2 = makeRepo();
+  const branchBlocked = runExec(fx2, [], {
+    STUB_CODEX_FIRST_LINE: 'STATUS: BLOCKED',
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `wo7a` at HEAD daf549ba',
+  });
+  const bbOut = branchBlocked.stdout || '';
+  check(
+    'a BLOCKED report with only a branch claim is relayed intact',
+    /STATUS: BLOCKED/.test(bbOut) &&
+      !/EXEC_UNAVAILABLE/.test(bbOut) &&
+      /REPORT INTEGRITY: verified/.test(bbOut),
+    bbOut.slice(0, 500)
+  );
+
+  // A mix: one branch line (no evidence of an edit) plus one real path-shaped
+  // claim, tree still untouched. The contradiction must still fire — but the
+  // failure text names only the path claim, never the branch line.
+  const fx3 = makeRepo();
+  const mixed = runExec(fx3, [], {
+    STUB_CODEX_CLAIM_CHANGES:
+      'Created branch `wo7a` at HEAD daf549ba,src/app.js:12 — added a flag',
+  });
+  const mOut = mixed.stdout || '';
+  const mFailureText = mOut.split('--- UNVERIFIED ENGINE OUTPUT')[0];
+  check(
+    'a mix of a branch line and a real path claim against an untouched tree still fails',
+    /STATUS: EXEC_UNAVAILABLE/.test(mOut) &&
+      /claims edits the runner measured as never happening/.test(mOut),
+    mOut.slice(0, 700)
+  );
+  check(
+    'the failure text names the path claim',
+    /src\/app\.js:12/.test(mFailureText),
+    mFailureText.slice(0, 1200)
+  );
+  check(
+    'the failure text does not hold the branch line against the audit',
+    !/Created branch/.test(mFailureText),
+    mFailureText.slice(0, 1200)
+  );
+
+  // The stub actually creates a branch (`git checkout -B`, no file edits),
+  // claiming only the branch line: relayed, and the TREE AUDIT names the
+  // branch change (same commit, different branch — HEAD alone would miss it).
+  const fx4 = makeRepo();
+  const realBranch = runExec(fx4, [], {
+    STUB_CODEX_BRANCH: 'wo7a',
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `wo7a` — checked out at the same commit',
+  });
+  const rOut = realBranch.stdout || '';
+  check(
+    'a real branch-only change (no file edits) is relayed as a verified report',
+    /STATUS: DONE/.test(rOut) && /REPORT INTEGRITY: verified/.test(rOut),
+    rOut.slice(0, 500)
+  );
+  check(
+    'the TREE AUDIT names the branch change',
+    /branch: main → wo7a/.test(rOut),
+    rOut.slice(0, 1500)
+  );
+
+  // Case 16's assertions must still pass unchanged: path-shaped claims are
+  // still held against the audit exactly as before.
+  const fx5 = makeRepo();
+  const lie = runExec(fx5, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag,src/other.js — new helper',
+  });
+  const lout = lie.stdout || '';
+  check(
+    'case 16 unaffected: claiming path-shaped edits against an untouched tree is still EXEC_UNAVAILABLE',
+    /STATUS: EXEC_UNAVAILABLE/.test(lout) &&
+      /claims edits the runner measured as never happening/.test(lout),
+    lout.slice(0, 700)
+  );
+}
+
 function finish() {
   for (const c of cleanups) {
     try {
@@ -1528,6 +1682,7 @@ async function main() {
   case19();
   case20();
   case21();
+  case22();
 }
 
 main().then(finish, (e) => {

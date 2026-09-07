@@ -43,6 +43,11 @@
  *                         comma-split entries to put in a CHANGES section of
  *                         the report WITHOUT touching anything — models an
  *                         engine claiming edits it never made.
+ *   STUB_CODEX_BRANCH     `git checkout -B <name>` inside --cd before
+ *                         reporting — models a ref/branch operation (no file
+ *                         touched, HEAD's commit unchanged) so the tree audit
+ *                         can be checked for measuring the branch, not just
+ *                         paths and HEAD.
  *   STUB_CODEX_EXTRA_LINES
  *                         raw text (literal "\n" sequences are turned into
  *                         real newlines) appended as its own section of the
@@ -177,6 +182,13 @@ for (const rel of (process.env.STUB_CODEX_TOUCH || '').split(',').map((s) => s.t
   } catch (_) {
     /* best effort */
   }
+}
+
+// Also before any simulated death: a ref/branch-only operation, the shape
+// that touches no file and moves no commit but still changes the tree the
+// audit measures.
+if (process.env.STUB_CODEX_BRANCH) {
+  spawnSync('git', ['-C', cd, 'checkout', '-B', process.env.STUB_CODEX_BRANCH], { encoding: 'utf8' });
 }
 
 // A failure that produces NOTHING — the field's exit-143 shape — is the case

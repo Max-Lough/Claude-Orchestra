@@ -1039,6 +1039,12 @@ function treeFingerprint(dir) {
   const r = runGit(['-C', dir, 'status', '--porcelain=v1', '--untracked-files=all']);
   if (r.error || r.status !== 0) return null;
   const head = runGit(['-C', dir, 'rev-parse', 'HEAD']);
+  // FIX (field, 2026-09-07): WO-7A round 1's engine ran `git checkout -B` —
+  // same commit, new branch — and the audit called that "a tree that did not
+  // change at all", so a report naming the branch it created got discarded
+  // whole. The branch name is now part of what the audit measures, alongside
+  // HEAD. Empty string when detached or when git cannot answer.
+  const branch = runGit(['-C', dir, 'symbolic-ref', '--short', '-q', 'HEAD']);
   const lines = (r.stdout || '').split('\n').filter((l) => l.trim());
   const map = new Map();
   const annotated = lines.map((line) => {
@@ -1059,6 +1065,7 @@ function treeFingerprint(dir) {
     text: annotated.join('\n'),
     map,
     head: head.status === 0 ? (head.stdout || '').trim() : '',
+    branch: branch.status === 0 ? (branch.stdout || '').trim() : '',
   };
 }
 
@@ -1612,7 +1619,7 @@ function unavailableHeader() {
 // The audit the engine cannot write for itself: which paths actually moved
 // while it ran. Source paths are the headline; generated build/engine churn
 // is counted so a suite run does not bury the edits.
-function auditLines(delta, headBefore, headAfter) {
+function auditLines(delta, headBefore, headAfter, branchBefore, branchAfter) {
   // Every audit ends with its provenance: it is measured IN-PROCESS by this
   // runner, from fingerprints it took itself around the engine invocation.
   // It never comes from session artifacts, engine output, or files a prior
@@ -1654,6 +1661,14 @@ function auditLines(delta, headBefore, headAfter) {
       '  HEAD moved: ' + (headBefore || '(none)').slice(0, 12) + ' → ' +
         (headAfter || '(none)').slice(0, 12) + ' — the engine made commit(s); paths those ' +
         'commits cleaned from the dirty set may show above as "left the dirty set".'
+    );
+  }
+  // FIX (field, 2026-09-07): a `checkout -B` at the same commit moves no HEAD
+  // and touches no path, but it is still a change the runner measured — name
+  // it here so it never reads as "nothing happened".
+  if (branchBefore !== branchAfter) {
+    lines.push(
+      '  branch: ' + (branchBefore || '(detached)') + ' → ' + (branchAfter || '(detached)')
     );
   }
   lines.push(
@@ -1725,6 +1740,30 @@ function changesClaims(body) {
     else if (line.trim() !== '' && items.length) break;
   }
   return items.filter((t) => !/^["'(]?\s*none\b/i.test(t) && !/^n\/a\b/i.test(t));
+}
+
+// FIX (field, 2026-09-07): WO-7A round 1's engine listed "Created `wo7a` at
+// HEAD daf549ba" (a `git checkout -B`, no tree change) in an otherwise valid
+// BLOCKED report; the contradiction check below held it against the tree
+// audit and discarded the whole report, including the real finding. The
+// brief demands CHANGES items shaped `<path:line> — <what changed>`, so a
+// claim whose head names no file is not evidence of an edit and must not be
+// held against the audit — only the path-shaped claims are.
+function claimHead(item) {
+  const m = /^(.*?)(?: — | - |: )/.exec(item);
+  return (m ? m[1] : item).trim().replace(/^[`'"]+|[`'"]+$/g, '');
+}
+
+function isPathShaped(head) {
+  if (!head) return false;
+  if (/[\\/]/.test(head)) return true; // contains a path separator
+  if (/\.[A-Za-z0-9]{1,8}(:\d+(-\d+)?)?$/.test(head)) return true; // file extension, optional :line[-line]
+  if (/^[^\s\\/:]+:\d+(-\d+)?$/.test(head)) return true; // bare filename:line
+  return false;
+}
+
+function pathClaims(claims) {
+  return claims.filter((c) => isPathShaped(claimHead(c)));
 }
 
 // ------------------------------------------------------------------ main
@@ -1809,6 +1848,27 @@ function main() {
     CONFIG.effortSource = 'default';
   }
 
+  // FIX (field, 2026-09-07): WO-4A round 7 ran model gpt-5.6-sol (default) at
+  // high effort under an Astra launcher because the launcher dropped its
+  // fields; 3.3.0 made `profile` required so the default is now Astra/xhigh,
+  // and this PREFLIGHT note is the belt to that brace — a principal launch on
+  // another model or effort is either an explicit pin the order named, or the
+  // same field failure recurring.
+  if (CONFIG.profile === 'principal' && CONFIG.model !== profile.model) {
+    PREFLIGHT.push(
+      'profile principal is running model "' + CONFIG.model + '" (' + CONFIG.modelSource +
+        '), not its default ' + profile.model + ' — a principal launch on another model is ' +
+        'an explicit pin, never a rung the runner chose; check the order named it'
+    );
+  }
+  if (CONFIG.profile === 'principal' && CONFIG.effort !== profile.effort) {
+    PREFLIGHT.push(
+      'profile principal is running effort "' + CONFIG.effort + '" (' + CONFIG.effortSource +
+        '), not its default ' + profile.effort + ' — a principal launch on another effort is ' +
+        'an explicit pin, never a rung the runner chose; check the order named it'
+    );
+  }
+
   if (!process.env.ORCHESTRA_EXEC_SANDBOX && typeof codexCfg.execSandbox === 'string') {
     CONFIG.sandbox = codexCfg.execSandbox.trim();
   }
@@ -1859,9 +1919,20 @@ function main() {
 
   // Which tree does the engine write? The project by default; --cd for a
   // Director-prepared isolated worktree (parallel disjoint orders).
-  CONFIG.execDir = (args.cd && args.cd.trim()) || CONFIG.projectDir;
-  CONFIG.execDirLabel =
-    CONFIG.execDir === CONFIG.projectDir ? 'live working tree' : 'directed worktree';
+  // FIX (field, 2026-09-07): the Agent tool's `isolation: "worktree"` put the
+  // launcher in a worktree, but the runner has no way to see the launcher's
+  // cwd — the MCP server runs at the repo root — so a launcher must pass its
+  // own cwd as `cd` on every call, and that has to be a no-op when it is
+  // already the live tree. Compare RESOLVED paths, case-insensitively on
+  // win32, since a launcher may pass the same directory with different
+  // slashes or case.
+  CONFIG.execDir = path.resolve((args.cd && args.cd.trim()) || CONFIG.projectDir);
+  const resolvedProjectDir = path.resolve(CONFIG.projectDir);
+  const sameTree =
+    process.platform === 'win32'
+      ? CONFIG.execDir.toLowerCase() === resolvedProjectDir.toLowerCase()
+      : CONFIG.execDir === resolvedProjectDir;
+  CONFIG.execDirLabel = sameTree ? 'live working tree' : 'directed worktree';
 
   // Fresh-session enforcement: this runner's guarantees — the idle precheck,
   // the tree audit, the report-integrity token — are all statements about ONE
@@ -2025,7 +2096,9 @@ function main() {
   const audit = auditLines(
     delta,
     before !== null ? before.head : '',
-    after !== null ? after.head : ''
+    after !== null ? after.head : '',
+    before !== null ? before.branch : '',
+    after !== null ? after.branch : ''
   );
 
   // Prefer the clean final-message file; fall back to stdout if the flag was
@@ -2096,21 +2169,29 @@ function main() {
   // reporting "already present" edits it never made, can. Skipped for
   // read-only dry runs, where no claim could have landed by design.
   const claims = changesClaims(body);
+  // FIX (field, 2026-09-07): a ref/branch operation (e.g. `checkout -B`) is
+  // not a file edit and must not be held against the tree audit — only a
+  // path-shaped claim (`<path:line> — ...`) is evidence of one. The branch is
+  // now part of what "untouched" means too, so a checkout that only moves the
+  // branch (same commit) is caught as a measured change, not silently folded
+  // into "the tree did not change at all".
+  const pathedClaims = claims ? pathClaims(claims) : claims;
   const treeUntouched =
     delta !== null &&
     delta.source.length === 0 &&
     delta.generated.length === 0 &&
-    before !== null && after !== null && before.head === after.head;
-  if (CONFIG.sandbox !== 'read-only' && claims && claims.length && treeUntouched) {
+    before !== null && after !== null &&
+    before.head === after.head && before.branch === after.branch;
+  if (CONFIG.sandbox !== 'read-only' && pathedClaims && pathedClaims.length && treeUntouched) {
     printUnavailable(
       'report integrity check failed — the report claims edits the runner measured as never happening',
-      'The report\'s CHANGES section claims ' + claims.length + ' edit(s):\n' +
-        indent(claims.slice(0, 10).map((c) => '- ' + c).join('\n'), '  ') +
-        (claims.length > 10 ? '\n  …and ' + (claims.length - 10) + ' more' : '') + '\n' +
+      'The report\'s CHANGES section claims ' + pathedClaims.length + ' edit(s):\n' +
+        indent(pathedClaims.slice(0, 10).map((c) => '- ' + c).join('\n'), '  ') +
+        (pathedClaims.length > 10 ? '\n  …and ' + (pathedClaims.length - 10) + ' more' : '') + '\n' +
         'but the runner\'s own before/after fingerprints show a tree that did not\n' +
         'change at all while the engine ran: no source paths, no generated churn,\n' +
-        'HEAD unmoved. A report and an audit that contradict each other must never\n' +
-        'be relayed as a completed order. Treat the order as NOT executed.',
+        'HEAD and branch unmoved. A report and an audit that contradict each other\n' +
+        'must never be relayed as a completed order. Treat the order as NOT executed.',
       att,
       audit,
       body

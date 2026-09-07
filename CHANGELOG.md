@@ -9,6 +9,59 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.3.2 — the doctor reads the install's manifest, and three launcher blind spots
+
+**Why.** codex-cli 0.153.4 ships `codex-command-runner.exe`,
+`codex-windows-sandbox-setup.exe` and `codex-resources` in the directory
+`codex-package.json` declares (`resourcesDir`, a sibling of `bin\`), and
+resolves them there with nothing in `bin\`. The helper-sibling check demanded
+them in `bin\`, read every self-update as "the update stripped them", and its
+recommended repair copied a 0.147.0-era runner into the new install — the
+version skew behind the intermittent sandbox fault. `packagedResourceDirs()`
+now reads the manifest, keeps the declared name beside the canonical
+directory (a junction alias must still match a helper entry), resolves real
+paths before the containment test, de-duplicates on the (dir, name) pair, and
+never lets a directory satisfy an executable entry. Four Sol review rounds
+through the lane; every finding fixed.
+
+**Three more field failures, from the ADR-0005 campaign's second batch**
+(`plans/orchestra-codex-issues.md` #9–12):
+
+- **A branch creation is not a claimed edit.** WO-7A round 1: the engine
+  reported "Created `wo7a` at HEAD daf549ba" (a `git checkout -B`, no tree
+  change); the report-integrity check saw no tree change against the claim
+  and declared `EXEC_UNAVAILABLE`, discarding a valid BLOCKED report that
+  carried the real finding. The check now holds only path-shaped CHANGES
+  claims against the audit, and the audit measures the current branch as
+  well as HEAD, so a `checkout -B` is a measured change.
+- **A principal launch off its default model is said out loud.** WO-4A round
+  7 ran Sol/high under a principal launcher that asked for Astra/xhigh —
+  the same wording that had worked on fifteen prior launches. `PREFLIGHT`
+  now names the pin and its source when a principal-profile run isn't
+  Astra/xhigh, and the principal launcher relays and flags it unless the
+  order itself named that pin.
+- **A launcher started in a worktree passes it as `cd`.** WO-7A2: the Agent
+  tool put the launcher in a worktree, but the runner cannot see a
+  launcher's cwd — it ran Astra against the main checkout, which held
+  another session's dirty files, and Astra correctly BLOCKED at Part 0. A
+  `cd` equal to the live tree is now labelled `tree: live working tree` on a
+  resolved-path compare, the MCP `cd` description says when to pass it, and
+  both launcher definitions pass their own working directory as `cd` when
+  the Agent tool put them in a worktree.
+- **Orders to the Codex lane are self-contained.** Three WO-4A rounds were
+  lost to orders that referenced a prior round's ruling by name only — the
+  engine is stateless and never saw it. Both launcher definitions now say
+  every `orchestra_exec` call is a fresh engine and flag an order that
+  visibly names a prior round.
+
+**Tests.** Exec case 22 (branch-only claims relayed for DONE and BLOCKED, a
+mixed claim still failing on the path claim alone, a real `checkout -B`
+named in the audit), case 18 (the principal off-default note fires on a pin
+and stays silent on the defaults and on the heavy rung), and case 12 (a `cd`
+that resolves to the project dir is the live tree); the stub engine grew a
+`STUB_CODEX_BRANCH` knob. Review-lane coverage for the manifest reader landed
+with the doctor fix.
+
 ## 3.3.1 — the cross-compare architects: Fable opposite Astra, and a revision that simplifies
 
 **Why.** Two owner-directed changes to `/cross-compare-plan`. The GPT lane now runs

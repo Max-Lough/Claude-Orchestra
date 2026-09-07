@@ -612,7 +612,7 @@ const TOOLS = [
         profile: { type: 'string', enum: ['heavy', 'principal'], description: 'REQUIRED. Which Codex executor rung runs the order: "heavy" is GPT-5.6 Sol at high effort; "principal" is GPT-6 Astra at xhigh effort. Each launcher passes its own rung and never chooses between them. A call without it is refused before any runner launches — there is no default rung.' },
         timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one. Default 1800000 — budget a build plus a suite.' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the executor must not run.' },
-        cd: { type: 'string', description: 'Isolated worktree directory to execute in, only when the order names one.' },
+        cd: { type: 'string', description: 'Directory the engine executes in. Pass the isolated worktree the order names, or your own working directory whenever you were launched inside a worktree (the runner cannot see where you are: without cd it runs in the main checkout). Omit only when you are in the main checkout.' },
         model: { type: 'string', description: 'Pin a specific model for this run, only when the order names one.' },
         effort: { type: 'string', description: 'Reasoning effort override, only when the order names one.' },
       },
@@ -780,7 +780,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.3.1' },
+          serverInfo: { name: 'orchestra-engine', version: '3.3.2' },
         },
       });
       return;

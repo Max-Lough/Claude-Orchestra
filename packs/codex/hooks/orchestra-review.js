@@ -1814,6 +1814,108 @@ function detectInstallLayout(binPath) {
   return { id: 'unknown', binRoot: '' };
 }
 
+// Is `child` inside `parent`? Hoisted out of verifyHelperSiblings so the
+// manifest reader below can share the one containment test rather than grow a
+// second, subtly different copy.
+function pathUnder(parent, child) {
+  try {
+    const rel = path.relative(path.resolve(parent), path.resolve(child));
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  } catch (_) {
+    return false;
+  }
+}
+
+// FIX (2026-09-07, codex-cli 0.153.4): the helper-sibling check demanded these
+// files sit in `bin\` beside `codex.exe`, and every self-update was read as
+// "the update stripped them". It never did. Codex ships them in a resources
+// directory declared by the install's own manifest — `codex-package.json`
+// (`layoutVersion: 1`, present unchanged in every release on this machine back
+// to 0.145.0) carries `resourcesDir: "codex-resources"`, a SIBLING of `bin\`,
+// and 0.153.4 resolves them from there with nothing in `bin\` at all (verified:
+// a sandboxed `codex exec` established the workspace-write sandbox and ran its
+// command on a stock install whose `bin\` held only the two shipped exes).
+//
+// The stale expectation was not merely noisy, it was harmful. Every release
+// dir here whose `bin\` DOES hold these files got them from a past repair, and
+// those copies are byte-identical across 0.151.0/0.153.0/0.153.2 — frozen at
+// the 0.147.0-era build. So the repair the doctor recommended would have copied
+// a 0.147.0 `codex-command-runner.exe` into a 0.153.4 install: precisely the
+// version skew the WO-11 investigation traced to the "intermittent codex
+// sandbox fault" (that helper rejects the newer CLI's spawn protocol v6). The
+// check was manufacturing the bug it existed to catch.
+//
+// Read the manifest instead of assuming a location, so the NEXT relayout is
+// followed rather than fought. Returns `{ dir, name }` for each declared
+// resources directory that actually exists — `dir` canonical (what to read
+// files out of), `name` the DECLARED last segment (what the directory is called
+// inside the package). An install without a manifest yields none and the caller
+// falls back to the beside-the-binary rule unchanged.
+//
+// FIX (Sol review, round 2): an earlier version returned only the canonical
+// path, which silently renames the directory whenever it is reached through an
+// in-package link. A valid `codex-resources -> assets` junction canonicalises to
+// `assets`, the `codex-resources` helper entry then matched nothing, and the
+// doctor called a healthy install broken — worse, a repairing run copied the
+// whole resources tree into `bin\codex-resources` and reported a repair it had
+// no business making. Both names are load-bearing, so both are kept.
+function packagedResourceDirs(installDir) {
+  const out = [];
+  // The manifest sits at the package root: one level above `bin\`. Check the
+  // install dir itself too, for a layout that does not nest the binary.
+  for (const root of [path.dirname(installDir), installDir]) {
+    if (!root) continue;
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(path.join(root, 'codex-package.json'), 'utf8'));
+    } catch (_) {
+      continue; // no manifest here, or unreadable/not JSON: not an error
+    }
+    const rel = manifest && typeof manifest.resourcesDir === 'string' ? manifest.resourcesDir.trim() : '';
+    if (!rel) continue;
+    const dir = path.resolve(root, rel);
+    // A manifest is a hint, not authority over the filesystem: only accept a
+    // path that stays inside the package and is really a directory.
+    //
+    // FIX (Sol review): `pathUnder` is LEXICAL, and a lexical test is not a
+    // containment test on a filesystem that has links. A `codex-resources`
+    // junction sitting inside the package can point anywhere on the disk —
+    // `path.resolve` never leaves the package, `statSync` follows the junction,
+    // and helpers from an arbitrary directory were accepted as the install's
+    // own. Resolve BOTH sides to their real paths first, so the check
+    // constrains where the files actually are rather than how they are named.
+    let realDir;
+    let realRoot;
+    try {
+      realDir = fs.realpathSync(dir);
+      realRoot = fs.realpathSync(root);
+    } catch (_) {
+      continue; // does not exist, or unreadable: not a candidate, not an error
+    }
+    if (!pathUnder(realRoot, realDir)) continue;
+    try {
+      if (!fs.statSync(realDir).isDirectory()) continue;
+    } catch (_) {
+      continue;
+    }
+    // `name` comes from the DECLARED path, not the canonical one: it is what
+    // the directory is called inside the package, which is the name a
+    // helperSiblings entry like `codex-resources` refers to.
+    //
+    // FIX (Sol review, round 3): de-duplicate on the PAIR, not the directory.
+    // Two manifests (package root and install dir) may declare different
+    // aliases that resolve to the same canonical directory; keying on the
+    // directory alone kept whichever was seen first and silently dropped the
+    // other alias — the very name a helper entry might refer to, which the
+    // doctor then called missing and the repairing path copied into `bin\`.
+    const declaredName = path.basename(dir);
+    if (!out.some((e) => e.dir === realDir && e.name === declaredName)) {
+      out.push({ dir: realDir, name: declaredName });
+    }
+  }
+  return out;
+}
+
 // Directories INSIDE the install itself, which is where a hand repair puts a
 // helper when it guesses wrong: the 2026-08-18 failure was
 // `codex-windows-sandbox-setup.exe` sitting in `codex-resources\`, one level
@@ -1907,6 +2009,11 @@ function helperSourceCandidates(installDir, layout) {
 // `codex-windows-sandbox-setup.exe` satisfies it and launches nothing. Names
 // that are executables must be files; `codex-resources` is a directory and any
 // entry of that name is accepted.
+// Names that must resolve to a FILE to count. Shared with the declared-alias
+// match below, which would otherwise let a DIRECTORY stand in for an executable
+// by a different route than the one this predicate was written to close.
+const EXECUTABLE_NAME_RE = /\.(exe|cmd|bat|com|dll)$/i;
+
 function siblingPresent(dir, name) {
   let st;
   try {
@@ -1914,7 +2021,7 @@ function siblingPresent(dir, name) {
   } catch (_) {
     return false;
   }
-  return /\.(exe|cmd|bat|com|dll)$/i.test(name) ? st.isFile() : true;
+  return EXECUTABLE_NAME_RE.test(name) ? st.isFile() : true;
 }
 
 // FIX: the documented repair for a self-update that strips helper files was
@@ -1937,11 +2044,50 @@ function siblingPresent(dir, name) {
 function verifyHelperSiblings(installDir, layout, dryRun) {
   const wanted = CONFIG.helperSiblings;
   if (!wanted.length || !installDir) {
-    return { checked: false, missing: [], restored: [], searched: [], notRestored: [] };
+    return { checked: false, missing: [], restored: [], packaged: [], packagedNames: [], searched: [], notRestored: [] };
   }
-  const missing = wanted.filter((name) => !siblingPresent(installDir, name));
+  // A helper the install's own manifest places in its resources directory is
+  // where Codex ships it and where Codex finds it — present, not missing, and
+  // emphatically not something to "repair" by copying another version's build
+  // in beside the binary. See packagedResourceDirs.
+  const packagedDirs = packagedResourceDirs(installDir);
+  const packaged = [];
+  const packagedNames = [];
+  const missing = wanted.filter((name) => {
+    if (siblingPresent(installDir, name)) return false;
+    // `codex-resources` is not a file the resources directory contains — it IS
+    // the resources directory. A wanted name that matches a declared one is
+    // satisfied by that directory existing where the manifest puts it. Match on
+    // the DECLARED name (and the canonical one, when a link has not renamed it):
+    // matching only the canonical basename loses the entry the moment the
+    // package reaches its resources through an in-package link.
+    //
+    // FIX (Sol review, round 3): a directory can only stand in for a name that
+    // is not executable-shaped. A manifest declaring
+    // `resourcesDir: "codex-command-runner.exe"` otherwise satisfied the
+    // helper entry with a DIRECTORY — the same false positive siblingPresent
+    // exists to close, reached by a different route, and it reported the
+    // missing runner as accounted for.
+    const isDeclaredDir =
+      !EXECUTABLE_NAME_RE.test(name) &&
+      packagedDirs.find((d) => d.name === name || path.basename(d.dir) === name);
+    if (isDeclaredDir) {
+      packaged.push(
+        name + ' (is the declared resources directory, at ' + isDeclaredDir.dir + ')'
+      );
+      packagedNames.push(name);
+      return false;
+    }
+    const inPackage = packagedDirs.find((d) => siblingPresent(d.dir, name));
+    if (inPackage) {
+      packaged.push(name + ' (in ' + inPackage.dir + ')');
+      packagedNames.push(name);
+      return false;
+    }
+    return true;
+  });
   if (!missing.length) {
-    return { checked: true, missing: [], restored: [], searched: [], notRestored: [] };
+    return { checked: true, missing: [], restored: [], packaged, packagedNames, searched: [], notRestored: [] };
   }
 
   const searched = helperSourceCandidates(installDir, layout);
@@ -1949,14 +2095,7 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
   const problems = [];
   const stillMissing = [];
   const notRestored = [];
-  const under = (parent, child) => {
-    try {
-      const rel = path.relative(path.resolve(parent), path.resolve(child));
-      return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-    } catch (_) {
-      return false;
-    }
-  };
+  const under = pathUnder;
   const insideInstall = (dir) => under(installDir, dir);
   for (const name of missing) {
     const dest = path.join(installDir, name);
@@ -1994,7 +2133,7 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
       problems.push(name + ': ' + boundedDiagnostic((e && e.message) || e, 2000));
     }
   }
-  return { checked: true, missing: stillMissing, restored, searched, problems, notRestored };
+  return { checked: true, missing: stillMissing, restored, packaged, packagedNames, searched, problems, notRestored };
 }
 
 // FIX: a Codex self-update can silently remove files a working install needs.
@@ -2144,8 +2283,19 @@ function inspectCodexInstall() {
   }
 
   // Helper siblings: the files a self-update strips — or a hand repair files in
-  // the wrong place — verified next to the RESOLVED binary rather than assumed.
+  // the wrong place — verified next to the RESOLVED binary, or in the resources
+  // directory the install's own manifest declares, rather than assumed.
   const siblings = verifyHelperSiblings(installDir, layout, CONFIG.noRepair);
+  // Say where they were found. Accepting the packaged location silently would
+  // hide the next relayout exactly the way the old beside-the-binary assumption
+  // hid this one.
+  if (siblings.packaged && siblings.packaged.length) {
+    lines.push(
+      'helper siblings carried in the install\'s declared resources directory (codex-package.json ' +
+        '"resourcesDir" — where Codex ships and resolves them, not beside the binary): ' +
+        siblings.packaged.join(', ')
+    );
+  }
   if (siblings.restored.length) {
     lines.push(
       'helper siblings repaired next to the resolved binary: ' + siblings.restored.join(', ')
@@ -2178,7 +2328,13 @@ function inspectCodexInstall() {
       if (HELPER_CONSEQUENCE[name]) detail += ' ' + name + ': ' + HELPER_CONSEQUENCE[name];
     }
   } else if (siblings.checked) {
-    lines.push('helper siblings present: ' + CONFIG.helperSiblings.join(', '));
+    // Name only the ones found beside the binary; the packaged ones already got
+    // their own line, and folding them in here would report a location that is
+    // not where they are.
+    const inPackage = new Set(siblings.packagedNames || []);
+    const beside = CONFIG.helperSiblings.filter((n) => !inPackage.has(n));
+    if (beside.length) lines.push('helper siblings present: ' + beside.join(', '));
+    lines.push('all ' + CONFIG.helperSiblings.length + ' expected helper sibling(s) accounted for.');
   }
 
   return {

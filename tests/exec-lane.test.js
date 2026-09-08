@@ -2055,6 +2055,13 @@ function case23() {
 //     matched the delimited span with an ambiguous regex that backtracked
 //     cubically on an unclosed delimiter (checks 9). Shape is not evidence
 //     and the scan is now capped; checks 8–10 pin all three.
+//
+//     FIX (Sol review round 3, 2026-09-08): the cut-point cap kept the 32
+//     LONGEST prefixes, so a spaced path followed by 31 or more separators
+//     lost its own cut point and the false claim relayed as verified —
+//     checks 10 now pad with separators, not just length. Check 11 covers a
+//     quadratic outside the classifier: printReport's trailing-whitespace
+//     strip.
 function case24() {
   section('24. Path claims whose path contains whitespace');
 
@@ -2227,21 +2234,24 @@ function case24() {
   // (9) FIX (Sol review round 2, 2026-09-08): the first attempt matched the
   //     delimited span with `/^\s*(["'`])\s*([^"'`\n]+?)\s*\1/`, whose two
   //     whitespace-matching quantifiers made an unclosed delimiter explore
-  //     O(n³) split points — 28 s on a 4,000-space item, extrapolating to an
-  //     hour at 20,000. A CHANGES item is unbounded engine text and this runs
-  //     AFTER the order completed, so the cost lands on a report and a tree
-  //     audit the Director already has. Both hostile shapes are timed
-  //     against a baseline run of the same fixture, so the assertion is a
-  //     delta and not a wall-clock guess about this machine.
+  //     O(n³) split points — 28 s of REGEX time on a 4,000-space item (41 s
+  //     of end-to-end runner wall clock for the same input, measured below),
+  //     extrapolating to about an hour at 20,000 spaces. A CHANGES item is
+  //     unbounded engine text and this runs AFTER the order completed, so the
+  //     cost lands on a report and a tree audit the Director already has.
+  //     Both hostile shapes are timed against a baseline run of the same
+  //     fixture, so the assertion is a delta and not a wall-clock guess about
+  //     this machine.
   function timedRun(claim) {
     const fxt = makeRepo();
     const t0 = Date.now();
     const out = (runExec(fxt, [], { STUB_CODEX_CLAIM_CHANGES: claim }).stdout || '');
     return { ms: Date.now() - t0, out };
   }
-  // The capped scan adds ~32 stat calls, i.e. noise; the shapes below cost
-  // 41 s and 4.9 s respectively without the fix, so this budget has an order
-  // of magnitude of headroom either way.
+  // The capped scan adds ~33 stat calls, i.e. noise; the shapes below cost
+  // 41 s and 4.9 s of end-to-end runner wall clock respectively without the
+  // fix (the first of those is the same input the O(n³) regex alone took 28 s
+  // on), so this budget has an order of magnitude of headroom either way.
   const BUDGET_MS = 2500;
   const baseline = timedRun('touched nothing');
   // Unclosed backtick, then a long whitespace run: the ReDoS payload.
@@ -2259,20 +2269,53 @@ function case24() {
     'baseline ' + baseline.ms + 'ms, hostile ' + manyCuts.ms + 'ms; ' + manyCuts.out.slice(0, 300)
   );
 
-  // (10) The caps must not become an evasion route. They bound the PREFIX
-  //      length, not the item's, so padding a bullet's tail past the cap
-  //      cannot hide a real path claim at its head: the cut point that ends
-  //      the path is still inside the window.
-  const fx10 = withSpacedFile(makeRepo());
-  const padded = runExec(fx10, [], {
-    STUB_CODEX_CLAIM_CHANGES: SPACED + ' — ' + 'padding '.repeat(1000),
-  });
-  const padOut = padded.stdout || '';
+  // (10) Neither cap may become an evasion route. Both bound the HEAD of the
+  //      item — the length cap bounds the prefix rather than the item, and
+  //      the cut-point cap takes the separators nearest the head — so no
+  //      amount of tail padding can push a real path claim out of the window.
+  //      One payload per cap, and a third that pads with the other separator
+  //      spelling, each run against a tree that really holds the file and a
+  //      run that really touched nothing.
+  //
+  //      FIX (Sol review round 3, 2026-09-08): only the first of these
+  //      existed, and its padding carries NO separators, so it exercised the
+  //      length cap alone and passed against the rejected first attempt as
+  //      well — it was never a mutation proof of the cut-point cap. That cap
+  //      kept the 32 LONGEST prefixes, so 31 separators in the description
+  //      evicted the cut at the end of the path and the false claim relayed
+  //      as verified. The two separator-bearing payloads below fail against
+  //      that behaviour and pass only when the budget is spent head-first.
+  const capEvasions = [
+    ['length cap: 8 KB of separator-free padding', 'padding '.repeat(1000)],
+    ['cut-point cap: 40 ` - ` separators past the head', 'a - '.repeat(40) + 'z'],
+    ['cut-point cap: 40 `: ` separators past the head', 'a: '.repeat(40) + 'z'],
+  ];
+  for (const [label, tail] of capEvasions) {
+    const fx10 = withSpacedFile(makeRepo());
+    const padOut =
+      (runExec(fx10, [], { STUB_CODEX_CLAIM_CHANGES: SPACED + ' — ' + tail }).stdout || '');
+    check(
+      'a real spaced path claim padded past the caps still fires the contradiction — ' + label,
+      /STATUS: EXEC_UNAVAILABLE/.test(padOut) &&
+        /claims edits the runner measured as never happening/.test(padOut),
+      padOut.slice(0, 900)
+    );
+  }
+
+  // (11) FIX (Sol review round 3, 2026-09-08): a quadratic OUTSIDE the
+  //      classifier. printReport stripped the body's trailing whitespace with
+  //      `body.replace(/\s+$/, '')`, which restarts `\s+` at every position of
+  //      an interior whitespace run before backtracking off the anchor —
+  //      2.3 s at 50k spaces, 6.3 s at 100k, 22.6 s at 200k, and over a
+  //      minute at 400k, all of it spent AFTER the engine finished, on a
+  //      report and a tree audit the Director already had. Same delta-against-
+  //      baseline form as (9): a 400,000-space bullet must cost no more than
+  //      an ordinary run.
+  const bigBody = timedRun('`' + ' '.repeat(400000) + 'word');
   check(
-    'a real spaced path claim padded past the length cap still fires the contradiction (the cap bounds prefixes, not items)',
-    /STATUS: EXEC_UNAVAILABLE/.test(padOut) &&
-      /claims edits the runner measured as never happening/.test(padOut),
-    padOut.slice(0, 900)
+    'a report body carrying a 400,000-space run costs no more than a baseline run (trailing strip is linear)',
+    bigBody.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(bigBody.out),
+    'baseline ' + baseline.ms + 'ms, hostile ' + bigBody.ms + 'ms; ' + bigBody.out.slice(0, 300)
   );
 }
 

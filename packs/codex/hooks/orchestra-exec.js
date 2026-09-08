@@ -1700,9 +1700,18 @@ function auditLines(delta, headBefore, headAfter, branchBefore, branchAfter) {
   return lines.join('\n');
 }
 
+// FIX (Sol review round 3, 2026-09-08): the trailing strip was
+// `body.replace(/\s+$/, '')`, which restarts `\s+` at every position of an
+// interior whitespace run before backtracking off the anchor — quadratic in
+// the run's length (2.3 s at 50k spaces, 22.6 s at 200k). The body is
+// engine-controlled text and this runs after the order finished, so a bullet
+// of 400,000 spaces cost the runner over a minute for a report and a tree
+// audit the Director already had. `trimEnd` is linear and strips exactly the
+// same characters: its WhiteSpace + LineTerminator set and the regex `\s`
+// class agree on every code point.
 function printReport(body, audit) {
   process.stdout.write(
-    engineHeader() + '\n\n' + body.replace(/\s+$/, '') + '\n\n' + audit +
+    engineHeader() + '\n\n' + body.trimEnd() + '\n\n' + audit +
       '\nREPORT INTEGRITY: verified — the engine echoed run token ' + RUN_NONCE +
       ', and the report does not contradict the tree audit.\n'
   );
@@ -1844,26 +1853,44 @@ function spacedPathHead(item, dir) {
 // classifier runs AFTER the order finished — burning CPU here destroys a
 // report and a TREE AUDIT the Director already has, with the runner's own
 // timeout no help (it bounds only the Codex child). So the scan is capped on
-// both axes. The cap is on the PREFIX length, not on the item: every
-// candidate is a prefix of the item, a real repo-relative path is nowhere
-// near 4 KB, and capping prefixes rather than skipping long items means an
-// engine cannot evade the check by padding its bullet's tail.
+// both axes: how long a prefix may be, and how many cut points are tried.
+// Both caps are spent at the HEAD of the item. Every candidate is a prefix,
+// a real repo-relative path is nowhere near 4 KB and has nowhere near 32
+// internal ` — `/` - `/`: ` separators, so a claim's own path always lies
+// inside both windows and padding a bullet's tail — with length or with
+// separators — cannot push it out of them.
 const MAX_CLAIM_HEAD_CHARS = 4096;
 const MAX_CLAIM_HEAD_CUTS = 32;
 
-// Every head claimHead could have cut, longest first, each stripped of
-// surrounding quotes the same way claimHead strips them.
+// Every head claimHead could have cut, each stripped of surrounding quotes
+// the same way claimHead strips them.
+//
+// FIX (Sol review round 3, 2026-09-08): the cut budget used to keep the
+// LONGEST prefixes, which is the wrong end of the item. A path claim is a
+// PREFIX of its bullet and the cut that ends it is the FIRST separator after
+// the path, so the cut points that matter are the ones nearest the HEAD.
+// Keeping the longest instead let an item's DESCRIPTION evict its own path:
+// `<spaced path> — ` + 'a - '.repeat(31) + 'z' dropped the cut at the end of
+// the path and relayed as a verified report against a measurably untouched
+// tree — the exact bypass this classifier exists to close, reopened by its
+// own cap. The budget is now taken head-first, and the regex stops scanning
+// once it is spent.
+//
+// Probing still runs longest-first WITHIN that head-nearest set, because a
+// real path can contain a separator (`…/Pirate Music Pack - free/…`) and the
+// longest prefix the tree actually holds is the head to report.
 function headCandidates(item) {
   const cuts = [];
   const re = / — | - |: /g;
   let m;
   while ((m = re.exec(item)) !== null) {
     if (m.index > MAX_CLAIM_HEAD_CHARS) break; // a prefix this long is not a path
-    cuts.push(m.index);
+    cuts.push(m.index); // ascending, so the head-nearest cuts are taken first
+    if (cuts.length >= MAX_CLAIM_HEAD_CUTS) break;
   }
-  const ends = (item.length <= MAX_CLAIM_HEAD_CHARS ? [item.length] : [])
-    .concat(cuts.reverse())
-    .slice(0, MAX_CLAIM_HEAD_CUTS);
+  // Longest first among the head-nearest cuts, with the whole item — when it
+  // is short enough to be a path at all — ahead of all of them.
+  const ends = (item.length <= MAX_CLAIM_HEAD_CHARS ? [item.length] : []).concat(cuts.reverse());
   const out = [];
   for (const end of ends) {
     const cand = item.slice(0, end).trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
@@ -1927,6 +1954,13 @@ function resolvesAsRef(dir, head) {
 // edit. Claims are few (this only runs against a CHANGES list), so the git
 // calls per path-shaped claim — one rev-parse, then up to six symbolic-ref
 // probes when it fails (Sol review round 6) — are cheap.
+//
+// FIX (Sol review round 3, 2026-09-08): the existence probe is asked FIRST.
+// Both operands are pure predicates of the same head — `fs.existsSync` reads
+// the filesystem and `resolvesAsRef` only ever runs read-only `rev-parse` /
+// `symbolic-ref` — so the conjunction's value is unchanged, but a head that
+// names a real file (the common case: an honest path claim) no longer spawns
+// up to seven git processes on its way to being kept.
 function pathClaims(claims, dir) {
   return claims.filter((c) => {
     // A single-token head is classified on shape alone; a head with
@@ -1939,7 +1973,7 @@ function pathClaims(claims, dir) {
     // real repo-relative file path) even when it does not yet resolve — kept
     // as a fast, resolution-independent rule ahead of the git call below.
     if (/^refs\//.test(head) && !fs.existsSync(path.join(dir, head))) return false;
-    if (resolvesAsRef(dir, head) && !fs.existsSync(path.join(dir, head))) return false;
+    if (!fs.existsSync(path.join(dir, head)) && resolvesAsRef(dir, head)) return false;
     return true;
   });
 }

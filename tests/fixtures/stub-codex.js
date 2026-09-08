@@ -43,6 +43,22 @@
  *                         comma-split entries to put in a CHANGES section of
  *                         the report WITHOUT touching anything — models an
  *                         engine claiming edits it never made.
+ *   STUB_CODEX_BRANCH     `git checkout -B <name>` inside --cd before
+ *                         reporting — models a ref/branch operation (no file
+ *                         touched, HEAD's commit unchanged) so the tree audit
+ *                         can be checked for measuring the branch, not just
+ *                         paths and HEAD.
+ *   STUB_CODEX_BRANCH_NO_CHECKOUT
+ *                         `git branch <name>` inside --cd before reporting —
+ *                         like STUB_CODEX_BRANCH but never checks the branch
+ *                         out, so HEAD and branch are both unchanged; models
+ *                         a claim head that names a real ref the current
+ *                         branch never moved to (Sol review, 2026-09-07:
+ *                         isPathShaped's ref exclusion).
+ *   STUB_CODEX_TAG        `git tag <name>` inside --cd before reporting —
+ *                         a ref that touches no file and moves neither HEAD
+ *                         nor branch (Sol review, 2026-09-07: a claim head
+ *                         like `v1.2.3` must not be mistaken for a path).
  *   STUB_CODEX_EXTRA_LINES
  *                         raw text (literal "\n" sequences are turned into
  *                         real newlines) appended as its own section of the
@@ -177,6 +193,27 @@ for (const rel of (process.env.STUB_CODEX_TOUCH || '').split(',').map((s) => s.t
   } catch (_) {
     /* best effort */
   }
+}
+
+// Also before any simulated death: a ref/branch-only operation, the shape
+// that touches no file and moves no commit but still changes the tree the
+// audit measures.
+if (process.env.STUB_CODEX_BRANCH) {
+  spawnSync('git', ['-C', cd, 'checkout', '-B', process.env.STUB_CODEX_BRANCH], { encoding: 'utf8' });
+}
+
+// FIX (Sol review, 2026-09-07): a ref created WITHOUT checking it out — HEAD
+// and branch both stay put, only `for-each-ref` gains a new name — the shape
+// the ref-exclusion in isPathShaped/pathClaims needs to be real, not just a
+// claim.
+if (process.env.STUB_CODEX_BRANCH_NO_CHECKOUT) {
+  spawnSync('git', ['-C', cd, 'branch', process.env.STUB_CODEX_BRANCH_NO_CHECKOUT], { encoding: 'utf8' });
+}
+
+// FIX (Sol review, 2026-09-07): a tag — same shape as above, but the kind of
+// ref a version-like claim head (`v1.2.3`) would actually name in the field.
+if (process.env.STUB_CODEX_TAG) {
+  spawnSync('git', ['-C', cd, 'tag', process.env.STUB_CODEX_TAG], { encoding: 'utf8' });
 }
 
 // A failure that produces NOTHING — the field's exit-143 shape — is the case

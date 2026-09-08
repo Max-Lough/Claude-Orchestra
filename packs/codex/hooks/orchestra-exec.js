@@ -181,6 +181,11 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redact');
+// FIX (field, 2026-09-07): shares the review runner's codex-package.json
+// manifest reader, so this runner's restoreHelpers() (below) knows what the
+// install's own manifest already carries before copying a helpersDir entry
+// over it. See orchestra-install.js for the failure this closes.
+const { packagedResourceDirs, carriedByPackage } = require('./orchestra-install');
 
 // Per-run report-integrity token, generated before anything else so every
 // output path — success, failure, early refusal — can carry it. The brief
@@ -995,16 +1000,30 @@ function resolveCodexBin(bin) {
   }
 }
 
-function restoreHelpers(helpersDir, installDir) {
-  if (!helpersDir || !installDir) return { restored: [], note: '' };
+// FIX (field, 2026-09-07): `packaged` (the caller's packagedResourceDirs()
+// result for this install) is consulted before anything is copied. A
+// top-level helpersDir entry carriedByPackage() reports on is SKIPPED,
+// subtree included — copyInto() below already recurses a directory whole, so
+// skipping it here before the copy is the whole fix. This is the runner the
+// 2026-09-07 15:48 re-injection actually happened in: a stale helpersDir kit
+// (0.147-era) copied its whole contents, including a bin\codex-resources\
+// subtree, into a live 0.153.4 install's bin\ while a review ran elsewhere.
+// See orchestra-install.js's carriedByPackage for the full account.
+function restoreHelpers(helpersDir, installDir, packaged) {
+  if (!helpersDir || !installDir) return { restored: [], skipped: [], note: '' };
   let entries;
   try {
     entries = fs.readdirSync(helpersDir);
   } catch (e) {
-    return { restored: [], note: 'helpersDir unreadable (' + boundedDiagnostic((e && e.message) || e, 2000) + ')' };
+    return { restored: [], skipped: [], note: 'helpersDir unreadable (' + boundedDiagnostic((e && e.message) || e, 2000) + ')' };
   }
   const restored = [];
+  const skipped = [];
   for (const entry of entries) {
+    if (carriedByPackage(entry, packaged)) {
+      skipped.push(entry);
+      continue;
+    }
     const dest = path.join(installDir, entry);
     if (fs.existsSync(dest)) continue;
     try {
@@ -1013,11 +1032,12 @@ function restoreHelpers(helpersDir, installDir) {
     } catch (e) {
       return {
         restored,
+        skipped,
         note: 'helper restore failed on ' + entry + ' (' + boundedDiagnostic((e && e.message) || e, 2000) + ')',
       };
     }
   }
-  return { restored, note: '' };
+  return { restored, skipped, note: '' };
 }
 
 // --------------------------------------------------------- tree fingerprint
@@ -1039,6 +1059,12 @@ function treeFingerprint(dir) {
   const r = runGit(['-C', dir, 'status', '--porcelain=v1', '--untracked-files=all']);
   if (r.error || r.status !== 0) return null;
   const head = runGit(['-C', dir, 'rev-parse', 'HEAD']);
+  // FIX (field, 2026-09-07): WO-7A round 1's engine ran `git checkout -B` —
+  // same commit, new branch — and the audit called that "a tree that did not
+  // change at all", so a report naming the branch it created got discarded
+  // whole. The branch name is now part of what the audit measures, alongside
+  // HEAD. Empty string when detached or when git cannot answer.
+  const branch = runGit(['-C', dir, 'symbolic-ref', '--short', '-q', 'HEAD']);
   const lines = (r.stdout || '').split('\n').filter((l) => l.trim());
   const map = new Map();
   const annotated = lines.map((line) => {
@@ -1059,6 +1085,7 @@ function treeFingerprint(dir) {
     text: annotated.join('\n'),
     map,
     head: head.status === 0 ? (head.stdout || '').trim() : '',
+    branch: branch.status === 0 ? (branch.stdout || '').trim() : '',
   };
 }
 
@@ -1612,7 +1639,7 @@ function unavailableHeader() {
 // The audit the engine cannot write for itself: which paths actually moved
 // while it ran. Source paths are the headline; generated build/engine churn
 // is counted so a suite run does not bury the edits.
-function auditLines(delta, headBefore, headAfter) {
+function auditLines(delta, headBefore, headAfter, branchBefore, branchAfter) {
   // Every audit ends with its provenance: it is measured IN-PROCESS by this
   // runner, from fingerprints it took itself around the engine invocation.
   // It never comes from session artifacts, engine output, or files a prior
@@ -1654,6 +1681,14 @@ function auditLines(delta, headBefore, headAfter) {
       '  HEAD moved: ' + (headBefore || '(none)').slice(0, 12) + ' → ' +
         (headAfter || '(none)').slice(0, 12) + ' — the engine made commit(s); paths those ' +
         'commits cleaned from the dirty set may show above as "left the dirty set".'
+    );
+  }
+  // FIX (field, 2026-09-07): a `checkout -B` at the same commit moves no HEAD
+  // and touches no path, but it is still a change the runner measured — name
+  // it here so it never reads as "nothing happened".
+  if (branchBefore !== branchAfter) {
+    lines.push(
+      '  branch: ' + (branchBefore || '(detached)') + ' → ' + (branchAfter || '(detached)')
     );
   }
   lines.push(
@@ -1725,6 +1760,105 @@ function changesClaims(body) {
     else if (line.trim() !== '' && items.length) break;
   }
   return items.filter((t) => !/^["'(]?\s*none\b/i.test(t) && !/^n\/a\b/i.test(t));
+}
+
+// FIX (field, 2026-09-07): WO-7A round 1's engine listed "Created `wo7a` at
+// HEAD daf549ba" (a `git checkout -B`, no tree change) in an otherwise valid
+// BLOCKED report; the contradiction check below held it against the tree
+// audit and discarded the whole report, including the real finding. The
+// brief demands CHANGES items shaped `<path:line> — <what changed>`, so a
+// claim whose head names no file is not evidence of an edit and must not be
+// held against the audit — only the path-shaped claims are.
+function claimHead(item) {
+  const m = /^(.*?)(?: — | - |: )/.exec(item);
+  return (m ? m[1] : item).trim().replace(/^[`'"]+|[`'"]+$/g, '');
+}
+
+// FIX (Sol review, 2026-09-07): `isPathShaped` was extension/separator-only
+// and mistook two ref shapes for file edits. (a) The brief demands
+// `<path:line> — <what>`, so a head containing whitespace after claimHead's
+// separator strip is prose ("Created branch `feature/foo` at HEAD deadbeef"
+// has no ` — `/` - `/`: ` separator, so its head is the whole sentence) — not
+// a path, checked FIRST so an embedded `/` in that prose (e.g. `feature/foo`)
+// never short-circuits into a false path match. (b) A bare digit run is not
+// an extension: `v1.2.3` must not be path-shaped, so the extension itself
+// (not its optional `:line` suffix) must contain a letter — `foo.1` man pages
+// are an accepted loss.
+function isPathShaped(head) {
+  if (!head) return false;
+  if (/\s/.test(head)) return false; // a path claim's head is a single token
+  if (/[\\/]/.test(head)) return true; // contains a path separator
+  const ext = /\.([A-Za-z0-9]{1,8})(?::\d+(?:-\d+)?)?$/.exec(head); // extension, optional :line[-line]
+  if (ext && /[A-Za-z]/.test(ext[1])) return true;
+  if (/^[^\s\\/:]+:\d+(-\d+)?$/.test(head)) return true; // bare filename:line
+  return false;
+}
+
+// FIX (Sol review round 4, 2026-09-07): three straight rounds each found one
+// more real git ref spelling the precomputed `for-each-ref` set (full name,
+// `:short`, `:lstrip=2`) did not emit verbatim — `origin/HEAD`, then
+// `refs/heads/foo`, and now `heads/foo`, `tags/v9`, `remotes/up.stream/HEAD`.
+// Enumerating spellings is the wrong design: there is no bound on how git
+// itself will resolve a ref name. Ask git per claim instead of guessing from
+// a precomputed set — `rev-parse --verify --quiet` accepts every spelling git
+// accepts, with nothing left to enumerate. `--end-of-options` (git >= 2.24;
+// this machine runs 2.47.1) stops a head beginning with `-` from being read
+// as a flag.
+function resolvesAsRef(dir, head) {
+  const r = runGit(['-C', dir, 'rev-parse', '--verify', '--quiet', '--end-of-options', head]);
+  if (!r.error && r.status === 0) return true;
+  // FIX (Sol review round 5, 2026-09-07): `rev-parse --verify` resolves a
+  // symbolic ref by following it to its target, so a dangling symref (an
+  // executor's `git symbolic-ref refs/remotes/up.stream/HEAD
+  // refs/remotes/up.stream/missing`, target never created) makes `--verify`
+  // fail even though the symref itself exists and names no file — the runner
+  // then counted `remotes/up.stream/HEAD — created` as an unevidenced path
+  // claim and discarded an otherwise valid report. `symbolic-ref --quiet`
+  // reads a symref without resolving its target, so it succeeds whether or
+  // not that target exists, and fails for a non-symbolic or absent ref —
+  // exactly the ref-vs-path distinction this function exists to draw. Try
+  // git's own documented DWIM candidate order (gitrevisions(7)) so this
+  // stays a ref check like `--verify` above, not a path guess; a candidate
+  // that is not a valid ref name (a head with `..`, a trailing `/`, etc.)
+  // simply fails here, same as it would above.
+  const candidates = [
+    head,
+    `refs/${head}`,
+    `refs/tags/${head}`,
+    `refs/heads/${head}`,
+    `refs/remotes/${head}`,
+    `refs/remotes/${head}/HEAD`,
+  ];
+  for (const full of candidates) {
+    const s = runGit(['-C', dir, 'symbolic-ref', '--quiet', full]);
+    if (!s.error && s.status === 0) return true;
+  }
+  return false;
+}
+
+// FIX (Sol review, 2026-09-07): (c) a single-token head can be path-shaped by
+// the separator rule above yet still name no file — `feature/foo` (a branch
+// this run itself created) contains a `/` but is a ref, not a path.
+//
+// FIX (Sol review round 4, 2026-09-07): a single-token head that git itself
+// resolves as a ref names no file, whatever spelling it uses — excluded
+// UNLESS a file of that exact name also exists in the tree, so a real path
+// that happens to collide with a ref name is still counted as evidence of an
+// edit. Claims are few (this only runs against a CHANGES list), so the git
+// calls per path-shaped claim — one rev-parse, then up to six symbolic-ref
+// probes when it fails (Sol review round 6) — are cheap.
+function pathClaims(claims, dir) {
+  return claims.filter((c) => {
+    const head = claimHead(c);
+    if (!isPathShaped(head)) return false;
+    // FIX (Sol review round 3, 2026-09-07): a head that starts with `refs/`
+    // is a ref by construction (that is git's own namespace prefix, never a
+    // real repo-relative file path) even when it does not yet resolve — kept
+    // as a fast, resolution-independent rule ahead of the git call below.
+    if (/^refs\//.test(head) && !fs.existsSync(path.join(dir, head))) return false;
+    if (resolvesAsRef(dir, head) && !fs.existsSync(path.join(dir, head))) return false;
+    return true;
+  });
 }
 
 // ------------------------------------------------------------------ main
@@ -1809,6 +1943,27 @@ function main() {
     CONFIG.effortSource = 'default';
   }
 
+  // FIX (field, 2026-09-07): WO-4A round 7 ran model gpt-5.6-sol (default) at
+  // high effort under an Astra launcher because the launcher dropped its
+  // fields; 3.3.0 made `profile` required so the default is now Astra/xhigh,
+  // and this PREFLIGHT note is the belt to that brace — a principal launch on
+  // another model or effort is either an explicit pin the order named, or the
+  // same field failure recurring.
+  if (CONFIG.profile === 'principal' && CONFIG.model !== profile.model) {
+    PREFLIGHT.push(
+      'profile principal is running model "' + CONFIG.model + '" (' + CONFIG.modelSource +
+        '), not its default ' + profile.model + ' — a principal launch on another model is ' +
+        'an explicit pin, never a rung the runner chose; check the order named it'
+    );
+  }
+  if (CONFIG.profile === 'principal' && CONFIG.effort !== profile.effort) {
+    PREFLIGHT.push(
+      'profile principal is running effort "' + CONFIG.effort + '" (' + CONFIG.effortSource +
+        '), not its default ' + profile.effort + ' — a principal launch on another effort is ' +
+        'an explicit pin, never a rung the runner chose; check the order named it'
+    );
+  }
+
   if (!process.env.ORCHESTRA_EXEC_SANDBOX && typeof codexCfg.execSandbox === 'string') {
     CONFIG.sandbox = codexCfg.execSandbox.trim();
   }
@@ -1859,9 +2014,20 @@ function main() {
 
   // Which tree does the engine write? The project by default; --cd for a
   // Director-prepared isolated worktree (parallel disjoint orders).
-  CONFIG.execDir = (args.cd && args.cd.trim()) || CONFIG.projectDir;
-  CONFIG.execDirLabel =
-    CONFIG.execDir === CONFIG.projectDir ? 'live working tree' : 'directed worktree';
+  // FIX (field, 2026-09-07): the Agent tool's `isolation: "worktree"` put the
+  // launcher in a worktree, but the runner has no way to see the launcher's
+  // cwd — the MCP server runs at the repo root — so a launcher must pass its
+  // own cwd as `cd` on every call, and that has to be a no-op when it is
+  // already the live tree. Compare RESOLVED paths, case-insensitively on
+  // win32, since a launcher may pass the same directory with different
+  // slashes or case.
+  CONFIG.execDir = path.resolve((args.cd && args.cd.trim()) || CONFIG.projectDir);
+  const resolvedProjectDir = path.resolve(CONFIG.projectDir);
+  const sameTree =
+    process.platform === 'win32'
+      ? CONFIG.execDir.toLowerCase() === resolvedProjectDir.toLowerCase()
+      : CONFIG.execDir === resolvedProjectDir;
+  CONFIG.execDirLabel = sameTree ? 'live working tree' : 'directed worktree';
 
   // Fresh-session enforcement: this runner's guarantees — the idle precheck,
   // the tree audit, the report-integrity token — are all statements about ONE
@@ -1930,11 +2096,23 @@ function main() {
   CONFIG.installDir = resolved.real ? path.dirname(resolved.path) : '';
   if (resolved.note) PREFLIGHT.push(resolved.note);
   if (CONFIG.helpersDir) {
-    const restore = restoreHelpers(CONFIG.helpersDir, CONFIG.installDir);
+    // FIX (field, 2026-09-07): computed here, once, and handed to
+    // restoreHelpers() so a helpersDir entry the manifest already carries is
+    // never copied over it — see orchestra-install.js's carriedByPackage.
+    const packagedForHelpers = packagedResourceDirs(CONFIG.installDir);
+    const restore = restoreHelpers(CONFIG.helpersDir, CONFIG.installDir, packagedForHelpers);
     if (restore.restored.length) {
       PREFLIGHT.push(
         'restored ' + restore.restored.length + ' file(s) into the Codex install from ' +
           CONFIG.helpersDir + ': ' + restore.restored.join(', ')
+      );
+    }
+    if (restore.skipped && restore.skipped.length) {
+      const dirs = Array.from(new Set(packagedForHelpers.map((d) => d.dir)));
+      PREFLIGHT.push(
+        'helpersDir: ' + restore.skipped.length + ' entr' + (restore.skipped.length === 1 ? 'y' : 'ies') +
+          ' not copied — the install carries them in its declared resources directory (' +
+          dirs.join(', ') + '): ' + restore.skipped.join(', ')
       );
     }
     if (restore.note) PREFLIGHT.push(restore.note);
@@ -2025,7 +2203,9 @@ function main() {
   const audit = auditLines(
     delta,
     before !== null ? before.head : '',
-    after !== null ? after.head : ''
+    after !== null ? after.head : '',
+    before !== null ? before.branch : '',
+    after !== null ? after.branch : ''
   );
 
   // Prefer the clean final-message file; fall back to stdout if the flag was
@@ -2096,21 +2276,32 @@ function main() {
   // reporting "already present" edits it never made, can. Skipped for
   // read-only dry runs, where no claim could have landed by design.
   const claims = changesClaims(body);
+  // FIX (field, 2026-09-07): a ref/branch operation (e.g. `checkout -B`) is
+  // not a file edit and must not be held against the tree audit — only a
+  // path-shaped claim (`<path:line> — ...`) is evidence of one. The branch is
+  // now part of what "untouched" means too, so a checkout that only moves the
+  // branch (same commit) is caught as a measured change, not silently folded
+  // into "the tree did not change at all".
+  // FIX (Sol review round 4, 2026-09-07): a single-token head that git itself
+  // resolves as a ref names no file, so pathClaims asks git per claim instead
+  // of matching against a precomputed ref-name set.
+  const pathedClaims = claims ? pathClaims(claims, CONFIG.execDir) : claims;
   const treeUntouched =
     delta !== null &&
     delta.source.length === 0 &&
     delta.generated.length === 0 &&
-    before !== null && after !== null && before.head === after.head;
-  if (CONFIG.sandbox !== 'read-only' && claims && claims.length && treeUntouched) {
+    before !== null && after !== null &&
+    before.head === after.head && before.branch === after.branch;
+  if (CONFIG.sandbox !== 'read-only' && pathedClaims && pathedClaims.length && treeUntouched) {
     printUnavailable(
       'report integrity check failed — the report claims edits the runner measured as never happening',
-      'The report\'s CHANGES section claims ' + claims.length + ' edit(s):\n' +
-        indent(claims.slice(0, 10).map((c) => '- ' + c).join('\n'), '  ') +
-        (claims.length > 10 ? '\n  …and ' + (claims.length - 10) + ' more' : '') + '\n' +
+      'The report\'s CHANGES section claims ' + pathedClaims.length + ' edit(s):\n' +
+        indent(pathedClaims.slice(0, 10).map((c) => '- ' + c).join('\n'), '  ') +
+        (pathedClaims.length > 10 ? '\n  …and ' + (pathedClaims.length - 10) + ' more' : '') + '\n' +
         'but the runner\'s own before/after fingerprints show a tree that did not\n' +
         'change at all while the engine ran: no source paths, no generated churn,\n' +
-        'HEAD unmoved. A report and an audit that contradict each other must never\n' +
-        'be relayed as a completed order. Treat the order as NOT executed.',
+        'HEAD and branch unmoved. A report and an audit that contradict each other\n' +
+        'must never be relayed as a completed order. Treat the order as NOT executed.',
       att,
       audit,
       body

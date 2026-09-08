@@ -142,12 +142,33 @@ function writeProjectConfig(fx, codexCfg) {
   fs.writeFileSync(path.join(dir, 'orchestra.json'), JSON.stringify({ codex: codexCfg }, null, 2));
 }
 
+// A suite run INSIDE a review lane inherits that runner's environment: its
+// GIT_CONFIG_GLOBAL, and every ORCHESTRA_* setting it exported for the engine
+// child. Cases here assert DEFAULTS, so an ambient ORCHESTRA_REVIEW_TIMEOUT_MS
+// quietly redefines what "default" means — the suite then fails only when a
+// reviewer runs it (observed by the Sol review of this very change: 183/186
+// inside the review lane, 186/186 outside it). Start every runner spawn from a
+// scrubbed copy; a case that wants one of these variables sets it explicitly.
+// Windows environment variable names are CASE-INSENSITIVE: an ambient
+// `orchestra_review_model` is the same variable as `ORCHESTRA_REVIEW_MODEL` and
+// a child reads it as the override, so a case-sensitive scrub leaks it straight
+// back in (Sol review, round 2 — five failures from lower-case variants). Match
+// case-insensitively there, and case-sensitively on POSIX, where a lower-case
+// name genuinely is a different variable and is not one the runner reads.
+function cleanEnv() {
+  const out = {};
+  const fold = process.platform === 'win32';
+  for (const k of Object.keys(process.env)) {
+    const key = fold ? k.toUpperCase() : k;
+    if (key === 'GIT_CONFIG_GLOBAL' || /^ORCHESTRA_/.test(key)) continue;
+    out[k] = process.env[k];
+  }
+  return out;
+}
+
 function runReview(fx, extraArgs, extraEnv, opts) {
   const args = [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er].concat(extraArgs || []);
-  // A suite run INSIDE a review lane inherits that runner's GIT_CONFIG_GLOBAL;
-  // a case that wants the variable sets it itself.
-  const base = Object.assign({}, process.env);
-  delete base.GIT_CONFIG_GLOBAL;
+  const base = cleanEnv();
   return spawnSync(process.execPath, args, {
     cwd: (opts && opts.cwd) || fx.repo,
     encoding: 'utf8',
@@ -187,8 +208,7 @@ function runReview(fx, extraArgs, extraEnv, opts) {
 function runReviewAllowStub(fx, extraArgs, allow, extraEnv) {
   const args = [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er].concat(extraArgs || []);
   const env = Object.assign(
-    {},
-    process.env,
+    cleanEnv(),
     {
       CLAUDE_PROJECT_DIR: fx.repo,
       CODEX_BIN: STUB_BIN,
@@ -268,8 +288,7 @@ function runDoctor(fx, extraEnv, extraArgs) {
     encoding: 'utf8',
     timeout: 240000,
     env: Object.assign(
-      {},
-      process.env,
+      cleanEnv(),
       {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
@@ -411,7 +430,7 @@ async function case4() {
     [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er, '--head-ref', fx.head],
     {
       cwd: fx.repo,
-      env: Object.assign({}, process.env, {
+      env: Object.assign(cleanEnv(), {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
@@ -491,7 +510,7 @@ async function case4() {
     [RUNNER, '--work-order', fx2.wo, '--executor-report', fx2.er, '--head-ref', fx2.head],
     {
       cwd: fx2.repo,
-      env: Object.assign({}, process.env, {
+      env: Object.assign(cleanEnv(), {
         CLAUDE_PROJECT_DIR: fx2.repo,
         CODEX_BIN: STUB_BIN,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
@@ -620,7 +639,7 @@ function case6b() {
   // and no orchestra.json entry at all — "gpt-5.6-sol" is a hard default, not
   // "whatever Codex's own default happens to be".
   const fx = makeDirtyRepo();
-  const env = Object.assign({}, process.env, {
+  const env = Object.assign(cleanEnv(), {
     CLAUDE_PROJECT_DIR: fx.repo,
     CODEX_BIN: STUB_BIN,
     ORCHESTRA_REVIEW_IDLE_MS: '0',
@@ -1670,6 +1689,141 @@ function case22() {
     !/helper siblings repaired next to the resolved binary/.test(snrOut),
     snrOut.slice(0, 1600)
   );
+
+  // FIX (field, 2026-09-07): restoreHelpers() must not copy a helpersDir
+  // entry the install's own manifest already carries in its declared
+  // resources directory — the 2026-09-07 15:48 field failure (a stale
+  // helpersDir kit re-injecting old helpers into a live 0.153.4 install's
+  // bin\ behind the manifest-based doctor fix tested in case 30). Exercised
+  // through both paths that call restoreHelpers(): a normal review, and the
+  // repairing `--doctor`.
+  const helpersDirManifest = path.join(fx.root, 'helpers-kit-manifest');
+  fs.mkdirSync(helpersDirManifest, { recursive: true });
+  // The stale kit: both helper names (a version skew if copied in), a
+  // codex-resources\ subtree of junk (must never be walked into or copied —
+  // the declared resources directory IS codex-resources, whole), and one
+  // genuinely new file the manifest carries nowhere.
+  fs.writeFileSync(path.join(helpersDirManifest, 'codex-command-runner.exe'), 'MZ STALE-0147-ERA\n');
+  fs.writeFileSync(path.join(helpersDirManifest, 'codex-windows-sandbox-setup.exe'), 'MZ STALE-0147-ERA\n');
+  const helpersResourcesJunk = path.join(helpersDirManifest, 'codex-resources');
+  fs.mkdirSync(helpersResourcesJunk, { recursive: true });
+  fs.writeFileSync(path.join(helpersResourcesJunk, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDirManifest, 'known-good-extra.txt'), 'genuinely new\n');
+
+  const makeManifestInstall = (root) => {
+    const release = path.join(root, 'release');
+    const installDir = path.join(release, 'bin');
+    const bin = makeStubBin(installDir, 'codex-stub');
+    fs.writeFileSync(
+      path.join(release, 'codex-package.json'),
+      JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+    );
+    const resources = path.join(release, 'codex-resources');
+    fs.mkdirSync(resources, { recursive: true });
+    fs.writeFileSync(path.join(resources, 'codex-command-runner.exe'), 'MZ current\n');
+    fs.writeFileSync(path.join(resources, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+    return { installDir, bin };
+  };
+
+  // Normal review.
+  const fx4 = makeDirtyRepo();
+  const install4 = makeManifestInstall(fx4.root);
+  writeProjectConfig(fx4, { helpersDir: helpersDirManifest });
+  const iso4 = { HOME: fx4.root, USERPROFILE: fx4.root, CODEX_HOME: path.join(fx4.root, '.codex') };
+  const rv = runReview(fx4, [], Object.assign({ CODEX_BIN: install4.bin }, iso4));
+  const rvOut = rv.stdout || '';
+  check(
+    'a normal review does not copy the manifest-carried helper names or directory into the install',
+    !fs.existsSync(path.join(install4.installDir, 'codex-command-runner.exe')) &&
+      !fs.existsSync(path.join(install4.installDir, 'codex-windows-sandbox-setup.exe')) &&
+      !fs.existsSync(path.join(install4.installDir, 'codex-resources')),
+    fs.readdirSync(install4.installDir).join(', ')
+  );
+  check(
+    'a normal review still copies the genuinely new helpersDir file',
+    fs.existsSync(path.join(install4.installDir, 'known-good-extra.txt')),
+    fs.readdirSync(install4.installDir).join(', ')
+  );
+  check(
+    'the preflight names all three manifest-carried entries as not copied',
+    /helpersDir: 3 entries not copied/.test(rvOut) &&
+      /codex-command-runner\.exe/.test(rvOut) &&
+      /codex-windows-sandbox-setup\.exe/.test(rvOut) &&
+      /codex-resources/.test(rvOut) &&
+      /declared resources directory/.test(rvOut),
+    rvOut.slice(0, 2400)
+  );
+
+  // Repairing `--doctor` (own install: the review run above must not have
+  // already restored anything into a shared installDir).
+  const fx5 = makeDirtyRepo();
+  const install5 = makeManifestInstall(fx5.root);
+  writeProjectConfig(fx5, { helpersDir: helpersDirManifest });
+  const doc = runDoctor(fx5, { CODEX_BIN: install5.bin });
+  const docOut = doc.stdout || '';
+  check(
+    'the repairing doctor does not copy the manifest-carried helper names or directory into the install',
+    !fs.existsSync(path.join(install5.installDir, 'codex-command-runner.exe')) &&
+      !fs.existsSync(path.join(install5.installDir, 'codex-windows-sandbox-setup.exe')) &&
+      !fs.existsSync(path.join(install5.installDir, 'codex-resources')),
+    fs.readdirSync(install5.installDir).join(', ')
+  );
+  check(
+    'the repairing doctor still copies the genuinely new helpersDir file',
+    fs.existsSync(path.join(install5.installDir, 'known-good-extra.txt')),
+    fs.readdirSync(install5.installDir).join(', ')
+  );
+  check(
+    'the doctor output names all three manifest-carried entries as not copied',
+    /helpersDir: 3 entries not copied/.test(docOut) &&
+      /codex-command-runner\.exe/.test(docOut) &&
+      /codex-windows-sandbox-setup\.exe/.test(docOut) &&
+      /codex-resources/.test(docOut) &&
+      /declared resources directory/.test(docOut),
+    docOut.slice(0, 2400)
+  );
+
+  // FIX (Sol review round 2, 2026-09-07): the declared-name compare
+  // (carriedByPackage/sameName, shared with orchestra-install.js) was
+  // case-sensitive, so a helpersDir entry spelled in a different case than
+  // the manifest's declared name went unmatched on Windows and was
+  // reinjected — exactly the stale-kit route this whole check exists to
+  // close. A separate fixture, spelled ONLY in the differing case, is
+  // required: on Windows `codex-resources` and `CODEX-RESOURCES` are the
+  // SAME directory entry (case-preserving, not case-sensitive), so this
+  // cannot be exercised by adding to helpersDirManifest above without
+  // colliding with it.
+  const helpersDirManifestCase = path.join(fx.root, 'helpers-kit-manifest-case');
+  fs.mkdirSync(helpersDirManifestCase, { recursive: true });
+  const helpersResourcesCaseDir = path.join(helpersDirManifestCase, 'CODEX-RESOURCES');
+  fs.mkdirSync(helpersResourcesCaseDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersResourcesCaseDir, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDirManifestCase, 'CODEX-COMMAND-RUNNER.EXE'), 'MZ STALE-CASE\n');
+
+  const fx6 = makeDirtyRepo();
+  const install6 = makeManifestInstall(fx6.root);
+  writeProjectConfig(fx6, { helpersDir: helpersDirManifestCase });
+  const iso6 = { HOME: fx6.root, USERPROFILE: fx6.root, CODEX_HOME: path.join(fx6.root, '.codex') };
+  const rv6 = runReview(fx6, [], Object.assign({ CODEX_BIN: install6.bin }, iso6));
+  const rv6Out = rv6.stdout || '';
+  // On Windows this must fold case and skip both entries, same as the
+  // exact-case fixture above. POSIX filesystems are case-sensitive, so
+  // `CODEX-RESOURCES`/`CODEX-COMMAND-RUNNER.EXE` are genuinely distinct names
+  // there and the compare does not apply — nothing to assert on that
+  // platform beyond "the review didn't crash".
+  check(
+    'on Windows, a helpersDir entry spelled in a different case than the manifest declares is still recognised as carried and skipped',
+    process.platform === 'win32'
+      ? !fs.existsSync(path.join(install6.installDir, 'CODEX-RESOURCES')) &&
+        !fs.existsSync(path.join(install6.installDir, 'CODEX-COMMAND-RUNNER.EXE')) &&
+        /helpersDir: 2 entries not copied/.test(rv6Out) &&
+        /CODEX-RESOURCES/.test(rv6Out) &&
+        /CODEX-COMMAND-RUNNER\.EXE/.test(rv6Out)
+      : true,
+    process.platform === 'win32'
+      ? rv6Out.slice(0, 2400)
+      : '(skipped — case folding is Windows-only; not applicable on ' + process.platform + ')'
+  );
 }
 
 // ------------------------------------------------------------------ driver
@@ -1723,7 +1877,7 @@ async function case23() {
     [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er, '--head-ref', fx.head],
     {
       cwd: fx.repo,
-      env: Object.assign({}, process.env, {
+      env: Object.assign(cleanEnv(), {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
@@ -2143,6 +2297,450 @@ function case29() {
   );
 }
 
+// Codex ships its Windows helpers in the resources directory its own manifest
+// declares — `codex-package.json` → `resourcesDir` — NOT beside the binary. The
+// doctor used to demand them in `bin\`, read every self-update as "the update
+// stripped them", and recommend a repair that copied ANOTHER RELEASE's build
+// in. That is the version skew WO-11 traced to the "intermittent codex sandbox
+// fault", so the false alarm was not merely noise: acting on it broke the
+// install. Both halves are load-bearing and tested here — the manifest is
+// honoured, and no foreign-version helper is copied on top of a complete one.
+function case30() {
+  section('30. Helpers in the install\'s manifest-declared resources directory are present, not missing');
+
+  const fx = makeDirtyRepo();
+  const relRoot = path.join(fx.root, '.codex', 'packages', 'standalone', 'releases');
+  const release = path.join(relRoot, '0.153.4-x86_64-pc-windows-msvc');
+  const installDir = path.join(release, 'bin');
+  const fakeBin = makeStubBin(installDir, 'codex-stub');
+
+  // The shipped layout: manifest at the package root, helpers in the resources
+  // directory it names — a SIBLING of bin\, never inside it.
+  fs.writeFileSync(
+    path.join(release, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, version: '0.153.4', entrypoint: 'bin/codex.exe', resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const resources = path.join(release, 'codex-resources');
+  fs.mkdirSync(resources, { recursive: true });
+  fs.writeFileSync(path.join(resources, 'codex-command-runner.exe'), 'MZ current-version\n');
+  fs.writeFileSync(path.join(resources, 'codex-windows-sandbox-setup.exe'), 'MZ current-version\n');
+
+  // A previous release left next door, whose bin\ carries STALE copies — the
+  // residue of past hand repairs, and exactly what the old check reached for.
+  const older = path.join(relRoot, '0.153.2-x86_64-pc-windows-msvc', 'bin');
+  fs.mkdirSync(older, { recursive: true });
+  fs.writeFileSync(path.join(older, 'codex-command-runner.exe'), 'MZ STALE-0147-ERA\n');
+  fs.writeFileSync(path.join(older, 'codex-windows-sandbox-setup.exe'), 'MZ STALE-0147-ERA\n');
+
+  const wanted = 'codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe';
+  const iso = {
+    HOME: fx.root, USERPROFILE: fx.root, CODEX_HOME: path.join(fx.root, '.codex'),
+    CODEX_BIN: fakeBin, ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+  };
+
+  const doc = runDoctor(fx, iso);
+  const dout = doc.stdout || '';
+  check(
+    'the doctor passes an install that carries its helpers where the manifest puts them',
+    doc.status === 0,
+    'exit ' + doc.status + ' — ' + dout.slice(0, 1200)
+  );
+  check(
+    'nothing is reported missing',
+    !/MISSING FROM THE CODEX INSTALL/.test(dout),
+    dout.slice(0, 1200)
+  );
+  check(
+    'the report names the resources directory as where they were found',
+    /declared resources directory/.test(dout) &&
+      /codex-command-runner\.exe \(in /.test(dout) &&
+      /codex-windows-sandbox-setup\.exe \(in /.test(dout),
+    dout.slice(0, 1400)
+  );
+  check(
+    'the resources directory itself satisfies the codex-resources entry',
+    /codex-resources \(is the declared resources directory/.test(dout),
+    dout.slice(0, 1400)
+  );
+  // The load-bearing half: a complete install must not be "repaired" with
+  // another release's build. Copying the stale sibling in is the defect.
+  check(
+    'no foreign-version helper is copied in beside the binary',
+    !fs.existsSync(path.join(installDir, 'codex-command-runner.exe')) &&
+      !fs.existsSync(path.join(installDir, 'codex-windows-sandbox-setup.exe')),
+    fs.readdirSync(installDir).join(', ')
+  );
+
+  // The acceptance is manifest-driven, not blanket: drop the manifest and the
+  // same tree reports missing again, so a real absence still fails loudly.
+  fs.rmSync(path.join(release, 'codex-package.json'));
+  // Read-only: a repairing run would copy the stale sibling in and poison the
+  // sub-cases below — which is itself the old behaviour, demonstrated above.
+  const bare = runDoctor(fx, iso, ['--no-repair']);
+  check(
+    'without a manifest the helpers are missing again, and the doctor fails',
+    bare.status !== 0 && /MISSING FROM THE CODEX INSTALL/.test(bare.stdout || ''),
+    'exit ' + bare.status + ' — ' + (bare.stdout || '').slice(0, 1200)
+  );
+
+  // A manifest that points outside the package is a hint, not authority.
+  //
+  // The Sol review caught the first version of this check passing for the wrong
+  // reason: a hand-counted `../../../../escape` landed on a directory that did
+  // not exist, so containment was never exercised and removing `pathUnder`
+  // would not have failed the test. Two things fix that. Derive the relative
+  // path with path.relative so the depth cannot drift, and stock the escape
+  // directory with BOTH helper exes — then the only thing standing between the
+  // doctor and a clean bill of health is the containment test, and the
+  // assertion names a helper that WOULD be found without it.
+  const escapeDir = path.join(fx.root, 'escape');
+  fs.mkdirSync(escapeDir, { recursive: true });
+  fs.writeFileSync(path.join(escapeDir, 'codex-command-runner.exe'), 'MZ outside\n');
+  fs.writeFileSync(path.join(escapeDir, 'codex-windows-sandbox-setup.exe'), 'MZ outside\n');
+  const escapeRel = path.relative(release, escapeDir).split(path.sep).join('/');
+  fs.writeFileSync(
+    path.join(release, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: escapeRel }) + '\n'
+  );
+  const esc = runDoctor(fx, iso, ['--no-repair']);
+  check(
+    'a resourcesDir pointing outside the package is refused, not trusted',
+    esc.status !== 0 &&
+      /MISSING FROM THE CODEX INSTALL: [^\n]*codex-command-runner\.exe/.test(esc.stdout || ''),
+    'resourcesDir=' + escapeRel + ' — exit ' + esc.status + ' — ' + (esc.stdout || '').slice(0, 1200)
+  );
+
+  // …and lexical containment is not containment on a filesystem with links.
+  // A `codex-resources` JUNCTION inside the package resolves nowhere near it,
+  // but `path.resolve` never leaves the package and `statSync` follows the
+  // link — which is how the first version of this fix accepted helpers from an
+  // arbitrary directory (Sol review, MAJOR). The real-path check is what makes
+  // this fail; without it the doctor exits 0 here.
+  fs.rmSync(resources, { recursive: true, force: true });
+  fs.symlinkSync(escapeDir, resources, process.platform === 'win32' ? 'junction' : 'dir');
+  fs.writeFileSync(
+    path.join(release, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const link = runDoctor(fx, iso, ['--no-repair']);
+  check(
+    'a resources directory that is a link OUT of the package is refused',
+    link.status !== 0 &&
+      /MISSING FROM THE CODEX INSTALL: [^\n]*codex-command-runner\.exe/.test(link.stdout || ''),
+    'exit ' + link.status + ' — ' + (link.stdout || '').slice(0, 1200)
+  );
+  fs.rmSync(resources, { recursive: true, force: true });
+
+  // A manifest that is not JSON must not throw the preflight.
+  fs.writeFileSync(path.join(release, 'codex-package.json'), 'not json at all\n');
+  const junk = runDoctor(fx, iso, ['--no-repair']);
+  check(
+    'an unparseable manifest degrades to the beside-the-binary rule instead of crashing',
+    junk.status !== 0 && /MISSING FROM THE CODEX INSTALL/.test(junk.stdout || '') &&
+      !/TypeError|SyntaxError/.test((junk.stdout || '') + (junk.stderr || '')),
+    'exit ' + junk.status + ' — ' + ((junk.stdout || '') + (junk.stderr || '')).slice(0, 1200)
+  );
+
+  // A link that stays INSIDE the package is legitimate, and canonicalising it
+  // must not rename the directory out from under the check: `codex-resources ->
+  // assets` is still called `codex-resources` inside the package, which is the
+  // name the helper entry refers to. Keeping only the canonical path made the
+  // doctor call this healthy install broken, and a repairing run then copied the
+  // whole tree into `bin\codex-resources` (Sol review, round 2 — MAJOR).
+  // Own fixture: the sub-cases above mutate `release`, and this must not depend
+  // on the state they leave behind.
+  const fxL = makeDirtyRepo();
+  const releaseL = path.join(
+    fxL.root, '.codex', 'packages', 'standalone', 'releases', '0.153.4-x86_64-pc-windows-msvc'
+  );
+  const installL = path.join(releaseL, 'bin');
+  const binL = makeStubBin(installL, 'codex-stub');
+  const assets = path.join(releaseL, 'assets');
+  fs.mkdirSync(assets, { recursive: true });
+  fs.writeFileSync(path.join(assets, 'codex-command-runner.exe'), 'MZ current\n');
+  fs.writeFileSync(path.join(assets, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+  fs.symlinkSync(
+    assets, path.join(releaseL, 'codex-resources'),
+    process.platform === 'win32' ? 'junction' : 'dir'
+  );
+  fs.writeFileSync(
+    path.join(releaseL, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const isoL = {
+    HOME: fxL.root, USERPROFILE: fxL.root, CODEX_HOME: path.join(fxL.root, '.codex'),
+    CODEX_BIN: binL, ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+  };
+  // The defect had two symptoms, and each needs its own assertion: read-only
+  // called the install broken, and the repairing path then "fixed" it.
+  const linkRo = runDoctor(fxL, isoL, ['--no-repair']);
+  check(
+    'an in-package link to the resources directory passes, keeping its declared name',
+    linkRo.status === 0 && !/MISSING FROM THE CODEX INSTALL/.test(linkRo.stdout || ''),
+    'exit ' + linkRo.status + ' — ' + (linkRo.stdout || '').slice(0, 1400)
+  );
+  const linkOk = runDoctor(fxL, isoL);
+  check(
+    'and nothing is copied into bin — a healthy install is not "repaired"',
+    !fs.existsSync(path.join(installL, 'codex-resources')) &&
+      !fs.existsSync(path.join(installL, 'codex-command-runner.exe')) &&
+      !/repaired/.test(linkOk.stdout || ''),
+    fs.readdirSync(installL).join(', ')
+  );
+
+  // A DIRECTORY must never stand in for an executable, whatever route it
+  // arrives by. A manifest declaring `resourcesDir: "codex-command-runner.exe"`
+  // satisfied that helper entry through the declared-alias match, bypassing the
+  // file-vs-directory test siblingPresent exists to apply, and the doctor
+  // reported the genuinely missing runner as accounted for (Sol review,
+  // round 3 — MAJOR).
+  const fxE = makeDirtyRepo();
+  const releaseE = path.join(
+    fxE.root, '.codex', 'packages', 'standalone', 'releases', '0.153.4-x86_64-pc-windows-msvc'
+  );
+  const installE = path.join(releaseE, 'bin');
+  const binE = makeStubBin(installE, 'codex-stub');
+  // The resources directory is NAMED like the executable, and no executable
+  // exists anywhere in the package.
+  fs.mkdirSync(path.join(releaseE, 'codex-command-runner.exe'), { recursive: true });
+  fs.writeFileSync(
+    path.join(releaseE, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-command-runner.exe' }) + '\n'
+  );
+  const exeShaped = runDoctor(
+    fxE,
+    {
+      HOME: fxE.root, USERPROFILE: fxE.root, CODEX_HOME: path.join(fxE.root, '.codex'),
+      CODEX_BIN: binE, ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-command-runner.exe',
+    },
+    ['--no-repair']
+  );
+  check(
+    'a directory named like an executable does not satisfy that helper entry',
+    exeShaped.status !== 0 &&
+      /MISSING FROM THE CODEX INSTALL: [^\n]*codex-command-runner\.exe/.test(exeShaped.stdout || ''),
+    'exit ' + exeShaped.status + ' — ' + (exeShaped.stdout || '').slice(0, 1200)
+  );
+
+  // Two manifests can declare DIFFERENT aliases that canonicalise to the same
+  // directory. De-duplicating on the directory alone kept the first alias and
+  // dropped the second, so a helper entry naming it was called missing (Sol
+  // review, round 3 — MAJOR). Package root declares `codex-resources`; the
+  // install dir declares `shared`, both reaching the same real directory.
+  const fxD = makeDirtyRepo();
+  const releaseD = path.join(
+    fxD.root, '.codex', 'packages', 'standalone', 'releases', '0.153.4-x86_64-pc-windows-msvc'
+  );
+  const installD = path.join(releaseD, 'bin');
+  const binD = makeStubBin(installD, 'codex-stub');
+  // Two constraints make this fixture the real thing, and getting either wrong
+  // makes the test pass against the defect (both were got wrong first):
+  //   - each alias must stay inside ITS OWN manifest root, or containment
+  //     refuses it for an unrelated reason. So the shared directory lives under
+  //     bin\, reachable from the root manifest and the install-dir one alike.
+  //   - neither alias may equal the canonical basename, or the
+  //     `path.basename(d.dir)` fallback silently covers for the dropped one.
+  // Real directory `bin\store`; root manifest calls it `codex-resources`,
+  // install-dir manifest calls it `helpers`, both via links.
+  const sharedD = path.join(installD, 'store');
+  fs.mkdirSync(sharedD, { recursive: true });
+  fs.writeFileSync(path.join(sharedD, 'codex-command-runner.exe'), 'MZ current\n');
+  fs.writeFileSync(path.join(sharedD, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+  fs.symlinkSync(sharedD, path.join(releaseD, 'codex-resources'), linkType);
+  // NESTED, not a direct child of the install dir: a link sitting beside the
+  // binary is satisfied by the beside-the-binary rule before the manifest logic
+  // is ever consulted, which hid the defect on the previous attempt.
+  fs.mkdirSync(path.join(installD, 'sub'), { recursive: true });
+  fs.symlinkSync(sharedD, path.join(installD, 'sub', 'helpers'), linkType);
+  fs.writeFileSync(
+    path.join(releaseD, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  fs.writeFileSync(
+    path.join(installD, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'sub/helpers' }) + '\n'
+  );
+  const isoD = {
+    HOME: fxD.root, USERPROFILE: fxD.root, CODEX_HOME: path.join(fxD.root, '.codex'),
+    CODEX_BIN: binD, ORCHESTRA_CODEX_HELPER_SIBLINGS: 'codex-resources,helpers,codex-command-runner.exe',
+  };
+  const dual = runDoctor(fxD, isoD, ['--no-repair']);
+  check(
+    'both manifests’ aliases survive when they canonicalise to one directory',
+    dual.status === 0 && !/MISSING FROM THE CODEX INSTALL/.test(dual.stdout || ''),
+    'exit ' + dual.status + ' — ' + (dual.stdout || '').slice(0, 1400)
+  );
+
+  // FIX (Sol review round 3, 2026-09-07): `sameName` folds case for the
+  // DECLARED alias (`d.name`), but the canonical-directory fallback compared
+  // the REAL, resolved directory name with a bare `===`. That fallback only
+  // ever matters when the alias and the real name are genuinely different
+  // words — reached through an in-package link — so exercise exactly that:
+  // alias `codex-resources` resolves (via junction) to a directory really
+  // named `Store`, and the wanted helper entry is spelled `STORE`. Neither
+  // `sameName(d.name, name)` (different words, not just different case) nor
+  // the old exact-compare fallback (`"Store" === "STORE"`) matched, so the
+  // doctor called a packaged directory missing.
+  const fxCF = makeDirtyRepo();
+  const releaseCF = path.join(
+    fxCF.root, '.codex', 'packages', 'standalone', 'releases', '0.153.4-x86_64-pc-windows-msvc'
+  );
+  const installCF = path.join(releaseCF, 'bin');
+  const binCF = makeStubBin(installCF, 'codex-stub');
+  const storeDir = path.join(releaseCF, 'Store');
+  fs.mkdirSync(storeDir, { recursive: true });
+  fs.writeFileSync(path.join(storeDir, 'codex-command-runner.exe'), 'MZ current\n');
+  fs.writeFileSync(path.join(storeDir, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+  fs.symlinkSync(
+    storeDir, path.join(releaseCF, 'codex-resources'),
+    process.platform === 'win32' ? 'junction' : 'dir'
+  );
+  fs.writeFileSync(
+    path.join(releaseCF, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const isoCF = {
+    HOME: fxCF.root, USERPROFILE: fxCF.root, CODEX_HOME: path.join(fxCF.root, '.codex'),
+    CODEX_BIN: binCF,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: 'STORE,codex-command-runner.exe,codex-windows-sandbox-setup.exe',
+  };
+  const caseFold = runDoctor(fxCF, isoCF, ['--no-repair']);
+  const caseFoldOut = caseFold.stdout || '';
+  check(
+    'a helper entry matching the resolved directory’s real name only by case is recognised as packaged',
+    process.platform === 'win32'
+      ? caseFold.status === 0 && !/MISSING FROM THE CODEX INSTALL/.test(caseFoldOut)
+      : true,
+    process.platform === 'win32'
+      ? 'exit ' + caseFold.status + ' — ' + caseFoldOut.slice(0, 1400)
+      : '(skipped — case folding is Windows-only; not applicable on ' + process.platform + ')'
+  );
+
+  // The scrub must survive Windows' case-insensitive environment: a lower-case
+  // ambient name is the SAME variable to a child process there (Sol review,
+  // round 2 — five failures from lower-case variants).
+  const hadLower = Object.prototype.hasOwnProperty.call(process.env, 'orchestra_review_timeout_ms');
+  process.env.orchestra_review_timeout_ms = '123456';
+  const scrubbed = cleanEnv();
+  const leaked = Object.keys(scrubbed).filter((k) => /^orchestra_/i.test(k));
+  if (!hadLower) delete process.env.orchestra_review_timeout_ms;
+  check(
+    'the env scrub drops ambient ORCHESTRA_* regardless of case',
+    process.platform === 'win32' ? leaked.length === 0 : true,
+    'leaked: ' + (leaked.join(', ') || '(none)')
+  );
+}
+
+// FIX (field, 2026-09-07): a helper the manifest carries in its declared
+// resources directory can ALSO sit beside the binary — "not missing" (case 30
+// above already covers that half), but `bin\` is EARLIER in Codex's own
+// resolution order, so a stale copy planted there shadows the current,
+// packaged one. Observed 2026-09-07 15:48: a helpersDir repair kit built for a
+// 0.147-era release re-injected `codex-command-runner.exe` and a whole
+// `bin\codex-resources\` subtree into a live 0.153.4 install's `bin\` — the
+// exact version-skew route WO-11 traced to the intermittent sandbox fault. The
+// doctor calling that "present" hid precisely the state it exists to catch.
+function case31() {
+  section('31. A stale helper kit shadowing the packaged copies beside the binary is a HAZARD');
+
+  const wanted = 'codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe';
+
+  const makeHazardInstall = (root, withStaleKit) => {
+    const release = path.join(
+      root, '.codex', 'packages', 'standalone', 'releases', '0.153.4-x86_64-pc-windows-msvc'
+    );
+    const installDir = path.join(release, 'bin');
+    const bin = makeStubBin(installDir, 'codex-stub');
+    fs.writeFileSync(
+      path.join(release, 'codex-package.json'),
+      JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+    );
+    const resources = path.join(release, 'codex-resources');
+    fs.mkdirSync(resources, { recursive: true });
+    fs.writeFileSync(path.join(resources, 'codex-command-runner.exe'), 'MZ current\n');
+    fs.writeFileSync(path.join(resources, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+    if (withStaleKit) {
+      // The re-injected kit: a stale build of the exe, and a whole junk
+      // codex-resources\ subtree — both land DIRECTLY beside the binary.
+      fs.writeFileSync(path.join(installDir, 'codex-command-runner.exe'), 'MZ STALE-0147-ERA\n');
+      const staleResources = path.join(installDir, 'codex-resources');
+      fs.mkdirSync(staleResources, { recursive: true });
+      fs.writeFileSync(path.join(staleResources, 'junk.txt'), 'junk\n');
+    }
+    return { installDir, bin };
+  };
+
+  // The hazard install: `--doctor --no-repair` must fail and name both
+  // shadowed entries (the exe and the resources directory).
+  const fx = makeDirtyRepo();
+  const install = makeHazardInstall(fx.root, true);
+  const iso = {
+    HOME: fx.root, USERPROFILE: fx.root, CODEX_HOME: path.join(fx.root, '.codex'),
+    CODEX_BIN: install.bin, ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+  };
+  const doc = runDoctor(fx, iso, ['--no-repair']);
+  const dout = doc.stdout || '';
+  check(
+    '--doctor --no-repair exits non-zero when a stale kit shadows the packaged helpers',
+    doc.status !== 0,
+    'exit ' + doc.status + ' — ' + dout.slice(0, 1600)
+  );
+  check(
+    'the HAZARD line names both the shadowed exe and the shadowed directory',
+    /HAZARD: 2 helper\(s\) also sit beside the binary/.test(dout) &&
+      /codex-command-runner\.exe/.test(dout) &&
+      /codex-resources/.test(dout) &&
+      /never repair into bin\\/.test(dout),
+    dout.slice(0, 1600)
+  );
+
+  // Regression: the identical manifest-carried layout, but a CLEAN bin\ — no
+  // shadow, no HAZARD line, exit 0 (case 30 already covers this shape; this
+  // asserts the new line stays silent on it).
+  const fxClean = makeDirtyRepo();
+  const installClean = makeHazardInstall(fxClean.root, false);
+  const isoClean = {
+    HOME: fxClean.root, USERPROFILE: fxClean.root, CODEX_HOME: path.join(fxClean.root, '.codex'),
+    CODEX_BIN: installClean.bin, ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+  };
+  const docClean = runDoctor(fxClean, isoClean, ['--no-repair']);
+  const doutClean = docClean.stdout || '';
+  check(
+    'a clean bin\\ still passes the doctor',
+    docClean.status === 0,
+    'exit ' + docClean.status + ' — ' + doutClean.slice(0, 1200)
+  );
+  check(
+    'a clean bin\\ prints no HAZARD line',
+    !/HAZARD:/.test(doutClean),
+    doutClean.slice(0, 1200)
+  );
+
+  // A normal review against the hazard install prints the same HAZARD line in
+  // its preflight and still runs a real review — informational, not a stop.
+  const fxReview = makeDirtyRepo();
+  const installReview = makeHazardInstall(fxReview.root, true);
+  const rv = runReview(fxReview, ['--head-ref', fxReview.head], {
+    CODEX_BIN: installReview.bin,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: wanted,
+    HOME: fxReview.root,
+    USERPROFILE: fxReview.root,
+    CODEX_HOME: path.join(fxReview.root, '.codex'),
+  });
+  const rvOut = rv.stdout || '';
+  check(
+    'a normal review prints the HAZARD line in its preflight',
+    /HAZARD: 2 helper\(s\) also sit beside the binary/.test(rvOut),
+    rvOut.slice(0, 1600)
+  );
+  check(
+    'and still runs a real review instead of REVIEW_UNAVAILABLE',
+    !/VERDICT: REVIEW_UNAVAILABLE/.test(rvOut),
+    rvOut.slice(0, 1600)
+  );
+}
+
 async function main() {
   case1();
   case2and3();
@@ -2173,6 +2771,8 @@ async function main() {
   case27();
   case28();
   case29();
+  case30();
+  case31();
 }
 
 main().then(finish, (e) => {

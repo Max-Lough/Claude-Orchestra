@@ -632,6 +632,29 @@ function case12() {
       /tree: directed worktree/.test((cd.stdout || '').split('\n')[0]),
     'CWD: ' + field(cd.stdout || '', 'CWD') + ' — ' + (cd.stdout || '').split('\n')[0]
   );
+
+  // FIX (field, 2026-09-07): the Agent tool's `isolation: "worktree"` put the
+  // launcher in a worktree the runner cannot see (the MCP server runs at the
+  // repo root), so launchers now pass their own cwd as `cd` on every call —
+  // including when that cwd IS the live tree. `cd` pointing at the project
+  // dir, spelled with forward slashes and (on win32) different case, must
+  // still resolve to "live working tree", not read as a second, directed one.
+  const slashVariant = fx.repo.split(path.sep).join('/');
+  const cdSlash = runExec(fx, ['--cd', slashVariant]);
+  check(
+    '`cd` equal to the live tree (forward slashes) is labelled live, not directed',
+    /tree: live working tree/.test((cdSlash.stdout || '').split('\n')[0]),
+    (cdSlash.stdout || '').split('\n')[0]
+  );
+  if (process.platform === 'win32') {
+    const caseVariant = fx.repo.toUpperCase();
+    const cdCase = runExec(fx, ['--cd', caseVariant]);
+    check(
+      '`cd` equal to the live tree (different case, win32) is labelled live, not directed',
+      /tree: live working tree/.test((cdCase.stdout || '').split('\n')[0]),
+      (cdCase.stdout || '').split('\n')[0]
+    );
+  }
 }
 
 function case13() {
@@ -900,6 +923,11 @@ function case18() {
     pout.slice(0, 300)
   );
   check(
+    'no model/effort override: no PREFLIGHT note about running off-default',
+    !/PREFLIGHT:.*is running (model|effort)/.test(pout),
+    (pout.match(/^PREFLIGHT:.*$/gm) || []).join(' | ') || '(no PREFLIGHT lines)'
+  );
+  check(
     'the principal rung sends its effort to codex, not just to the header',
     field(pout, 'CONFIG_OVERRIDES') ===
       'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
@@ -985,11 +1013,35 @@ function case18() {
   // A profile is still only a pair of defaults: an explicit flag outranks it,
   // exactly as it outranks env and config on the heavy rung (case 2).
   const flagOverPrincipal = runExec(fx, ['--profile', 'principal', '--model', 'gpt-6-flag']);
+  const fopOut = flagOverPrincipal.stdout || '';
   check(
     'an explicit --model still outranks the profile default',
-    field(flagOverPrincipal.stdout || '', 'MODEL') === 'gpt-6-flag' &&
-      /profile: principal, model: gpt-6-flag \(flag\)/.test(flagOverPrincipal.stdout || ''),
-    (flagOverPrincipal.stdout || '').split('\n')[0]
+    field(fopOut, 'MODEL') === 'gpt-6-flag' &&
+      /profile: principal, model: gpt-6-flag \(flag\)/.test(fopOut),
+    fopOut.split('\n')[0]
+  );
+  // FIX (field, 2026-09-07): WO-4A round 7 ran gpt-5.6-sol (default) at high
+  // effort under an Astra launcher because the launcher dropped its fields —
+  // a PREFLIGHT note now flags a principal run on a non-default model/effort,
+  // so a pin and a dropped field never look the same from the header.
+  check(
+    'a principal launch on a non-default model gets a PREFLIGHT note naming the pin',
+    /PREFLIGHT: profile principal is running model "gpt-6-flag" \(flag\), not its default gpt-6-astra/.test(fopOut),
+    (fopOut.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+  check(
+    'the same run\'s effort is still the default, so no effort PREFLIGHT note fires',
+    !/PREFLIGHT:.*is running effort/.test(fopOut),
+    (fopOut.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+
+  // The note is specific to the principal profile: an override on the heavy
+  // rung must never trigger it.
+  const flagOverHeavy = runExec(fx, ['--model', 'gpt-6-flag']);
+  check(
+    'the same override on the heavy profile gets no PREFLIGHT note',
+    !/PREFLIGHT:.*is running (model|effort)/.test(flagOverHeavy.stdout || ''),
+    (flagOverHeavy.stdout || '').match(/^PREFLIGHT:.*$/gm) || []
   );
 }
 
@@ -1495,6 +1547,500 @@ function case21() {
   );
 }
 
+// 22. FIX (field, 2026-09-07): WO-7A round 1 — the engine's CHANGES section
+//     named a `git checkout -B` (a ref/branch op, no file edit) in an
+//     otherwise valid BLOCKED report, and the report/audit contradiction
+//     check (case 16) discarded the whole report over it. A claim whose head
+//     names no file must never be held against the tree audit, and the audit
+//     now measures the branch alongside HEAD so a checkout that only moves
+//     the branch reads as a measured change, not "nothing happened".
+function case22() {
+  section('22. Ref/branch claims are not edits; the audit measures the branch too');
+
+  // The field shape exactly: a branch/ref claim, nothing else, tree untouched.
+  const fx = makeRepo();
+  const branchOnly = runExec(fx, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `wo7a` at HEAD daf549ba',
+  });
+  const bOut = branchOnly.stdout || '';
+  check(
+    'a branch/ref claim alone is relayed, not discarded as a contradiction',
+    /STATUS: DONE/.test(bOut) &&
+      !/EXEC_UNAVAILABLE/.test(bOut) &&
+      /REPORT INTEGRITY: verified/.test(bOut),
+    bOut.slice(0, 500)
+  );
+
+  // Same claim, but the status is BLOCKED — the actual field shape, where
+  // discarding the report also discarded the real finding.
+  const fx2 = makeRepo();
+  const branchBlocked = runExec(fx2, [], {
+    STUB_CODEX_FIRST_LINE: 'STATUS: BLOCKED',
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `wo7a` at HEAD daf549ba',
+  });
+  const bbOut = branchBlocked.stdout || '';
+  check(
+    'a BLOCKED report with only a branch claim is relayed intact',
+    /STATUS: BLOCKED/.test(bbOut) &&
+      !/EXEC_UNAVAILABLE/.test(bbOut) &&
+      /REPORT INTEGRITY: verified/.test(bbOut),
+    bbOut.slice(0, 500)
+  );
+
+  // A mix: one branch line (no evidence of an edit) plus one real path-shaped
+  // claim, tree still untouched. The contradiction must still fire — but the
+  // failure text names only the path claim, never the branch line.
+  const fx3 = makeRepo();
+  const mixed = runExec(fx3, [], {
+    STUB_CODEX_CLAIM_CHANGES:
+      'Created branch `wo7a` at HEAD daf549ba,src/app.js:12 — added a flag',
+  });
+  const mOut = mixed.stdout || '';
+  const mFailureText = mOut.split('--- UNVERIFIED ENGINE OUTPUT')[0];
+  check(
+    'a mix of a branch line and a real path claim against an untouched tree still fails',
+    /STATUS: EXEC_UNAVAILABLE/.test(mOut) &&
+      /claims edits the runner measured as never happening/.test(mOut),
+    mOut.slice(0, 700)
+  );
+  check(
+    'the failure text names the path claim',
+    /src\/app\.js:12/.test(mFailureText),
+    mFailureText.slice(0, 1200)
+  );
+  check(
+    'the failure text does not hold the branch line against the audit',
+    !/Created branch/.test(mFailureText),
+    mFailureText.slice(0, 1200)
+  );
+
+  // The stub actually creates a branch (`git checkout -B`, no file edits),
+  // claiming only the branch line: relayed, and the TREE AUDIT names the
+  // branch change (same commit, different branch — HEAD alone would miss it).
+  const fx4 = makeRepo();
+  const realBranch = runExec(fx4, [], {
+    STUB_CODEX_BRANCH: 'wo7a',
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `wo7a` — checked out at the same commit',
+  });
+  const rOut = realBranch.stdout || '';
+  check(
+    'a real branch-only change (no file edits) is relayed as a verified report',
+    /STATUS: DONE/.test(rOut) && /REPORT INTEGRITY: verified/.test(rOut),
+    rOut.slice(0, 500)
+  );
+  check(
+    'the TREE AUDIT names the branch change',
+    /branch: main → wo7a/.test(rOut),
+    rOut.slice(0, 1500)
+  );
+
+  // Case 16's assertions must still pass unchanged: path-shaped claims are
+  // still held against the audit exactly as before.
+  const fx5 = makeRepo();
+  const lie = runExec(fx5, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag,src/other.js — new helper',
+  });
+  const lout = lie.stdout || '';
+  check(
+    'case 16 unaffected: claiming path-shaped edits against an untouched tree is still EXEC_UNAVAILABLE',
+    /STATUS: EXEC_UNAVAILABLE/.test(lout) &&
+      /claims edits the runner measured as never happening/.test(lout),
+    lout.slice(0, 700)
+  );
+
+  // FIX (Sol review, 2026-09-07), finding 1: a claim head with no separator
+  // is prose, not a path, even when the prose contains a `/` (from the
+  // branch name it names). Against an untouched tree, this must be relayed.
+  const fx6 = makeRepo();
+  const proseHead = runExec(fx6, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'Created branch `feature/foo` at HEAD deadbeef',
+  });
+  const pOut = proseHead.stdout || '';
+  check(
+    'a whitespace-prose claim head naming a branch (with a slash inside it) is relayed, not misread as a path',
+    /STATUS: DONE/.test(pOut) &&
+      !/EXEC_UNAVAILABLE/.test(pOut) &&
+      /REPORT INTEGRITY: verified/.test(pOut),
+    pOut.slice(0, 500)
+  );
+
+  // FIX (Sol review, 2026-09-07), finding 1(c): a single-token head that IS
+  // path-shaped by the separator rule (`feature/foo` contains `/`) but names
+  // a ref the run actually created — WITHOUT checking it out, so HEAD and
+  // branch both stay put and only the ref-exclusion can save the report.
+  const fx7 = makeRepo();
+  const refHead = runExec(fx7, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'feature/foo',
+    STUB_CODEX_CLAIM_CHANGES: '`feature/foo` — created branch',
+  });
+  const rhOut = refHead.stdout || '';
+  check(
+    'a single-token claim head that names a real (uncheckedout) branch is excluded via the ref set, not treated as a path',
+    /STATUS: DONE/.test(rhOut) &&
+      !/EXEC_UNAVAILABLE/.test(rhOut) &&
+      /REPORT INTEGRITY: verified/.test(rhOut),
+    rhOut.slice(0, 500)
+  );
+
+  // FIX (Sol review, 2026-09-07), finding 1(b): a version-like tag head must
+  // not be misclassified as a path extension (the digit-only ".3" of
+  // "v1.2.3" has no letter). The stub also creates the tag for real, so the
+  // ref-exclusion path is exercised too.
+  const fx8 = makeRepo();
+  const tagHead = runExec(fx8, [], {
+    STUB_CODEX_TAG: 'v1.2.3',
+    STUB_CODEX_CLAIM_CHANGES: 'v1.2.3 — created tag',
+  });
+  const tOut = tagHead.stdout || '';
+  check(
+    'a version-like tag claim head is relayed, not misread as a file extension',
+    /STATUS: DONE/.test(tOut) &&
+      !/EXEC_UNAVAILABLE/.test(tOut) &&
+      /REPORT INTEGRITY: verified/.test(tOut),
+    tOut.slice(0, 500)
+  );
+
+  // Re-assert case 16's shape with the ref set populated (a real branch
+  // exists), so the ref-exclusion cannot go blind and swallow a genuine
+  // path-shaped claim just because refs happen to be present this run.
+  const fx9 = makeRepo();
+  const realPathStillLies = runExec(fx9, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'some-ref',
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag',
+  });
+  const rplOut = realPathStillLies.stdout || '';
+  check(
+    'a real path-shaped claim against an untouched tree is still EXEC_UNAVAILABLE even when a ref set is present',
+    /STATUS: EXEC_UNAVAILABLE/.test(rplOut) &&
+      /claims edits the runner measured as never happening/.test(rplOut),
+    rplOut.slice(0, 700)
+  );
+
+  // FIX (Sol review, 2026-09-07), finding 2: a real branch move (measured
+  // change) alongside an UNPROVEN path claim — no file was actually edited.
+  // The branch move alone disables the untouched-tree contradiction, exactly
+  // as HEAD moving would; this pins the `before.branch === after.branch`
+  // clause in treeUntouched (removing it makes this EXEC_UNAVAILABLE).
+  const fx10 = makeRepo();
+  const branchMoveWithFalsePathClaim = runExec(fx10, [], {
+    STUB_CODEX_BRANCH: 'wo7a',
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag',
+  });
+  const bmOut = branchMoveWithFalsePathClaim.stdout || '';
+  check(
+    'a real branch move relays the report even though the accompanying path claim was never made real (branch-equality clause pin)',
+    /STATUS: DONE/.test(bmOut) &&
+      !/EXEC_UNAVAILABLE/.test(bmOut) &&
+      /REPORT INTEGRITY: verified/.test(bmOut),
+    bmOut.slice(0, 500)
+  );
+  check(
+    'the TREE AUDIT names the branch move in the pin scenario',
+    /branch: main → wo7a/.test(bmOut),
+    bmOut.slice(0, 1500)
+  );
+
+  // FIX (Sol review round 2, 2026-09-07): refNames() read only the SHORT ref
+  // name, so a CHANGES claim naming the FULL ref (`refs/heads/feature/foo`,
+  // as a run reporting on a branch it created might) matched nothing in the
+  // exclusion set — isPathShaped counts it path-shaped on its embedded `/`,
+  // and a genuinely valid report was rejected as contradicting an untouched
+  // tree. Same fixture shape as fx7 (branch created, never checked out), but
+  // the claim spells the ref in full.
+  const fx11 = makeRepo();
+  const fullRefHead = runExec(fx11, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'feature/foo',
+    STUB_CODEX_CLAIM_CHANGES: 'refs/heads/feature/foo — created',
+  });
+  const frOut = fullRefHead.stdout || '';
+  check(
+    'a full ref name (refs/heads/<branch>) claim head is excluded via the ref set, not treated as a path',
+    /STATUS: DONE/.test(frOut) &&
+      !/EXEC_UNAVAILABLE/.test(frOut) &&
+      /REPORT INTEGRITY: verified/.test(frOut),
+    frOut.slice(0, 500)
+  );
+
+  // FIX (Sol review round 3, 2026-09-07), finding 2(a): `refname:short` drops
+  // the trailing `/HEAD` off a remote-tracking HEAD, so
+  // `refs/remotes/origin/HEAD` shortens to `origin` — the conventional
+  // `origin/HEAD` spelling a claim would actually use matched neither the
+  // full nor the short form. `refname:lstrip=2` (added to refNames' format)
+  // yields `origin/HEAD` too, so this must now be excluded and relayed.
+  const fx12 = makeRepo();
+  git(['remote', 'add', 'origin', fx12.repo], fx12.repo);
+  git(['update-ref', 'refs/remotes/origin/HEAD', 'HEAD'], fx12.repo);
+  const originHead = runExec(fx12, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'origin/HEAD — updated',
+  });
+  const ohOut = originHead.stdout || '';
+  check(
+    'an origin/HEAD claim head is excluded via the lstrip=2 ref spelling, not treated as a path',
+    /STATUS: DONE/.test(ohOut) &&
+      !/EXEC_UNAVAILABLE/.test(ohOut) &&
+      /REPORT INTEGRITY: verified/.test(ohOut),
+    ohOut.slice(0, 500)
+  );
+
+  // FIX (Sol review round 3, 2026-09-07), finding 2(b): a head that STARTS
+  // WITH `refs/` is a ref by construction — that namespace prefix is git's
+  // own, never a real repo-relative file path — so it is excluded even when
+  // the ref never actually exists (nothing in refNames' set names it). No
+  // tag `v9` is created here at all; only the `refs/` prefix rule can save
+  // this report.
+  const fx13 = makeRepo();
+  const nonexistentTagRef = runExec(fx13, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'refs/tags/v9 — created',
+  });
+  const ntOut = nonexistentTagRef.stdout || '';
+  check(
+    'a refs/tags/<name> claim head is excluded on its refs/ prefix alone, even when that ref does not exist',
+    /STATUS: DONE/.test(ntOut) &&
+      !/EXEC_UNAVAILABLE/.test(ntOut) &&
+      /REPORT INTEGRITY: verified/.test(ntOut),
+    ntOut.slice(0, 500)
+  );
+
+  // The refs/ prefix rule must not swallow a genuine path claim: with a real
+  // origin/HEAD ref present (same fixture shape as fx12), a false path claim
+  // against an untouched tree is still EXEC_UNAVAILABLE.
+  const fx14 = makeRepo();
+  git(['remote', 'add', 'origin', fx14.repo], fx14.repo);
+  git(['update-ref', 'refs/remotes/origin/HEAD', 'HEAD'], fx14.repo);
+  const stillLiesWithRemote = runExec(fx14, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag',
+  });
+  const slwrOut = stillLiesWithRemote.stdout || '';
+  check(
+    'a real path-shaped claim against an untouched tree is still EXEC_UNAVAILABLE when a remote-tracking HEAD ref is present',
+    /STATUS: EXEC_UNAVAILABLE/.test(slwrOut) &&
+      /claims edits the runner measured as never happening/.test(slwrOut),
+    slwrOut.slice(0, 700)
+  );
+
+  // FIX (Sol review round 4, 2026-09-07): three straight rounds each found one
+  // more real git ref spelling the old precomputed for-each-ref set missed.
+  // Rather than add a fourth spelling to the enumeration, pathClaims now asks
+  // git itself (resolvesAsRef) whether a head resolves as a ref — so these
+  // three additional conventional spellings must be excluded without any
+  // enumeration naming them specifically.
+
+  // `heads/<branch>` — git's own `refs/<refname>` disambiguation rule
+  // resolves it to `refs/heads/<branch>` directly.
+  const fx15 = makeRepo();
+  const headsPrefixed = runExec(fx15, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'feature/topic',
+    STUB_CODEX_CLAIM_CHANGES: 'heads/feature/topic — updated',
+  });
+  const hpOut = headsPrefixed.stdout || '';
+  check(
+    'a heads/<branch> claim head is excluded because git itself resolves it as a ref',
+    /STATUS: DONE/.test(hpOut) &&
+      !/EXEC_UNAVAILABLE/.test(hpOut) &&
+      /REPORT INTEGRITY: verified/.test(hpOut),
+    hpOut.slice(0, 500)
+  );
+
+  // `tags/<name>` — same disambiguation rule, resolving to `refs/tags/<name>`.
+  const fx16 = makeRepo();
+  const tagsPrefixed = runExec(fx16, [], {
+    STUB_CODEX_TAG: 'v9',
+    STUB_CODEX_CLAIM_CHANGES: 'tags/v9 — updated',
+  });
+  const tpOut = tagsPrefixed.stdout || '';
+  check(
+    'a tags/<name> claim head is excluded because git itself resolves it as a ref',
+    /STATUS: DONE/.test(tpOut) &&
+      !/EXEC_UNAVAILABLE/.test(tpOut) &&
+      /REPORT INTEGRITY: verified/.test(tpOut),
+    tpOut.slice(0, 500)
+  );
+
+  // `remotes/<remote>/HEAD` — the fourth spelling nothing before this round
+  // ever enumerated; same fixture shape as fx12/fx14 but a differently named
+  // remote so the head text itself (not just `origin/HEAD`) is exercised.
+  const fx17 = makeRepo();
+  git(['remote', 'add', 'up.stream', fx17.repo], fx17.repo);
+  git(['update-ref', 'refs/remotes/up.stream/HEAD', 'HEAD'], fx17.repo);
+  const remotesPrefixed = runExec(fx17, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'remotes/up.stream/HEAD — updated',
+  });
+  const rpOut = remotesPrefixed.stdout || '';
+  check(
+    'a remotes/<remote>/HEAD claim head is excluded because git itself resolves it as a ref',
+    /STATUS: DONE/.test(rpOut) &&
+      !/EXEC_UNAVAILABLE/.test(rpOut) &&
+      /REPORT INTEGRITY: verified/.test(rpOut),
+    rpOut.slice(0, 500)
+  );
+
+  // Collision guard: resolvesAsRef alone must never win over a real file. A
+  // branch AND a tracked file both named `feature/topic` — the file is
+  // genuinely edited (STUB_CODEX_TOUCH overwrites it), so the tree is not
+  // untouched and the claim must still be counted as (real) path evidence and
+  // relayed as verified, not excluded as a ref.
+  const fx18 = makeRepo();
+  fs.mkdirSync(path.join(fx18.repo, 'feature'), { recursive: true });
+  fs.writeFileSync(path.join(fx18.repo, 'feature', 'topic'), 'original\n');
+  git(['add', '-A'], fx18.repo);
+  git(
+    ['-c', 'user.email=test@example.com', '-c', 'user.name=Orchestra Test', 'commit', '-qm', 'add feature/topic'],
+    fx18.repo
+  );
+  git(['branch', 'feature/topic'], fx18.repo);
+  const collision = runExec(fx18, [], {
+    STUB_CODEX_TOUCH: 'feature/topic',
+    STUB_CODEX_CLAIM_CHANGES: 'feature/topic — edited',
+  });
+  const colOut = collision.stdout || '';
+  check(
+    'a claim head that both resolves as a ref and names a real file is still treated as a path (existsSync guard wins), relayed once the file is genuinely edited',
+    /STATUS: DONE/.test(colOut) &&
+      !/EXEC_UNAVAILABLE/.test(colOut) &&
+      /REPORT INTEGRITY: verified/.test(colOut),
+    colOut.slice(0, 500)
+  );
+
+  // FIX (Sol review round 5, 2026-09-07): `rev-parse --verify` resolves a
+  // symbolic ref by following it to its target, so a DANGLING symref (target
+  // never created — no remote needed, just the symref itself) makes
+  // `--verify` fail even though the symref exists and names no file.
+  // resolvesAsRef must fall back to `symbolic-ref --quiet`, which reads the
+  // symref without resolving its target. Same claim head shape as fx17
+  // (`remotes/<remote>/HEAD`), but the target the symref points at is never
+  // created — exercising the fallback fx17 alone could not reach, since
+  // `--verify` succeeded there without it.
+  const fx19 = makeRepo();
+  git(['symbolic-ref', 'refs/remotes/up.stream/HEAD', 'refs/remotes/up.stream/missing'], fx19.repo);
+  const danglingSymref = runExec(fx19, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'remotes/up.stream/HEAD — created',
+  });
+  const dsOut = danglingSymref.stdout || '';
+  check(
+    'a remotes/<remote>/HEAD claim head naming a DANGLING symref is excluded via the symbolic-ref fallback, not treated as a path',
+    /STATUS: DONE/.test(dsOut) &&
+      !/EXEC_UNAVAILABLE/.test(dsOut) &&
+      /REPORT INTEGRITY: verified/.test(dsOut),
+    dsOut.slice(0, 500)
+  );
+}
+
+function case23() {
+  section('23. restoreHelpers() does not copy a helpersDir entry the install\'s manifest already carries');
+
+  // FIX (field, 2026-09-07): mirrors review-lane case 22's manifest
+  // sub-fixture. A stale helpersDir kit must never re-inject a helper name —
+  // or the codex-resources\ directory itself — that the install's own
+  // codex-package.json already declares a resources directory for; a size
+  // difference against helpersDir is not a reason to prefer the older kit.
+  // This runner (orchestra-exec.js) is the one the 2026-09-07 15:48 field
+  // failure actually happened in: a stale helpersDir kit copied its whole
+  // contents, codex-resources\ subtree included, into a live install's bin\.
+  const fx = makeRepo();
+  const release = path.join(fx.root, 'release');
+  const installDir = path.join(release, 'bin');
+  const bin = makeStubBin(installDir, 'codex-stub');
+  fs.writeFileSync(
+    path.join(release, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const resources = path.join(release, 'codex-resources');
+  fs.mkdirSync(resources, { recursive: true });
+  fs.writeFileSync(path.join(resources, 'codex-command-runner.exe'), 'MZ current\n');
+  fs.writeFileSync(path.join(resources, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+
+  // The stale kit: both helper names (a version skew if copied in), a
+  // codex-resources\ subtree of junk (must never be walked into or copied —
+  // the declared resources directory IS codex-resources, whole), and one
+  // genuinely new file the manifest carries nowhere.
+  const helpersDir = path.join(fx.root, 'helpers-kit-manifest');
+  fs.mkdirSync(helpersDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersDir, 'codex-command-runner.exe'), 'MZ STALE-0147-ERA\n');
+  fs.writeFileSync(path.join(helpersDir, 'codex-windows-sandbox-setup.exe'), 'MZ STALE-0147-ERA\n');
+  const helpersResources = path.join(helpersDir, 'codex-resources');
+  fs.mkdirSync(helpersResources, { recursive: true });
+  fs.writeFileSync(path.join(helpersResources, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDir, 'known-good-extra.txt'), 'genuinely new\n');
+  writeProjectConfig(fx, { codex: { helpersDir } });
+
+  const r = runExec(fx, [], { CODEX_BIN: bin });
+  const out = r.stdout || '';
+  check(
+    'the exec runner does not copy the manifest-carried helper names or directory into the install',
+    !fs.existsSync(path.join(installDir, 'codex-command-runner.exe')) &&
+      !fs.existsSync(path.join(installDir, 'codex-windows-sandbox-setup.exe')) &&
+      !fs.existsSync(path.join(installDir, 'codex-resources')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    'the exec runner still copies the genuinely new helpersDir file',
+    fs.existsSync(path.join(installDir, 'known-good-extra.txt')),
+    fs.readdirSync(installDir).join(', ')
+  );
+  check(
+    'the PREFLIGHT names all three manifest-carried entries as not copied',
+    /PREFLIGHT: helpersDir: 3 entries not copied/.test(out) &&
+      /codex-command-runner\.exe/.test(out) &&
+      /codex-windows-sandbox-setup\.exe/.test(out) &&
+      /codex-resources/.test(out) &&
+      /declared resources directory/.test(out),
+    (out.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+
+  // FIX (Sol review round 2, 2026-09-07): the declared-name compare
+  // (carriedByPackage/sameName) was case-sensitive, so a helpersDir entry
+  // spelled in a different case than the manifest's declared name went
+  // unmatched on Windows and was reinjected — exactly the stale-kit route
+  // this whole check exists to close. A separate fixture, spelled ONLY in the
+  // differing case, is required: on Windows `codex-resources` and
+  // `CODEX-RESOURCES` are the SAME directory entry (case-preserving, not
+  // case-sensitive), so this cannot be exercised by adding to the fixture
+  // above without colliding with it.
+  const fxCase = makeRepo();
+  const releaseCase = path.join(fxCase.root, 'release');
+  const installDirCase = path.join(releaseCase, 'bin');
+  const binCase = makeStubBin(installDirCase, 'codex-stub');
+  fs.writeFileSync(
+    path.join(releaseCase, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const resourcesCase = path.join(releaseCase, 'codex-resources');
+  fs.mkdirSync(resourcesCase, { recursive: true });
+  fs.writeFileSync(path.join(resourcesCase, 'codex-command-runner.exe'), 'MZ current\n');
+
+  const helpersDirCase = path.join(fxCase.root, 'helpers-kit-case');
+  fs.mkdirSync(helpersDirCase, { recursive: true });
+  // A directory entry spelled in a different case than the declared
+  // `codex-resources`, and a file entry spelled in a different case than the
+  // packaged `codex-command-runner.exe`.
+  const helpersResourcesCaseDir = path.join(helpersDirCase, 'CODEX-RESOURCES');
+  fs.mkdirSync(helpersResourcesCaseDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersResourcesCaseDir, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDirCase, 'CODEX-COMMAND-RUNNER.EXE'), 'MZ STALE-CASE\n');
+  writeProjectConfig(fxCase, { codex: { helpersDir: helpersDirCase } });
+
+  const rCase = runExec(fxCase, [], { CODEX_BIN: binCase });
+  const outCase = rCase.stdout || '';
+  // On Windows this must fold case and skip both entries, same as the exact-
+  // case fixture above. POSIX filesystems are case-sensitive, so
+  // `CODEX-RESOURCES`/`CODEX-COMMAND-RUNNER.EXE` are genuinely distinct names
+  // there and the compare does not apply — nothing to assert on that
+  // platform beyond "the runner didn't crash".
+  check(
+    'on Windows, a helpersDir entry spelled in a different case than the manifest declares is still recognised as carried and skipped',
+    process.platform === 'win32'
+      ? !fs.existsSync(path.join(installDirCase, 'CODEX-RESOURCES')) &&
+        !fs.existsSync(path.join(installDirCase, 'CODEX-COMMAND-RUNNER.EXE')) &&
+        /PREFLIGHT: helpersDir: 2 entries not copied/.test(outCase) &&
+        /CODEX-RESOURCES/.test(outCase) &&
+        /CODEX-COMMAND-RUNNER\.EXE/.test(outCase)
+      : true,
+    process.platform === 'win32'
+      ? (outCase.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+      : '(skipped — case folding is Windows-only; not applicable on ' + process.platform + ')'
+  );
+}
+
 function finish() {
   for (const c of cleanups) {
     try {
@@ -1528,6 +2074,8 @@ async function main() {
   case19();
   case20();
   case21();
+  case22();
+  case23();
 }
 
 main().then(finish, (e) => {

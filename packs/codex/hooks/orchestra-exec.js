@@ -1794,59 +1794,43 @@ function isPathShaped(head) {
   return false;
 }
 
+// FIX (Sol review round 4, 2026-09-07): three straight rounds each found one
+// more real git ref spelling the precomputed `for-each-ref` set (full name,
+// `:short`, `:lstrip=2`) did not emit verbatim — `origin/HEAD`, then
+// `refs/heads/foo`, and now `heads/foo`, `tags/v9`, `remotes/up.stream/HEAD`.
+// Enumerating spellings is the wrong design: there is no bound on how git
+// itself will resolve a ref name. Ask git per claim instead of guessing from
+// a precomputed set — `rev-parse --verify --quiet` accepts every spelling git
+// accepts, with nothing left to enumerate. `--end-of-options` (git >= 2.24;
+// this machine runs 2.47.1) stops a head beginning with `-` from being read
+// as a flag.
+function resolvesAsRef(dir, head) {
+  const r = runGit(['-C', dir, 'rev-parse', '--verify', '--quiet', '--end-of-options', head]);
+  return !r.error && r.status === 0;
+}
+
 // FIX (Sol review, 2026-09-07): (c) a single-token head can be path-shaped by
 // the separator rule above yet still name no file — `feature/foo` (a branch
-// this run itself created) contains a `/` but is a ref, not a path. `refs` is
-// the run's `for-each-ref` set (read once, tolerating failure as empty); a
-// head in that set is excluded UNLESS a file of that exact name also exists
-// in the tree, so a real path that happens to collide with a ref name is
-// still counted as evidence of an edit.
-function pathClaims(claims, refs, dir) {
+// this run itself created) contains a `/` but is a ref, not a path.
+//
+// FIX (Sol review round 4, 2026-09-07): a single-token head that git itself
+// resolves as a ref names no file, whatever spelling it uses — excluded
+// UNLESS a file of that exact name also exists in the tree, so a real path
+// that happens to collide with a ref name is still counted as evidence of an
+// edit. Claims are few (this only runs against a CHANGES list), so one git
+// call per path-shaped claim is cheap.
+function pathClaims(claims, dir) {
   return claims.filter((c) => {
     const head = claimHead(c);
     if (!isPathShaped(head)) return false;
-    if (refs && refs.has(head) && !fs.existsSync(path.join(dir, head))) return false;
-    // FIX (Sol review round 3, 2026-09-07): the full and `refname:short` forms
-    // read below still miss spellings for-each-ref never emits verbatim —
-    // `refs/remotes/origin/HEAD` shortens to `origin`, not `origin/HEAD`, so
-    // a claim naming the conventional `origin/HEAD` matched neither form. A
-    // head that starts with `refs/` is a ref by construction (that is git's
-    // own namespace prefix, never a real repo-relative file path), so treat
-    // it the same as a name found in `refs` — excluded unless a file of that
-    // exact name genuinely exists in the tree.
+    // FIX (Sol review round 3, 2026-09-07): a head that starts with `refs/`
+    // is a ref by construction (that is git's own namespace prefix, never a
+    // real repo-relative file path) even when it does not yet resolve — kept
+    // as a fast, resolution-independent rule ahead of the git call below.
     if (/^refs\//.test(head) && !fs.existsSync(path.join(dir, head))) return false;
+    if (resolvesAsRef(dir, head) && !fs.existsSync(path.join(dir, head))) return false;
     return true;
   });
-}
-
-// FIX (Sol review, 2026-09-07): backs pathClaims' ref exclusion above. Read
-// once per run — a repo with no refs, or no git at all, yields an empty set
-// rather than blocking on an error, since the exclusion is a narrowing, never
-// a requirement.
-//
-// FIX (Sol review round 2, 2026-09-07): only the SHORT name was read, so a
-// CHANGES claim naming the full ref (`refs/heads/feature/foo — created`, as a
-// branch created but never checked out is reported) matched nothing in this
-// set — `isPathShaped` counts it path-shaped on its embedded `/`, the
-// exclusion above never fires, and a genuinely valid report was rejected as
-// contradicting an untouched tree. Read both forms per ref so either spelling
-// a claim might use is recognised.
-//
-// FIX (Sol review round 3, 2026-09-07): full and `refname:short` still do not
-// cover every conventional spelling — `refname:short` shortens
-// `refs/remotes/origin/HEAD` to `origin`, dropping the remote branch name, so
-// the conventional `origin/HEAD` a claim would actually use matched neither
-// form. `refname:lstrip=2` strips the two leading namespace components
-// (`refs/heads/`, `refs/remotes/`, `refs/tags/`) and keeps the rest, so
-// `refs/remotes/origin/HEAD` also yields `origin/HEAD`, `refs/heads/x` yields
-// `x`, and `refs/tags/v1` yields `v1`.
-function refNames(dir) {
-  const r = runGit([
-    '-C', dir, 'for-each-ref',
-    '--format=%(refname)%0a%(refname:short)%0a%(refname:lstrip=2)',
-  ]);
-  if (r.error || r.status !== 0) return new Set();
-  return new Set((r.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean));
 }
 
 // ------------------------------------------------------------------ main
@@ -2270,8 +2254,10 @@ function main() {
   // now part of what "untouched" means too, so a checkout that only moves the
   // branch (same commit) is caught as a measured change, not silently folded
   // into "the tree did not change at all".
-  const refs = claims && claims.length ? refNames(CONFIG.execDir) : new Set();
-  const pathedClaims = claims ? pathClaims(claims, refs, CONFIG.execDir) : claims;
+  // FIX (Sol review round 4, 2026-09-07): a single-token head that git itself
+  // resolves as a ref names no file, so pathClaims asks git per claim instead
+  // of matching against a precomputed ref-name set.
+  const pathedClaims = claims ? pathClaims(claims, CONFIG.execDir) : claims;
   const treeUntouched =
     delta !== null &&
     delta.source.length === 0 &&

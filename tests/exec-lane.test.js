@@ -1817,6 +1817,89 @@ function case22() {
       /claims edits the runner measured as never happening/.test(slwrOut),
     slwrOut.slice(0, 700)
   );
+
+  // FIX (Sol review round 4, 2026-09-07): three straight rounds each found one
+  // more real git ref spelling the old precomputed for-each-ref set missed.
+  // Rather than add a fourth spelling to the enumeration, pathClaims now asks
+  // git itself (resolvesAsRef) whether a head resolves as a ref — so these
+  // three additional conventional spellings must be excluded without any
+  // enumeration naming them specifically.
+
+  // `heads/<branch>` — git's own `refs/<refname>` disambiguation rule
+  // resolves it to `refs/heads/<branch>` directly.
+  const fx15 = makeRepo();
+  const headsPrefixed = runExec(fx15, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'feature/topic',
+    STUB_CODEX_CLAIM_CHANGES: 'heads/feature/topic — updated',
+  });
+  const hpOut = headsPrefixed.stdout || '';
+  check(
+    'a heads/<branch> claim head is excluded because git itself resolves it as a ref',
+    /STATUS: DONE/.test(hpOut) &&
+      !/EXEC_UNAVAILABLE/.test(hpOut) &&
+      /REPORT INTEGRITY: verified/.test(hpOut),
+    hpOut.slice(0, 500)
+  );
+
+  // `tags/<name>` — same disambiguation rule, resolving to `refs/tags/<name>`.
+  const fx16 = makeRepo();
+  const tagsPrefixed = runExec(fx16, [], {
+    STUB_CODEX_TAG: 'v9',
+    STUB_CODEX_CLAIM_CHANGES: 'tags/v9 — updated',
+  });
+  const tpOut = tagsPrefixed.stdout || '';
+  check(
+    'a tags/<name> claim head is excluded because git itself resolves it as a ref',
+    /STATUS: DONE/.test(tpOut) &&
+      !/EXEC_UNAVAILABLE/.test(tpOut) &&
+      /REPORT INTEGRITY: verified/.test(tpOut),
+    tpOut.slice(0, 500)
+  );
+
+  // `remotes/<remote>/HEAD` — the fourth spelling nothing before this round
+  // ever enumerated; same fixture shape as fx12/fx14 but a differently named
+  // remote so the head text itself (not just `origin/HEAD`) is exercised.
+  const fx17 = makeRepo();
+  git(['remote', 'add', 'up.stream', fx17.repo], fx17.repo);
+  git(['update-ref', 'refs/remotes/up.stream/HEAD', 'HEAD'], fx17.repo);
+  const remotesPrefixed = runExec(fx17, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'remotes/up.stream/HEAD — updated',
+  });
+  const rpOut = remotesPrefixed.stdout || '';
+  check(
+    'a remotes/<remote>/HEAD claim head is excluded because git itself resolves it as a ref',
+    /STATUS: DONE/.test(rpOut) &&
+      !/EXEC_UNAVAILABLE/.test(rpOut) &&
+      /REPORT INTEGRITY: verified/.test(rpOut),
+    rpOut.slice(0, 500)
+  );
+
+  // Collision guard: resolvesAsRef alone must never win over a real file. A
+  // branch AND a tracked file both named `feature/topic` — the file is
+  // genuinely edited (STUB_CODEX_TOUCH overwrites it), so the tree is not
+  // untouched and the claim must still be counted as (real) path evidence and
+  // relayed as verified, not excluded as a ref.
+  const fx18 = makeRepo();
+  fs.mkdirSync(path.join(fx18.repo, 'feature'), { recursive: true });
+  fs.writeFileSync(path.join(fx18.repo, 'feature', 'topic'), 'original\n');
+  git(['add', '-A'], fx18.repo);
+  git(
+    ['-c', 'user.email=test@example.com', '-c', 'user.name=Orchestra Test', 'commit', '-qm', 'add feature/topic'],
+    fx18.repo
+  );
+  git(['branch', 'feature/topic'], fx18.repo);
+  const collision = runExec(fx18, [], {
+    STUB_CODEX_TOUCH: 'feature/topic',
+    STUB_CODEX_CLAIM_CHANGES: 'feature/topic — edited',
+  });
+  const colOut = collision.stdout || '';
+  check(
+    'a claim head that both resolves as a ref and names a real file is still treated as a path (existsSync guard wins), relayed once the file is genuinely edited',
+    /STATUS: DONE/.test(colOut) &&
+      !/EXEC_UNAVAILABLE/.test(colOut) &&
+      /REPORT INTEGRITY: verified/.test(colOut),
+    colOut.slice(0, 500)
+  );
 }
 
 function case23() {

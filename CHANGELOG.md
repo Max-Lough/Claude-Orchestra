@@ -29,7 +29,7 @@ an old build behind the doctor's back — observed 2026-09-07 15:48, when a
 sibling project's exec lane, `helpersDir` still pointed at a 0.147-era kit,
 copied that kit's helpers (a `codex-resources\` subtree included) into a
 live 0.153.4 install's `bin\` while a review ran here. `restoreHelpers()` in
-both runners now skips any top-level `helpersDir` entry the install's
+both runners now skip any top-level `helpersDir` entry the install's
 declared resources directory already carries, whatever their sizes, and the
 codex pack's Windows note (`pack.json`) now states the manifest layout
 rather than the old beside-the-binary rule. The doctor now names a helper

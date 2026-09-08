@@ -126,6 +126,21 @@ function packagedResourceDirs(installDir) {
 // `codex-command-runner.exe.bak-0147era` — into a live 0.153.4 install's
 // `bin\` while a review ran here.
 //
+// FIX (Sol review round 2, 2026-09-07): declared-name comparisons were exact
+// (`===`), so a helpersDir entry spelled in a different case than the
+// manifest's declared name — `CODEX-RESOURCES` against a declared
+// `codex-resources` — matched nothing and was treated as a genuinely new
+// file to copy in, precisely the stale-kit reinjection this whole check
+// exists to stop. `fs.existsSync` is already case-insensitive on Windows (the
+// filesystem resolves it that way), so only the declared-name compare needed
+// this; a single shared helper keeps orchestra-review.js's copy of the same
+// compare (the `shadowed` detection and the packaged match) from drifting
+// from this one.
+function sameName(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return a === b;
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
 // A helpersDir entry is carried by the package when either: the package
 // declares a resources directory called exactly this (nothing to copy — the
 // directory named `codex-resources` in helpersDir is the same thing the
@@ -136,8 +151,8 @@ function packagedResourceDirs(installDir) {
 // copy would be exactly as wrong). Size is therefore not part of this check.
 function carriedByPackage(name, packaged) {
   return (packaged || []).some(
-    (d) => d.name === name || fs.existsSync(path.join(d.dir, name))
+    (d) => sameName(d.name, name) || fs.existsSync(path.join(d.dir, name))
   );
 }
 
-module.exports = { pathUnder, packagedResourceDirs, carriedByPackage };
+module.exports = { pathUnder, packagedResourceDirs, carriedByPackage, sameName };

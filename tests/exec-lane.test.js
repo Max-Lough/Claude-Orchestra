@@ -1739,6 +1739,27 @@ function case22() {
     /branch: main → wo7a/.test(bmOut),
     bmOut.slice(0, 1500)
   );
+
+  // FIX (Sol review round 2, 2026-09-07): refNames() read only the SHORT ref
+  // name, so a CHANGES claim naming the FULL ref (`refs/heads/feature/foo`,
+  // as a run reporting on a branch it created might) matched nothing in the
+  // exclusion set — isPathShaped counts it path-shaped on its embedded `/`,
+  // and a genuinely valid report was rejected as contradicting an untouched
+  // tree. Same fixture shape as fx7 (branch created, never checked out), but
+  // the claim spells the ref in full.
+  const fx11 = makeRepo();
+  const fullRefHead = runExec(fx11, [], {
+    STUB_CODEX_BRANCH_NO_CHECKOUT: 'feature/foo',
+    STUB_CODEX_CLAIM_CHANGES: 'refs/heads/feature/foo — created',
+  });
+  const frOut = fullRefHead.stdout || '';
+  check(
+    'a full ref name (refs/heads/<branch>) claim head is excluded via the ref set, not treated as a path',
+    /STATUS: DONE/.test(frOut) &&
+      !/EXEC_UNAVAILABLE/.test(frOut) &&
+      /REPORT INTEGRITY: verified/.test(frOut),
+    frOut.slice(0, 500)
+  );
 }
 
 function case23() {
@@ -1801,6 +1822,59 @@ function case23() {
       /codex-resources/.test(out) &&
       /declared resources directory/.test(out),
     (out.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+
+  // FIX (Sol review round 2, 2026-09-07): the declared-name compare
+  // (carriedByPackage/sameName) was case-sensitive, so a helpersDir entry
+  // spelled in a different case than the manifest's declared name went
+  // unmatched on Windows and was reinjected — exactly the stale-kit route
+  // this whole check exists to close. A separate fixture, spelled ONLY in the
+  // differing case, is required: on Windows `codex-resources` and
+  // `CODEX-RESOURCES` are the SAME directory entry (case-preserving, not
+  // case-sensitive), so this cannot be exercised by adding to the fixture
+  // above without colliding with it.
+  const fxCase = makeRepo();
+  const releaseCase = path.join(fxCase.root, 'release');
+  const installDirCase = path.join(releaseCase, 'bin');
+  const binCase = makeStubBin(installDirCase, 'codex-stub');
+  fs.writeFileSync(
+    path.join(releaseCase, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const resourcesCase = path.join(releaseCase, 'codex-resources');
+  fs.mkdirSync(resourcesCase, { recursive: true });
+  fs.writeFileSync(path.join(resourcesCase, 'codex-command-runner.exe'), 'MZ current\n');
+
+  const helpersDirCase = path.join(fxCase.root, 'helpers-kit-case');
+  fs.mkdirSync(helpersDirCase, { recursive: true });
+  // A directory entry spelled in a different case than the declared
+  // `codex-resources`, and a file entry spelled in a different case than the
+  // packaged `codex-command-runner.exe`.
+  const helpersResourcesCaseDir = path.join(helpersDirCase, 'CODEX-RESOURCES');
+  fs.mkdirSync(helpersResourcesCaseDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersResourcesCaseDir, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDirCase, 'CODEX-COMMAND-RUNNER.EXE'), 'MZ STALE-CASE\n');
+  writeProjectConfig(fxCase, { codex: { helpersDir: helpersDirCase } });
+
+  const rCase = runExec(fxCase, [], { CODEX_BIN: binCase });
+  const outCase = rCase.stdout || '';
+  // On Windows this must fold case and skip both entries, same as the exact-
+  // case fixture above. POSIX filesystems are case-sensitive, so
+  // `CODEX-RESOURCES`/`CODEX-COMMAND-RUNNER.EXE` are genuinely distinct names
+  // there and the compare does not apply — nothing to assert on that
+  // platform beyond "the runner didn't crash".
+  check(
+    'on Windows, a helpersDir entry spelled in a different case than the manifest declares is still recognised as carried and skipped',
+    process.platform === 'win32'
+      ? !fs.existsSync(path.join(installDirCase, 'CODEX-RESOURCES')) &&
+        !fs.existsSync(path.join(installDirCase, 'CODEX-COMMAND-RUNNER.EXE')) &&
+        /PREFLIGHT: helpersDir: 2 entries not copied/.test(outCase) &&
+        /CODEX-RESOURCES/.test(outCase) &&
+        /CODEX-COMMAND-RUNNER\.EXE/.test(outCase)
+      : true,
+    process.platform === 'win32'
+      ? (outCase.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+      : '(skipped — case folding is Windows-only; not applicable on ' + process.platform + ')'
   );
 }
 

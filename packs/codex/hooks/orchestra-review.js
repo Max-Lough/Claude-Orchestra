@@ -257,7 +257,7 @@ const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redac
 // moved out to orchestra-install.js so orchestra-exec.js's restoreHelpers()
 // reads the same manifest this runner's doctor does, instead of only this
 // runner knowing about it. See that file for why carriedByPackage exists.
-const { pathUnder, packagedResourceDirs, carriedByPackage } = require('./orchestra-install');
+const { pathUnder, packagedResourceDirs, carriedByPackage, sameName } = require('./orchestra-install');
 
 // ------------------------------------------------------------------ config
 
@@ -1981,9 +1981,14 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
     // helper entry with a DIRECTORY — the same false positive siblingPresent
     // exists to close, reached by a different route, and it reported the
     // missing runner as accounted for.
+    //
+    // FIX (Sol review round 2, 2026-09-07): `d.name === name` was an exact
+    // compare, so a helpersDir/wanted name spelled in a different case than
+    // the manifest's declared name went unmatched on Windows — see
+    // orchestra-install.js's sameName for the full account.
     const isDeclaredDir =
       !EXECUTABLE_NAME_RE.test(name) &&
-      packagedDirs.find((d) => d.name === name || path.basename(d.dir) === name);
+      packagedDirs.find((d) => sameName(d.name, name) || path.basename(d.dir) === name);
     if (isDeclaredDir) {
       packaged.push(
         name + ' (is the declared resources directory, at ' + isDeclaredDir.dir + ')'
@@ -2018,9 +2023,11 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
   if (packagedDirs.length) {
     for (const name of wanted) {
       if (!siblingPresent(installDir, name)) continue;
+      // FIX (Sol review round 2, 2026-09-07): same exact-compare fix as the
+      // packaged-match above — see orchestra-install.js's sameName.
       const isDeclaredDir =
         !EXECUTABLE_NAME_RE.test(name) &&
-        packagedDirs.find((d) => d.name === name || path.basename(d.dir) === name);
+        packagedDirs.find((d) => sameName(d.name, name) || path.basename(d.dir) === name);
       const inPackage = isDeclaredDir ? null : packagedDirs.find((d) => siblingPresent(d.dir, name));
       const packagedPath = isDeclaredDir ? isDeclaredDir.dir : inPackage && inPackage.dir;
       if (packagedPath) {

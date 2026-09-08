@@ -1814,8 +1814,16 @@ function pathClaims(claims, refs, dir) {
 // once per run — a repo with no refs, or no git at all, yields an empty set
 // rather than blocking on an error, since the exclusion is a narrowing, never
 // a requirement.
+//
+// FIX (Sol review round 2, 2026-09-07): only the SHORT name was read, so a
+// CHANGES claim naming the full ref (`refs/heads/feature/foo — created`, as a
+// branch created but never checked out is reported) matched nothing in this
+// set — `isPathShaped` counts it path-shaped on its embedded `/`, the
+// exclusion above never fires, and a genuinely valid report was rejected as
+// contradicting an untouched tree. Read both forms per ref so either spelling
+// a claim might use is recognised.
 function refNames(dir) {
-  const r = runGit(['-C', dir, 'for-each-ref', '--format=%(refname:short)']);
+  const r = runGit(['-C', dir, 'for-each-ref', '--format=%(refname)%0a%(refname:short)']);
   if (r.error || r.status !== 0) return new Set();
   return new Set((r.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean));
 }

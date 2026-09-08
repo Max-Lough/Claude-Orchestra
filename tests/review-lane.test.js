@@ -1782,6 +1782,48 @@ function case22() {
       /declared resources directory/.test(docOut),
     docOut.slice(0, 2400)
   );
+
+  // FIX (Sol review round 2, 2026-09-07): the declared-name compare
+  // (carriedByPackage/sameName, shared with orchestra-install.js) was
+  // case-sensitive, so a helpersDir entry spelled in a different case than
+  // the manifest's declared name went unmatched on Windows and was
+  // reinjected — exactly the stale-kit route this whole check exists to
+  // close. A separate fixture, spelled ONLY in the differing case, is
+  // required: on Windows `codex-resources` and `CODEX-RESOURCES` are the
+  // SAME directory entry (case-preserving, not case-sensitive), so this
+  // cannot be exercised by adding to helpersDirManifest above without
+  // colliding with it.
+  const helpersDirManifestCase = path.join(fx.root, 'helpers-kit-manifest-case');
+  fs.mkdirSync(helpersDirManifestCase, { recursive: true });
+  const helpersResourcesCaseDir = path.join(helpersDirManifestCase, 'CODEX-RESOURCES');
+  fs.mkdirSync(helpersResourcesCaseDir, { recursive: true });
+  fs.writeFileSync(path.join(helpersResourcesCaseDir, 'junk.txt'), 'junk\n');
+  fs.writeFileSync(path.join(helpersDirManifestCase, 'CODEX-COMMAND-RUNNER.EXE'), 'MZ STALE-CASE\n');
+
+  const fx6 = makeDirtyRepo();
+  const install6 = makeManifestInstall(fx6.root);
+  writeProjectConfig(fx6, { helpersDir: helpersDirManifestCase });
+  const iso6 = { HOME: fx6.root, USERPROFILE: fx6.root, CODEX_HOME: path.join(fx6.root, '.codex') };
+  const rv6 = runReview(fx6, [], Object.assign({ CODEX_BIN: install6.bin }, iso6));
+  const rv6Out = rv6.stdout || '';
+  // On Windows this must fold case and skip both entries, same as the
+  // exact-case fixture above. POSIX filesystems are case-sensitive, so
+  // `CODEX-RESOURCES`/`CODEX-COMMAND-RUNNER.EXE` are genuinely distinct names
+  // there and the compare does not apply — nothing to assert on that
+  // platform beyond "the review didn't crash".
+  check(
+    'on Windows, a helpersDir entry spelled in a different case than the manifest declares is still recognised as carried and skipped',
+    process.platform === 'win32'
+      ? !fs.existsSync(path.join(install6.installDir, 'CODEX-RESOURCES')) &&
+        !fs.existsSync(path.join(install6.installDir, 'CODEX-COMMAND-RUNNER.EXE')) &&
+        /helpersDir: 2 entries not copied/.test(rv6Out) &&
+        /CODEX-RESOURCES/.test(rv6Out) &&
+        /CODEX-COMMAND-RUNNER\.EXE/.test(rv6Out)
+      : true,
+    process.platform === 'win32'
+      ? rv6Out.slice(0, 2400)
+      : '(skipped — case folding is Windows-only; not applicable on ' + process.platform + ')'
+  );
 }
 
 // ------------------------------------------------------------------ driver

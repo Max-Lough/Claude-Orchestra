@@ -2268,8 +2268,8 @@ function case24() {
     const out = (runExec(fxt, [], { STUB_CODEX_CLAIM_CHANGES: claim }).stdout || '');
     return { ms: Date.now() - t0, out };
   }
-  // The capped scan adds ~33 stat calls, i.e. noise; the shapes below cost
-  // 41 s and 4.9 s of end-to-end runner wall clock respectively without the
+  // The shapes below cost
+  // 41 s and 6.0 s of end-to-end runner wall clock respectively without the
   // fix (the first of those is the same input the O(n³) regex alone took 28 s
   // on), so this budget has an order of magnitude of headroom either way.
   const BUDGET_MS = 2500;
@@ -2288,10 +2288,10 @@ function case24() {
     manyCuts.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(manyCuts.out),
     'baseline ' + baseline.ms + 'ms, hostile ' + manyCuts.ms + 'ms; ' + manyCuts.out.slice(0, 300)
   );
-  // FIX (Sol review round 4, 2026-09-08): the worst case the round-4 changes
-  // create. Raising the cut cap to 256 and probing each candidate twice (as
-  // written, then with its `:line` suffix removed) puts the ceiling at 514
-  // `fs.existsSync` calls per item, and every one of them MISSES here — no
+  // FIX (Sol review round 4, 2026-09-08): raising the cut cap to 256 and
+  // probing each candidate with and without its `:line` suffix produces 512
+  // `fs.existsSync` calls on this over-length item (no whole-item candidate).
+  // Every one of them MISSES here — no
   // fixture file resolves, so nothing short-circuits the scan. The shape has
   // to earn that ceiling: `a b` keeps claimHead's result whitespace-bearing so
   // the spaced branch runs at all (a bare `a:1` head is single-token
@@ -2299,7 +2299,7 @@ function case24() {
   // candidate is what doubles the probes. ` - `-only padding costs half.
   const maxProbes = timedRun('a b:1 - '.repeat(6000));
   check(
-    'a 48 KB item whose every candidate carries a `:line` suffix (514 filesystem probes, all misses) still costs no more than a baseline run',
+    'a 48 KB item whose every candidate carries a `:line` suffix (512 filesystem probes, all misses) still costs no more than a baseline run',
     maxProbes.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(maxProbes.out),
     'baseline ' + baseline.ms + 'ms, hostile ' + maxProbes.ms + 'ms; ' + maxProbes.out.slice(0, 300)
   );
@@ -2399,8 +2399,8 @@ function case24() {
   //      with "no real path has that many internal separators". Review refuted
   //      it with one — a committed 166-character path carrying 33 ` - `
   //      separators lost its own endpoint and its false claim relayed as
-  //      verified. The cap is now set from WORK (256 cut points, ≤ 514
-  //      filesystem probes, ~40 ms) rather than from a guess about paths, and
+  //      verified. The cap is now set from WORK (256 cut points, at most six
+  //      spellings per candidate) rather than from a guess about paths, and
   //      this is the path that proves the difference: 40 internal separators,
   //      committed, claimed against a tree the run never touched.
   const fx13 = withCommitted(makeRepo(), MANY_SEP);
@@ -2438,6 +2438,124 @@ function case24() {
       /claims edits the runner measured as never happening/.test(unavailOut),
     'baseline ' + baseline.ms + 'ms, hostile ' + unavailMs + 'ms; ' + unavailOut.slice(0, 300)
   );
+  for (const [label, ms] of [
+    ['baseline', baseline.ms],
+    ['unclosed backtick + 4000 spaces', redos.ms],
+    ['32 KB / 8000 cuts', manyCuts.ms],
+    ['48 KB / :line suffixes', maxProbes.ms],
+    ['400000 spaces / relayed', bigBody.ms],
+    ['400000 spaces / held', unavailMs],
+  ]) {
+    console.log('  TIMING  ' + label + ': ' + ms + 'ms; delta ' + (ms - baseline.ms) + 'ms; budget < ' + BUDGET_MS + 'ms');
+  }
+}
+
+// FIX (Sol review round 5, 2026-09-08): all locator and delimiter spellings
+// must reach the same committed file. Existence outside the audited tree is
+// not corroboration. Run this case alone against old runners for mutation
+// proofs: ORCHESTRA_TEST_EXEC_CASE=25 plus ORCHESTRA_TEST_EXEC_RUNNER.
+function case25() {
+  section('25. Spaced claim normalization and tree confinement');
+  const SPACED = 'src/My Module.gd';
+  function fixture() {
+    const fx = makeRepo();
+    fs.mkdirSync(path.join(fx.repo, 'src'));
+    fs.writeFileSync(path.join(fx.repo, SPACED), 'content\n');
+    git(['add', '-A'], fx.repo);
+    git(['-c', 'user.email=test@example.com', '-c', 'user.name=Orchestra Test', 'commit', '-qm', 'add spaced file'], fx.repo);
+    return fx;
+  }
+  function claim(fx, head, touch) {
+    // EXTRA_LINES keeps ", line N" as one bullet; CLAIM_CHANGES comma-splits.
+    return runExec(fx, [], {
+      STUB_CODEX_TOUCH: touch ? SPACED : '',
+      STUB_CODEX_EXTRA_LINES: 'CHANGES\n- ' + head + ' — inspected only',
+    });
+  }
+  function held(r) {
+    return r.status === 0 && /STATUS: EXEC_UNAVAILABLE/.test(r.stdout || '') &&
+      /claims edits the runner measured as never happening/.test(r.stdout || '');
+  }
+  function verified(r) {
+    return r.status === 0 && /STATUS: DONE/.test(r.stdout || '') &&
+      !/EXEC_UNAVAILABLE/.test(r.stdout || '') && /REPORT INTEGRITY: verified/.test(r.stdout || '');
+  }
+  const fx = fixture();
+  const forms = [
+    '`' + SPACED + '`:12',
+    '"' + SPACED + '":12',
+    '` ' + SPACED + ' `:12',
+    SPACED + ':12:5',
+    SPACED + '#L12',
+    SPACED + '#L12-L20',
+    SPACED + ' (lines 3-9)',
+    SPACED + ':12–20',
+    SPACED + '.',
+  ];
+  if (process.platform === 'win32') forms.push('src\\My Module.gd:12');
+  for (const head of forms) {
+    const r = claim(fx, head);
+    check('A1 HELD: ' + head, held(r), (r.stdout || r.stderr || '').slice(0, 900));
+  }
+  for (const head of [forms[0], forms[6]]) {
+    const edited = fixture();
+    const r = claim(edited, head, true);
+    check('A1 real edit RELAYED as verified: ' + head,
+      verified(r) && git(['diff', '--name-only'], edited.repo) === SPACED,
+      (r.stdout || r.stderr || '').slice(0, 900));
+  }
+
+  // The rest of the closed locator set, inside/outside quotes, punctuation
+  // outside the wrapper, and punctuation inside a quoted path before a locator.
+  for (const head of [
+    SPACED + ':12', SPACED + ':12-20', SPACED + '#L12-20',
+    SPACED + ' (line 3)', SPACED + ', line 3',
+    SPACED + ' (line 3).', SPACED + ' (lines 3-9));',
+    "' " + SPACED + " ':12;", '" ' + SPACED + ' ":12,',
+    '`' + SPACED + ':12`.', '"' + SPACED + '#L12-L20";',
+    '`' + SPACED + ' (lines 3-9)`)', '"' + SPACED + '.":12,',
+    SPACED + ':', SPACED + ';', SPACED + ',', SPACED + ')',
+    path.join(fx.repo, SPACED) + ':12',
+  ]) {
+    const r = claim(fx, head);
+    check('normalized HELD: ' + (path.isAbsolute(head) ? '(absolute path inside tree)' : head),
+      held(r), (r.stdout || r.stderr || '').slice(0, 900));
+  }
+
+  fs.writeFileSync(path.join(fx.root, 'outside notes.txt'), 'outside\n');
+  const outside = claim(fx, '../outside notes.txt');
+  check('A2 outside spaced file RELAYED: ../outside notes.txt', verified(outside), (outside.stdout || '').slice(0, 900));
+  const sibling = path.join(fx.root, 'project sibling');
+  fs.mkdirSync(sibling);
+  fs.writeFileSync(path.join(sibling, 'outside notes.txt'), 'outside\n');
+  for (const head of [
+    '../project sibling/outside notes.txt',
+    path.join(sibling, 'outside notes.txt'),
+    '`../outside notes.txt`:12',
+  ]) {
+    const r = claim(fx, head);
+    check('outside normalized file RELAYED: ' + head, verified(r), (r.stdout || '').slice(0, 900));
+  }
+
+  // These look similar to supported forms but do not name a corroborated
+  // file. One locator is removed, never a chain of independent locators.
+  for (const head of [
+    '`' + SPACED + "':12", '`' + SPACED + ':12',
+    SPACED + '#L12#L20', SPACED + ' (lines 3 to 9)',
+    SPACED + ', line three', 'Updated ' + SPACED + ':12',
+    '`python tools/gen.py --out assets/crew/`:12',
+  ]) {
+    const r = claim(fx, head);
+    check('uncorroborated prose RELAYED: ' + head, verified(r), (r.stdout || '').slice(0, 900));
+  }
+  // Pin the deliberate 3.3.3 asymmetry, including the refs/ fast guard whose
+  // counted set would shrink if existence were confined in that branch.
+  fs.writeFileSync(path.join(fx.root, 'outside.txt'), 'outside\n');
+  for (const head of ['../outside.txt', 'refs/../../outside.txt', 'note:5']) {
+    const r = claim(fx, head);
+    check('3.3.3 single-token claim remains HELD: ' + head, held(r), (r.stdout || '').slice(0, 900));
+  }
+  check('normalization fixtures leave the audited tree untouched', git(['status', '--porcelain'], fx.repo) === '');
 }
 
 function finish() {
@@ -2453,6 +2571,10 @@ function finish() {
 }
 
 async function main() {
+  if (process.env.ORCHESTRA_TEST_EXEC_CASE === '25') {
+    case25();
+    return;
+  }
   case1();
   case2();
   case4();
@@ -2476,6 +2598,7 @@ async function main() {
   case22();
   case23();
   case24();
+  case25();
 }
 
 main().then(finish, (e) => {

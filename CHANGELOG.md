@@ -23,15 +23,31 @@ loudly; it was silently not running.
 
 **Fixed.** `pathClaims` still classifies a single-token head on shape alone. A
 head containing whitespace is counted only when the tree itself corroborates
-it — the head names something the audited tree actually holds (`fs.existsSync`,
-which folds case on Windows as the filesystem does). Because `claimHead` cuts at
+it — a normalized spelling resolves lexically inside the audited directory and
+exists there (`fs.existsSync`, which folds case on Windows as the filesystem
+does). This is `path.resolve` containment; symlinks are not resolved for the
+containment check. Because `claimHead` cuts at
 the first ` — ` / ` - ` / `: ` and a spaced path can contain one of those
-itself, the other cut points are tried too, longest existing prefix wins. Each
-candidate is probed twice: as written, and with a trailing `:line` /
-`:line-line` removed — the brief asks executors for `<path:line> — <what>`, so
-the shape the harness itself demands has to resolve. (The single-token branch
-needs no such strip: it excludes on "git resolves this as a ref", and
-`src/foo.gd:12` is neither ref nor file, so it was always kept.)
+itself, the other cut points are tried too, longest candidate first within the
+head-nearest bounded set. Normalization now happens in one pipeline, after
+cutting: try a trailing locator before removing matched wrapping backticks or
+single/double quotes and their inner padding, then try a locator inside the
+quotes if none was removed. Strip trailing `.,;:)` and repeat once, retaining
+intermediate spellings so literal punctuation-bearing filenames still resolve.
+A parenthesis completing an unstripped locator is kept for the next pass.
+Backslashes become slashes on Windows. At most one locator is removed overall.
+The closed set is `:N`, `:N-N`, `:N–N`, `:N:N`, `#LN`, `#LN-LN`, `#LN-N`,
+` (line N)`, ` (lines N-N)`, and `, line N`, with decimal digits for N.
+
+Round 4 stripped quotes too early: `` `src/My Module.gd`:12 `` lost only its
+opening quote and could never resolve after the locator was removed. It also
+recognized only `:N` and `:N-N`, and accepted `../outside notes.txt` merely
+because that file existed outside the audited tree. Round 5 fixes all three.
+`claimHead` and `isPathShaped` remain byte-identical to 3.3.3 (`ad27bf5`), and
+single-token heads never enter this normalization pipeline. Their existing
+filesystem guards remain unchanged: confining them would shrink the baseline
+counted set for a real `refs/../../outside.txt`. Thus outside spaced heads are
+excluded, while outside single-token claims and `note:5` retain 3.3.3 behavior.
 
 **What was tried and rejected.** The first attempt also counted a head the
 engine had *delimited* in backticks when it merely looked path-shaped. Review
@@ -47,7 +63,8 @@ nothing to resolve against, so `assets/My Pack/new.ogg — created` is relayed
 rather than held against an untouched tree. A single-token creation claim is
 still caught, so the gap is spaced paths only — narrower than the one being
 fixed, and on the safe side of "prefer relaying a valid report over discarding
-one". Prose is genuinely unchanged: `Updated src/foo.gd — added guard` and
+one". Prose that names no corroborated file remains excluded:
+`Updated src/foo.gd — added guard` and
 `Ran the test suite` name nothing and stay excluded.
 
 **Bounded.** A CHANGES item is engine-controlled text of no bounded length, and
@@ -66,18 +83,25 @@ The 256 is set from work, not from a guess about what paths look like. An
 earlier attempt capped at 32 and justified it as "no real path has that many
 internal separators"; review refuted it with one, a committed 166-character
 path carrying 33 ` - ` separators whose own endpoint fell off the end of the
-budget, relaying its false claim as verified. One candidate costs one
-`fs.existsSync` (two when it carries a `:line` suffix), measured at 55–165 µs,
-so 256 cut points is at most 257 candidates, 514 probes, and about 40 ms.
-Stated exactly: **every cut point in the first 4,096 characters is tried, up to
-256 of them.** What remains outside that is a path needing its 257th internal
-separator — at least ~770 characters of path — or a path over 4,096 characters;
-neither is a path any filesystem will hand you, and both are relayed rather
-than held, on the safe side of the default. All three hostile classifier shapes
-now cost no more than an ordinary run: 0.91 s for the 4,000-space item (down
-from 41 s), 0.97 s for a 32 KB item of 8,000 cut points (down from 6.0 s), and
-1.02 s for the shape that reaches the 514-probe ceiling, against a 0.89 s
-baseline.
+budget, relaying its false claim as verified. Round 5 keeps those caps and
+deduplicates intermediate spellings with a Set. There are at most six per
+candidate: the original, one locator removal, two quote removals, and two
+punctuation trims. That bounds filesystem probes at **257 × 6 = 1,542 per
+claim**, including pathClaims (which accepts a corroborated spaced head without
+probing it again). The 48 KB `:line` payload has only two spellings per cut,
+so still costs 512 probes; its whole-item candidate exceeds the length cap.
+Each suffix match starts with a literal introducer, ends at the string end,
+and separates digit runs with non-digits. There are no overlapping quantified
+classes: each run is visited a constant number of times. Quote matching uses
+endpoints, punctuation trimming walks backward, and the separator regex scans
+only the bounded prefix plus the three characters needed to finish a separator.
+Stated exactly: **the candidate set includes the first 256 cuts at or before
+character 4,096, plus the whole item when it fits.** Probing stops at the first
+existing normalized head. A path whose endpoint falls beyond those bounds may
+be real; it is not probed. The cap is a work limit, not a filesystem limit. case24 keeps
+the existing 2,500 ms delta budget for the unclosed backtick plus 4,000 spaces,
+the 32 KB item of 8,000 cut points, the 48 KB `:line` item, and both 400,000-space
+report paths, and prints the measured baseline and every hostile timing.
 
 `resolvesAsRef`'s `symbolic-ref` probes also gained the `--end-of-options` its
 `rev-parse` probe already had, and `pathClaims` now asks `fs.existsSync` before
@@ -91,22 +115,22 @@ anchor, so a single CHANGES bullet of 400,000 spaces cost 87 s — spent after t
 engine had finished, on a report and a tree audit the Director already had. Both
 copies are now `trimEnd`, which is linear and strips exactly the same characters
 (its WhiteSpace + LineTerminator set and the regex `\s` class agree on every code
-point). `printReport` was the first: a relayed report now costs 1.3 s on that
-body instead of 87 s. `indent()` was the second and the worse one, because it is
+point). `printReport` was the first: round 3 measured 1.3 s on that body instead
+of 87 s. `indent()` was the second and the worse one, because it is
 reached from the integrity-failure path — which indents the *raw* claim text
 before `boundedDiagnostic` ever bounds it — so the one report whose whole job is
 to hand the Director an already-measured tree audit promptly was the one delayed
-by a minute and a half. It now costs 1.4 s. Six sibling copies remain in
+by a minute and a half. Round 4 measured 1.4 s. Six sibling copies remain in
 `orchestra-review.js`, `orchestra-crossplan.js` and `install.js`; they are not
 on this lane's engine-text path and are left for their own change.
 
-One exec-lane case (`case24`, 27 checks) covers all of this, and it fails
-against every version this entry describes: eleven checks against 3.3.3 — the
-false-claim mutation proof — fifteen against the rejected shape-signal attempt,
-six against the tree-corroboration attempt that capped the cut points at the
-wrong end of the item, and four against the one that fixed that end but kept the
-cap at 32 and never stripped the `:line` suffix the brief asks executors to
-write.
+`case24` retains the prior 27 regression checks. `case25` adds 45 checks on
+Windows covering the round-5
+normalization and containment matrix, two genuine edits, prose counterexamples,
+and the pinned single-token asymmetry. The fixture file is committed before
+each untouched-tree assertion. It can run independently against historical
+runners with `ORCHESTRA_TEST_EXEC_CASE=25` and `ORCHESTRA_TEST_EXEC_RUNNER`, so
+the new evidence can be mutation-tested without old unrelated timing failures.
 
 ## 3.3.3 — repository cleanup: the 2.x archives and the stale Codex-side fork leave the tree
 

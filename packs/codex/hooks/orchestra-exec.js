@@ -1832,10 +1832,12 @@ function isPathShaped(head) {
 // the exact class the WO-7A field fix and Sol rounds 3–6 existed to remove: a
 // non-path head discarding an otherwise valid report. That signal is gone.
 //
-// The only thing that can corroborate a spaced head is the tree itself, so
-// that is the whole rule now: the head must name something the audited tree
-// actually holds. There is no shape guess left to fake, and `fs.existsSync`
-// folds case on win32 exactly as the filesystem does. Prose is untouched —
+// The only thing that can corroborate a spaced head is the tree itself: the
+// normalized head must resolve lexically within dir and exist there. This is
+// path.resolve containment, not realpath containment through symlinks.
+// There is no shape guess left to fake, and `fs.existsSync`
+// folds case on win32 exactly as the filesystem does. Prose naming nothing
+// stays excluded —
 // `Updated src/foo.gd — added guard` and `Ran the test suite` name nothing,
 // so the "prefer relaying a valid report over discarding one" default holds.
 //
@@ -1849,30 +1851,60 @@ function isPathShaped(head) {
 // path can land INSIDE the path itself (`…/Pirate Music Pack - free/…`), so
 // the other cut points are tried too, longest first.
 //
-// FIX (Sol review round 4, 2026-09-08): the brief asks for `<path:line> — <what>`
-// and `isPathShaped` accepts that `:line` / `:line-line` suffix on a
-// single-token head — but nothing ever strips it before a filesystem probe,
-// because the single-token branch never makes one (it excludes on "resolves
-// as a ref", and `src/foo.gd:12` resolves as neither ref nor file, so it is
-// kept). The spaced branch is the opposite: existence is the whole signal, so
-// an unstripped suffix meant `src/My Module.gd:12 — edited` resolved nothing,
-// fell out of `pathedClaims`, and a false claim under a real spaced path was
-// relayed as a verified report. Each candidate is now probed as written and
-// again with the suffix removed.
-//
-// The head RETURNED is whichever spelling the tree actually holds. That keeps
-// this function's contract exact — it returns a head the audited tree holds,
-// never a guess — and lets `pathClaims`' `fs.existsSync` short-circuit, so a
-// line-numbered spaced path costs no git probes to discover it is not a ref.
-const CLAIM_LINE_SUFFIX = /:\d+(?:-\d+)?$/;
+// FIX (Sol review round 5, 2026-09-08): stripping quotes in headCandidates
+// BEFORE a locator left `"src/My Module.gd":12` with an unmatched closing
+// quote. Keep raw candidates and normalize here only. Each pass removes a
+// locator before matching wrapping backticks/single/double quotes (with inner
+// padding), then tries an inside-the-quotes locator if none was removed yet.
+// Strip trailing .,;:) and repeat once, retaining intermediate spellings so
+// literal filenames with that punctuation or locator text still get a probe.
+// At most ONE locator is removed across both passes; arbitrary suffix chains
+// are not locators. The closed set is :N, :N-N, :N–N, :N:N, #LN, #LN-LN,
+// #LN-N, " (line N)", " (lines N-N)", and ", line N" (decimal digits only).
+// Every match needs its literal introducer and end anchor. Digit runs are
+// separated by non-digits, with no overlapping quantified classes: each run
+// is visited a constant number of times, so even a failed match is linear.
+// Quote matching uses endpoints; punctuation trimming walks backward once,
+// retaining a closing parenthesis that completes a still-unstripped locator.
+const CLAIM_LINE_SUFFIX = /(?::\d+(?:[-–:]\d+)?|#L\d+(?:-L?\d+)?| \(line \d+\)| \(lines \d+-\d+\)|, line \d+)$/;
 
 function spacedPathHead(item, dir) {
+  const root = path.resolve(dir);
   for (const cand of headCandidates(item)) {
     if (!/\s/.test(cand)) continue; // single tokens are isPathShaped's business
-    const bare = cand.replace(CLAIM_LINE_SUFFIX, '');
-    for (const probe of bare === cand ? [cand] : [cand, bare]) {
+    const spellings = new Set();
+    let head = cand;
+    let located = false;
+    const remember = () => {
+      if (head) spellings.add(process.platform === 'win32' ? head.replace(/\\/g, '/') : head);
+    };
+    const stripLocator = () => {
+      if (located) return;
+      const bare = head.replace(CLAIM_LINE_SUFFIX, '');
+      located = bare !== head;
+      head = bare;
+      remember();
+    };
+    remember();
+    for (let pass = 0; pass < 2; pass++) {
+      stripLocator();
+      if (head.length >= 2 && /[`'"]/.test(head[0]) && head[head.length - 1] === head[0]) {
+        head = head.slice(1, -1).trim();
+        remember();
+      }
+      stripLocator();
+      let end = head.length;
+      while (end > 0 && '.,;:)'.includes(head[end - 1])) end--;
+      if (!located && head[end] === ')' && CLAIM_LINE_SUFFIX.test(head.slice(0, end + 1))) end++;
+      head = head.slice(0, end);
+      remember();
+    }
+    for (const probe of spellings) {
       try {
-        if (fs.existsSync(path.join(dir, probe))) return probe;
+        const resolved = path.resolve(root, probe);
+        const rel = path.relative(root, resolved);
+        if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) continue;
+        if (fs.existsSync(resolved)) return probe;
       } catch (_) {
         /* a head no filesystem call can take (embedded NUL, over-long) is not a path */
       }
@@ -1895,24 +1927,23 @@ function spacedPathHead(item, dir) {
 // refuted it with one: a committed 166-character path carrying 33 ` - `
 // separators lost its endpoint and its false claim relayed as verified. 32
 // was a guess at what a path looks like; the cap exists to bound WORK, so it
-// is now set from work instead. One candidate costs one `fs.existsSync` (two
-// when it carries a `:line` suffix) — 55–165 µs measured on Windows, the
-// slowest platform here — so 256 cut points is ≤ 257 candidates and ≤ 514
-// probes, about 40 ms of filesystem work. The item built to reach exactly
-// that ceiling (48 KB, every candidate `:line`-suffixed, every probe a miss)
-// costs 1.02 s end to end against a 0.89 s baseline.
+// is now set from work instead. Round 5 retains both caps. One candidate has
+// at most six distinct spellings: the original, one locator removal, two
+// quote removals and two punctuation trims. Thus at most 257 * 6 = 1,542
+// filesystem probes per claim, with no extra probe in pathClaims. The 48 KB
+// `:line` payload still produces only two spellings per cut (512 probes).
 //
-// What that buys, stated exactly: every cut point in the first 4,096
-// characters is tried, up to 256 of them. The residual loss is a path that
-// needs its 257th internal ` — `/` - `/`: ` separator — at least ~770
-// characters of path, past every filesystem's practical limit — or a path
-// longer than 4,096 characters. Neither is a path; both are still relayed
-// rather than held, on the safe side of the default.
+// The candidate set includes the first 256 cuts at or before character 4,096,
+// plus the whole item when it fits. Probing stops at the first existing
+// normalized head. The residual loss is a path that
+// needs a cut beyond the first 256 ` — `/` - `/`: ` separators or a head
+// longer than 4,096 characters. Such paths can be real; candidates outside
+// the bounds are not probed, an accepted loss rather than a filesystem rule.
 const MAX_CLAIM_HEAD_CHARS = 4096;
 const MAX_CLAIM_HEAD_CUTS = 256;
 
-// Every head claimHead could have cut, each stripped of surrounding quotes
-// the same way claimHead strips them.
+// Raw heads within the bounds, with quote/locator normalization left entirely
+// to spacedPathHead so delimiters closing before a locator remain matched.
 //
 // FIX (Sol review round 3, 2026-09-08): the cut budget used to keep the
 // LONGEST prefixes, which is the wrong end of the item. A path claim is a
@@ -1935,17 +1966,18 @@ function headCandidates(item) {
   const cuts = [];
   const re = / — | - |: /g;
   let m;
-  while ((m = re.exec(item)) !== null) {
-    if (m.index > MAX_CLAIM_HEAD_CHARS) break; // a prefix this long is not a path
+  const prefix = item.slice(0, MAX_CLAIM_HEAD_CHARS + 3);
+  while ((m = re.exec(prefix)) !== null) {
+    if (m.index > MAX_CLAIM_HEAD_CHARS) break; // outside the bounded prefix
     cuts.push(m.index); // ascending, so the head-nearest cuts are taken first
     if (cuts.length >= MAX_CLAIM_HEAD_CUTS) break;
   }
   // Longest first among the head-nearest cuts, with the whole item — when it
-  // is short enough to be a path at all — ahead of all of them.
+  // fits the length budget — ahead of all of them.
   const ends = (item.length <= MAX_CLAIM_HEAD_CHARS ? [item.length] : []).concat(cuts.reverse());
   const out = new Set();
   for (const end of ends) {
-    const cand = item.slice(0, end).trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
+    const cand = item.slice(0, end).trim();
     if (cand) out.add(cand);
   }
   return out;
@@ -2017,9 +2049,14 @@ function pathClaims(claims, dir) {
   return claims.filter((c) => {
     // A single-token head is classified on shape alone; a head with
     // whitespace needs a signal prose cannot fake (see spacedPathHead).
-    const single = claimHead(c);
-    const head = isPathShaped(single) ? single : spacedPathHead(c, dir);
-    if (!head) return false;
+    const head = claimHead(c);
+    // A spaced result already passed existence and containment: do not probe
+    // it again or reinterpret an absolute spelling with path.join below.
+    if (!isPathShaped(head)) return spacedPathHead(c, dir) !== null;
+    // Keep the 3.3.3 single-token guards, including their outside-tree probes.
+    // Confining them would drop counted heads such as refs/../../outside.txt
+    // when that file exists, shrinking the baseline set. case25 pins this
+    // asymmetry; locator normalization never enters the single-token branch.
     // FIX (Sol review round 3, 2026-09-07): a head that starts with `refs/`
     // is a ref by construction (that is git's own namespace prefix, never a
     // real repo-relative file path) even when it does not yet resolve — kept

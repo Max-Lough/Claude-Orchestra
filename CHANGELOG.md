@@ -9,6 +9,31 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.3.4 — a path with a space in it was not a path claim
+
+**Why.** 3.3.2 taught the exec lane's report-integrity check to hold only
+*path-shaped* CHANGES claims against the tree audit, and drew the line at
+whitespace: a head with a space in it is prose, not a path. That rule is right
+about prose and wrong about filenames. Reviewing the 3.3.3 install, Sol found
+that an executor claiming an edit under a spaced path — an art repo's
+`assets/audio/music/Pirate Music Pack - free/ogg/Pirate 1.ogg` — had that claim
+filtered out as prose, `pathedClaims` went empty, and a report contradicting a
+measurably untouched tree was relayed as verified. The check was not failing
+loudly; it was silently not running.
+
+**Fixed.** `pathClaims` still classifies a single-token head on shape alone, and
+a head containing whitespace now counts when it carries a signal prose cannot
+fake: the engine delimited it (backticks or quotes) *and* it reads as a file
+path — a separator plus an extension or a trailing separator — or it names
+something the audited tree actually holds (`fs.existsSync`, which folds case on
+Windows as the filesystem does). Because `claimHead` cuts at the first ` — ` /
+` - ` / `: ` and a spaced path can contain one of those itself, the
+tree-resolution test tries every longer cut point, longest first. Prose is
+unchanged: `Updated src/foo.gd — added guard` and `Ran the test suite` carry
+neither signal and stay excluded, so the "prefer relaying a valid report over
+discarding one" default still holds. Eight exec-lane cases cover it, four of
+which fail on 3.3.3 — including the false-claim mutation proof.
+
 ## 3.3.3 — repository cleanup: the 2.x archives and the stale Codex-side fork leave the tree
 
 **Why.** Five days after the 3.0 reverse-port, three quarters of the checkout by

@@ -1788,10 +1788,75 @@ function isPathShaped(head) {
   if (!head) return false;
   if (/\s/.test(head)) return false; // a path claim's head is a single token
   if (/[\\/]/.test(head)) return true; // contains a path separator
-  const ext = /\.([A-Za-z0-9]{1,8})(?::\d+(?:-\d+)?)?$/.exec(head); // extension, optional :line[-line]
-  if (ext && /[A-Za-z]/.test(ext[1])) return true;
+  if (hasFileExtension(head)) return true;
   if (/^[^\s\\/:]+:\d+(-\d+)?$/.test(head)) return true; // bare filename:line
   return false;
+}
+
+// A trailing `.ext`, optional `:line[-line]` suffix. The extension itself
+// must contain a letter (see (b) above), so `v1.2.3` is not one.
+function hasFileExtension(head) {
+  const ext = /\.([A-Za-z0-9]{1,8})(?::\d+(?:-\d+)?)?$/.exec(head);
+  return !!(ext && /[A-Za-z]/.test(ext[1]));
+}
+
+// FIX (Sol review, 2026-09-08): the whitespace rule above is the right
+// DEFAULT — most prose heads have spaces and name no file — but it was
+// absolute, so a claim naming a real file whose PATH contains a space (an art
+// repo's `assets/audio/music/Pirate Music Pack - free/ogg/Pirate 1.ogg`) was
+// classified as prose and dropped from the report-integrity check entirely:
+// `pathedClaims` went empty and a false claim was relayed as a verified
+// report. A spaced head is counted when it carries a signal prose cannot
+// fake:
+//   (a) the engine DELIMITED it (backticks or quotes, as the brief's own
+//       CHANGES examples do) and the delimited text reads as a file path — a
+//       separator plus either a file extension or a trailing separator. A
+//       delimited branch name with a space (`feature/foo bar`) has neither,
+//       so it stays prose; a delimited head that does resolve as a ref is
+//       still excluded by pathClaims' ref rules below.
+//   (b) it names something the audited tree actually holds. This is the
+//       strongest signal available here and needs no shape guess at all;
+//       `fs.existsSync` folds case on win32 exactly as the filesystem does.
+// A head with neither carries no evidence of an edit: `Updated src/foo.gd —
+// added guard` and `Ran the test suite` stay excluded, so the "prefer
+// relaying a valid report over discarding one" default is unchanged for
+// genuine prose.
+//
+// claimHead cuts at the FIRST ` — `/` - `/`: ` separator, which for a spaced
+// path can land INSIDE the path itself (`…/Pirate Music Pack - free/…`), so
+// (b) tries every longer cut point too, longest first.
+function spacedPathHead(item, dir) {
+  const q = /^\s*([`'"])\s*([^`'"\n]+?)\s*\1/.exec(item);
+  if (q) {
+    const head = q[2];
+    if (/\s/.test(head) && /[\\/]/.test(head) && (/[\\/]$/.test(head) || hasFileExtension(head))) {
+      return head;
+    }
+  }
+  for (const cand of headCandidates(item)) {
+    if (!/\s/.test(cand)) continue; // single tokens are isPathShaped's business
+    try {
+      if (fs.existsSync(path.join(dir, cand))) return cand;
+    } catch (_) {
+      /* a head no filesystem call can take (embedded NUL, over-long) is not a path */
+    }
+  }
+  return null;
+}
+
+// Every head claimHead could have cut, longest first, each stripped of
+// surrounding quotes the same way claimHead strips them.
+function headCandidates(item) {
+  const cuts = [];
+  const re = / — | - |: /g;
+  let m;
+  while ((m = re.exec(item)) !== null) cuts.push(m.index);
+  const out = [];
+  for (const end of [item.length].concat(cuts.reverse())) {
+    const cand = item.slice(0, end).trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
+    if (cand && !out.includes(cand)) out.push(cand);
+  }
+  return out;
 }
 
 // FIX (Sol review round 4, 2026-09-07): three straight rounds each found one
@@ -1849,8 +1914,11 @@ function resolvesAsRef(dir, head) {
 // probes when it fails (Sol review round 6) — are cheap.
 function pathClaims(claims, dir) {
   return claims.filter((c) => {
-    const head = claimHead(c);
-    if (!isPathShaped(head)) return false;
+    // A single-token head is classified on shape alone; a head with
+    // whitespace needs a signal prose cannot fake (see spacedPathHead).
+    const single = claimHead(c);
+    const head = isPathShaped(single) ? single : spacedPathHead(c, dir);
+    if (!head) return false;
     // FIX (Sol review round 3, 2026-09-07): a head that starts with `refs/`
     // is a ref by construction (that is git's own namespace prefix, never a
     // real repo-relative file path) even when it does not yet resolve — kept

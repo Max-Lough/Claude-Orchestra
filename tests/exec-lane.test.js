@@ -2041,6 +2041,154 @@ function case23() {
   );
 }
 
+// 24. FIX (Sol review, 2026-09-08): the whitespace rule in isPathShaped was
+//     absolute, so a claim naming a real file whose PATH contains a space
+//     (`assets/audio/music/Pirate Music Pack - free/ogg/Pirate 1.ogg`) was
+//     classified as prose and dropped from the report-integrity check
+//     entirely — pathedClaims went empty and a false claim was relayed as a
+//     verified report. A spaced head must be counted when it carries a
+//     signal prose cannot fake, while genuine prose stays excluded.
+function case24() {
+  section('24. Path claims whose path contains whitespace');
+
+  const SPACED = 'assets/audio/music/Pirate Music Pack - free/ogg/Pirate 1.ogg';
+
+  // Commits a real file at a spaced path, so a claim naming it can be
+  // resolved against the audited tree without the run itself creating it.
+  function withSpacedFile(fx) {
+    const dest = path.join(fx.repo, SPACED);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, 'ogg\n');
+    git(['add', '-A'], fx.repo);
+    git(
+      ['-c', 'user.email=test@example.com', '-c', 'user.name=Orchestra Test', 'commit', '-qm', 'add spaced asset'],
+      fx.repo
+    );
+    return fx;
+  }
+
+  // (1) The honest shape: the run really writes the spaced path and claims
+  //     it. Counted as a path claim, tree genuinely changed, report relayed.
+  const fx1 = makeRepo();
+  const honest = runExec(fx1, [], {
+    STUB_CODEX_TOUCH: SPACED,
+    STUB_CODEX_CLAIM_CHANGES: SPACED + ' — added the track',
+  });
+  const hOut = honest.stdout || '';
+  check(
+    'a spaced path that the run really wrote is relayed as a verified report',
+    /STATUS: DONE/.test(hOut) &&
+      !/EXEC_UNAVAILABLE/.test(hOut) &&
+      /REPORT INTEGRITY: verified/.test(hOut),
+    hOut.slice(0, 700)
+  );
+
+  // (2) MUTATION PROOF. The spaced file exists in the tree but the run never
+  //     touched it, and the report claims the edit anyway. Before this fix
+  //     the claim was dropped as prose and the false report was relayed as
+  //     verified; the contradiction must now fire.
+  const fx2 = withSpacedFile(makeRepo());
+  const lie = runExec(fx2, [], {
+    STUB_CODEX_CLAIM_CHANGES: SPACED + ' — added the track',
+  });
+  const lOut = lie.stdout || '';
+  check(
+    'a spaced path claimed against an untouched tree is EXEC_UNAVAILABLE, not silently relayed',
+    /STATUS: EXEC_UNAVAILABLE/.test(lOut) &&
+      /claims edits the runner measured as never happening/.test(lOut),
+    lOut.slice(0, 900)
+  );
+  const lDetail = lOut.split('--- UNVERIFIED ENGINE OUTPUT')[0];
+  check(
+    'the failure text counts the spaced path claim and names it',
+    /claims 1 edit\(s\)/.test(lDetail) &&
+      /Pirate Music Pack - free\/ogg\/Pirate 1\.ogg/.test(lDetail),
+    lDetail.slice(0, 1200)
+  );
+
+  // (3) MUTATION PROOF, second signal. A spaced path the engine DELIMITED
+  //     with backticks, naming a file that does not exist yet (a creation
+  //     claim), against an untouched tree: the delimiters plus the path
+  //     shape (separator + extension) are the evidence, since there is
+  //     nothing in the tree to resolve against.
+  const fx3 = makeRepo();
+  const delimited = runExec(fx3, [], {
+    STUB_CODEX_CLAIM_CHANGES: '`' + SPACED + '` — created',
+  });
+  const dOut = delimited.stdout || '';
+  check(
+    'a backtick-delimited spaced path claimed against an untouched tree is EXEC_UNAVAILABLE',
+    /STATUS: EXEC_UNAVAILABLE/.test(dOut) &&
+      /claims edits the runner measured as never happening/.test(dOut),
+    dOut.slice(0, 900)
+  );
+
+  // (4) The tradeoff this fix must not break: a genuinely prose CHANGES line
+  //     whose text happens to contain a slash and a file extension names no
+  //     file and carries no delimiters — still excluded, still relayed.
+  const fx4 = makeRepo();
+  const prose = runExec(fx4, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'Updated src/foo.gd — added guard',
+  });
+  const pOut = prose.stdout || '';
+  check(
+    'a prose head with a slash and an extension but no path signal is still excluded, not a false contradiction',
+    /STATUS: DONE/.test(pOut) &&
+      !/EXEC_UNAVAILABLE/.test(pOut) &&
+      /REPORT INTEGRITY: verified/.test(pOut),
+    pOut.slice(0, 700)
+  );
+
+  // (5) Plain prose with no separator at all — claimHead returns the whole
+  //     sentence — is excluded on the same rule.
+  const fx5 = makeRepo();
+  const plainProse = runExec(fx5, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'Ran the test suite',
+  });
+  const ppOut = plainProse.stdout || '';
+  check(
+    'a plain prose claim line with no path signal at all is relayed, not misread as a path',
+    /STATUS: DONE/.test(ppOut) &&
+      !/EXEC_UNAVAILABLE/.test(ppOut) &&
+      /REPORT INTEGRITY: verified/.test(ppOut),
+    ppOut.slice(0, 700)
+  );
+
+  // (6) The delimiter signal must not swallow a ref: a branch name with a
+  //     space inside backticks has a separator but neither an extension nor
+  //     a trailing separator, so it stays prose and the report is relayed.
+  const fx6 = makeRepo();
+  const delimitedRef = runExec(fx6, [], {
+    STUB_CODEX_CLAIM_CHANGES: '`feature/foo bar` — created branch',
+  });
+  const drOut = delimitedRef.stdout || '';
+  check(
+    'a delimited branch-like head with a space is not counted as a path claim',
+    /STATUS: DONE/.test(drOut) &&
+      !/EXEC_UNAVAILABLE/.test(drOut) &&
+      /REPORT INTEGRITY: verified/.test(drOut),
+    drOut.slice(0, 700)
+  );
+
+  // (7) Windows folds case, so the tree-resolution signal must too: the same
+  //     false claim as (2), spelled in a different case. On POSIX the two
+  //     spellings are genuinely different paths and nothing resolves, so the
+  //     report is relayed there — the compare does not apply.
+  const fx7 = withSpacedFile(makeRepo());
+  const casedLie = runExec(fx7, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'ASSETS/Audio/Music/Pirate Music Pack - free/OGG/Pirate 1.OGG — added the track',
+  });
+  const cOut = casedLie.stdout || '';
+  check(
+    'on Windows, a spaced path claim spelled in a different case still resolves against the tree and fires the contradiction',
+    process.platform === 'win32'
+      ? /STATUS: EXEC_UNAVAILABLE/.test(cOut) &&
+        /claims edits the runner measured as never happening/.test(cOut)
+      : /STATUS: DONE/.test(cOut) && !/EXEC_UNAVAILABLE/.test(cOut),
+    cOut.slice(0, 900)
+  );
+}
+
 function finish() {
   for (const c of cleanups) {
     try {
@@ -2076,6 +2224,7 @@ async function main() {
   case21();
   case22();
   case23();
+  case24();
 }
 
 main().then(finish, (e) => {

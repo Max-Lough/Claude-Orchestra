@@ -1844,8 +1844,9 @@ function resolvesAsRef(dir, head) {
 // resolves as a ref names no file, whatever spelling it uses — excluded
 // UNLESS a file of that exact name also exists in the tree, so a real path
 // that happens to collide with a ref name is still counted as evidence of an
-// edit. Claims are few (this only runs against a CHANGES list), so one git
-// call per path-shaped claim is cheap.
+// edit. Claims are few (this only runs against a CHANGES list), so the git
+// calls per path-shaped claim — one rev-parse, then up to six symbolic-ref
+// probes when it fails (Sol review round 6) — are cheap.
 function pathClaims(claims, dir) {
   return claims.filter((c) => {
     const head = claimHead(c);

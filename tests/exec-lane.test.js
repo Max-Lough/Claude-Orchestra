@@ -2046,8 +2046,15 @@ function case23() {
 //     (`assets/audio/music/Pirate Music Pack - free/ogg/Pirate 1.ogg`) was
 //     classified as prose and dropped from the report-integrity check
 //     entirely — pathedClaims went empty and a false claim was relayed as a
-//     verified report. A spaced head must be counted when it carries a
-//     signal prose cannot fake, while genuine prose stays excluded.
+//     verified report. A spaced head must be counted when the tree itself
+//     corroborates it, while genuine prose stays excluded.
+//
+//     FIX (Sol review round 2, 2026-09-08): the first attempt also counted a
+//     backtick-delimited head that merely LOOKED path-shaped, which held
+//     shell commands and ordinary phrases against the audit (checks 8), and
+//     matched the delimited span with an ambiguous regex that backtracked
+//     cubically on an unclosed delimiter (checks 9). Shape is not evidence
+//     and the scan is now capped; checks 8–10 pin all three.
 function case24() {
   section('24. Path claims whose path contains whitespace');
 
@@ -2106,20 +2113,21 @@ function case24() {
     lDetail.slice(0, 1200)
   );
 
-  // (3) MUTATION PROOF, second signal. A spaced path the engine DELIMITED
-  //     with backticks, naming a file that does not exist yet (a creation
-  //     claim), against an untouched tree: the delimiters plus the path
-  //     shape (separator + extension) are the evidence, since there is
-  //     nothing in the tree to resolve against.
+  // (3) The accepted loss, pinned. A spaced path that names nothing in the
+  //     tree — a creation claim — has nothing to corroborate it, so it is
+  //     relayed rather than held against the audit. Backticks around it
+  //     change nothing: delimiters are punctuation the engine controls, not
+  //     evidence, and treating them as evidence is what round 2 removed.
   const fx3 = makeRepo();
   const delimited = runExec(fx3, [], {
     STUB_CODEX_CLAIM_CHANGES: '`' + SPACED + '` — created',
   });
   const dOut = delimited.stdout || '';
   check(
-    'a backtick-delimited spaced path claimed against an untouched tree is EXEC_UNAVAILABLE',
-    /STATUS: EXEC_UNAVAILABLE/.test(dOut) &&
-      /claims edits the runner measured as never happening/.test(dOut),
+    'a delimited spaced path that names nothing in the tree is relayed (creation claims under spaced paths are an accepted loss)',
+    /STATUS: DONE/.test(dOut) &&
+      !/EXEC_UNAVAILABLE/.test(dOut) &&
+      /REPORT INTEGRITY: verified/.test(dOut),
     dOut.slice(0, 900)
   );
 
@@ -2186,6 +2194,85 @@ function case24() {
         /claims edits the runner measured as never happening/.test(cOut)
       : /STATUS: DONE/.test(cOut) && !/EXEC_UNAVAILABLE/.test(cOut),
     cOut.slice(0, 900)
+  );
+
+  // (8) FIX (Sol review round 2, 2026-09-08): the first attempt also counted
+  //     a delimited head that merely LOOKED path-shaped, which held ordinary
+  //     shell commands and phrases against the tree audit and discarded
+  //     valid reports — the class the WO-7A fix removed. Every head below is
+  //     one the reviewer proved was newly (and wrongly) counted; each must be
+  //     relayed against an untouched tree. Run one per fixture so a failure
+  //     names the head that caused it.
+  const notPaths = [
+    '`python tools/generate_round_lookout.py --out assets/crew/` — regenerated; output byte-identical so nothing changed',
+    '`git checkout -- src/foo.gd` — reverted',
+    '`git mv src/a.gd src/b.gd` — renamed',
+    '`npm run build -- --out dist/` — rebuilt',
+    '`ran tests in tests/ ` — all green',
+    '`docs/ and src/` — reviewed',
+    '`a b/` — inspected',
+  ];
+  for (const claim of notPaths) {
+    const fxn = makeRepo();
+    const out = (runExec(fxn, [], { STUB_CODEX_CLAIM_CHANGES: claim }).stdout || '');
+    check(
+      'a delimited non-path head is relayed, not held against the audit: ' + claim.split(' — ')[0],
+      /STATUS: DONE/.test(out) &&
+        !/EXEC_UNAVAILABLE/.test(out) &&
+        /REPORT INTEGRITY: verified/.test(out),
+      out.slice(0, 900)
+    );
+  }
+
+  // (9) FIX (Sol review round 2, 2026-09-08): the first attempt matched the
+  //     delimited span with `/^\s*(["'`])\s*([^"'`\n]+?)\s*\1/`, whose two
+  //     whitespace-matching quantifiers made an unclosed delimiter explore
+  //     O(n³) split points — 28 s on a 4,000-space item, extrapolating to an
+  //     hour at 20,000. A CHANGES item is unbounded engine text and this runs
+  //     AFTER the order completed, so the cost lands on a report and a tree
+  //     audit the Director already has. Both hostile shapes are timed
+  //     against a baseline run of the same fixture, so the assertion is a
+  //     delta and not a wall-clock guess about this machine.
+  function timedRun(claim) {
+    const fxt = makeRepo();
+    const t0 = Date.now();
+    const out = (runExec(fxt, [], { STUB_CODEX_CLAIM_CHANGES: claim }).stdout || '');
+    return { ms: Date.now() - t0, out };
+  }
+  // The capped scan adds ~32 stat calls, i.e. noise; the shapes below cost
+  // 41 s and 4.9 s respectively without the fix, so this budget has an order
+  // of magnitude of headroom either way.
+  const BUDGET_MS = 2500;
+  const baseline = timedRun('touched nothing');
+  // Unclosed backtick, then a long whitespace run: the ReDoS payload.
+  const redos = timedRun('`' + ' '.repeat(4000) + 'word');
+  check(
+    'an unclosed-delimiter item with a 4,000-space run costs no more than a baseline run (no catastrophic backtracking)',
+    redos.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(redos.out),
+    'baseline ' + baseline.ms + 'ms, hostile ' + redos.ms + 'ms; ' + redos.out.slice(0, 300)
+  );
+  // 32 KB of separators: 8,000 cut points before the caps apply.
+  const manyCuts = timedRun('a - '.repeat(8000));
+  check(
+    'a 32 KB item of 8,000 cut points costs no more than a baseline run (candidate scan is capped)',
+    manyCuts.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(manyCuts.out),
+    'baseline ' + baseline.ms + 'ms, hostile ' + manyCuts.ms + 'ms; ' + manyCuts.out.slice(0, 300)
+  );
+
+  // (10) The caps must not become an evasion route. They bound the PREFIX
+  //      length, not the item's, so padding a bullet's tail past the cap
+  //      cannot hide a real path claim at its head: the cut point that ends
+  //      the path is still inside the window.
+  const fx10 = withSpacedFile(makeRepo());
+  const padded = runExec(fx10, [], {
+    STUB_CODEX_CLAIM_CHANGES: SPACED + ' — ' + 'padding '.repeat(1000),
+  });
+  const padOut = padded.stdout || '';
+  check(
+    'a real spaced path claim padded past the length cap still fires the contradiction (the cap bounds prefixes, not items)',
+    /STATUS: EXEC_UNAVAILABLE/.test(padOut) &&
+      /claims edits the runner measured as never happening/.test(padOut),
+    padOut.slice(0, 900)
   );
 }
 

@@ -1788,16 +1788,10 @@ function isPathShaped(head) {
   if (!head) return false;
   if (/\s/.test(head)) return false; // a path claim's head is a single token
   if (/[\\/]/.test(head)) return true; // contains a path separator
-  if (hasFileExtension(head)) return true;
+  const ext = /\.([A-Za-z0-9]{1,8})(?::\d+(?:-\d+)?)?$/.exec(head); // extension, optional :line[-line]
+  if (ext && /[A-Za-z]/.test(ext[1])) return true;
   if (/^[^\s\\/:]+:\d+(-\d+)?$/.test(head)) return true; // bare filename:line
   return false;
-}
-
-// A trailing `.ext`, optional `:line[-line]` suffix. The extension itself
-// must contain a letter (see (b) above), so `v1.2.3` is not one.
-function hasFileExtension(head) {
-  const ext = /\.([A-Za-z0-9]{1,8})(?::\d+(?:-\d+)?)?$/.exec(head);
-  return !!(ext && /[A-Za-z]/.test(ext[1]));
 }
 
 // FIX (Sol review, 2026-09-08): the whitespace rule above is the right
@@ -1806,33 +1800,35 @@ function hasFileExtension(head) {
 // repo's `assets/audio/music/Pirate Music Pack - free/ogg/Pirate 1.ogg`) was
 // classified as prose and dropped from the report-integrity check entirely:
 // `pathedClaims` went empty and a false claim was relayed as a verified
-// report. A spaced head is counted when it carries a signal prose cannot
-// fake:
-//   (a) the engine DELIMITED it (backticks or quotes, as the brief's own
-//       CHANGES examples do) and the delimited text reads as a file path — a
-//       separator plus either a file extension or a trailing separator. A
-//       delimited branch name with a space (`feature/foo bar`) has neither,
-//       so it stays prose; a delimited head that does resolve as a ref is
-//       still excluded by pathClaims' ref rules below.
-//   (b) it names something the audited tree actually holds. This is the
-//       strongest signal available here and needs no shape guess at all;
-//       `fs.existsSync` folds case on win32 exactly as the filesystem does.
-// A head with neither carries no evidence of an edit: `Updated src/foo.gd —
-// added guard` and `Ran the test suite` stay excluded, so the "prefer
-// relaying a valid report over discarding one" default is unchanged for
-// genuine prose.
+// report.
+//
+// FIX (Sol review round 2, 2026-09-08): the first attempt at this ALSO
+// counted a head the engine had delimited in backticks when it merely LOOKED
+// path-shaped (a separator plus an extension or a trailing separator). Shape
+// is not evidence. A backticked shell command satisfies every shape test a
+// path does — `python tools/gen.py --out assets/crew/`, `git checkout --
+// src/foo.gd`, `npm run build -- --out dist/`, and plain phrases like `docs/
+// and src/` were all newly held against the tree audit — which reintroduced
+// the exact class the WO-7A field fix and Sol rounds 3–6 existed to remove: a
+// non-path head discarding an otherwise valid report. That signal is gone.
+//
+// The only thing that can corroborate a spaced head is the tree itself, so
+// that is the whole rule now: the head must name something the audited tree
+// actually holds. There is no shape guess left to fake, and `fs.existsSync`
+// folds case on win32 exactly as the filesystem does. Prose is untouched —
+// `Updated src/foo.gd — added guard` and `Ran the test suite` name nothing,
+// so the "prefer relaying a valid report over discarding one" default holds.
+//
+// Accepted loss: a CREATION claim under a spaced path has nothing to resolve
+// against, so `assets/My Pack/new.ogg — created` is relayed rather than held
+// against an untouched tree. A single-token creation claim is still caught
+// (case 16), so this narrows to spaced paths only — a far smaller gap than
+// the one being fixed, and on the safe side of the default.
 //
 // claimHead cuts at the FIRST ` — `/` - `/`: ` separator, which for a spaced
 // path can land INSIDE the path itself (`…/Pirate Music Pack - free/…`), so
-// (b) tries every longer cut point too, longest first.
+// every longer cut point is tried too, longest first.
 function spacedPathHead(item, dir) {
-  const q = /^\s*([`'"])\s*([^`'"\n]+?)\s*\1/.exec(item);
-  if (q) {
-    const head = q[2];
-    if (/\s/.test(head) && /[\\/]/.test(head) && (/[\\/]$/.test(head) || hasFileExtension(head))) {
-      return head;
-    }
-  }
   for (const cand of headCandidates(item)) {
     if (!/\s/.test(cand)) continue; // single tokens are isPathShaped's business
     try {
@@ -1844,15 +1840,32 @@ function spacedPathHead(item, dir) {
   return null;
 }
 
+// A CHANGES item is engine-controlled text of no bounded length, and this
+// classifier runs AFTER the order finished — burning CPU here destroys a
+// report and a TREE AUDIT the Director already has, with the runner's own
+// timeout no help (it bounds only the Codex child). So the scan is capped on
+// both axes. The cap is on the PREFIX length, not on the item: every
+// candidate is a prefix of the item, a real repo-relative path is nowhere
+// near 4 KB, and capping prefixes rather than skipping long items means an
+// engine cannot evade the check by padding its bullet's tail.
+const MAX_CLAIM_HEAD_CHARS = 4096;
+const MAX_CLAIM_HEAD_CUTS = 32;
+
 // Every head claimHead could have cut, longest first, each stripped of
 // surrounding quotes the same way claimHead strips them.
 function headCandidates(item) {
   const cuts = [];
   const re = / — | - |: /g;
   let m;
-  while ((m = re.exec(item)) !== null) cuts.push(m.index);
+  while ((m = re.exec(item)) !== null) {
+    if (m.index > MAX_CLAIM_HEAD_CHARS) break; // a prefix this long is not a path
+    cuts.push(m.index);
+  }
+  const ends = (item.length <= MAX_CLAIM_HEAD_CHARS ? [item.length] : [])
+    .concat(cuts.reverse())
+    .slice(0, MAX_CLAIM_HEAD_CUTS);
   const out = [];
-  for (const end of [item.length].concat(cuts.reverse())) {
+  for (const end of ends) {
     const cand = item.slice(0, end).trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
     if (cand && !out.includes(cand)) out.push(cand);
   }
@@ -1885,7 +1898,9 @@ function resolvesAsRef(dir, head) {
   // git's own documented DWIM candidate order (gitrevisions(7)) so this
   // stays a ref check like `--verify` above, not a path guess; a candidate
   // that is not a valid ref name (a head with `..`, a trailing `/`, etc.)
-  // simply fails here, same as it would above.
+  // simply fails here, same as it would above. `--end-of-options` for the
+  // same reason it is on `--verify`: a head beginning with `-` is a name to
+  // look up, never a flag.
   const candidates = [
     head,
     `refs/${head}`,
@@ -1895,7 +1910,7 @@ function resolvesAsRef(dir, head) {
     `refs/remotes/${head}/HEAD`,
   ];
   for (const full of candidates) {
-    const s = runGit(['-C', dir, 'symbolic-ref', '--quiet', full]);
+    const s = runGit(['-C', dir, 'symbolic-ref', '--quiet', '--end-of-options', full]);
     if (!s.error && s.status === 0) return true;
   }
   return false;

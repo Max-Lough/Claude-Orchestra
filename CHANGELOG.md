@@ -21,18 +21,45 @@ filtered out as prose, `pathedClaims` went empty, and a report contradicting a
 measurably untouched tree was relayed as verified. The check was not failing
 loudly; it was silently not running.
 
-**Fixed.** `pathClaims` still classifies a single-token head on shape alone, and
-a head containing whitespace now counts when it carries a signal prose cannot
-fake: the engine delimited it (backticks or quotes) *and* it reads as a file
-path — a separator plus an extension or a trailing separator — or it names
-something the audited tree actually holds (`fs.existsSync`, which folds case on
-Windows as the filesystem does). Because `claimHead` cuts at the first ` — ` /
-` - ` / `: ` and a spaced path can contain one of those itself, the
-tree-resolution test tries every longer cut point, longest first. Prose is
-unchanged: `Updated src/foo.gd — added guard` and `Ran the test suite` carry
-neither signal and stay excluded, so the "prefer relaying a valid report over
-discarding one" default still holds. Eight exec-lane cases cover it, four of
-which fail on 3.3.3 — including the false-claim mutation proof.
+**Fixed.** `pathClaims` still classifies a single-token head on shape alone. A
+head containing whitespace is counted only when the tree itself corroborates
+it — the head names something the audited tree actually holds (`fs.existsSync`,
+which folds case on Windows as the filesystem does). Because `claimHead` cuts at
+the first ` — ` / ` - ` / `: ` and a spaced path can contain one of those
+itself, every longer cut point is tried too, longest first.
+
+**What was tried and rejected.** The first attempt also counted a head the
+engine had *delimited* in backticks when it merely looked path-shaped. Review
+refuted that: shape is not evidence. A backticked shell command satisfies every
+shape test a real path does, so `python tools/gen.py --out assets/crew/`,
+`git checkout -- src/foo.gd`, `npm run build -- --out dist/` and plain phrases
+like `docs/ and src/` were all newly held against the tree audit — reintroducing
+the exact class the WO-7A field fix and Sol rounds 3–6 existed to remove, where
+a non-path head discards an otherwise valid report. The signal is gone rather
+than narrowed; seven of those heads are now regression checks. That leaves one
+accepted loss, stated plainly: a *creation* claim under a spaced path has
+nothing to resolve against, so `assets/My Pack/new.ogg — created` is relayed
+rather than held against an untouched tree. A single-token creation claim is
+still caught, so the gap is spaced paths only — narrower than the one being
+fixed, and on the safe side of "prefer relaying a valid report over discarding
+one". Prose is genuinely unchanged: `Updated src/foo.gd — added guard` and
+`Ran the test suite` name nothing and stay excluded.
+
+**Bounded.** A CHANGES item is engine-controlled text of no bounded length, and
+this classifier runs *after* the order finished, where the runner's own timeout
+gives no cover — burning CPU there destroys a report and a TREE AUDIT the
+Director already has. The delimiter regex the first attempt used backtracked
+cubically on an unclosed backtick (41 s on a 4,000-space item, extrapolating to
+about an hour at 20,000); deleting that signal removes it. The cut-point scan is
+capped at 4,096 characters and 32 candidates — a cap on the *prefix*, not the
+item, so padding a bullet's tail cannot hide a real path claim at its head. Both
+hostile shapes now cost under 100 ms of classification. `resolvesAsRef`'s
+`symbolic-ref` probes also gained the `--end-of-options` its `rev-parse` probe
+already had.
+
+One exec-lane case (`case24`, 18 checks) covers all of this: four checks fail
+against 3.3.3 — the false-claim mutation proof — and ten fail against the
+rejected first attempt.
 
 ## 3.3.3 — repository cleanup: the 2.x archives and the stale Codex-side fork leave the tree
 

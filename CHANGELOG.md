@@ -50,6 +50,11 @@ exits non-zero, instead of reporting it present.
   and `v1.2.3` (a digit "extension") for paths: a path claim's head is now
   a single token, an extension must contain a letter, and a token that
   names an existing ref is excluded unless a file of that name also exists.
+  Two more rounds narrowed it: the ref set carries every git spelling
+  (`refs/heads/x`, `x`, and `origin/HEAD`, which `refname:short` collapses
+  to `origin`), a head beginning `refs/` is a ref by construction, and the
+  helper-name compares in the doctor and the helpersDir skip fold case on
+  Windows, declared alias and canonical basename alike.
 - **A principal launch off its default model is said out loud.** WO-4A round
   7 ran Sol/high under a principal launcher that asked for Astra/xhigh —
   the same wording that had worked on fifteen prior launches. `PREFLIGHT`

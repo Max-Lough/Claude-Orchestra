@@ -1900,6 +1900,29 @@ function case22() {
       /REPORT INTEGRITY: verified/.test(colOut),
     colOut.slice(0, 500)
   );
+
+  // FIX (Sol review round 5, 2026-09-07): `rev-parse --verify` resolves a
+  // symbolic ref by following it to its target, so a DANGLING symref (target
+  // never created — no remote needed, just the symref itself) makes
+  // `--verify` fail even though the symref exists and names no file.
+  // resolvesAsRef must fall back to `symbolic-ref --quiet`, which reads the
+  // symref without resolving its target. Same claim head shape as fx17
+  // (`remotes/<remote>/HEAD`), but the target the symref points at is never
+  // created — exercising the fallback fx17 alone could not reach, since
+  // `--verify` succeeded there without it.
+  const fx19 = makeRepo();
+  git(['symbolic-ref', 'refs/remotes/up.stream/HEAD', 'refs/remotes/up.stream/missing'], fx19.repo);
+  const danglingSymref = runExec(fx19, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'remotes/up.stream/HEAD — created',
+  });
+  const dsOut = danglingSymref.stdout || '';
+  check(
+    'a remotes/<remote>/HEAD claim head naming a DANGLING symref is excluded via the symbolic-ref fallback, not treated as a path',
+    /STATUS: DONE/.test(dsOut) &&
+      !/EXEC_UNAVAILABLE/.test(dsOut) &&
+      /REPORT INTEGRITY: verified/.test(dsOut),
+    dsOut.slice(0, 500)
+  );
 }
 
 function case23() {

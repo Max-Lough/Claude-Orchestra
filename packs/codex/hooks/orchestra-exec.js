@@ -1806,7 +1806,34 @@ function isPathShaped(head) {
 // as a flag.
 function resolvesAsRef(dir, head) {
   const r = runGit(['-C', dir, 'rev-parse', '--verify', '--quiet', '--end-of-options', head]);
-  return !r.error && r.status === 0;
+  if (!r.error && r.status === 0) return true;
+  // FIX (Sol review round 5, 2026-09-07): `rev-parse --verify` resolves a
+  // symbolic ref by following it to its target, so a dangling symref (an
+  // executor's `git symbolic-ref refs/remotes/up.stream/HEAD
+  // refs/remotes/up.stream/missing`, target never created) makes `--verify`
+  // fail even though the symref itself exists and names no file — the runner
+  // then counted `remotes/up.stream/HEAD — created` as an unevidenced path
+  // claim and discarded an otherwise valid report. `symbolic-ref --quiet`
+  // reads a symref without resolving its target, so it succeeds whether or
+  // not that target exists, and fails for a non-symbolic or absent ref —
+  // exactly the ref-vs-path distinction this function exists to draw. Try
+  // git's own documented DWIM candidate order (gitrevisions(7)) so this
+  // stays a ref check like `--verify` above, not a path guess; a candidate
+  // that is not a valid ref name (a head with `..`, a trailing `/`, etc.)
+  // simply fails here, same as it would above.
+  const candidates = [
+    head,
+    `refs/${head}`,
+    `refs/tags/${head}`,
+    `refs/heads/${head}`,
+    `refs/remotes/${head}`,
+    `refs/remotes/${head}/HEAD`,
+  ];
+  for (const full of candidates) {
+    const s = runGit(['-C', dir, 'symbolic-ref', '--quiet', full]);
+    if (!s.error && s.status === 0) return true;
+  }
+  return false;
 }
 
 // FIX (Sol review, 2026-09-07): (c) a single-token head can be path-shaped by

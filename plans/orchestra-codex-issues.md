@@ -1,5 +1,7 @@
 # Astra / Codex lane issues to address in the Orchestra master repo
 
+**Status: closed.** Items 1–8 were addressed in 3.3.0 and items 9–12 in 3.3.2 (see `CHANGELOG.md`). Kept as the field record that prompted those releases.
+
 Running list kept by the Director during the ADR-0005 campaign (2026-09-06). Each entry:
 what happened, evidence, and the fix the master repo should carry. Harness in use: v3.2.0,
 Codex CLI 0.153.2, `.claude/orchestra.json` with `codex.worktreeRoot` + `helpersDir`.

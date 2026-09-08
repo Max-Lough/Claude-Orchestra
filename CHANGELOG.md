@@ -9,6 +9,32 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.3.3 — repository cleanup: the 2.x archives and the stale Codex-side fork leave the tree
+
+**Why.** Five days after the 3.0 reverse-port, three quarters of the checkout by
+line count was still Orchestra 2.0 evidence or a copy of a project that has its
+own repository. Nothing live linked to any of it, but every clone carried 7 MB
+of corpus fixtures, and a reader landing on `codex/` found a Director protocol
+that still cast the retired Luna and Terra models. Doc-only; no installed
+behavior changes.
+
+**Removed.**
+- `codex/` and `install-codex.{js,sh,ps1}` — the 1.8.0 "Codex CLI as Director"
+  tree. Since 3.0.1 that harness is the standalone Codex-Orchestra repository
+  (see "Install beside Codex-Orchestra" in the README); the copy here had
+  diverged on every functional file and had no test coverage.
+- `roster/`, `research/`, and `plans/cross-compare/` — the 2.0 build and
+  shakedown records, the model dossiers, and the 2026-08-27/28 role-architecture
+  session with its WO-12 corpus. All of it remains at tag `v2.5.0-final` and in
+  git history; `plans/port-3.0/` stays as the record of why 2.0 was retired.
+- The repository's own `.claude/` (a 2.x WO-1 telemetry hook wired into every
+  tool call in this checkout) and the `.gitignore` whose only entries covered
+  that hook's ledger and the deleted quartermaster.
+
+**Tidied.** `plans/orchestra-codex-issues.md` is marked closed (items 1–8 by 3.3.0, 9–12 by 3.3.2);
+`plans/proposed-orchestra-improvements.md` notes that its `path:line` citations
+predate the reverse-port; `packs/codex/FIELD-VALIDATION.md` no longer titles
+itself as the 1.10.0 checklist.
 ## 3.3.2 — the doctor reads the install's manifest, and three launcher blind spots
 
 **Why.** codex-cli 0.153.4 ships `codex-command-runner.exe`,

@@ -1,4 +1,4 @@
-# Field-validation checklist — the MCP transport, v1.10.0
+# Field-validation checklist — the MCP transport
 
 For the next **gate-class review** and the next **ordered execution** run by a
 project that installed this pack (`node install.js <project> --packs codex`).
@@ -6,7 +6,7 @@ The master's suites (`node tests/mcp-lane.test.js` plus the review/exec lanes,
 ~270 checks) prove the mechanics against a stub engine; this checklist proves
 the new transport against the real Codex CLI on real work.
 
-The 1.10.0 change is that launchers no longer shell out — each makes one
+Since 1.10.0 launchers no longer shell out — each makes one
 blocking `orchestra_*` MCP tool call and relays the result. What needs field
 proof is exactly the seam the stub cannot stage: a real engine, running
 minutes-long, under a real Director's round.

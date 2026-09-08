@@ -1986,9 +1986,16 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
     // compare, so a helpersDir/wanted name spelled in a different case than
     // the manifest's declared name went unmatched on Windows — see
     // orchestra-install.js's sameName for the full account.
+    //
+    // FIX (Sol review round 3, 2026-09-07): the canonical-directory fallback
+    // (`path.basename(d.dir) === name`) was still an exact compare, so an
+    // alias resolving to a differently-cased canonical directory (e.g. alias
+    // `Store`, dir basename `STORE`) went unmatched on Windows even though
+    // sameName above already covers the declared-name side. Route it through
+    // sameName too.
     const isDeclaredDir =
       !EXECUTABLE_NAME_RE.test(name) &&
-      packagedDirs.find((d) => sameName(d.name, name) || path.basename(d.dir) === name);
+      packagedDirs.find((d) => sameName(d.name, name) || sameName(path.basename(d.dir), name));
     if (isDeclaredDir) {
       packaged.push(
         name + ' (is the declared resources directory, at ' + isDeclaredDir.dir + ')'
@@ -2025,9 +2032,13 @@ function verifyHelperSiblings(installDir, layout, dryRun) {
       if (!siblingPresent(installDir, name)) continue;
       // FIX (Sol review round 2, 2026-09-07): same exact-compare fix as the
       // packaged-match above — see orchestra-install.js's sameName.
+      //
+      // FIX (Sol review round 3, 2026-09-07): same canonical-directory
+      // fallback fix as the packaged-match above — route through sameName
+      // instead of an exact compare.
       const isDeclaredDir =
         !EXECUTABLE_NAME_RE.test(name) &&
-        packagedDirs.find((d) => sameName(d.name, name) || path.basename(d.dir) === name);
+        packagedDirs.find((d) => sameName(d.name, name) || sameName(path.basename(d.dir), name));
       const inPackage = isDeclaredDir ? null : packagedDirs.find((d) => siblingPresent(d.dir, name));
       const packagedPath = isDeclaredDir ? isDeclaredDir.dir : inPackage && inPackage.dir;
       if (packagedPath) {

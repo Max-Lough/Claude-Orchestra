@@ -2572,6 +2572,51 @@ function case30() {
     'exit ' + dual.status + ' — ' + (dual.stdout || '').slice(0, 1400)
   );
 
+  // FIX (Sol review round 3, 2026-09-07): `sameName` folds case for the
+  // DECLARED alias (`d.name`), but the canonical-directory fallback compared
+  // the REAL, resolved directory name with a bare `===`. That fallback only
+  // ever matters when the alias and the real name are genuinely different
+  // words — reached through an in-package link — so exercise exactly that:
+  // alias `codex-resources` resolves (via junction) to a directory really
+  // named `Store`, and the wanted helper entry is spelled `STORE`. Neither
+  // `sameName(d.name, name)` (different words, not just different case) nor
+  // the old exact-compare fallback (`"Store" === "STORE"`) matched, so the
+  // doctor called a packaged directory missing.
+  const fxCF = makeDirtyRepo();
+  const releaseCF = path.join(
+    fxCF.root, '.codex', 'packages', 'standalone', 'releases', '0.153.4-x86_64-pc-windows-msvc'
+  );
+  const installCF = path.join(releaseCF, 'bin');
+  const binCF = makeStubBin(installCF, 'codex-stub');
+  const storeDir = path.join(releaseCF, 'Store');
+  fs.mkdirSync(storeDir, { recursive: true });
+  fs.writeFileSync(path.join(storeDir, 'codex-command-runner.exe'), 'MZ current\n');
+  fs.writeFileSync(path.join(storeDir, 'codex-windows-sandbox-setup.exe'), 'MZ current\n');
+  fs.symlinkSync(
+    storeDir, path.join(releaseCF, 'codex-resources'),
+    process.platform === 'win32' ? 'junction' : 'dir'
+  );
+  fs.writeFileSync(
+    path.join(releaseCF, 'codex-package.json'),
+    JSON.stringify({ layoutVersion: 1, resourcesDir: 'codex-resources' }) + '\n'
+  );
+  const isoCF = {
+    HOME: fxCF.root, USERPROFILE: fxCF.root, CODEX_HOME: path.join(fxCF.root, '.codex'),
+    CODEX_BIN: binCF,
+    ORCHESTRA_CODEX_HELPER_SIBLINGS: 'STORE,codex-command-runner.exe,codex-windows-sandbox-setup.exe',
+  };
+  const caseFold = runDoctor(fxCF, isoCF, ['--no-repair']);
+  const caseFoldOut = caseFold.stdout || '';
+  check(
+    'a helper entry matching the resolved directory’s real name only by case is recognised as packaged',
+    process.platform === 'win32'
+      ? caseFold.status === 0 && !/MISSING FROM THE CODEX INSTALL/.test(caseFoldOut)
+      : true,
+    process.platform === 'win32'
+      ? 'exit ' + caseFold.status + ' — ' + caseFoldOut.slice(0, 1400)
+      : '(skipped — case folding is Windows-only; not applicable on ' + process.platform + ')'
+  );
+
   // The scrub must survive Windows' case-insensitive environment: a lower-case
   // ambient name is the SAME variable to a child process there (Sol review,
   // round 2 — five failures from lower-case variants).

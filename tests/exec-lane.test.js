@@ -1760,6 +1760,63 @@ function case22() {
       /REPORT INTEGRITY: verified/.test(frOut),
     frOut.slice(0, 500)
   );
+
+  // FIX (Sol review round 3, 2026-09-07), finding 2(a): `refname:short` drops
+  // the trailing `/HEAD` off a remote-tracking HEAD, so
+  // `refs/remotes/origin/HEAD` shortens to `origin` — the conventional
+  // `origin/HEAD` spelling a claim would actually use matched neither the
+  // full nor the short form. `refname:lstrip=2` (added to refNames' format)
+  // yields `origin/HEAD` too, so this must now be excluded and relayed.
+  const fx12 = makeRepo();
+  git(['remote', 'add', 'origin', fx12.repo], fx12.repo);
+  git(['update-ref', 'refs/remotes/origin/HEAD', 'HEAD'], fx12.repo);
+  const originHead = runExec(fx12, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'origin/HEAD — updated',
+  });
+  const ohOut = originHead.stdout || '';
+  check(
+    'an origin/HEAD claim head is excluded via the lstrip=2 ref spelling, not treated as a path',
+    /STATUS: DONE/.test(ohOut) &&
+      !/EXEC_UNAVAILABLE/.test(ohOut) &&
+      /REPORT INTEGRITY: verified/.test(ohOut),
+    ohOut.slice(0, 500)
+  );
+
+  // FIX (Sol review round 3, 2026-09-07), finding 2(b): a head that STARTS
+  // WITH `refs/` is a ref by construction — that namespace prefix is git's
+  // own, never a real repo-relative file path — so it is excluded even when
+  // the ref never actually exists (nothing in refNames' set names it). No
+  // tag `v9` is created here at all; only the `refs/` prefix rule can save
+  // this report.
+  const fx13 = makeRepo();
+  const nonexistentTagRef = runExec(fx13, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'refs/tags/v9 — created',
+  });
+  const ntOut = nonexistentTagRef.stdout || '';
+  check(
+    'a refs/tags/<name> claim head is excluded on its refs/ prefix alone, even when that ref does not exist',
+    /STATUS: DONE/.test(ntOut) &&
+      !/EXEC_UNAVAILABLE/.test(ntOut) &&
+      /REPORT INTEGRITY: verified/.test(ntOut),
+    ntOut.slice(0, 500)
+  );
+
+  // The refs/ prefix rule must not swallow a genuine path claim: with a real
+  // origin/HEAD ref present (same fixture shape as fx12), a false path claim
+  // against an untouched tree is still EXEC_UNAVAILABLE.
+  const fx14 = makeRepo();
+  git(['remote', 'add', 'origin', fx14.repo], fx14.repo);
+  git(['update-ref', 'refs/remotes/origin/HEAD', 'HEAD'], fx14.repo);
+  const stillLiesWithRemote = runExec(fx14, [], {
+    STUB_CODEX_CLAIM_CHANGES: 'src/app.js:12 — added a flag',
+  });
+  const slwrOut = stillLiesWithRemote.stdout || '';
+  check(
+    'a real path-shaped claim against an untouched tree is still EXEC_UNAVAILABLE when a remote-tracking HEAD ref is present',
+    /STATUS: EXEC_UNAVAILABLE/.test(slwrOut) &&
+      /claims edits the runner measured as never happening/.test(slwrOut),
+    slwrOut.slice(0, 700)
+  );
 }
 
 function case23() {

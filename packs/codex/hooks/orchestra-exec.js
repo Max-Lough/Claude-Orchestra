@@ -1806,6 +1806,15 @@ function pathClaims(claims, refs, dir) {
     const head = claimHead(c);
     if (!isPathShaped(head)) return false;
     if (refs && refs.has(head) && !fs.existsSync(path.join(dir, head))) return false;
+    // FIX (Sol review round 3, 2026-09-07): the full and `refname:short` forms
+    // read below still miss spellings for-each-ref never emits verbatim —
+    // `refs/remotes/origin/HEAD` shortens to `origin`, not `origin/HEAD`, so
+    // a claim naming the conventional `origin/HEAD` matched neither form. A
+    // head that starts with `refs/` is a ref by construction (that is git's
+    // own namespace prefix, never a real repo-relative file path), so treat
+    // it the same as a name found in `refs` — excluded unless a file of that
+    // exact name genuinely exists in the tree.
+    if (/^refs\//.test(head) && !fs.existsSync(path.join(dir, head))) return false;
     return true;
   });
 }
@@ -1822,8 +1831,20 @@ function pathClaims(claims, refs, dir) {
 // exclusion above never fires, and a genuinely valid report was rejected as
 // contradicting an untouched tree. Read both forms per ref so either spelling
 // a claim might use is recognised.
+//
+// FIX (Sol review round 3, 2026-09-07): full and `refname:short` still do not
+// cover every conventional spelling — `refname:short` shortens
+// `refs/remotes/origin/HEAD` to `origin`, dropping the remote branch name, so
+// the conventional `origin/HEAD` a claim would actually use matched neither
+// form. `refname:lstrip=2` strips the two leading namespace components
+// (`refs/heads/`, `refs/remotes/`, `refs/tags/`) and keeps the rest, so
+// `refs/remotes/origin/HEAD` also yields `origin/HEAD`, `refs/heads/x` yields
+// `x`, and `refs/tags/v1` yields `v1`.
 function refNames(dir) {
-  const r = runGit(['-C', dir, 'for-each-ref', '--format=%(refname)%0a%(refname:short)']);
+  const r = runGit([
+    '-C', dir, 'for-each-ref',
+    '--format=%(refname)%0a%(refname:short)%0a%(refname:lstrip=2)',
+  ]);
   if (r.error || r.status !== 0) return new Set();
   return new Set((r.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean));
 }

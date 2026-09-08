@@ -2062,23 +2062,43 @@ function case23() {
 //     checks 10 now pad with separators, not just length. Check 11 covers a
 //     quadratic outside the classifier: printReport's trailing-whitespace
 //     strip.
+//
+//     FIX (Sol review round 4, 2026-09-08): three more. The spaced branch
+//     never stripped the `<path:line>` suffix the brief itself demands, so
+//     `src/My Module.gd:12 — edited` resolved nothing and relayed (checks
+//     12). The 32-cut cap was refuted by a real 166-character path carrying
+//     33 separators, so the cap is now set from work rather than from a guess
+//     about paths (check 13, and the probe-ceiling timing beside check 9).
+//     And the EXEC_UNAVAILABLE path carried its own copy of the printReport
+//     quadratic, in `indent()` (check 14).
 function case24() {
   section('24. Path claims whose path contains whitespace');
 
   const SPACED = 'assets/audio/music/Pirate Music Pack - free/ogg/Pirate 1.ogg';
 
-  // Commits a real file at a spaced path, so a claim naming it can be
-  // resolved against the audited tree without the run itself creating it.
-  function withSpacedFile(fx) {
-    const dest = path.join(fx.repo, SPACED);
+  // A spaced path carrying 40 internal ` - ` separators — the shape that
+  // outran round 3's 32-cut cap (Sol review round 4 refuted it with a real
+  // 166-character path carrying 33 of them).
+  const MANY_SEP = 'a - '.repeat(40) + 'z.ogg';
+  // A spaced path a claim will name with the brief's `<path:line>` suffix.
+  const SPACED_LINE = 'src/My Module.gd';
+
+  // Commits a real file at the given repo-relative path, so a claim naming it
+  // can be resolved against the audited tree without the run itself creating
+  // it.
+  function withCommitted(fx, rel) {
+    const dest = path.join(fx.repo, rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, 'ogg\n');
+    fs.writeFileSync(dest, 'content\n');
     git(['add', '-A'], fx.repo);
     git(
-      ['-c', 'user.email=test@example.com', '-c', 'user.name=Orchestra Test', 'commit', '-qm', 'add spaced asset'],
+      ['-c', 'user.email=test@example.com', '-c', 'user.name=Orchestra Test', 'commit', '-qm', 'add asset'],
       fx.repo
     );
     return fx;
+  }
+  function withSpacedFile(fx) {
+    return withCommitted(fx, SPACED);
   }
 
   // (1) The honest shape: the run really writes the spaced path and claims
@@ -2268,6 +2288,21 @@ function case24() {
     manyCuts.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(manyCuts.out),
     'baseline ' + baseline.ms + 'ms, hostile ' + manyCuts.ms + 'ms; ' + manyCuts.out.slice(0, 300)
   );
+  // FIX (Sol review round 4, 2026-09-08): the worst case the round-4 changes
+  // create. Raising the cut cap to 256 and probing each candidate twice (as
+  // written, then with its `:line` suffix removed) puts the ceiling at 514
+  // `fs.existsSync` calls per item, and every one of them MISSES here — no
+  // fixture file resolves, so nothing short-circuits the scan. The shape has
+  // to earn that ceiling: `a b` keeps claimHead's result whitespace-bearing so
+  // the spaced branch runs at all (a bare `a:1` head is single-token
+  // path-shaped and never reaches it), and the trailing `:1` on every
+  // candidate is what doubles the probes. ` - `-only padding costs half.
+  const maxProbes = timedRun('a b:1 - '.repeat(6000));
+  check(
+    'a 48 KB item whose every candidate carries a `:line` suffix (514 filesystem probes, all misses) still costs no more than a baseline run',
+    maxProbes.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(maxProbes.out),
+    'baseline ' + baseline.ms + 'ms, hostile ' + maxProbes.ms + 'ms; ' + maxProbes.out.slice(0, 300)
+  );
 
   // (10) Neither cap may become an evasion route. Both bound the HEAD of the
   //      item — the length cap bounds the prefix rather than the item, and
@@ -2316,6 +2351,92 @@ function case24() {
     'a report body carrying a 400,000-space run costs no more than a baseline run (trailing strip is linear)',
     bigBody.ms - baseline.ms < BUDGET_MS && /STATUS: DONE/.test(bigBody.out),
     'baseline ' + baseline.ms + 'ms, hostile ' + bigBody.ms + 'ms; ' + bigBody.out.slice(0, 300)
+  );
+
+  // (12) FIX (Sol review round 4, 2026-09-08): the brief asks executors for
+  //      `<path:line> — <what changed>`, and isPathShaped accepts that suffix
+  //      on a single-token head — but the spaced branch corroborates a head by
+  //      EXISTENCE, and nothing stripped the suffix before the filesystem
+  //      probe. So the report shape the brief itself demands, under a path
+  //      with a space in it, resolved nothing, fell out of pathedClaims, and
+  //      relayed a false claim as a verified report. Both suffix spellings
+  //      must be held; the honest edit of the same file must still relay.
+  const lineForms = [
+    ['`:line`', ':12'],
+    ['`:line-line`', ':12-20'],
+  ];
+  for (const [label, suffix] of lineForms) {
+    const fxl = withCommitted(makeRepo(), SPACED_LINE);
+    const lineOut =
+      (runExec(fxl, [], {
+        STUB_CODEX_CLAIM_CHANGES: SPACED_LINE + suffix + ' — claimed but untouched',
+      }).stdout || '');
+    check(
+      'a spaced path claimed with a ' + label + ' suffix against an untouched tree fires the contradiction',
+      /STATUS: EXEC_UNAVAILABLE/.test(lineOut) &&
+        /claims edits the runner measured as never happening/.test(lineOut),
+      lineOut.slice(0, 900)
+    );
+  }
+  // The other side of the same rule: suffix-stripping must not turn an honest
+  // report into a false contradiction. Same claim, but the run really edits
+  // the committed file, so the tree moved and the report is relayed.
+  const fx12c = withCommitted(makeRepo(), SPACED_LINE);
+  const honestLine = runExec(fx12c, [], {
+    STUB_CODEX_TOUCH: SPACED_LINE,
+    STUB_CODEX_CLAIM_CHANGES: SPACED_LINE + ':12 — added guard',
+  });
+  const hlOut = honestLine.stdout || '';
+  check(
+    'the same `<spaced path>:line` claim is relayed as verified when the run really edited the file',
+    /STATUS: DONE/.test(hlOut) &&
+      !/EXEC_UNAVAILABLE/.test(hlOut) &&
+      /REPORT INTEGRITY: verified/.test(hlOut),
+    hlOut.slice(0, 900)
+  );
+
+  // (13) FIX (Sol review round 4, 2026-09-08): round 3 justified a 32-cut cap
+  //      with "no real path has that many internal separators". Review refuted
+  //      it with one — a committed 166-character path carrying 33 ` - `
+  //      separators lost its own endpoint and its false claim relayed as
+  //      verified. The cap is now set from WORK (256 cut points, ≤ 514
+  //      filesystem probes, ~40 ms) rather than from a guess about paths, and
+  //      this is the path that proves the difference: 40 internal separators,
+  //      committed, claimed against a tree the run never touched.
+  const fx13 = withCommitted(makeRepo(), MANY_SEP);
+  const sepOut =
+    (runExec(fx13, [], {
+      STUB_CODEX_CLAIM_CHANGES: MANY_SEP + ' — claimed but untouched',
+    }).stdout || '');
+  check(
+    'a committed spaced path with 40 internal ` - ` separators is still resolved, and its false claim fires the contradiction',
+    /STATUS: EXEC_UNAVAILABLE/.test(sepOut) &&
+      /claims edits the runner measured as never happening/.test(sepOut),
+    sepOut.slice(0, 900)
+  );
+
+  // (14) FIX (Sol review round 4, 2026-09-08): the EXEC_UNAVAILABLE path had
+  //      its own copy of the quadratic (11) removed from printReport —
+  //      `indent()` strips trailing whitespace the same way, and the
+  //      integrity-failure detail indents the RAW claim text before
+  //      boundedDiagnostic ever bounds it. That is the one report whose whole
+  //      job is to hand the Director an already-measured tree audit promptly,
+  //      so it is the worse place to lose a minute. `app.js` is committed by
+  //      the fixture and the run touches nothing, so the claim is held and
+  //      this really does traverse the unavailable path.
+  const fx14 = makeRepo();
+  const t14 = Date.now();
+  const unavailOut =
+    (runExec(fx14, [], {
+      STUB_CODEX_CLAIM_CHANGES: 'app.js — ' + ' '.repeat(400000) + 'word',
+    }).stdout || '');
+  const unavailMs = Date.now() - t14;
+  check(
+    'a false claim carrying a 400,000-space run still reports EXEC_UNAVAILABLE within a baseline run (indent strip is linear)',
+    unavailMs - baseline.ms < BUDGET_MS &&
+      /STATUS: EXEC_UNAVAILABLE/.test(unavailOut) &&
+      /claims edits the runner measured as never happening/.test(unavailOut),
+    'baseline ' + baseline.ms + 'ms, hostile ' + unavailMs + 'ms; ' + unavailOut.slice(0, 300)
   );
 }
 

@@ -26,7 +26,12 @@ head containing whitespace is counted only when the tree itself corroborates
 it — the head names something the audited tree actually holds (`fs.existsSync`,
 which folds case on Windows as the filesystem does). Because `claimHead` cuts at
 the first ` — ` / ` - ` / `: ` and a spaced path can contain one of those
-itself, the other cut points are tried too, longest existing prefix wins.
+itself, the other cut points are tried too, longest existing prefix wins. Each
+candidate is probed twice: as written, and with a trailing `:line` /
+`:line-line` removed — the brief asks executors for `<path:line> — <what>`, so
+the shape the harness itself demands has to resolve. (The single-token branch
+needs no such strip: it excludes on "git resolves this as a ref", and
+`src/foo.gd:12` is neither ref nor file, so it was always kept.)
 
 **What was tried and rejected.** The first attempt also counted a head the
 engine had *delimited* in backticks when it merely looked path-shaped. Review
@@ -52,13 +57,27 @@ Director already has. The delimiter regex the first attempt used backtracked
 cubically on an unclosed backtick — 28 s of regex time on a 4,000-space item,
 41 s of end-to-end runner wall clock for the same input, extrapolating to about
 an hour at 20,000 spaces; deleting that signal removes it. The cut-point scan is
-capped at 4,096 characters and 32 cut points, and *both* caps are spent at the
+capped at 4,096 characters and 256 cut points, and *both* caps are spent at the
 head of the item: the length cap bounds the *prefix* rather than the item, and
-the cut points kept are the ones nearest the head. A claim's own path is
-therefore always inside both windows, so padding a bullet's tail — with length
-or with separators — cannot hide a real path claim. Both hostile classifier
-shapes now cost no more than an ordinary run (0.87 s and 0.92 s against a 0.90 s
-baseline, down from 41 s and 6.0 s).
+the cut points kept are the ones nearest the head, so padding a bullet's tail —
+with length or with separators — cannot hide a real path claim.
+
+The 256 is set from work, not from a guess about what paths look like. An
+earlier attempt capped at 32 and justified it as "no real path has that many
+internal separators"; review refuted it with one, a committed 166-character
+path carrying 33 ` - ` separators whose own endpoint fell off the end of the
+budget, relaying its false claim as verified. One candidate costs one
+`fs.existsSync` (two when it carries a `:line` suffix), measured at 55–165 µs,
+so 256 cut points is at most 257 candidates, 514 probes, and about 40 ms.
+Stated exactly: **every cut point in the first 4,096 characters is tried, up to
+256 of them.** What remains outside that is a path needing its 257th internal
+separator — at least ~770 characters of path — or a path over 4,096 characters;
+neither is a path any filesystem will hand you, and both are relayed rather
+than held, on the safe side of the default. All three hostile classifier shapes
+now cost no more than an ordinary run: 0.91 s for the 4,000-space item (down
+from 41 s), 0.97 s for a 32 KB item of 8,000 cut points (down from 6.0 s), and
+1.02 s for the shape that reaches the 514-probe ceiling, against a 0.89 s
+baseline.
 
 `resolvesAsRef`'s `symbolic-ref` probes also gained the `--end-of-options` its
 `rev-parse` probe already had, and `pathClaims` now asks `fs.existsSync` before
@@ -66,20 +85,28 @@ baseline, down from 41 s and 6.0 s).
 honest claim naming a real file no longer spawns up to seven git processes on
 its way to being kept.
 
-**A quadratic outside the classifier.** `printReport` stripped the report body's
-trailing whitespace with `body.replace(/\s+$/, '')`, which restarts `\s+` at
-every position of an *interior* whitespace run before backtracking off the
-anchor. A single CHANGES bullet of 400,000 spaces cost the runner 87 s — after
-the engine had finished, on a report and a tree audit the Director already had.
-`trimEnd` is linear and strips exactly the same characters (its WhiteSpace +
-LineTerminator set and the regex `\s` class agree on every code point); the same
-body now costs 1.3 s against a 0.9 s baseline.
+**Two quadratics outside the classifier.** `replace(/\s+$/, '')` restarts `\s+`
+at every position of an *interior* whitespace run before backtracking off the
+anchor, so a single CHANGES bullet of 400,000 spaces cost 87 s — spent after the
+engine had finished, on a report and a tree audit the Director already had. Both
+copies are now `trimEnd`, which is linear and strips exactly the same characters
+(its WhiteSpace + LineTerminator set and the regex `\s` class agree on every code
+point). `printReport` was the first: a relayed report now costs 1.3 s on that
+body instead of 87 s. `indent()` was the second and the worse one, because it is
+reached from the integrity-failure path — which indents the *raw* claim text
+before `boundedDiagnostic` ever bounds it — so the one report whose whole job is
+to hand the Director an already-measured tree audit promptly was the one delayed
+by a minute and a half. It now costs 1.4 s. Six sibling copies remain in
+`orchestra-review.js`, `orchestra-crossplan.js` and `install.js`; they are not
+on this lane's engine-text path and are left for their own change.
 
-One exec-lane case (`case24`, 21 checks) covers all of this: seven checks fail
-against 3.3.3 — the false-claim mutation proof — eleven fail against the
-rejected first attempt, and three fail against the first fix of this defect,
-which capped the cut points at the wrong end (a spaced path followed by 31 or
-more separators lost its own cut point and relayed as verified).
+One exec-lane case (`case24`, 27 checks) covers all of this, and it fails
+against every version this entry describes: eleven checks against 3.3.3 — the
+false-claim mutation proof — fifteen against the rejected shape-signal attempt,
+six against the tree-corroboration attempt that capped the cut points at the
+wrong end of the item, and four against the one that fixed that end but kept the
+cap at 32 and never stripped the `:line` suffix the brief asks executors to
+write.
 
 ## 3.3.3 — repository cleanup: the 2.x archives and the stale Codex-side fork leave the tree
 

@@ -317,10 +317,21 @@ function stringList(value) {
   return Array.isArray(value) ? value.filter((s) => typeof s === 'string' && s.trim()) : [];
 }
 
+// FIX (Sol review round 4, 2026-09-08): `replace(/\s+$/, '')` here for the
+// same reason it left printReport — it restarts `\s+` at every position of an
+// INTERIOR whitespace run before backtracking off the anchor, and this one is
+// reached with engine text that has NOT been length-bounded yet: the
+// integrity-failure detail indents the raw CHANGES claims before
+// `boundedDiagnostic` ever sees them, so a claim carrying a 400,000-space run
+// delayed the EXEC_UNAVAILABLE report — the one report that exists to hand the
+// Director an already-measured tree audit promptly — by over a minute.
+// `trimEnd` is linear and strips exactly the same characters: its
+// WhiteSpace + LineTerminator set and the regex `\s` class agree on every code
+// point.
 function indent(text, pad) {
   if (!text) return '';
   return String(text)
-    .replace(/\s+$/, '')
+    .trimEnd()
     .split('\n')
     .map((l) => pad + l)
     .join('\n');
@@ -1836,14 +1847,35 @@ function isPathShaped(head) {
 //
 // claimHead cuts at the FIRST ` — `/` - `/`: ` separator, which for a spaced
 // path can land INSIDE the path itself (`…/Pirate Music Pack - free/…`), so
-// every longer cut point is tried too, longest first.
+// the other cut points are tried too, longest first.
+//
+// FIX (Sol review round 4, 2026-09-08): the brief asks for `<path:line> — <what>`
+// and `isPathShaped` accepts that `:line` / `:line-line` suffix on a
+// single-token head — but nothing ever strips it before a filesystem probe,
+// because the single-token branch never makes one (it excludes on "resolves
+// as a ref", and `src/foo.gd:12` resolves as neither ref nor file, so it is
+// kept). The spaced branch is the opposite: existence is the whole signal, so
+// an unstripped suffix meant `src/My Module.gd:12 — edited` resolved nothing,
+// fell out of `pathedClaims`, and a false claim under a real spaced path was
+// relayed as a verified report. Each candidate is now probed as written and
+// again with the suffix removed.
+//
+// The head RETURNED is whichever spelling the tree actually holds. That keeps
+// this function's contract exact — it returns a head the audited tree holds,
+// never a guess — and lets `pathClaims`' `fs.existsSync` short-circuit, so a
+// line-numbered spaced path costs no git probes to discover it is not a ref.
+const CLAIM_LINE_SUFFIX = /:\d+(?:-\d+)?$/;
+
 function spacedPathHead(item, dir) {
   for (const cand of headCandidates(item)) {
     if (!/\s/.test(cand)) continue; // single tokens are isPathShaped's business
-    try {
-      if (fs.existsSync(path.join(dir, cand))) return cand;
-    } catch (_) {
-      /* a head no filesystem call can take (embedded NUL, over-long) is not a path */
+    const bare = cand.replace(CLAIM_LINE_SUFFIX, '');
+    for (const probe of bare === cand ? [cand] : [cand, bare]) {
+      try {
+        if (fs.existsSync(path.join(dir, probe))) return probe;
+      } catch (_) {
+        /* a head no filesystem call can take (embedded NUL, over-long) is not a path */
+      }
     }
   }
   return null;
@@ -1854,13 +1886,30 @@ function spacedPathHead(item, dir) {
 // report and a TREE AUDIT the Director already has, with the runner's own
 // timeout no help (it bounds only the Codex child). So the scan is capped on
 // both axes: how long a prefix may be, and how many cut points are tried.
-// Both caps are spent at the HEAD of the item. Every candidate is a prefix,
-// a real repo-relative path is nowhere near 4 KB and has nowhere near 32
-// internal ` — `/` - `/`: ` separators, so a claim's own path always lies
-// inside both windows and padding a bullet's tail — with length or with
-// separators — cannot push it out of them.
+// Both caps are spent at the HEAD of the item, so padding a bullet's tail —
+// with length or with separators — cannot push a claim's own path out of the
+// window.
+//
+// FIX (Sol review round 4, 2026-09-08): the cut cap was 32, which round 3
+// justified as "no real path has that many internal separators". Review
+// refuted it with one: a committed 166-character path carrying 33 ` - `
+// separators lost its endpoint and its false claim relayed as verified. 32
+// was a guess at what a path looks like; the cap exists to bound WORK, so it
+// is now set from work instead. One candidate costs one `fs.existsSync` (two
+// when it carries a `:line` suffix) — 55–165 µs measured on Windows, the
+// slowest platform here — so 256 cut points is ≤ 257 candidates and ≤ 514
+// probes, about 40 ms of filesystem work. The item built to reach exactly
+// that ceiling (48 KB, every candidate `:line`-suffixed, every probe a miss)
+// costs 1.02 s end to end against a 0.89 s baseline.
+//
+// What that buys, stated exactly: every cut point in the first 4,096
+// characters is tried, up to 256 of them. The residual loss is a path that
+// needs its 257th internal ` — `/` - `/`: ` separator — at least ~770
+// characters of path, past every filesystem's practical limit — or a path
+// longer than 4,096 characters. Neither is a path; both are still relayed
+// rather than held, on the safe side of the default.
 const MAX_CLAIM_HEAD_CHARS = 4096;
-const MAX_CLAIM_HEAD_CUTS = 32;
+const MAX_CLAIM_HEAD_CUTS = 256;
 
 // Every head claimHead could have cut, each stripped of surrounding quotes
 // the same way claimHead strips them.
@@ -1879,6 +1928,9 @@ const MAX_CLAIM_HEAD_CUTS = 32;
 // Probing still runs longest-first WITHIN that head-nearest set, because a
 // real path can contain a separator (`…/Pirate Music Pack - free/…`) and the
 // longest prefix the tree actually holds is the head to report.
+//
+// Deduplicated through a Set rather than a linear scan: the cap is 256 now,
+// and `includes` over a growing array is quadratic in the candidate count.
 function headCandidates(item) {
   const cuts = [];
   const re = / — | - |: /g;
@@ -1891,10 +1943,10 @@ function headCandidates(item) {
   // Longest first among the head-nearest cuts, with the whole item — when it
   // is short enough to be a path at all — ahead of all of them.
   const ends = (item.length <= MAX_CLAIM_HEAD_CHARS ? [item.length] : []).concat(cuts.reverse());
-  const out = [];
+  const out = new Set();
   for (const end of ends) {
     const cand = item.slice(0, end).trim().replace(/^[`'"]+|[`'"]+$/g, '').trim();
-    if (cand && !out.includes(cand)) out.push(cand);
+    if (cand) out.add(cand);
   }
   return out;
 }

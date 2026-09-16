@@ -9,6 +9,99 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.4.0 — the Codex lane stopped leaving processes running
+
+**Why.** An order that launched a headless engine and returned left it running
+forever. Codex 0.154.0 on Windows calls `preserve_descendants()` on the
+non-timeout root-exit branch of its command runner
+(`windows-sandbox-rs/src/bin/command_runner/win.rs`), and its PTY job helper
+(`utils/pty/src/win/job.rs`) strips `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` from
+the job it builds — so any child still alive when a shell command returns
+outlives the run. In the field (2026-09-15) that meant Godot 4.6.3 processes
+owned by the sandbox identity accumulating after every Codex-lane order, and
+every quiet-machine benchmark gate on the project blocked until somebody found
+and killed them by hand.
+
+Two things that were *not* the cause, because both were checked and both cost
+time. It is not a privilege problem: the owner account can `Stop-Process` the
+survivors, the process DACL grants Everyone terminate rights, and
+`windows.sandbox = "elevated"` describes admin-approved sandbox *setup*, not
+what the orphan holds. And it is not something an order can fix: prose telling
+an executor to clean up after itself is prose, and the failing case is exactly
+the one where the engine does not get to run its cleanup. The standing
+workaround was to keep any Godot-launching order off the Codex lane entirely,
+which is a whole rung of the executor ladder given up to a process-lifetime bug.
+
+**Fixed.** The runner owns a kill group around the whole invocation, so the
+guarantee does not depend on what Codex does inside it. New
+`packs/codex/hooks/orchestra-jobrun.js` supervises every engine launch in all
+three lanes:
+
+- **Windows** — a Job object this supervisor creates with
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and *without* `BREAKAWAY_OK` or
+  `SILENT_BREAKAWAY_OK`. A nested job cannot escape an outer job's
+  kill-on-close; only `CREATE_BREAKAWAY_FROM_JOB` can, and that requires
+  `BREAKAWAY_OK` on the outer job, which this one never sets. That is why
+  Codex's own job stripping kill-on-close cannot defeat it. The handle is held
+  by a small PowerShell holder process rather than by the supervisor, so losing
+  the supervisor outright — a `kill -9`, a `TaskStop` that does not walk the
+  tree — closes the handle and the kernel reaps the tree.
+- **POSIX** — a new process group (`setsid`), signalled as a group.
+- **Both** — `TerminateJobObject` / group-kill on timeout, on cancellation, on
+  a crash, and when the launcher process vanishes (polled, because on Windows
+  killing a parent does not kill its children). On a normal exit the supervisor
+  enumerates the group (`JobObjectBasicProcessIdList`) and reaps everything in
+  it that is not the engine.
+
+**The documented fallback, because the job is not total.** A process that
+deliberately breaks away, and a process started in the millisecond between
+spawn and job assignment, are outside the group. Both are caught by a second,
+independent pass: a parent/child walk down from the engine PID, keyed on the
+run token, with a creation-time guard against a recycled PID. On Windows the
+parent PID survives the parent's death, so an orphaned Godot is still found
+this way. The two sources are merged, and the census says which found each
+survivor.
+
+**What a Director sees.** Every report — `STATUS: DONE`, `EXEC_UNAVAILABLE`,
+`REVIEW_UNAVAILABLE`, a cross-plan document — now carries a `PROCESS CENSUS`
+block beside the `TREE AUDIT`, measured in-process and stamped with the run's
+own token exactly as the audit is: the kill-group mechanism, any pre-run
+descendants (debris from earlier work, explicitly not attributed to this run),
+and then `SURVIVORS: none` or the PIDs with image names, creation times and
+whether the runner killed them. A survivor that would not die is reported as
+`STILL ALIVE after the kill sweep`, with the consequence named — a machine that
+is not quiet makes the run's timing evidence worthless. No separate scout.
+
+**Opting out, loudly.** `--kill-survivors` is the default and
+`--preserve-survivors` censuses without reaping, for an order deliberately
+starting a long-lived service; per-lane config keys (`execKillSurvivors`,
+`reviewKillSurvivors`, `crossplanKillSurvivors`) and env vars do the same.
+`ORCHESTRA_JOBRUN=off` disables supervision entirely. All three appear in the
+report header (`survivors: kill (default)` / `PRESERVE (flag)` /
+`UNSUPERVISED (ORCHESTRA_JOBRUN=off)`) and in the census block, because a
+guarantee that silently stopped applying is worse than one never claimed.
+
+**Also fixed, found while testing the above.** A kill group that refuses to die
+would have hung the supervisor, and with it the runner that calls it
+synchronously — node's own backstop timer is no help there, since it can only
+signal a process already ignoring signals. Every termination now arms a
+deadline of its own; past it the supervisor writes what it knows
+(`abandoned: true`, and a census block that says the census is incomplete) and
+leaves.
+
+**Tested.** `tests/jobrun.test.js` launches processes that deliberately never
+exit and then asks the operating system whether they are still there, on the
+normal-exit path, the timeout path and the cancelled-launcher path, through the
+CLI and through the real exec and review runners. Each has a
+`--preserve-survivors` twin over the same fixture asserting the process is
+*still alive*, so a process that would have exited on its own fails the twin
+rather than passing the first case for the wrong reason. Both mutations were
+run: disabling the survivor reap fails 4 cases, and no-oping the group
+terminate fails 4 others. The Windows job holder speaks a line protocol, and
+`tests/fixtures/stub-jobholder.js` speaks it too, so the driver — assignment,
+census parsing, a refused kill, a wedged holder that must time out rather than
+hang — is exercised on every platform, not only where PowerShell exists.
+
 ## 3.3.4 — a path with a space in it was not a path claim
 
 **Why.** 3.3.2 taught the exec lane's report-integrity check to hold only

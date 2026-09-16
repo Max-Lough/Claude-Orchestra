@@ -182,6 +182,14 @@ function runReview(fx, extraArgs, extraEnv, opts) {
         // to disable; an empty CODEX_HOME keeps the developer's real ~/.codex
         // out of the exact override lists asserted below.
         CODEX_HOME: CLEAN_CODEX_HOME,
+        // Process supervision OFF for the bulk of this suite. On Windows the
+        // kill group costs a PowerShell job holder and two Win32_Process
+        // snapshots per run, and this suite invokes the runner ~76 times —
+        // paying for a fixture no case here asserts on would put the job over
+        // its CI timeout. The supervised default path, including the kill
+        // group, the census block and the header line, is covered end to end
+        // against these same runners in tests/jobrun.test.js.
+        ORCHESTRA_JOBRUN: 'off',
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
         // Expect no helper siblings unless a case says otherwise, so the same

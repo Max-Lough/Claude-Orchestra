@@ -66,6 +66,8 @@ The Astra rung crosses the vendor line, so a double bounce at the heavy tier esc
 
 A Codex executor's `STATUS: EXEC_UNAVAILABLE` is not a completed order: read its `TREE AUDIT`, have a scout confirm the tree, then route the order to the appropriate Claude executor and say so.
 
+**Orders that launch a long-running process may now use the Codex lane.** They could not before: Codex preserved a shell command's descendants when that command returned (0.154.0, Windows), so an order that started a headless engine — `godot --headless`, a dev server, a watcher — orphaned it permanently, and the standing rule was to keep such orders on a Claude executor. The runners now own a kill group around the whole invocation and end every run with a `PROCESS CENSUS` block in the report: `SURVIVORS: none`, or the PIDs with image names, creation times and whether the runner killed them. Read that block the way you read the `TREE AUDIT` — it is the same kind of measurement, and a run reporting survivors it could not kill means the machine is not quiet, so any timing or benchmark evidence from it is worthless. A header saying `survivors: UNSUPERVISED` or `survivors: PRESERVE` means this guarantee was deliberately switched off for that run; treat its orphans as yours to clean up.
+
 **An agent's turn ends when its report does.** Nothing wakes a stopped subagent. A report that promises a later report is a failed round: re-dispatch, don't wait.
 
 ## 3. Director law

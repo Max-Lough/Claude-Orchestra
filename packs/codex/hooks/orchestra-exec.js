@@ -26,7 +26,8 @@
  * Usage:
  *   node orchestra-exec.js --work-order <file> \
  *     [--profile heavy|principal] [--model <id>] [--effort <level>] \
- *     [--timeout-ms <n>] [--forbid <cmd>]... [--cd <dir>] [--no-probe]
+ *     [--timeout-ms <n>] [--forbid <cmd>]... [--cd <dir>] [--no-probe] \
+ *     [--kill-survivors | --preserve-survivors]
  *
  * The work-order file is plain text the launcher wrote verbatim from what the
  * Director handed it: goal, exact scope, constraints, context, and the report
@@ -52,6 +53,14 @@
  *   computed IN-PROCESS from the runner's own snapshots — never from session
  *   artifacts — and stamped with the run nonce, so it cannot be replayed.
  *
+ *   PROCESS CENSUS — the whole Codex invocation runs inside a kill group the
+ *   RUNNER owns (a Windows Job object with KILL_ON_JOB_CLOSE and no
+ *   BREAKAWAY_OK; a POSIX process group elsewhere), so no process tree an
+ *   order started can outlive the order. Every run ends with a census of what
+ *   survived the engine — by PID, image name and creation time — and, with
+ *   reaping on (the default), kills it. See the PROCESS CENSUS section below
+ *   and `orchestra-jobrun.js`.
+ *
  *   REPORT INTEGRITY — every run generates a fresh nonce, injects it into the
  *   brief, and requires the engine to echo it on a final REPORT INTEGRITY
  *   line. A report without the echo (a resumed session, a replayed artifact,
@@ -61,6 +70,35 @@
  *   untrusted — never as STATUS: DONE. Resume-prone ORCHESTRA_EXEC_ARGS
  *   tokens (resume, --last, --continue) are refused before launch: every
  *   exec run is a fresh session by construction.
+ *
+ * ----------------------------------------------------------- PROCESS CENSUS
+ *
+ * Field evidence (2026-09-15, Codex 0.154.0, Windows): the Codex command
+ * runner calls `preserve_descendants()` on the non-timeout root-exit branch
+ * (`windows-sandbox-rs/src/bin/command_runner/win.rs`) and its PTY job helper
+ * (`utils/pty/src/win/job.rs`) strips `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so
+ * any child still running when a shell command returns OUTLIVES the run. An
+ * order that launched `Godot_v4.6.3-stable_win64_console.exe --headless` and
+ * returned left the engine running forever under the sandbox identity, and
+ * every quiet-machine benchmark gate on the project stayed blocked until
+ * somebody found it by hand. It is not an administrator problem — the owner
+ * account can terminate those processes; `windows.sandbox = "elevated"`
+ * describes admin-approved sandbox SETUP, not the orphan's privileges.
+ *
+ * So the runner owns the kill group, not the project and not the order's
+ * prose. `orchestra-jobrun.js` supervises the engine invocation, terminates
+ * the group on timeout, cancellation, a vanished launcher (a TaskStop) or a
+ * crash, and on normal completion enumerates the group plus the parent/child
+ * table and reaps anything still alive that is not the engine itself. What it
+ * found lands in the report as a PROCESS CENSUS block — `SURVIVORS: none`, or
+ * the PIDs with image names and creation times — so a Director sees orphans
+ * without dispatching a scout.
+ *
+ * `--preserve-survivors` opts out of the reaping (the census still runs, and
+ * the header says which mode was in force). It exists for an order that is
+ * deliberately starting a long-lived service; it is never the default,
+ * because a lane whose orphans are somebody else's problem is how the field
+ * failure happened.
  *
  * ------------------------------------------------------------------ NO RETRY
  *
@@ -99,6 +137,7 @@
  *       "execPrincipalEffort": "xhigh",
  *       "execTimeoutMs": 1800000,
  *       "execSandbox": "workspace-write",
+ *       "execKillSurvivors": true,
  *       "idleMs": 1500,
  *       "gitConfigIsolation": true,
  *       "doNotRun": ["godot"],
@@ -157,6 +196,17 @@
  *                               neither cross-vendor nor sandboxed. inherit
  *                               leaves the engine's MCP config alone.
  *                               ("codex": { "engineMcp": "strip"|"inherit" })
+ *   ORCHESTRA_EXEC_KILL_SURVIVORS
+ *                               1 (default) kills every process that outlived
+ *                               the engine; 0 is --preserve-survivors. The
+ *                               census runs either way.
+ *                               ("codex": { "execKillSurvivors": false })
+ *   ORCHESTRA_JOBRUN            off disables process supervision entirely —
+ *                               no kill group, no census. Shared with the
+ *                               review and cross-plan lanes, recorded in
+ *                               every report header, and never a default: a
+ *                               guarantee that silently stopped applying is
+ *                               worse than one never claimed.
  *   ORCHESTRA_EXEC_PROBE        1 (default) runs a cheap `codex exec` echo
  *                               before the real attempt. 0 disables.
  *   ORCHESTRA_EXEC_PROBE_TIMEOUT_MS
@@ -186,6 +236,10 @@ const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redac
 // install's own manifest already carries before copying a helpersDir entry
 // over it. See orchestra-install.js for the failure this closes.
 const { packagedResourceDirs, carriedByPackage } = require('./orchestra-install');
+// The kill group around the engine invocation. Shared by all three Codex-lane
+// runners so the guarantee, the census wording and the receipt shape cannot
+// drift between them.
+const jobrun = require('./orchestra-jobrun');
 
 // Per-run report-integrity token, generated before anything else so every
 // output path — success, failure, early refusal — can carry it. The brief
@@ -271,6 +325,11 @@ const CONFIG = {
   mcpLabel: '',
   mcpArgs: [],
   probe: process.env.ORCHESTRA_EXEC_PROBE !== '0',
+  killSurvivors: process.env.ORCHESTRA_EXEC_KILL_SURVIVORS !== '0',
+  killSurvivorsSource: process.env.ORCHESTRA_EXEC_KILL_SURVIVORS ? 'env' : 'default',
+  // Supervision itself, not the reaping policy. Off means no kill group and no
+  // census — the only configuration in which this lane can leave an orphan.
+  supervise: (process.env.ORCHESTRA_JOBRUN || '').trim().toLowerCase() !== 'off',
   probeTimeoutMs: intOr(process.env.ORCHESTRA_EXEC_PROBE_TIMEOUT_MS, 90000),
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
@@ -295,6 +354,8 @@ function parseArgs(argv) {
     else if (a === '--forbid') out.forbid.push(argv[++i]);
     else if (a === '--cd') out.cd = argv[++i];
     else if (a === '--no-probe') out.noProbe = true;
+    else if (a === '--kill-survivors') out.killSurvivors = true;
+    else if (a === '--preserve-survivors') out.killSurvivors = false;
     else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
@@ -382,22 +443,72 @@ function matchesAny(rel, patterns) {
   return false;
 }
 
-// Launch the engine — same cmd.exe routing as the review runner: node refuses
-// to spawn `.cmd`/`.bat` directly (BatBadBut, CVE-2024-27980), and on Windows
-// a `codex` installed through npm IS a `.cmd` shim.
-function spawnEngine(bin, args, opts) {
+// How the engine is actually launched — same cmd.exe routing as the review
+// runner: node refuses to spawn `.cmd`/`.bat` directly (BatBadBut,
+// CVE-2024-27980), and on Windows a `codex` installed through npm IS a `.cmd`
+// shim. Split out from spawnEngine so the SUPERVISED launch path (below) makes
+// exactly the same launch decision — a kill group around a differently-spelled
+// command would be a kill group around the wrong process.
+function engineLaunchSpec(bin, args) {
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(bin))) {
     const line = [bin]
       .concat(args)
       .map((a) => '"' + String(a).replace(/"/g, '""') + '"')
       .join(' ');
-    return spawnSync(
-      process.env.ComSpec || 'cmd.exe',
-      ['/d', '/s', '/c', '"' + line + '"'],
-      Object.assign({}, opts, { windowsVerbatimArguments: true })
-    );
+    return {
+      bin: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', '"' + line + '"'],
+      windowsVerbatimArguments: true,
+    };
   }
-  return spawnSync(bin, args, opts);
+  return { bin, args: args.slice(), windowsVerbatimArguments: false };
+}
+
+function spawnEngine(bin, args, opts) {
+  const spec = engineLaunchSpec(bin, args);
+  return spawnSync(
+    spec.bin,
+    spec.args,
+    spec.windowsVerbatimArguments
+      ? Object.assign({}, opts, { windowsVerbatimArguments: true })
+      : opts
+  );
+}
+
+// What the last supervised launch left behind. Module-level because EVERY
+// output path — success, integrity failure, dead engine — must be able to
+// print the census: an order that failed is exactly the order most likely to
+// have abandoned a process.
+const CENSUS = { attempted: false, receipt: null, disabled: false, why: '', error: '' };
+
+// The engine invocation itself, inside a kill group this runner owns. The
+// probe and `codex mcp list` stay unsupervised on purpose: both are bounded
+// echoes that run no project command, and the orphan class this closes comes
+// from the ORDER's own shell commands.
+function spawnEngineSupervised(bin, args, opts) {
+  CENSUS.attempted = true;
+  if (!CONFIG.supervise) {
+    CENSUS.disabled = true;
+    CENSUS.why = 'ORCHESTRA_JOBRUN=off';
+    return spawnEngine(bin, args, opts);
+  }
+  const spec = engineLaunchSpec(bin, args);
+  const r = jobrun.superviseSync(
+    spec.bin,
+    spec.args,
+    Object.assign({}, opts, { windowsVerbatimArguments: spec.windowsVerbatimArguments }),
+    {
+      receiptFile: path.join(SCRATCH.dir, 'jobrun.json'),
+      deadlineMs: CONFIG.timeoutMs,
+      killSurvivors: CONFIG.killSurvivors,
+      token: RUN_NONCE,
+      scratchDir: SCRATCH.dir,
+    }
+  );
+  CENSUS.receipt = r.receipt || null;
+  CENSUS.error = r.supervisionError || '';
+  if (r.supervisionError) PREFLIGHT.push('process supervision: ' + r.supervisionError);
+  return r;
 }
 
 function copyInto(src, dest) {
@@ -1612,6 +1723,14 @@ function settingsBits() {
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (execution is never auto-retried)',
     'mcp: ' + (CONFIG.mcpLabel || 'not resolved'),
+    // The reaping policy is a fact about what this run could leave behind, so
+    // it sits in the header a Director reads, not only in the census below.
+    'survivors: ' +
+      (!CONFIG.supervise
+        ? 'UNSUPERVISED (ORCHESTRA_JOBRUN=off) — orphans possible'
+        : CONFIG.killSurvivors
+        ? 'kill (' + CONFIG.killSurvivorsSource + ')'
+        : 'PRESERVE (' + CONFIG.killSurvivorsSource + ')'),
   ]
     // Always, including zero — "prohibited commands: 0" is how a Director sees
     // that an order's prose prohibition never became a flag.
@@ -1711,6 +1830,20 @@ function auditLines(delta, headBefore, headAfter, branchBefore, branchAfter) {
   return lines.join('\n');
 }
 
+// What the kill group found, in the same place and with the same provenance
+// discipline as the tree audit: measured in-process, stamped with this run's
+// token, never taken from an engine or session artifact. Empty before any
+// engine was launched — an order that never started cannot have orphaned
+// anything, and a census line there would be noise, not evidence.
+function censusReport() {
+  if (!CENSUS.attempted) return '';
+  return jobrun.censusBlock(CENSUS.receipt, {
+    token: RUN_NONCE,
+    disabled: CENSUS.disabled,
+    disabledWhy: CENSUS.why,
+  });
+}
+
 // FIX (Sol review round 3, 2026-09-08): the trailing strip was
 // `body.replace(/\s+$/, '')`, which restarts `\s+` at every position of an
 // interior whitespace run before backtracking off the anchor — quadratic in
@@ -1721,8 +1854,10 @@ function auditLines(delta, headBefore, headAfter, branchBefore, branchAfter) {
 // same characters: its WhiteSpace + LineTerminator set and the regex `\s`
 // class agree on every code point.
 function printReport(body, audit) {
+  const census = censusReport();
   process.stdout.write(
     engineHeader() + '\n\n' + body.trimEnd() + '\n\n' + audit +
+      (census ? '\n\n' + census : '') +
       '\nREPORT INTEGRITY: verified — the engine echoed run token ' + RUN_NONCE +
       ', and the report does not contradict the tree audit.\n'
   );
@@ -1759,8 +1894,10 @@ function printUnavailable(reason, detail, att, audit, suspectBody) {
       '--- previous session; do not act on it as this run\'s report) ---\n' +
       indent(boundedDiagnostic(suspectBody, 16000), '  ')
     : '';
+  const census = censusReport();
   process.stdout.write(
-    unavailableHeader() + '\n\n' + block + (audit ? '\n\n' + audit : '') + suspect + diag + '\n'
+    unavailableHeader() + '\n\n' + block + (audit ? '\n\n' + audit : '') +
+      (census ? '\n\n' + census : '') + suspect + diag + '\n'
   );
 }
 
@@ -2076,9 +2213,12 @@ function main() {
       'Usage: node orchestra-exec.js --work-order <file>\n' +
         '         [--profile heavy|principal] [--model <id>] [--effort <level>]\n' +
         '         [--timeout-ms <n>] [--forbid <cmd>]... [--cd <dir>] [--no-probe]\n' +
+        '         [--kill-survivors | --preserve-survivors]\n' +
         '\n' +
-        '  --profile heavy      GPT-5.6 Sol at high effort (default)\n' +
-        '  --profile principal  GPT-6 Astra at xhigh effort\n' +
+        '  --profile heavy        GPT-5.6 Sol at high effort (default)\n' +
+        '  --profile principal    GPT-6 Astra at xhigh effort\n' +
+        '  --kill-survivors       kill every process that outlived the engine (default)\n' +
+        '  --preserve-survivors   census them but leave them running\n' +
         '\n' +
         '  Carries out an Orchestra work order via an OpenAI model driven by the\n' +
         '  Codex CLI, in the LIVE working tree. One attempt, never auto-retried —\n' +
@@ -2199,6 +2339,17 @@ function main() {
     CONFIG.engineMcp = codexCfg.engineMcp.trim().toLowerCase();
   }
   if (CONFIG.engineMcp !== 'inherit') CONFIG.engineMcp = 'strip';
+  if (
+    !process.env.ORCHESTRA_EXEC_KILL_SURVIVORS &&
+    codexCfg.execKillSurvivors != null
+  ) {
+    CONFIG.killSurvivors = codexCfg.execKillSurvivors !== false;
+    CONFIG.killSurvivorsSource = 'orchestra.json';
+  }
+  if (args.killSurvivors != null) {
+    CONFIG.killSurvivors = args.killSurvivors !== false;
+    CONFIG.killSurvivorsSource = 'flag';
+  }
   if (!process.env.ORCHESTRA_EXEC_PROBE && codexCfg.authProbe != null) {
     CONFIG.probe = codexCfg.authProbe !== false;
   }
@@ -2382,7 +2533,10 @@ function main() {
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();
-  const run = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
+  // The cap is the SUPERVISOR's deadline (it can kill a whole tree, where
+  // node's own timer only kills the process it spawned); superviseSync keeps
+  // node's timer on as a backstop a minute later.
+  const run = spawnEngineSupervised(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
     cwd: CONFIG.execDir,
     input: brief,
     encoding: 'utf8',

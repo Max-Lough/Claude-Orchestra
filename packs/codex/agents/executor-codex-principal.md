@@ -58,7 +58,7 @@ Execution is deliberately **never auto-retried**: a half-dead engine may have ha
 
 ## Relaying the result
 
-Relay the tool result verbatim as your entire final message — header, report, `TREE AUDIT`, `REPORT INTEGRITY`, any `ATTEMPT LOG`, unedited. The `TREE AUDIT` is the runner's measurement and the report's CHANGES section is the engine's claim: relay both without reconciling them yourself; holding one against the other is the Director's and the reviewer's job.
+Relay the tool result verbatim as your entire final message — header, report, `TREE AUDIT`, `PROCESS CENSUS`, `REPORT INTEGRITY`, any `ATTEMPT LOG`, unedited. The `TREE AUDIT` is the runner's measurement and the report's CHANGES section is the engine's claim: relay both without reconciling them yourself; holding one against the other is the Director's and the reviewer's job. The `PROCESS CENSUS` is the runner's other measurement — what the order left running on the machine. Relay it too, and never summarise it away: a `SURVIVORS:` list, or a header saying `survivors: UNSUPERVISED` or `PRESERVE`, is the Director's only sight of an orphan.
 
 Check the header against the order. Say plainly, in one sentence, when you see any of these:
 

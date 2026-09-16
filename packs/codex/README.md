@@ -31,6 +31,7 @@ cross-compare still degrade to Claude-only exactly as before.
 | `hooks/orchestra-engine-mcp.js` | **The MCP transport** — a zero-dependency stdio MCP server exposing the three runners plus the doctor as typed tools (`orchestra_review`, `orchestra_exec`, `orchestra_crossplan`, `orchestra_doctor`). Registered in the project's root `.mcp.json` by the installer. |
 | `hooks/orchestra-review.js` | Review runner — builds the adversarial brief, drives `codex exec` in a sandbox (optionally in a clean worktree pinned to the commit under review), prints an Orchestra-format verdict. |
 | `hooks/orchestra-exec.js` | Execution runner — builds the Orchestra executor-law brief, drives `codex exec` in a `workspace-write` sandbox in the LIVE tree, audits which paths actually changed, prints an Orchestra-format executor report. One attempt, never auto-retried. Two rungs behind one `--profile` flag (`heavy`, `principal`); they differ only in model and effort. |
+| `hooks/orchestra-jobrun.js` | **The process-tree supervisor** — the kill group every lane's engine invocation runs inside (a Windows Job object with `KILL_ON_JOB_CLOSE` and no `BREAKAWAY_OK`; a POSIX process group elsewhere), plus the per-run process census the runners print. Also a standalone CLI, so the guarantee can be demonstrated against a deliberate hang without Codex in the picture. |
 | `hooks/orchestra-crossplan.js` | Cross-compare architect runner — drives `codex exec` read-only for one phase (draft / critique / revise), with web search on by default for research symmetry with the Claude lane, saves the produced document under `.claude/plans/cross-compare/`, and enforces the report-integrity nonce and a read-only tree fingerprint. |
 | `skills/cross-compare-plan/` | The `/cross-compare-plan` two-architect session — independent drafts, cross-critique, owner revision, blind merge, and (by default) a post-synthesis cross-family audit of the final plan by the GPT lane. |
 
@@ -188,7 +189,10 @@ Environment variables override the file; explicit runner flags override both.
     "worktreeRoot": "C:/tmp/orchestra-review",
     "doNotRun": ["godot", "*.exe --headless"],
     "worktreeWarmupCmd": "godot --headless --import",
-    "integrityIgnore": ["*.import", ".godot/"]
+    "integrityIgnore": ["*.import", ".godot/"],
+    "execKillSurvivors": true,
+    "reviewKillSurvivors": true,
+    "crossplanKillSurvivors": true
   }
 }
 ```
@@ -206,6 +210,7 @@ Environment variables override the file; explicit runner flags override both.
 | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
 | `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
 | `integrityIgnore` / `integrityIgnoreDefaults` | Paths that are expected build/engine churn, added to (or replacing) the built-in list of generated-artifact paths. |
+| `execKillSurvivors` / `reviewKillSurvivors` / `crossplanKillSurvivors` | `true` by default: kill every process that outlived the engine in that lane (see "Process census"). `false` is the per-lane `--preserve-survivors` — the census still runs and the header says which mode was in force. |
 | `helperSiblings` / `requireHelperSiblings` | Files the Codex install must carry next to its executable (default on Windows: `codex-command-runner.exe`, `codex-resources`, `codex-windows-sandbox-setup.exe`). Verified every run — as files where the name says executable, so a directory of the right name does not pass; repaired where a known-good copy is locatable, including one misplaced inside the install itself; `requireHelperSiblings: true` makes a missing one a hard stop. |
 
 ## Reliability machinery
@@ -222,6 +227,49 @@ SHA plus a tree that moved past it spends the whole budget on
 resolve. Teardown is guaranteed on every exit path, and each run sweeps
 worktrees orphaned by a hard kill. The header names the checkout that produced
 the verdict. Uncommitted work still reviews live.
+
+**Process census and the kill group.** Every engine invocation runs inside a
+kill group the *runner* owns — on Windows a Job object created with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and without `BREAKAWAY_OK`, held open by a
+tiny PowerShell holder process for the run's lifetime; elsewhere a POSIX process
+group. The group is terminated on timeout, on cancellation, when the launcher
+vanishes (a `TaskStop`, a `kill -9`, a closed terminal) and on any crash. On a
+normal exit the runner enumerates the group **and** walks the parent/child table
+down from the engine PID, and reaps whatever is still alive. What it found is
+printed as a `PROCESS CENSUS` block beside the tree audit:
+
+```
+PROCESS CENSUS: kill group = Windows Job object, KILL_ON_JOB_CLOSE, no BREAKAWAY_OK; reaping = on
+  pre-run descendants: none
+  SURVIVORS: none — nothing the engine started outlived it.
+```
+
+Why it exists: Codex 0.154.0 on Windows calls `preserve_descendants()` on the
+non-timeout root-exit branch of its command runner, and its PTY job helper
+strips `KILL_ON_JOB_CLOSE` from the job it builds — so **any child still running
+when a shell command returns outlives the run**. An order that launched
+`Godot_v4.6.3-stable_win64_console.exe --headless` and returned left the engine
+running forever under the sandbox identity, blocking every quiet-machine
+benchmark gate on the project until somebody found it by hand. That is not an
+administrator problem: the owner account can terminate those processes, and
+`windows.sandbox = "elevated"` describes admin-approved sandbox *setup*, not the
+orphan's privileges. So the fix lives in the runner, where the run is owned,
+rather than in the project or in an order's prose.
+
+Two things the mechanism cannot do, stated rather than implied. A process that
+deliberately leaves the group — `CREATE_BREAKAWAY_FROM_JOB` on Windows (which
+needs `BREAKAWAY_OK` on our job, and we never set it), or `setsid()` on POSIX —
+and a process started in the millisecond between spawn and job assignment, are
+outside the group. Both are caught instead by the census's parent/child walk,
+which is the documented fallback reaper; on Windows the parent PID survives the
+parent's death, so an orphaned Godot is still found by it. A survivor the runner
+could not kill is reported as `STILL ALIVE after the kill sweep`, never silently.
+
+`--preserve-survivors` (or `codex.execKillSurvivors: false`, and its review /
+cross-plan siblings) censuses without reaping, for an order that is deliberately
+starting a long-lived service. `ORCHESTRA_JOBRUN=off` disables supervision
+outright. Both are named in the report header and in the census block: a
+guarantee that silently stopped applying is worse than one never claimed.
 
 **Inert timeout floor.** An inert tier narrows what must be *verified*, not how
 long the engine takes to explore — a 9-line docs diff is still minutes. Inert
@@ -393,6 +441,10 @@ loudly when it does.
 | `ORCHESTRA_EXEC_GIT_ISOLATION` | `1` | Git-config isolation for the run, with the user's `user.name`/`user.email` copied into the scratch config so ordered commits still work. Shares `codex.gitConfigIsolation`. |
 | `ORCHESTRA_EXEC_PROBE` | `1` | Stage-a echo before the real attempt (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_EXEC_PROBE_TIMEOUT_MS` caps it. |
 | `ORCHESTRA_EXEC_ARGS` | — | Extra args appended to the execution `codex exec`. |
+| `ORCHESTRA_EXEC_KILL_SURVIVORS` | `1` | Kill processes that outlived the engine (`codex.execKillSurvivors`; also `--kill-survivors` / `--preserve-survivors`). |
+| `ORCHESTRA_REVIEW_KILL_SURVIVORS` | `1` | Same for the review lane (`codex.reviewKillSurvivors`). |
+| `ORCHESTRA_CROSSPLAN_KILL_SURVIVORS` | `1` | Same for the cross-compare lane (`codex.crossplanKillSurvivors`). |
+| `ORCHESTRA_JOBRUN` | — | `off` disables process supervision entirely in **all three lanes** — no kill group, no census. Every report header says so; it is never a default. |
 | `CODEX_BIN` | `codex` | Codex executable path (shared by all runners). |
 | `ORCHESTRA_CROSSPLAN_MODEL` | `gpt-6-astra` | Cross-compare GPT-architect model (`codex.crossplanModel`; also the skill's `model=`). |
 | `ORCHESTRA_CROSSPLAN_EFFORT` | `xhigh` | Cross-compare GPT-architect reasoning effort (`codex.crossplanEffort`), sent as `-c model_reasoning_effort=`. The skill's `effort=` overrides per session and routes the Claude lane to the matching tier. |
@@ -416,6 +468,7 @@ about the symptom.
 | The install relocated to a new layout (`%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`), invalidating layout-specific advice. | 2026-08-12, codex-cli ≥ 0.147.0. | Both layouts detected and named in the preflight; repair searches sibling version directories and the other layout. **Unverified upstream:** whether the new layout ships or needs `codex-command-runner.exe` / `codex-resources` at all. The check is therefore a loud warning, not a hard stop, unless you set `requireHelperSiblings`. |
 | `codex-windows-sandbox-setup.exe` is resolved by name rather than relative to the binary, so an install whose directory is not on `PATH` cannot find its own sandbox helper — and fails silently rather than saying so. | 2026-08-12 → 08-18, Windows. | The name is in the default sibling list, verified beside the resolved binary, and repaired from a misplaced copy; the install directory is prepended to the engine's `PATH`; `--doctor` answers the question without running a review. The silence itself is upstream. |
 | `codex exec` exiting 143 (SIGTERM-class) mid-review with no verdict and nothing on stderr. | 2026-08-12 gate, attempt 1. | Full attribution (the runner proves it was not its own timer), plus one automatic retry in a fresh checkout — which is what produced the verdict that round. If the kill originates *inside* codex, only upstream can fix the cause. |
+| A child still running when a shell command's root process exits is *preserved*, not reaped (`preserve_descendants()` on the non-timeout branch of `windows-sandbox-rs/src/bin/command_runner/win.rs`; `utils/pty/src/win/job.rs` strips `KILL_ON_JOB_CLOSE`). An order that launches a headless engine and returns orphans it permanently. | 2026-09-15, Codex 0.154.0, Windows. Godot 4.6.3 processes owned by the sandbox identity outliving every run, blocking quiet-machine benchmark gates. | The runner owns its own Job object (`KILL_ON_JOB_CLOSE`, no `BREAKAWAY_OK`) around the whole invocation, terminates it on timeout/cancel/crash, and censuses plus reaps survivors on normal exit — see "Process census". Upstream still preserves descendants inside its own job; ours encloses it. |
 | The engine explores at length before concluding, so even a trivial diff costs minutes. | Every round. | Timeout floors and honest cap reporting; `doNotRun` / `--no-tests` as hard prohibitions. Not fixable here — it is how the engine works. |
 | Model-side flakiness: an occasional run that produces no final message despite exiting 0. | Occasional. | Classified as a zero-output failure and retried once; reported in the `ATTEMPT LOG` either way, so the lane's real reliability stays visible. |
 

@@ -158,6 +158,21 @@
  *                               after a missing binary. The whole chain reports
  *                               as ONE outcome; REVIEW_UNAVAILABLE is emitted
  *                               only when the chain is exhausted.
+ *   ORCHESTRA_REVIEW_KILL_SURVIVORS
+ *                               1 (default) kills every process that outlived
+ *                               the engine; 0 is --preserve-survivors. A
+ *                               review is read-only, but read-only bounds what
+ *                               the engine may WRITE, not what it may LAUNCH:
+ *                               a reviewer running the project's suite starts
+ *                               processes like any other lane. The census runs
+ *                               either way.
+ *                               ("codex": { "reviewKillSurvivors": false })
+ *   ORCHESTRA_JOBRUN            off disables process supervision entirely — no
+ *                               kill group, no census. Shared with the exec and
+ *                               cross-plan lanes, recorded in every report
+ *                               header, and never a default: a guarantee that
+ *                               silently stopped applying is worse than one
+ *                               never claimed. See orchestra-jobrun.js.
  *   ORCHESTRA_REVIEW_PROBE      1 (default) runs a cheap `codex exec` echo before
  *                               the real attempt, so an unauthenticated or
  *                               broken install fails in seconds instead of after
@@ -366,6 +381,11 @@ const CONFIG = {
   gitIsolation: process.env.ORCHESTRA_REVIEW_GIT_ISOLATION !== '0',
   retries: Math.min(MAX_RETRIES, intOr(process.env.ORCHESTRA_REVIEW_RETRIES, 1)),
   probe: process.env.ORCHESTRA_REVIEW_PROBE !== '0',
+  killSurvivors: process.env.ORCHESTRA_REVIEW_KILL_SURVIVORS !== '0',
+  killSurvivorsSource: process.env.ORCHESTRA_REVIEW_KILL_SURVIVORS ? 'env' : 'default',
+  // Supervision itself, not the reaping policy. Off means no kill group and no
+  // census — the only configuration in which this lane can leave an orphan.
+  supervise: (process.env.ORCHESTRA_JOBRUN || '').trim().toLowerCase() !== 'off',
   probeTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS, 90000),
   warmupCmd: (process.env.ORCHESTRA_REVIEW_WARMUP_CMD || '').trim(),
   warmupTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS, 300000),
@@ -393,6 +413,19 @@ function intOr(raw, fallback) {
 }
 
 // ------------------------------------------------------------------ helpers
+// The kill group around each engine attempt. Shared with the exec and
+// cross-plan lanes so the guarantee, the census wording and the receipt shape
+// cannot drift between them — one Codex install, one orphan story.
+const jobrun = require('./orchestra-jobrun');
+
+// The review lane has no report-integrity token of its own (the exec and
+// cross-plan lanes generate one; a review is idempotent, so a replayed verdict
+// is caught by the retry chain instead). The census still needs a per-run
+// stamp, so that two runs' census blocks are distinguishable at a glance and
+// neither can be passed off as the other's. Generated before anything else so
+// every output path can carry it.
+const CENSUS_TOKEN = crypto.randomBytes(8).toString('hex');
+
 function parseArgs(argv) {
   const out = { forbid: [], allow: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -410,6 +443,8 @@ function parseArgs(argv) {
     else if (a === '--retries') out.retries = argv[++i];
     else if (a === '--no-retry') out.retries = '0';
     else if (a === '--no-probe') out.noProbe = true;
+    else if (a === '--kill-survivors') out.killSurvivors = true;
+    else if (a === '--preserve-survivors') out.killSurvivors = false;
     else if (a === '--warmup-cmd') out.warmupCmd = argv[++i];
     else if (a === '--doctor') out.doctor = true;
     else if (a === '--no-repair') out.noRepair = true;
@@ -607,19 +642,81 @@ function scratchIsInsideRepo(projectTop, candidate) {
 // space (`C:\Program Files\…`, and this runner passes several paths) would be
 // split into pieces. Quoting each argument ourselves and handing cmd.exe one
 // verbatim command line is what npm's own shims do.
-function spawnEngine(bin, args, opts) {
+// Split out from spawnEngine so the SUPERVISED launch path below makes exactly
+// the same launch decision: a kill group around a differently-spelled command
+// would be a kill group around the wrong process.
+function engineLaunchSpec(bin, args) {
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(bin))) {
     const line = [bin]
       .concat(args)
       .map((a) => '"' + String(a).replace(/"/g, '""') + '"')
       .join(' ');
-    return spawnSync(
-      process.env.ComSpec || 'cmd.exe',
-      ['/d', '/s', '/c', '"' + line + '"'],
-      Object.assign({}, opts, { windowsVerbatimArguments: true })
-    );
+    return {
+      bin: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', '"' + line + '"'],
+      windowsVerbatimArguments: true,
+    };
   }
-  return spawnSync(bin, args, opts);
+  return { bin, args: args.slice(), windowsVerbatimArguments: false };
+}
+
+function spawnEngine(bin, args, opts) {
+  const spec = engineLaunchSpec(bin, args);
+  return spawnSync(
+    spec.bin,
+    spec.args,
+    spec.windowsVerbatimArguments
+      ? Object.assign({}, opts, { windowsVerbatimArguments: true })
+      : opts
+  );
+}
+
+// What the last supervised attempt left behind. A review is read-only by
+// design, but "read-only" bounds what the engine may WRITE, not what it may
+// LAUNCH: a reviewer that runs the project's test command can start a headless
+// engine just as an executor can, and on Windows Codex preserves descendants
+// when a shell command's root process exits (0.154.0). So the review lane gets
+// the same kill group and the same census as the exec lane.
+const CENSUS = { attempted: false, receipt: null, disabled: false, why: '', attempt: 0 };
+
+function spawnEngineSupervised(bin, args, opts, sup) {
+  CENSUS.attempted = true;
+  CENSUS.attempt = (sup && sup.attempt) || 0;
+  if (!CONFIG.supervise) {
+    CENSUS.disabled = true;
+    CENSUS.why = 'ORCHESTRA_JOBRUN=off';
+    return spawnEngine(bin, args, opts);
+  }
+  const spec = engineLaunchSpec(bin, args);
+  const r = jobrun.superviseSync(
+    spec.bin,
+    spec.args,
+    Object.assign({}, opts, { windowsVerbatimArguments: spec.windowsVerbatimArguments }),
+    {
+      receiptFile: path.join((sup && sup.dir) || SCRATCH.dir, 'jobrun.json'),
+      deadlineMs: CONFIG.timeoutMs,
+      killSurvivors: CONFIG.killSurvivors,
+      token: CENSUS_TOKEN,
+      scratchDir: (sup && sup.dir) || SCRATCH.dir,
+    }
+  );
+  CENSUS.receipt = r.receipt || null;
+  if (r.supervisionError) PREFLIGHT.push('process supervision: ' + r.supervisionError);
+  return r;
+}
+
+// The census block, in the same place and with the same provenance discipline
+// as the rest of the runner's own measurements. Empty before any engine ran.
+function censusReport() {
+  if (!CENSUS.attempted) return '';
+  const block = jobrun.censusBlock(CENSUS.receipt, {
+    token: CENSUS_TOKEN,
+    disabled: CENSUS.disabled,
+    disabledWhy: CENSUS.why,
+  });
+  return CENSUS.attempt > 1
+    ? block.replace(/^PROCESS CENSUS: /, 'PROCESS CENSUS (attempt ' + CENSUS.attempt + '): ')
+    : block;
 }
 
 // Copy a file or a whole directory. Used by the helper repair, where the thing
@@ -3198,6 +3295,16 @@ function settingsBits() {
   // is how the launcher sees the permission never became a flag.
   bits.push('allowed commands: ' + CONFIG.allowed.length);
   bits.push('mcp: ' + (CONFIG.mcpLabel || 'not resolved'));
+  // What this run could leave running on the machine, in the header a Director
+  // reads rather than only in the census below.
+  bits.push(
+    'survivors: ' +
+      (!CONFIG.supervise
+        ? 'UNSUPERVISED (ORCHESTRA_JOBRUN=off) — orphans possible'
+        : CONFIG.killSurvivors
+        ? 'kill (' + CONFIG.killSurvivorsSource + ')'
+        : 'PRESERVE (' + CONFIG.killSurvivorsSource + ')')
+  );
   if (CONFIG.reviewDirLabel) bits.push('checkout: ' + CONFIG.reviewDirLabel);
   return bits;
 }
@@ -3319,8 +3426,13 @@ function attemptLog() {
 
 function printReview(body) {
   const engineContent = neutralizeDelimiterOccurrences(body.replace(/\s+$/, '') + attemptLog());
+  // The census is the RUNNER's measurement, so it belongs above the delimiter
+  // with the rest of the attribution — nothing the engine writes can edit it,
+  // and nothing it writes may be mistaken for it.
+  const census = censusReport();
   process.stdout.write(
-    engineHeader() + '\n\n' + ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
+    engineHeader() + (census ? '\n\n' + census : '') + '\n\n' +
+      ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
   );
 }
 
@@ -3357,8 +3469,12 @@ function printUnavailable(reason, detail) {
   // everything that can carry engine-authored text (the block's DETAIL may
   // quote a probe's stdout/stderr, and the ATTEMPT LOG always can).
   const engineContent = neutralizeDelimiterOccurrences(block + attemptLog());
+  // A dead attempt's debris is exactly what a Director needs named, so the
+  // census is on this path too — above the delimiter, with the attribution.
+  const census = censusReport();
   process.stdout.write(
-    unavailableHeader() + '\n\n' + ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
+    unavailableHeader() + (census ? '\n\n' + census : '') + '\n\n' +
+      ENGINE_OUTPUT_DELIMITER + '\n' + engineContent + '\n'
   );
 }
 
@@ -3371,6 +3487,7 @@ function main() {
         '         [--tier full|inert] [--timeout-ms <n>] [--no-tests] [--forbid <cmd>]...\n' +
         '         [--allow <cmd>]... [--base-ref <ref>] [--head-ref <ref>] [--worktree-root <dir>]\n' +
         '         [--retries <n>|--no-retry] [--no-probe] [--warmup-cmd <cmd>]\n' +
+        '         [--kill-survivors | --preserve-survivors]\n' +
         '       node orchestra-review.js --doctor [--no-repair] [--live]\n' +
         '\n' +
         '  --doctor checks the local Codex install the way a review does — real\n' +
@@ -3455,6 +3572,17 @@ function main() {
   if (CONFIG.engineMcp !== 'inherit') CONFIG.engineMcp = 'strip';
   if (!process.env.ORCHESTRA_REVIEW_RETRIES && codexCfg.reviewRetries != null) {
     CONFIG.retries = Math.min(MAX_RETRIES, intOr(codexCfg.reviewRetries, CONFIG.retries));
+  }
+  if (
+    !process.env.ORCHESTRA_REVIEW_KILL_SURVIVORS &&
+    codexCfg.reviewKillSurvivors != null
+  ) {
+    CONFIG.killSurvivors = codexCfg.reviewKillSurvivors !== false;
+    CONFIG.killSurvivorsSource = 'orchestra.json';
+  }
+  if (args.killSurvivors != null) {
+    CONFIG.killSurvivors = args.killSurvivors !== false;
+    CONFIG.killSurvivorsSource = 'flag';
   }
   if (!process.env.ORCHESTRA_REVIEW_PROBE && codexCfg.authProbe != null) {
     CONFIG.probe = codexCfg.authProbe !== false;
@@ -3833,7 +3961,10 @@ function main() {
     codexArgs.push('-'); // read the prompt from stdin
 
     const startedAt = Date.now();
-    const run = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
+    // The cap is the SUPERVISOR's deadline (it can kill a whole tree, where
+    // node's own timer only kills the process it spawned); superviseSync keeps
+    // node's timer on as a backstop a minute later.
+    const run = spawnEngineSupervised(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
       cwd: att.reviewDir,
       input: brief,
       encoding: 'utf8',
@@ -3843,7 +3974,7 @@ function main() {
       // config has to reach IT, not just us — otherwise every command it issues
       // still warns about a global config path the sandbox cannot read.
       env: childEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
-    });
+    }, { dir: attemptDir, attempt: n });
     const elapsed = Date.now() - startedAt;
 
     att.elapsed = elapsed;

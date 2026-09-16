@@ -12,6 +12,24 @@
  * Behaviour knobs (env):
  *   STUB_CODEX_SLEEP_MS   busy-wait this long before writing anything (used to
  *                         kill the runner mid-review).
+ *   STUB_CODEX_SPAWN_ORPHAN
+ *                         launch a never-exiting child and RETURN while it is
+ *                         still running — the exact field shape the runner's
+ *                         kill group exists for (Codex 0.154.0 on Windows
+ *                         preserves descendants when a shell command's root
+ *                         process exits, so a `godot --headless` launched by
+ *                         an order outlives the order). Spawned before any
+ *                         simulated sleep or death, so the timeout path
+ *                         orphans too.
+ *   STUB_CODEX_ORPHAN_PID_FILE
+ *                         where to write that child's PID, so a test can ask
+ *                         the operating system whether it is still alive
+ *                         after the runner returned.
+ *   STUB_CODEX_ORPHAN_DETACHED
+ *                         1 puts the orphan in its OWN session/process group
+ *                         (POSIX setsid), modelling a descendant that escapes
+ *                         a process-group kill the way CREATE_BREAKAWAY_FROM_JOB
+ *                         would escape a Windows job.
  *   STUB_CODEX_PARTIAL    text streamed to stdout BEFORE that sleep — an engine
  *                         that had already said something when it was killed.
  *   STUB_CODEX_EXIT       exit with this status instead of 0.
@@ -75,7 +93,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const argv = process.argv.slice(2);
 function flag(name) {
@@ -141,6 +159,26 @@ if (/ORCHESTRA_PROBE_OK/.test(brief)) {
   }
   process.stdout.write('ORCHESTRA_PROBE_OK\n');
   process.exit(0);
+}
+
+// The orphan, before anything that could kill this process: an order whose
+// engine dies mid-run has still launched whatever it launched, and that debris
+// is precisely what the runner's census and reaper must account for.
+if (process.env.STUB_CODEX_SPAWN_ORPHAN) {
+  const orphan = spawn(process.execPath, ['-e', 'setInterval(function () {}, 1000)'], {
+    stdio: 'ignore',
+    detached: process.env.STUB_CODEX_ORPHAN_DETACHED === '1',
+  });
+  // Without unref() this process would wait for the child it just launched,
+  // which is the one thing the modelled failure does NOT do.
+  orphan.unref();
+  if (process.env.STUB_CODEX_ORPHAN_PID_FILE) {
+    try {
+      fs.writeFileSync(process.env.STUB_CODEX_ORPHAN_PID_FILE, String(orphan.pid), 'utf8');
+    } catch (_) {
+      /* the test asserts on the PID file; a failure to write shows up there */
+    }
+  }
 }
 
 // Text streamed BEFORE the sleep: a real engine narrates as it works, so an

@@ -560,6 +560,7 @@ const TOOLS = [
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the reviewer must not execute. Lift every command the order forbids into this list, wherever the order says it.' },
         allow: { type: 'array', items: { type: 'string' }, description: 'Exact commands the order explicitly PERMITS despite no_tests or a restriction written into the order (e.g. a self-test the brief allows). Lift each one as written; the header reports "allowed commands: N".' },
         warmup_cmd: { type: 'string', description: 'Command run unsandboxed in the fresh pinned checkout before the integrity baseline (e.g. "pnpm install"). Pinned reviews only.' },
+        preserve_survivors: { type: 'boolean', description: 'Leave processes the engine started running instead of killing them when the run ends. Default false: the runner reaps them, and every report carries a PROCESS CENSUS block either way. Pass true ONLY when the order explicitly says it starts a long-lived service that must survive the run — never on your own judgment, because the orphans then become somebody else\'s to find.' },
       },
       required: ['work_order', 'executor_report'],
     },
@@ -591,6 +592,7 @@ const TOOLS = [
       pushForbids(args, a.forbid);
       if (Array.isArray(a.allow)) for (const x of a.allow) if (typeof x === 'string' && x.trim()) args.push('--allow', x);
       if (typeof a.warmup_cmd === 'string' && a.warmup_cmd.trim()) args.push('--warmup-cmd', a.warmup_cmd);
+      if (a.preserve_survivors === true) args.push('--preserve-survivors');
       runRunner(id, 'review', args, progressToken, undefined, dir);
     },
   },
@@ -615,6 +617,7 @@ const TOOLS = [
         cd: { type: 'string', description: 'Directory the engine executes in. Pass the isolated worktree the order names, or your own working directory whenever you were launched inside a worktree (the runner cannot see where you are: without cd it runs in the main checkout). Omit only when you are in the main checkout.' },
         model: { type: 'string', description: 'Pin a specific model for this run, only when the order names one.' },
         effort: { type: 'string', description: 'Reasoning effort override, only when the order names one.' },
+        preserve_survivors: { type: 'boolean', description: 'Leave processes the engine started running instead of killing them when the run ends. Default false: the runner reaps them, and every report carries a PROCESS CENSUS block either way. Pass true ONLY when the work order explicitly says the order starts a long-lived service that must survive it — never on your own judgment, because the orphans then become somebody else\'s to find.' },
       },
       required: ['work_order', 'profile'],
     },
@@ -663,6 +666,7 @@ const TOOLS = [
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);
       if (effectiveModel) args.push('--model', effectiveModel);
       if (effectiveEffort) args.push('--effort', effectiveEffort);
+      if (a.preserve_survivors === true) args.push('--preserve-survivors');
       runRunner(id, 'exec', args, progressToken, undefined, dir);
     },
   },
@@ -689,6 +693,7 @@ const TOOLS = [
         effort: { type: 'string', description: 'Reasoning effort, only when the order names one (default xhigh).' },
         model: { type: 'string', description: 'Model id, only when the order names one (default gpt-6-astra).' },
         timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one (default 900000).' },
+        preserve_survivors: { type: 'boolean', description: 'Leave processes the engine started running instead of killing them when the run ends. Default false: the runner reaps them, and every report carries a PROCESS CENSUS block either way. Pass true ONLY when the order explicitly says it starts a long-lived service that must survive the run — never on your own judgment, because the orphans then become somebody else\'s to find.' },
       },
       required: ['phase', 'brief', 'out_path'],
     },
@@ -725,6 +730,7 @@ const TOOLS = [
       if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', codexEffort(a.effort));
       if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
+      if (a.preserve_survivors === true) args.push('--preserve-survivors');
       runRunner(id, 'crossplan', args, progressToken, undefined, dir);
     },
   },
@@ -780,7 +786,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.3.4' },
+          serverInfo: { name: 'orchestra-engine', version: '3.4.0' },
         },
       });
       return;

@@ -65,7 +65,13 @@ Codex CLI 0.153.2, `.claude/orchestra.json` with `codex.worktreeRoot` + `helpers
    engine verdict on GDScript/asset work is static-only and marks executor evidence
    UNVERIFIED. Pre-hydrated LFS in review worktrees (already noted in memory) would let the
    Python checkers run; Godot remains Claude-lane.
-   Status: fixed in 3.3.0.
+   Status: fixed in 3.3.0. **Addendum (3.4.0):** the "Godot remains Claude-lane" half of
+   this is no longer true for the reason it was written. It stood because a Godot process a
+   Codex-lane order launched OUTLIVED the order (Codex 0.154.0 preserves a shell command's
+   descendants on Windows); the runners now own a kill group and census every run, so a
+   Godot-launching order may use the Codex lane again. What remains true is the original
+   sentence's other half: the sandbox still has no Blender and unhydrated LFS, so an engine
+   verdict on asset work is still static-only.
 
 ## Second batch (2026-09-07)
 

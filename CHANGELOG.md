@@ -9,6 +9,82 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.5.0 — the cross-vendor caps were set at the mean of what they cap
+
+**Why.** Every Codex-lane wall-clock cap was a guess, and the guesses were low.
+The field ledger this repository already carries
+(`plans/field-evidence-tug-review-rounds-2026-09-05.md`, reconstructed from 78
+Sol reviews and 59 heavy-tier executor runs across the four-day Tug campaign)
+says what the work actually costs:
+
+| Lane | Measured | Old cap |
+|---|---|---|
+| Codex review (Sol, high) | 20.7 min mean, 12–39 min observed, of which 9–10 min is the cold worktree import paid on *every* attempt | 45 min |
+| Comparable executor rungs | 29.5 min mean (`executor-heavy`, 51 runs), 31.1 min (`executor-heavy-xhigh`, 8 runs) | 30 min |
+| Cross-compare phase | the lane's own tool description said a phase "routinely uses most of it" | 15 min |
+
+So the exec cap sat at roughly the **mean** of the population it caps — a cap
+that fires on about half its runs is a coin flip, not a safety net — and the
+review cap sat barely above the observed **maximum**, leaving nothing for a
+longer diff or a colder cache. The cross-compare cap was already being
+overridden by hand: this repository's own `.claude/orchestra.json` contains
+nothing but `{ "codex": { "crossplanTimeoutMs": 3600000 } }`, which is the
+clearest evidence a default can get that it is wrong.
+
+Two of the smaller caps were worse than low. `worktreeWarmupTimeoutMs` was
+`300000` while the same notebook recorded the cold Godot import it exists to
+cover at **9–10 minutes** — a cap set below the measured cost of the very
+command it caps, so an asset-heavy project had its warmup killed every round
+and then reviewed a half-imported tree. And the inert review floor was
+`600000`, barely more than that import, although the floor exists precisely
+because "inert" narrows what must be *verified*, not how long the engine spends
+looking.
+
+**Fixed.** New defaults, each a multiple of the measured mean rather than a
+computed percentile — agent wall-clock is long-tailed, and a few dozen to a few
+hundred runs per lane is enough to place a mean and an observed range but not a
+true p99:
+
+| Setting | Was | Now | Multiple of measured mean |
+|---|---|---|---|
+| `execTimeoutMs` | 1800000 (30 min) | **7200000** (2 h) | ~4× |
+| `reviewTimeoutMs` | 2700000 (45 min) | **5400000** (90 min) | ~4.3× (~2.3× the observed max) |
+| `crossplanTimeoutMs` | 900000 (15 min) | **3600000** (1 h) | the value the field already chose |
+| inert review floor | 600000 (10 min) | **1800000** (30 min) | — |
+| `worktreeWarmupTimeoutMs` | 300000 (5 min) | **1800000** (30 min) | ~3× the measured cold import |
+| `probeTimeoutMs` | 90000 (90 s) | **180000** (3 min) | — |
+
+The exec lane gets the largest multiple on purpose: it is never auto-retried,
+so a cap that fires costs the whole order *and* leaves a half-edited tree for
+the Director to clean up before re-dispatching. The review lane retries once,
+so a user-visible timeout there now needs two runs past 90 minutes.
+
+Nothing about resolution changed: flag > env > `orchestra.json` > default, and
+the header still prints the value with its source, so a cap that came from
+somewhere other than these defaults is as visible as it ever was. Both executor
+launcher definitions and all three MCP tool descriptions now say explicitly
+that `timeout_ms` is for an order that *names* a cap, and is never to be passed
+to hurry a run along.
+
+**Also fixed.** The transport kept its own copy of each lane's default (it
+resolves the cap before the runner starts, to place its kill-backstop above
+it), and the suite guarded only the review lane against drift between the two.
+A stale copy is invisible until a real run goes long enough to hit the tighter
+of the two numbers, at which point the backstop kills a run that was still
+inside its cap. That guard now covers the exec lane as well. Three stale
+documented defaults were corrected in passing: the root README and the
+`orchestra-status` skill both still advertised `reviewTimeoutMs` as `1800000`,
+which it had not been since 3.0.
+
+**Not proven.** An `orchestra_*` MCP call blocks for the whole runner chain, and
+the server emits `notifications/progress` every 30 s so a client that resets its
+timeout on progress can hold arbitrarily long. Pre-release measurement proved a
+1800 s hold (`packs/codex/FIELD-VALIDATION.md`); these caps go well past that
+and the longer holds have not been measured end to end through a client. If a
+long run comes back as an `MCP TRANSPORT ERROR` rather than a runner report,
+that seam is the first place to look — the runner's own timer is not what
+failed.
+
 ## 3.4.0 — the Codex lane stopped leaving processes running
 
 **Why.** An order that launched a headless engine and returned left it running

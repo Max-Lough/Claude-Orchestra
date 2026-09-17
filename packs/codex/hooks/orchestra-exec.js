@@ -135,14 +135,14 @@
  *       "execHeavyEffort": "high",
  *       "execPrincipalModel": "gpt-6-astra",
  *       "execPrincipalEffort": "xhigh",
- *       "execTimeoutMs": 1800000,
+ *       "execTimeoutMs": 7200000,
  *       "execSandbox": "workspace-write",
  *       "execKillSurvivors": true,
  *       "idleMs": 1500,
  *       "gitConfigIsolation": true,
  *       "doNotRun": ["godot"],
  *       "authProbe": true,
- *       "probeTimeoutMs": 90000,
+ *       "probeTimeoutMs": 180000,
  *       "helpersDir": "/path/to/known-good-codex-helpers",
  *       "integrityIgnore": ["*.import", ".godot/"],
  *       "integrityIgnoreDefaults": true
@@ -165,9 +165,14 @@
  *                               low|medium|high|xhigh|max, with no `none`).
  *                               Only the SELECTED profile reads its own pair;
  *                               the other rung's vars are ignored entirely.
- *   ORCHESTRA_EXEC_TIMEOUT_MS   Max wall-clock for the run (default 1800000).
- *                               Execution runs the project's verification, so
- *                               budget it like a build+suite, not like a chat.
+ *   ORCHESTRA_EXEC_TIMEOUT_MS   Max wall-clock for the run (default 7200000 —
+ *                               two hours). Execution runs the project's
+ *                               verification, so budget it like a build+suite,
+ *                               not like a chat. The default is ~4x the 29.5-
+ *                               31.1 minute mean the field ledger measured for
+ *                               the comparable executor rungs: this lane is
+ *                               never auto-retried, so a cap that fires costs
+ *                               the whole order and leaves a half-edited tree.
  *   ORCHESTRA_EXEC_SANDBOX      Codex sandbox: workspace-write (default — an
  *                               executor that cannot write is not an executor)
  *                               or read-only (dry-run; the runner warns that
@@ -210,7 +215,7 @@
  *   ORCHESTRA_EXEC_PROBE        1 (default) runs a cheap `codex exec` echo
  *                               before the real attempt. 0 disables.
  *   ORCHESTRA_EXEC_PROBE_TIMEOUT_MS
- *                               Cap for that probe (default 90000).
+ *                               Cap for that probe (default 180000).
  *   ORCHESTRA_EXEC_ARGS         Extra args appended to `codex exec`,
  *                               space-split (escape hatch for flag drift).
  *   ORCHESTRA_CODEX_HELPERS     Directory of known-good files mirrored into
@@ -296,6 +301,30 @@ const EXEC_PROFILES = {
 };
 const DEFAULT_PROFILE = 'heavy';
 
+// The wall-clock cap for one execution run.
+//
+// Set from the field ledger, not from a guess about how long work "should"
+// take. The 2026-09-05 Tug campaign record (plans/field-evidence-tug-review-
+// rounds-2026-09-05.md) measured the comparable executor rungs over 59
+// completions: `executor-heavy` averaged 29.5 minutes and
+// `executor-heavy-xhigh` 31.1. The old 1800000 default was therefore set at
+// roughly the MEAN of the population it caps — about half of a like
+// distribution runs past it — and a cap that fires on half its runs is not a
+// safety net, it is a coin flip.
+//
+// Two facts make this lane the one that can least afford that. Execution is
+// never auto-retried (a half-dead engine may have half-edited the tree), so a
+// timeout costs the whole order AND leaves debris the Director must clean up
+// before re-dispatching. And an exec order runs the project's verification, so
+// its cost is a build plus a suite on top of the model's own thinking — in a
+// Godot project the cold asset import alone is 9-10 minutes.
+//
+// 7200000 is ~4x that measured mean. Agent wall-clock is long-tailed rather
+// than normal, so a multiple of the mean is the honest way to buy the far tail
+// here; this one puts the cap well past the 99th percentile of everything the
+// ledger recorded, leaving only genuinely stuck runs to hit it.
+const EXEC_TIMEOUT_MS = 7200000;
+
 // Seeded from env + defaults so the early-failure paths can already print a
 // truthful header; main() layers project config and CLI flags over it.
 const CONFIG = {
@@ -305,7 +334,7 @@ const CONFIG = {
   effort: '',
   effortSource: 'default',
   sandbox: (process.env.ORCHESTRA_EXEC_SANDBOX || 'workspace-write').trim(),
-  timeoutMs: parseInt(process.env.ORCHESTRA_EXEC_TIMEOUT_MS || '', 10) || 1800000,
+  timeoutMs: parseInt(process.env.ORCHESTRA_EXEC_TIMEOUT_MS || '', 10) || EXEC_TIMEOUT_MS,
   timeoutSource: process.env.ORCHESTRA_EXEC_TIMEOUT_MS ? 'env' : 'default',
   idleMs: intOr(process.env.ORCHESTRA_EXEC_IDLE_MS, 1500),
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
@@ -330,7 +359,7 @@ const CONFIG = {
   // Supervision itself, not the reaping policy. Off means no kill group and no
   // census — the only configuration in which this lane can leave an orphan.
   supervise: (process.env.ORCHESTRA_JOBRUN || '').trim().toLowerCase() !== 'off',
-  probeTimeoutMs: intOr(process.env.ORCHESTRA_EXEC_PROBE_TIMEOUT_MS, 90000),
+  probeTimeoutMs: intOr(process.env.ORCHESTRA_EXEC_PROBE_TIMEOUT_MS, 180000),
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
 };

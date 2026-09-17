@@ -564,37 +564,55 @@ async function case5() {
   s.close();
 }
 
-// 5b. The MCP backstop's effective review cap must track the runner's own
-//     default (orchestra-review.js: 2700000ms) rather than a
-//     stale fallback baked into this file — a mismatch here is invisible
-//     until a real review runs long enough to hit the OLD, tighter backstop
-//     first. No --timeout-ms/env/config override, so effectiveCapMs('review')
-//     falls all the way to its own default; the progress notification is the
-//     one place that value is externally observable.
+// 5b. The MCP backstop's effective cap must track each runner's OWN default
+//     rather than a stale fallback baked into the server — a mismatch is
+//     invisible until a real run goes long enough to hit the tighter of the
+//     two, and then the backstop kills a run that was still inside its cap.
+//     The server keeps its own copy of every default (it resolves the cap
+//     before the runner starts, to place the backstop above it), so the two
+//     numbers can drift silently; that is exactly what this case exists to
+//     stop, and it now covers all three lanes rather than review alone,
+//     because all three defaults moved in 3.5.0.
+//
+//     No --timeout-ms/env/config override, so effectiveCapMs() falls all the
+//     way to its own default; the progress notification is the one place that
+//     value is externally observable.
+const LANE_DEFAULT_CAPS = [
+  { lane: 'review', cap: 5400000, tool: 'orchestra_review',
+    args: () => ({ work_order: WORK_ORDER, executor_report: EXEC_REPORT }),
+    done: /VERDICT: APPROVE/ },
+  { lane: 'exec', cap: 7200000, tool: 'orchestra_exec',
+    args: () => ({ work_order: 'Report and change nothing.', profile: 'heavy' }),
+    done: /STATUS: DONE/, env: { STUB_CODEX_FIRST_LINE: 'STATUS: DONE' } },
+];
+
 async function case5b() {
-  section('5b. review lane default effective cap (no flag/env/config) is 2700000ms — matches the runner\'s own default');
-  const fx = makeRepo();
-  const s = mcpSession({
-    fx,
-    env: { STUB_CODEX_SLEEP_MS: '1200', ORCHESTRA_MCP_PROGRESS_MS: '300' },
-  });
-  await s.start();
-  const res = await s.rpc('tools/call', {
-    name: 'orchestra_review',
-    arguments: { work_order: WORK_ORDER, executor_report: EXEC_REPORT },
-    _meta: { progressToken: 'cap-tok' },
-  }, 180000);
-  check('the call still completed', /VERDICT: APPROVE/.test(resultText(res)), resultText(res).slice(0, 300));
-  const progress = s.notifications.filter(
-    (n) => n.method === 'notifications/progress' && n.params && n.params.progressToken === 'cap-tok'
-  );
-  check('at least one progress notification fired', progress.length >= 1, JSON.stringify(s.notifications.slice(0, 3)));
-  check(
-    'with no --timeout-ms/env/config, the reported runner cap is 2700000ms',
-    progress.some((n) => /runner cap 2700000ms/.test((n.params && n.params.message) || '')),
-    JSON.stringify(progress.map((n) => n.params && n.params.message))
-  );
-  s.close();
+  section('5b. each lane\'s default effective cap matches its runner\'s own default');
+  for (const { lane, cap, tool, args, done, env } of LANE_DEFAULT_CAPS) {
+    const fx = makeRepo();
+    const s = mcpSession({
+      fx,
+      env: Object.assign({ STUB_CODEX_SLEEP_MS: '1200', ORCHESTRA_MCP_PROGRESS_MS: '300' }, env || {}),
+    });
+    await s.start();
+    const res = await s.rpc('tools/call', {
+      name: tool,
+      arguments: args(),
+      _meta: { progressToken: 'cap-tok-' + lane },
+    }, 180000);
+    check(lane + ': the call still completed', done.test(resultText(res)), resultText(res).slice(0, 300));
+    const progress = s.notifications.filter(
+      (n) => n.method === 'notifications/progress' && n.params && n.params.progressToken === 'cap-tok-' + lane
+    );
+    check(lane + ': at least one progress notification fired', progress.length >= 1,
+      JSON.stringify(s.notifications.slice(0, 3)));
+    check(
+      lane + ': with no --timeout-ms/env/config, the reported runner cap is ' + cap + 'ms',
+      progress.some((n) => new RegExp('runner cap ' + cap + 'ms').test((n.params && n.params.message) || '')),
+      JSON.stringify(progress.map((n) => n.params && n.params.message))
+    );
+    s.close();
+  }
 }
 
 // 5c. orchestra_doctor's argument translation: read-only by default

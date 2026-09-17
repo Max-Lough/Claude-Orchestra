@@ -97,7 +97,7 @@
  * nothing:
  *
  *   { "codex": {
- *       "reviewTimeoutMs": 2700000,
+ *       "reviewTimeoutMs": 5400000,
  *       "reviewModel": "gpt-5.6-sol",
  *       "reviewSandbox": "workspace-write",
  *       "helpersDir": "/path/to/known-good-codex-helpers",
@@ -107,9 +107,9 @@
  *       "doNotRun": ["godot"],
  *       "reviewRetries": 1,
  *       "authProbe": true,
- *       "probeTimeoutMs": 90000,
+ *       "probeTimeoutMs": 180000,
  *       "worktreeWarmupCmd": "godot --headless --import",
- *       "worktreeWarmupTimeoutMs": 300000,
+ *       "worktreeWarmupTimeoutMs": 1800000,
  *       "integrityIgnore": ["*.import", ".godot/"],
  *       "integrityIgnoreDefaults": true,
  *       "requireHelperSiblings": false,
@@ -125,12 +125,14 @@
  *                               the reviewer actually run the test suite) or
  *                               read-only (hard no-write guarantee, but many
  *                               test runners can't run under it).
- *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for the review (default 2700000).
+ *   ORCHESTRA_REVIEW_TIMEOUT_MS Max wall-clock for ONE attempt (default
+ *                               5400000 — 90 minutes; ~2.3x the slowest review
+ *                               the field ledger recorded).
  *                               This engine explores before it concludes, so
  *                               even a nine-line docs diff is MINUTES, not
  *                               seconds — an inert tier narrows what gets
  *                               VERIFIED, never how long the engine takes to
- *                               look. Inert reviews therefore carry a 600000ms
+ *                               look. Inert reviews therefore carry a 1800000ms
  *                               FLOOR (see INERT_FLOOR_MS): a shorter cap from
  *                               a launcher flag or the built-in default is
  *                               raised to it, and the header says so. A cap you
@@ -178,7 +180,7 @@
  *                               broken install fails in seconds instead of after
  *                               a full review budget. 0 disables.
  *   ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS
- *                               Cap for that probe (default 90000). A probe that
+ *                               Cap for that probe (default 180000). A probe that
  *                               merely times out is a warning, not a refusal — a
  *                               slow engine is still a working engine.
  *   ORCHESTRA_REVIEW_WARMUP_CMD Shell command run inside the review checkout
@@ -188,7 +190,9 @@
  *                               make every first review look like the reviewer
  *                               mutated the tree.
  *   ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS
- *                               Cap for the warmup (default 300000).
+ *                               Cap for the warmup (default 1800000 — the
+ *                               field ledger put a cold Godot import at 9-10
+ *                               minutes, and the old 300000 cap was below it).
  *   ORCHESTRA_REVIEW_GIT_ISOLATION
  *                               1 (default) runs every git the review touches —
  *                               the runner's own and the engine's — against a
@@ -282,7 +286,31 @@ const { pathUnder, packagedResourceDirs, carriedByPackage, sameName } = require(
 // it thirty seconds" cap guarantees a timeout instead of a verdict. Reviews
 // declared inert get raised to this floor when the cap came from a launcher
 // flag or the built-in default.
-const INERT_FLOOR_MS = 600000;
+// The wall-clock cap for ONE review attempt.
+//
+// Set from the field ledger, not from a guess. The 2026-09-05 Tug campaign
+// record (plans/field-evidence-tug-review-rounds-2026-09-05.md) measured 78
+// Sol review completions: 20.7 minutes on average, 12-39 minutes observed, and
+// 9-10 minutes of every single attempt spent on the cold worktree import
+// before the engine reads anything. The old 2700000 (45 min) sat barely above
+// the observed MAXIMUM, which leaves nothing for the tail — a longer diff, a
+// slower machine, a colder cache.
+//
+// 5400000 is ~2.3x the observed max and ~4.3x the mean. Agent wall-clock is
+// long-tailed rather than normal, so a multiple is the honest way to buy the
+// far tail; this one puts the cap past the 99th percentile of everything the
+// ledger recorded. The lane retries once, so a user-visible timeout now needs
+// TWO runs past 90 minutes.
+const REVIEW_TIMEOUT_MS = 5400000;
+
+// A review the launcher declared inert may not be capped below this.
+//
+// Raised with the rest: the floor exists because "inert" narrows what must be
+// VERIFIED, not how long the engine spends looking, and at 600000 it sat below
+// the 9-10 minute cold import alone — a floor that barely covers the warmup is
+// not a floor. 1800000 is the full-depth mean with headroom, which is what an
+// inert review actually costs.
+const INERT_FLOOR_MS = 1800000;
 
 // A retry is a bet that the same configuration behaves differently the second
 // time. That bet is worth one round — a signal kill, a launch that produced
@@ -345,7 +373,7 @@ const HELPER_CONSEQUENCE = {
 const CONFIG = {
   model: (process.env.ORCHESTRA_REVIEW_MODEL || '').trim(),
   sandbox: (process.env.ORCHESTRA_REVIEW_SANDBOX || 'workspace-write').trim(),
-  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || 2700000,
+  timeoutMs: parseInt(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS || '', 10) || REVIEW_TIMEOUT_MS,
   timeoutSource: process.env.ORCHESTRA_REVIEW_TIMEOUT_MS ? 'env' : 'default',
   idleMs: intOr(process.env.ORCHESTRA_REVIEW_IDLE_MS, 1500),
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
@@ -386,9 +414,15 @@ const CONFIG = {
   // Supervision itself, not the reaping policy. Off means no kill group and no
   // census — the only configuration in which this lane can leave an orphan.
   supervise: (process.env.ORCHESTRA_JOBRUN || '').trim().toLowerCase() !== 'off',
-  probeTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS, 90000),
+  probeTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS, 180000),
   warmupCmd: (process.env.ORCHESTRA_REVIEW_WARMUP_CMD || '').trim(),
-  warmupTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS, 300000),
+  // FIX (field ledger, 2026-09-05): this was 300000, and the same notebook
+  // that recorded it also recorded the cold Godot import at 9-10 minutes per
+  // attempt — a cap set BELOW the measured cost of the very command it caps,
+  // so the warmup was killed on every round of an asset-heavy project and the
+  // review then ran against a half-imported tree. 1800000 covers that import
+  // with headroom for a cold `pnpm install` or a first-run asset build.
+  warmupTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS, 1800000),
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
   // Env override exists for the same reason every other setting here has one:

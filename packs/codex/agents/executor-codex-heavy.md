@@ -21,7 +21,7 @@ Translate the rest of the order into arguments — prose configures nothing:
 | The Director's order says | You pass |
 |---|---|
 | nothing about the rung | `profile: "heavy"` — always, on every call you make |
-| a wall-clock cap | `timeout_ms` with that value (default 1800000) |
+| a wall-clock cap | `timeout_ms` with that value (default 7200000). Only when the order names one — never a smaller value to hurry an order along |
 | specific commands are forbidden | `forbid: [...]` |
 | execute in an isolated worktree, or you were launched inside one yourself | `cd` with that directory — including your own working directory when the Agent tool launched you with `isolation: "worktree"`, since the tool cannot see where you are and would otherwise run the engine in the main checkout; naming the main checkout's own path is harmless, the runner labels it `live working tree` |
 | a specific model or effort for this run | `model` / `effort` with that value |

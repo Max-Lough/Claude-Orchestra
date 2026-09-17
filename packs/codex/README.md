@@ -182,7 +182,7 @@ Environment variables override the file; explicit runner flags override both.
 ```json
 {
   "codex": {
-    "reviewTimeoutMs": 2700000,
+    "reviewTimeoutMs": 5400000,
     "reviewModel": "gpt-5.6-sol",
     "reviewSandbox": "workspace-write",
     "helpersDir": "C:/tools/codex-helpers",
@@ -199,7 +199,7 @@ Environment variables override the file; explicit runner flags override both.
 
 | Key | Effect |
 |---|---|
-| `reviewTimeoutMs` | Wall-clock cap. Reviews that run a real suite need far more than the 45-minute default. |
+| `reviewTimeoutMs` | Wall-clock cap per attempt (default 90 minutes). See "Timeout budgets". |
 | `reviewModel` / `reviewSandbox` | Same as `ORCHESTRA_REVIEW_MODEL` / `ORCHESTRA_REVIEW_SANDBOX`. |
 | `helpersDir` | A directory of known-good files mirrored into the Codex install directory before each run (see "Helper restore"). |
 | `doNotRun` | Commands the reviewer is forbidden to execute. Injected into the brief as a hard prohibition. |
@@ -273,8 +273,8 @@ guarantee that silently stopped applying is worse than one never claimed.
 
 **Inert timeout floor.** An inert tier narrows what must be *verified*, not how
 long the engine takes to explore — a 9-line docs diff is still minutes. Inert
-reviews are floored at `600000` ms when the cap came from a launcher flag or the
-default; a cap you set yourself is honoured and flagged.
+reviews are floored at `1800000` ms when the cap came from a launcher flag or
+the default; a cap you set yourself is honoured and flagged.
 
 **Git config isolation.** A sandboxed process often cannot read the user's
 global git config, and git then complains on *every* invocation. The runner
@@ -297,10 +297,39 @@ holding known-good copies; before each run the runner mirrors anything missing
 from the Codex install directory and reports what it restored. No filenames are
 hardcoded — the directory you populate defines the repair kit.
 
+**Timeout budgets.** The defaults are set from the field ledger
+(`plans/field-evidence-tug-review-rounds-2026-09-05.md`), not from a guess about
+how long work ought to take, and they are deliberately generous: a cross-vendor
+run should hit its cap only when something is genuinely stuck, never because it
+was a slow-but-normal run.
+
+| Cap | Default | What the ledger measured |
+|---|---|---|
+| `execTimeoutMs` | `7200000` (2 h) | The comparable executor rungs averaged **29.5 min** (`executor-heavy`, 51 runs) and **31.1 min** (`executor-heavy-xhigh`, 8 runs). The old `1800000` sat at roughly the *mean* of that population. This lane is never auto-retried, so a cap that fires costs the whole order and leaves a half-edited tree. |
+| `reviewTimeoutMs` | `5400000` (90 min) | 78 Sol review completions: **20.7 min average, 12–39 min observed**, of which **9–10 min per attempt** is the cold worktree import. The old `2700000` sat barely above the observed maximum. The lane retries once, so a visible timeout now needs two runs past 90 minutes. |
+| `crossplanTimeoutMs` | `3600000` (1 h) | The lane's own tool description said a phase "routinely uses most of" the old `900000`, and this repository's `.claude/orchestra.json` already overrode it to exactly `3600000` by hand. |
+| inert review floor | `1800000` (30 min) | "Inert" narrows what must be *verified*, not how long the engine spends looking — a 9-line docs review once burned a round at `300000`. The old `600000` floor barely covered the cold import. |
+| `worktreeWarmupTimeoutMs` | `1800000` (30 min) | The old `300000` was **below the 9–10 minute cold import it was capping**, so an asset-heavy project had its warmup killed every round and reviewed a half-imported tree. |
+| `probeTimeoutMs` | `180000` (3 min) | A stage-a echo. A probe that merely times out is a warning, not a refusal, so the cost of the raise is bounded to the pathological path. |
+
+Agent wall-clock is long-tailed rather than normal, so each cap is a multiple of
+the measured mean (~2–4×) rather than a computed percentile — the ledger is a
+few dozen to a few hundred runs per lane, which is enough to place a mean and an
+observed range but not a true p99. Raise any of them further for a project whose
+suite is slower; they are all config.
+
+Note the transport side: an `orchestra_*` MCP call blocks for the whole runner
+chain, and the server emits `notifications/progress` every 30 s so a client that
+resets its timeout on progress can hold arbitrarily long. Pre-release
+measurement proved a 1800 s hold; the longer caps above have not been proven end
+to end through a client, so if a long run comes back as a transport error rather
+than a runner report, that seam is the first place to look.
+
 **Timeout as a value, not prose.** A work order saying "use a 30-minute timeout"
 does nothing; only the config does. Set `codex.reviewTimeoutMs`, or have the
 launcher pass `--timeout-ms`. The header prints the cap that was actually
 applied, so a prose-only instruction is visibly ignored instead of silently so.
+The launchers are told never to pass a *smaller* cap to hurry a run along.
 
 **Hard command prohibition.** "Skip the tests" in the brief gets overridden by
 the reviewer's own judgment — it runs them anyway and burns the clock. `--no-tests`
@@ -419,15 +448,15 @@ loudly when it does.
 |---|---|---|
 | `ORCHESTRA_REVIEW_MODEL` | `gpt-5.6-sol` | Pin the OpenAI review model; hard default, not "Codex's own default". |
 | `ORCHESTRA_REVIEW_SANDBOX` | `workspace-write` | Codex sandbox; `read-only` forbids writes but blocks most test runners. |
-| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `2700000` | Wall-clock cap. |
+| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `5400000` | Wall-clock cap per attempt (90 min). See "Timeout budgets". |
 | `ORCHESTRA_REVIEW_IDLE_MS` | `1500` | Idle-precheck settle window; `0` disables. Live-tree reviews only. |
 | `ORCHESTRA_REVIEW_WORKTREE_ROOT` | OS temp dir | Scratch root for a pinned review's worktree. Set-and-unwritable is a hard failure. |
 | `ORCHESTRA_REVIEW_GIT_ISOLATION` | `1` | Isolate git's global config for the review; `0` disables. |
 | `ORCHESTRA_REVIEW_RETRIES` | `1` | Extra attempts after a retryable failure (max 3). |
 | `ORCHESTRA_REVIEW_PROBE` | `1` | Stage-a `codex exec` echo before the real attempt; `0` disables. |
-| `ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS` | `90000` | Cap for that probe. |
+| `ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS` | `180000` | Cap for that probe. |
 | `ORCHESTRA_REVIEW_WARMUP_CMD` | — | Command run in the checkout before the integrity baseline. |
-| `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `300000` | Cap for the warmup. |
+| `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `1800000` | Cap for the warmup. The old `300000` was below the 9–10 minute cold import it was capping. |
 | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
 | `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |
@@ -435,7 +464,7 @@ loudly when it does.
 | `ORCHESTRA_EXEC_HEAVY_EFFORT` | `high` | Heavy-rung reasoning effort (`codex.execHeavyEffort`), sent as `-c model_reasoning_effort=`. |
 | `ORCHESTRA_EXEC_PRINCIPAL_MODEL` | `gpt-6-astra` | Principal-rung execution model (`codex.execPrincipalModel`). Read only when the run selects `--profile principal`. |
 | `ORCHESTRA_EXEC_PRINCIPAL_EFFORT` | `xhigh` | Principal-rung reasoning effort (`codex.execPrincipalEffort`), sent as `-c model_reasoning_effort=`. |
-| `ORCHESTRA_EXEC_TIMEOUT_MS` | `1800000` | Wall-clock cap for an execution run (`codex.execTimeoutMs`; also `--timeout-ms`). It runs your verification — budget a build plus a suite. |
+| `ORCHESTRA_EXEC_TIMEOUT_MS` | `7200000` | Wall-clock cap for an execution run (`codex.execTimeoutMs`; also `--timeout-ms`). It runs your verification — budget a build plus a suite. |
 | `ORCHESTRA_EXEC_SANDBOX` | `workspace-write` | Codex sandbox for execution (`codex.execSandbox`). `read-only` = dry run; the runner warns that no edit can land. |
 | `ORCHESTRA_EXEC_IDLE_MS` | `1500` | Idle-precheck settle window before executing; `0` disables. Shares `codex.idleMs` with review. |
 | `ORCHESTRA_EXEC_GIT_ISOLATION` | `1` | Git-config isolation for the run, with the user's `user.name`/`user.email` copied into the scratch config so ordered commits still work. Shares `codex.gitConfigIsolation`. |
@@ -448,7 +477,7 @@ loudly when it does.
 | `CODEX_BIN` | `codex` | Codex executable path (shared by all runners). |
 | `ORCHESTRA_CROSSPLAN_MODEL` | `gpt-6-astra` | Cross-compare GPT-architect model (`codex.crossplanModel`; also the skill's `model=`). |
 | `ORCHESTRA_CROSSPLAN_EFFORT` | `xhigh` | Cross-compare GPT-architect reasoning effort (`codex.crossplanEffort`), sent as `-c model_reasoning_effort=`. The skill's `effort=` overrides per session and routes the Claude lane to the matching tier. |
-| `ORCHESTRA_CROSSPLAN_TIMEOUT_MS` | `900000` | Wall-clock cap per cross-compare phase (`codex.crossplanTimeoutMs`; also `--timeout-ms`). |
+| `ORCHESTRA_CROSSPLAN_TIMEOUT_MS` | `3600000` | Wall-clock cap per cross-compare phase (`codex.crossplanTimeoutMs`; also `--timeout-ms`). |
 | `ORCHESTRA_CROSSPLAN_WEB` | `1` | GPT-lane web search, sent as `-c tools.web_search=true` (`codex.crossplanWeb`; also `--no-web`; flag > env > config > default). On by default so both lanes carry the same research capability; whether either lane USES it is governed by the brief's GROUND TRUTH grant. The provenance header prints the setting. |
 | `ORCHESTRA_CROSSPLAN_PROBE` | `1` | Stage-a echo before each phase (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS` caps it. |
 | `ORCHESTRA_CROSSPLAN_ARGS` | — | Extra args appended to the cross-compare `codex exec`. Resume-prone tokens are refused. |

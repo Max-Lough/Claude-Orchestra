@@ -608,12 +608,12 @@ function case5() {
 }
 
 function case6() {
-  section('6. Inert reviews get the 600000ms floor');
+  section('6. Inert reviews get the 1800000ms floor');
   const fx = makeDirtyRepo();
   const flagged = runReview(fx, ['--tier', 'inert', '--timeout-ms', '300000']);
   check(
     'a launcher flag below the floor is raised, and says so',
-    /timeout: 600000ms \(flag 300000ms → raised to the 600000ms inert floor\)/.test(flagged.stdout || ''),
+    /timeout: 1800000ms \(flag 300000ms → raised to the 1800000ms inert floor\)/.test(flagged.stdout || ''),
     (flagged.stdout || '').split('\n')[0]
   );
 
@@ -627,20 +627,20 @@ function case6() {
   const userSet = runReview(fx, ['--tier', 'inert'], { ORCHESTRA_REVIEW_TIMEOUT_MS: '120000' });
   check(
     'a cap the user set is honoured, not overridden',
-    /timeout: 120000ms \(env, below the 600000ms inert floor — expect a timeout\)/.test(userSet.stdout || ''),
+    /timeout: 120000ms \(env, below the 1800000ms inert floor — expect a timeout\)/.test(userSet.stdout || ''),
     (userSet.stdout || '').split('\n')[0]
   );
 
   const dflt = runReview(fx, ['--tier', 'inert']);
   check(
-    'the default (2700000ms) already clears the 600000ms inert floor',
-    /timeout: 2700000ms \(default\)/.test(dflt.stdout || ''),
+    'the default (5400000ms) already clears the 1800000ms inert floor',
+    /timeout: 5400000ms \(default\)/.test(dflt.stdout || ''),
     (dflt.stdout || '').split('\n')[0]
   );
 }
 
 function case6b() {
-  section('6b. Zero overrides: the Sol reviewer and the 2700000ms timeout are hard defaults');
+  section('6b. Zero overrides: the Sol reviewer and the 5400000ms timeout are hard defaults');
   // runReview() always forces ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol so every other
   // case exercises a real cross-vendor model name; this case proves the SAME
   // value is what the runner falls back to on its own, with no flag, no env,
@@ -669,8 +669,8 @@ function case6b() {
     'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
   );
   check(
-    'the default timeout is 2700000ms with no flag, env, or config',
-    /timeout: 2700000ms \(default\)/.test(out),
+    'the default timeout is 5400000ms with no flag, env, or config',
+    /timeout: 5400000ms \(default\)/.test(out),
     out.split('\n')[0]
   );
 }
@@ -2013,7 +2013,7 @@ function case26() {
     broken.split('\n').slice(0, 12).join('\n')
   );
 
-  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 });
+  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 }); // deliberately NOT the default, so 'orchestra.json' is provably the source
   // The classic typo: the key one level too high, where nothing reads it.
   fs.writeFileSync(
     path.join(fx.repo, '.claude', 'orchestra.json'),
@@ -2032,7 +2032,7 @@ function case26() {
   );
 
   // Control: the key in the right place lands, and the header says where from.
-  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 });
+  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 }); // deliberately NOT the default, so 'orchestra.json' is provably the source
   const good = runReview(fx, ['--head-ref', fx.head]).stdout || '';
   check(
     'under "codex" it applies, sourced to the file',

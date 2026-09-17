@@ -58,7 +58,7 @@
  *   ORCHESTRA_CROSSPLAN_EFFORT      reasoning effort, passed to codex as
  *                                    `-c model_reasoning_effort=<v>`
  *                                    (default "xhigh"; the skill offers xhigh and max)
- *   ORCHESTRA_CROSSPLAN_TIMEOUT_MS  wall-clock cap (default 900000)
+ *   ORCHESTRA_CROSSPLAN_TIMEOUT_MS  wall-clock cap per phase (default 3600000)
  *   ORCHESTRA_CROSSPLAN_WEB         0 disables the engine's web search
  *                                    (default on — research symmetry with
  *                                    the Claude lane; also --no-web)
@@ -112,13 +112,30 @@ const DEFAULT_INTEGRITY_IGNORE = [
 
 const PHASES = ['draft', 'critique', 'revise'];
 
+// The wall-clock cap for ONE consultation phase.
+//
+// The old 900000 (15 min) was already known to be too small by the lane's own
+// documentation: the `orchestra_crossplan` tool description says a phase
+// "routinely uses most of it", and the harness repository's own
+// .claude/orchestra.json carries `{ "codex": { "crossplanTimeoutMs": 3600000 } }`
+// — the owner had already overridden the default by hand, which is the
+// clearest evidence a default can get that it is wrong. A cap that is
+// routinely almost exhausted is a cap that fires on the tail of its own
+// distribution.
+//
+// This lane is an architect at xhigh effort with web search on, asked for a
+// full plan document: recon, then drafting, then a writeup. 3600000 adopts the
+// value the field already chose, and re-dispatch stays safe because the lane
+// is read-only.
+const CROSSPLAN_TIMEOUT_MS = 3600000;
+
 const CONFIG = {
   phase: '',
   model: '',
   modelSource: 'default',
   effort: '',
   effortSource: 'default',
-  timeoutMs: parseInt(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS || '', 10) || 900000,
+  timeoutMs: parseInt(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS || '', 10) || CROSSPLAN_TIMEOUT_MS,
   timeoutSource: process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS ? 'env' : 'default',
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
   extraArgs: (process.env.ORCHESTRA_CROSSPLAN_ARGS || '').trim(),
@@ -141,7 +158,7 @@ const CONFIG = {
   supervise: (process.env.ORCHESTRA_JOBRUN || '').trim().toLowerCase() !== 'off',
   web: true,
   webSource: 'default',
-  probeTimeoutMs: intOr(process.env.ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS, 90000),
+  probeTimeoutMs: intOr(process.env.ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS, 180000),
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
   outPath: '',

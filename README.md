@@ -194,22 +194,22 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex` | object | `{}` | Runner overrides below (requires the `codex` pack). |
 | `codex.reviewModel` | string | `"gpt-5.6-sol"` | Sol review model. |
 | `codex.reviewSandbox` | string | `"workspace-write"` | Codex sandbox for review. |
-| `codex.reviewTimeoutMs` | integer | `1800000` | Per-attempt review wall-clock cap — Sol reviews at high effort commonly run 12–33 minutes. |
+| `codex.reviewTimeoutMs` | integer | `5400000` | Per-attempt review wall-clock cap. Sol reviews ran 12–39 minutes in the field ledger (20.7 min average over 78 runs), with 9–10 of those minutes spent on the cold worktree import every attempt. |
 | `codex.execHeavyModel` | string | `"gpt-5.6-sol"` | Heavy-rung model — the user-request-only Sol executor. |
 | `codex.execHeavyEffort` | string | `"high"` | Heavy-rung reasoning effort. |
 | `codex.execPrincipalModel` | string | `"gpt-6-astra"` | Principal-rung model — the default ladder's top rung. |
 | `codex.execPrincipalEffort` | string | `"xhigh"` | Principal-rung reasoning effort. Astra's ladder is `low`/`medium`/`high`/`xhigh`/`max` — it has no `none`. |
 | `codex.execSandbox` | string | `"workspace-write"` | Codex sandbox for execution. |
-| `codex.execTimeoutMs` | integer | `1800000` | Execution wall-clock cap. |
+| `codex.execTimeoutMs` | integer | `7200000` | Execution wall-clock cap. The comparable executor rungs averaged 29.5–31.1 minutes in the field ledger, and this lane is never auto-retried. |
 | `codex.idleMs` | integer | `1500` | Live-tree settle window shared by both lanes; `0` disables. |
 | `codex.helpersDir` | string | `""` | Known-good Codex helper files, mirrored in before each run. |
 | `codex.worktreeRoot` | string | OS temp dir | Root for a pinned review's throwaway worktree; must be outside the repo. |
 | `codex.gitConfigIsolation` | boolean | `true` | Hand the review/execution process a scratch global git config that carries a copy of your real one (credential helpers, LFS filters, identity carry across) and overrides only the excludes/attributes probing. |
 | `codex.reviewRetries` | integer | `1` | Extra retryable review attempts (max 3). |
 | `codex.authProbe` | boolean | `true` | Run the fast Codex availability probe before the real attempt. |
-| `codex.probeTimeoutMs` | integer | `90000` | Cap for that probe. |
+| `codex.probeTimeoutMs` | integer | `180000` | Cap for that probe. |
 | `codex.worktreeWarmupCmd` | string | `""` | Optional command run in a pinned worktree before the integrity baseline. |
-| `codex.worktreeWarmupTimeoutMs` | integer | `300000` | Cap for the warmup command. |
+| `codex.worktreeWarmupTimeoutMs` | integer | `1800000` | Cap for the warmup command. The old `300000` was below the 9–10 minute cold import it capped. |
 | `codex.integrityIgnoreDefaults` | boolean | `true` | Include the built-in generated-artifact ignore list. |
 | `codex.integrityIgnore` | string[] | `[]` | Additional tree-audit ignore patterns. |
 | `codex.helperSiblings` | string[] | Windows: the three names above; else `[]` | Files the Codex install must carry directly beside its executable. |
@@ -218,7 +218,7 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex.engineMcp` | string | `"strip"` | `strip` disables every MCP server in the user's Codex config (plus the apps connector) for the engine child in every lane; `inherit` leaves it alone. |
 | `codex.crossplanModel` | string | `"gpt-6-astra"` | GPT cross-compare architect model. |
 | `codex.crossplanEffort` | string | `"xhigh"` | GPT architect reasoning effort. |
-| `codex.crossplanTimeoutMs` | integer | `900000` | Wall-clock cap per cross-compare phase. |
+| `codex.crossplanTimeoutMs` | integer | `3600000` | Wall-clock cap per cross-compare phase. |
 | `codex.crossplanWeb` | boolean | `true` | Permit web research in the GPT architect lane. |
 
 Settings resolve **flag > environment > `.claude/orchestra.json` > default**; every verdict header names the value actually applied and where it came from.

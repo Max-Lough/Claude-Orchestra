@@ -534,6 +534,12 @@ section('5. the Windows job-holder protocol (driven on every platform)');
     process.env.STUB_HOLDER_LOG = logFile;
     process.env.STUB_HOLDER_MEMBERS = '4242|Godot_v4.6.3-stable_win64_console.exe|2026-09-15T22:14:03Z,4243|python.exe|';
     check('the holder starts', holder.start(), 'start() refused');
+    await holder.ready;
+    check(
+      "the driver keeps the job's real LimitFlags off the READY line",
+      holder.limitFlags === '0x2000',
+      JSON.stringify(holder.limitFlags)
+    );
     const assignErr = await holder.assign(1234);
     check('an accepted assignment reports no error', assignErr === '', assignErr);
     const members = await holder.members();
@@ -778,7 +784,10 @@ function runRest() {
     check(
       '--preserve-survivors leaves it running — so the case above proves the kill, not luck',
       orphan > 0 && stillAliveAfter(orphan, 2000),
-      'pid ' + orphan + ' died anyway'
+      // The census block carries the job's reported LimitFlags and any
+      // contradiction note, so a failure here says WHY the survivor did not
+      // survive instead of only that it did not.
+      'pid ' + orphan + ' died anyway\n' + censusSlice(out.stdout || '')
     );
     check(
       'the header and the census both say the run preserved it',

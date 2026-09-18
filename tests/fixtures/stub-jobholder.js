@@ -22,6 +22,10 @@
  *                            holder must time the driver out, never hang it.
  *   STUB_HOLDER_LOG          append every command received to this file, so a
  *                            test can assert the driver sent BYE.
+ *   STUB_HOLDER_FLAGS        the LimitFlags to report on the READY line
+ *                            (default: derived from --kill-on-close, as the
+ *                            real holder derives it by reading the kernel
+ *                            back). 0x2000 is KILL_ON_JOB_CLOSE.
  */
 'use strict';
 
@@ -56,7 +60,9 @@ if (process.env.STUB_HOLDER_FATAL) {
   process.exit(1);
 }
 
-say('READY ' + jobName + (flag('--kill-on-close') === '0' ? '' : ''));
+const killOnClose = flag('--kill-on-close') !== '0';
+const flags = process.env.STUB_HOLDER_FLAGS || (killOnClose ? '0x2000' : '0x0');
+say('READY ' + jobName + ' flags=' + flags);
 log('KILL_ON_CLOSE=' + (flag('--kill-on-close') || '1'));
 
 const rl = readline.createInterface({ input: process.stdin });

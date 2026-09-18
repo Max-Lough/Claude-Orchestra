@@ -418,7 +418,7 @@ function mergeCensus(lists) {
 //
 // Protocol, one line each way on stdin/stdout:
 //
-//   → (holder emits) READY <jobname>        | FATAL <message>
+//   → (holder emits) READY <jobname> flags=0x<n>  | FATAL <message>
 //   ← ASSIGN <pid>      → ASSIGNED <pid> OK | ASSIGNED <pid> ERR <message>
 //   ← CENSUS            → PROC <pid>|<image>|<startedIso> … then CENSUS-END
 //   ← KILL <pid>        → KILLED <pid> OK   | KILLED <pid> ERR <message>
@@ -485,8 +485,12 @@ const HOLDER_PS1 = [
   '  const uint PROCESS_TERMINATE = 0x0001;',
   '  const uint PROCESS_SET_QUOTA = 0x0100;',
   '  public static IntPtr Job = IntPtr.Zero;',
+  '  public static uint AppliedFlags = 0;',
+  '  // The job is ANONYMOUS on purpose. CreateJobObjectW with a NAME opens an',
+  '  // existing job of that name instead of creating one, inheriting limits',
+  '  // this process never set — and nothing here ever needs to open it by name.',
   '  public static string Create(string name, bool killOnClose) {',
-  '    Job = CreateJobObjectW(IntPtr.Zero, name);',
+  '    Job = CreateJobObjectW(IntPtr.Zero, null);',
   '    if (Job == IntPtr.Zero) return "CreateJobObject failed: " + Marshal.GetLastWin32Error();',
   '    if (killOnClose) {',
   '      var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();',
@@ -499,7 +503,22 @@ const HOLDER_PS1 = [
   '          return "SetInformationJobObject failed: " + Marshal.GetLastWin32Error();',
   '      } finally { Marshal.FreeHGlobal(buf); }',
   '    }',
+  '    AppliedFlags = QueryFlags();',
   '    return "";',
+  '  }',
+  '  // What the KERNEL says is in force, not what we believe we set. The',
+  '  // difference is the whole point: this value goes into the run receipt, so',
+  '  // a job that is reaping when it was asked not to (or the reverse) is a',
+  '  // reported number rather than a theory.',
+  '  public static uint QueryFlags() {',
+  '    int len = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));',
+  '    IntPtr buf = Marshal.AllocHGlobal(len);',
+  '    try {',
+  '      for (int i = 0; i < len; i++) Marshal.WriteByte(buf, i, 0);',
+  '      if (!QueryInformationJobObject(Job, ExtendedLimitInformation, buf, (uint)len, IntPtr.Zero)) return 0xFFFFFFFF;',
+  '      var info = (JOBOBJECT_EXTENDED_LIMIT_INFORMATION)Marshal.PtrToStructure(buf, typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));',
+  '      return info.BasicLimitInformation.LimitFlags;',
+  '    } finally { Marshal.FreeHGlobal(buf); }',
   '  }',
   '  public static string Assign(int pid) {',
   '    IntPtr h = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, (uint)pid);',
@@ -547,7 +566,7 @@ const HOLDER_PS1 = [
   '  Write-Output ("FATAL " + $_.Exception.Message)',
   '  exit 1',
   '}',
-  'Write-Output ("READY " + $JobName)',
+  'Write-Output ("READY " + $JobName + " flags=0x" + ([OrchestraJob]::AppliedFlags).ToString("x"))',
   '$procCache = $null',
   'while ($true) {',
   '  $line = [Console]::In.ReadLine()',
@@ -601,6 +620,9 @@ class JobHolder {
     this.closed = false;
     this.jobName = 'OrchestraRun_' + process.pid + '_' + Date.now().toString(36);
     this.scriptFile = '';
+    // The LimitFlags the kernel reports for the job once created, as the
+    // holder read them back. '' until READY answers.
+    this.limitFlags = '';
   }
 
   // Spawns the holder and returns as soon as the process exists; `this.ready`
@@ -676,6 +698,8 @@ class JobHolder {
         this.failed = line.slice(6);
         return false;
       }
+      const m = /\bflags=(0x[0-9a-fA-F]+)\b/.exec(line);
+      if (m) this.limitFlags = m[1];
       return true;
     });
     return true;
@@ -889,6 +913,9 @@ async function supervise(cfg) {
     abandoned: false,
     spawnError: null,
     census: { before: [], survivors: [], killed: [], stubborn: [], source: '', unavailable: '' },
+    // Windows only: the LimitFlags the kernel reports for the job, read back
+    // rather than assumed. '' elsewhere.
+    jobLimitFlags: '',
     notes: [],
   };
 
@@ -971,6 +998,22 @@ async function supervise(cfg) {
   // a hole in the guarantee.
   if (holder) {
     const ready = await holder.ready;
+    if (ready) {
+      receipt.jobLimitFlags = holder.limitFlags || '(not reported)';
+      // 0x2000 is JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE. A job that carries it
+      // when --preserve-survivors asked for a census-only job will reap the
+      // tree the moment this supervisor's handle closes, which is the exact
+      // opposite of what was asked for — say so in the receipt rather than let
+      // the survivors quietly disappear.
+      const flags = parseInt(holder.limitFlags || '0', 16);
+      if (!receipt.killSurvivors && Number.isFinite(flags) && (flags & 0x2000)) {
+        receipt.notes.push(
+          'the Job object reports KILL_ON_JOB_CLOSE (' + holder.limitFlags + ') although ' +
+            '--preserve-survivors asked for a census-only job: survivors will not in fact ' +
+            'survive this run'
+        );
+      }
+    }
     if (!ready) {
       receipt.mechanism = 'windows-job-object-unavailable';
       receipt.mechanismNote =
@@ -1343,6 +1386,9 @@ function censusBlock(receipt, opts) {
     'PROCESS CENSUS: kill group = ' + mech + '; reaping = ' +
       (receipt.killSurvivors ? 'on' : 'OFF (--preserve-survivors)')
   );
+  // Windows: the flags the kernel reports, so "reaping = OFF" can be checked
+  // against what the job is actually configured to do rather than believed.
+  if (receipt.jobLimitFlags) lines.push('  job limit flags: ' + receipt.jobLimitFlags);
   if (receipt.mechanismNote) lines.push('  note: ' + receipt.mechanismNote);
   if (receipt.census && receipt.census.unavailable) {
     lines.push('  note: ' + receipt.census.unavailable);

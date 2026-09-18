@@ -256,14 +256,25 @@ administrator problem: the owner account can terminate those processes, and
 orphan's privileges. So the fix lives in the runner, where the run is owned,
 rather than in the project or in an order's prose.
 
-Two things the mechanism cannot do, stated rather than implied. A process that
+The job is created and confirmed **before** the engine is launched, and the
+engine is assigned to it before it can have spawned anything, so everything it
+starts inherits membership. That costs a second or two of startup on Windows
+(the holder compiles a P/Invoke shim) and buys an unconditional guarantee
+instead of a race: an earlier version let the shim compile in parallel and a
+fast engine was never assigned at all.
+
+What the mechanism cannot do, stated rather than implied: a process that
 deliberately leaves the group — `CREATE_BREAKAWAY_FROM_JOB` on Windows (which
 needs `BREAKAWAY_OK` on our job, and we never set it), or `setsid()` on POSIX —
-and a process started in the millisecond between spawn and job assignment, are
-outside the group. Both are caught instead by the census's parent/child walk,
-which is the documented fallback reaper; on Windows the parent PID survives the
-parent's death, so an orphaned Godot is still found by it. A survivor the runner
-could not kill is reported as `STILL ALIVE after the kill sweep`, never silently.
+is outside it. Those are caught instead by the census's parent/child walk, the
+documented fallback reaper. Know its limit: the walk goes *down* from the engine
+PID, so it needs every intermediate process to still be listed. On Windows the
+parent PID survives the parent's death, but `Win32_Process` lists only *running*
+processes, so a chain whose middle has already exited (`cmd.exe` → `codex` →
+an orphan) is invisible to it. That is precisely why the job must hold the
+engine from its first instruction rather than catch up later. A survivor the
+runner could not kill is reported as `STILL ALIVE after the kill sweep`, never
+silently.
 
 `--preserve-survivors` (or `codex.execKillSurvivors: false`, and its review /
 cross-plan siblings) censuses without reaping, for an order that is deliberately

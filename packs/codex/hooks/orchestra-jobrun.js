@@ -603,9 +603,10 @@ class JobHolder {
     this.scriptFile = '';
   }
 
-  // Starts the holder WITHOUT waiting for READY: the PowerShell shim compiles
-  // while the engine boots, so a real run pays nothing for it and a run whose
-  // engine dies in milliseconds never waits for a compile it will not use.
+  // Spawns the holder and returns as soon as the process exists; `this.ready`
+  // resolves when it answers READY (or false when it cannot). Callers must
+  // await that before launching anything they intend the job to hold — see the
+  // note at the launch site in supervise().
   start() {
     const custom = (process.env.ORCHESTRA_JOBRUN_HOLDER || '').trim();
     let bin;
@@ -946,6 +947,42 @@ async function supervise(cfg) {
     }
   }
 
+  // FIX (Windows CI, 2026-09-18): WAIT for the job before launching anything.
+  //
+  // This used to start the holder and spawn the engine without waiting, so the
+  // PowerShell shim could compile while the engine booted — the assignment was
+  // sent whenever the holder became ready. That traded the guarantee for about
+  // two seconds of startup, and the trade was bad: an engine that finished
+  // before the holder did was never assigned at all (`OpenProcess failed: 87`
+  // — ERROR_INVALID_PARAMETER, which is what OpenProcess returns for a pid
+  // that no longer exists), so the job held nothing and the run fell back to
+  // the parent/child census.
+  //
+  // And that fallback cannot cover this case. The walk goes DOWN from the
+  // engine pid, so it needs every intermediate process to still be listed;
+  // Win32_Process lists only running processes. With the real Windows shape —
+  // cmd.exe (the npm `.cmd` shim) -> codex -> the orphan — both intermediates
+  // are gone by census time and the chain from the root is broken, so a live
+  // orphan is invisible. CI proved exactly that: `SURVIVORS: none` printed
+  // while `pid 4068 survived the exec runner`.
+  //
+  // So the job is not an optimization to race against; it is the mechanism.
+  // Two seconds of startup against a cap measured in hours is not a cost worth
+  // a hole in the guarantee.
+  if (holder) {
+    const ready = await holder.ready;
+    if (!ready) {
+      receipt.mechanism = 'windows-job-object-unavailable';
+      receipt.mechanismNote =
+        'the Job object never became usable (' + (holder.failed || 'the holder did not answer') +
+        '); survivors are reaped by the parent/child census instead, which cannot see past a ' +
+        'process whose own parent has already exited';
+      if (holder.failed) receipt.notes.push(holder.failed);
+      holder.close(true);
+      holder = null;
+    }
+  }
+
   // --- launch. stdio is inherited straight through, so the engine writes to
   // the runner's own pipes and this supervisor never buffers a report.
   let child = null;
@@ -973,24 +1010,25 @@ async function supervise(cfg) {
   writeReceipt(); // the pre-receipt: a supervisor killed from here on still
   // leaves the caller a PID to sweep.
 
+  // The holder is already READY, so this answers in milliseconds — and it runs
+  // before the engine can have spawned anything, which is the whole point:
+  // everything the engine starts from here inherits job membership.
+  //
+  // No pid means the launch itself failed (ENOENT, EACCES): there is nothing to
+  // put in the job, and asking would stall on an answer that cannot come.
   let assigned = false;
-  let assignPromise = Promise.resolve('');
-  // No pid means the launch itself failed (ENOENT, EACCES): there is nothing
-  // to put in the job, and asking the holder to assign it would stall the run
-  // for the whole ready timeout waiting on an answer that cannot come.
   if (holder && child.pid > 0) {
-    assignPromise = holder.assign(child.pid).then((err) => {
-      if (err) {
-        receipt.notes.push('job assignment failed: ' + err);
-        receipt.mechanismNote =
-          receipt.mechanismNote ||
-          'the engine was never assigned to the Job object (' + err + '); survivors are ' +
-            'reaped by the parent/child census instead';
-      } else {
-        assigned = true;
-      }
-      return err;
-    });
+    const err = await holder.assign(child.pid);
+    if (err) {
+      receipt.notes.push('job assignment failed: ' + err);
+      receipt.mechanismNote =
+        receipt.mechanismNote ||
+        'the engine was never assigned to the Job object (' + err + '); survivors are ' +
+          'reaped by the parent/child census instead, which cannot see past a process ' +
+          'whose own parent has already exited';
+    } else {
+      assigned = true;
+    }
   }
 
   // The descendant walk needs a lower bound on the target's start time to
@@ -1101,18 +1139,6 @@ async function supervise(cfg) {
   // kill group itself (authoritative for anything that never escaped) and a
   // parent/child walk from the engine PID (the fallback that catches a process
   // which broke away, or which was started in the window before assignment).
-  // A holder that is still compiling its P/Invoke shim must not hold up a run
-  // that is already over. The assignment resolves the moment the holder
-  // answers, so a short grace is enough for one that is ready and nothing for
-  // one that is not — and a run whose engine was never assigned has an empty
-  // job to census anyway, so there is nothing to wait for.
-  await Promise.race([assignPromise.catch(() => ''), sleep(250)]);
-  if (holder && !assigned) {
-    receipt.mechanismNote =
-      receipt.mechanismNote ||
-      'the engine exited before it could be assigned to the Job object, so the job held ' +
-        'nothing; survivors below come from the parent/child census instead';
-  }
   let jobEntries = [];
   if (holder && assigned) {
     const members = await holder.members();

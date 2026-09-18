@@ -940,6 +940,7 @@ async function supervise(cfg) {
     // this run" and "we could not tell", so it is recorded rather than implied.
     parentPid: 0,
     parentPidSource: '',
+    parentWatchArmed: null,
     abandoned: false,
     spawnError: null,
     census: { before: [], survivors: [], killed: [], stubborn: [], source: '', unavailable: '' },
@@ -1124,6 +1125,13 @@ async function supervise(cfg) {
 
   receipt.targetPid = child.pid || 0;
   receipt.targetStarted = new Date().toISOString();
+  // FIX (Windows CI, 2026-09-18): these were recorded with the parent watch,
+  // below, so they only ever reached the FINAL receipt — and the failure they
+  // exist to explain is a supervisor that never writes one. The reading came
+  // back `parentPid: 0, parentPidSource: ""` from the pre-receipt and said
+  // nothing about whether the watch had armed. They belong here.
+  receipt.parentPid = RESOLVED_PARENT.pid;
+  receipt.parentPidSource = RESOLVED_PARENT.source;
   writeReceipt(); // the pre-receipt: a supervisor killed from here on still
   // leaves the caller a PID to sweep.
 
@@ -1227,8 +1235,20 @@ async function supervise(cfg) {
   // own), else from the boot-time reading — never from a fresh `process.ppid`
   // here, which by now may be answering 0 for a parent that has already died.
   const parentPid = RESOLVED_PARENT.pid;
-  receipt.parentPid = parentPid;
-  receipt.parentPidSource = RESOLVED_PARENT.source;
+  if (!(parentPid > 1)) {
+    // Nothing to watch means a cancelled run is not noticed at all: this
+    // supervisor would sit on the engine until its deadline instead. That is a
+    // hole in the guarantee, so it is stated in the receipt and in the census
+    // rather than left as an absence the reader has to infer.
+    receipt.notes.push(
+      'the cancellation watch could NOT be armed: this run has no resolvable parent pid ' +
+        '(source tried: ' + (RESOLVED_PARENT.source || 'none') + '). A cancelled run will ' +
+        'not be noticed until the deadline fires.'
+    );
+    receipt.parentWatchArmed = false;
+  } else {
+    receipt.parentWatchArmed = true;
+  }
   const parentWatch = setInterval(() => {
     if (parentPid > 1 && !parentAlive(parentPid)) {
       receipt.cancelled = true;
@@ -1479,6 +1499,12 @@ function censusBlock(receipt, opts) {
   );
   // Windows: the flags the kernel reports, so "reaping = OFF" can be checked
   // against what the job is actually configured to do rather than believed.
+  if (receipt.parentWatchArmed === false) {
+    lines.push(
+      '  CANCELLATION WATCH NOT ARMED — this run could not resolve a parent to watch, so a',
+      '  cancelled run would not be reaped until its deadline fired.'
+    );
+  }
   if (receipt.jobLimitFlags) lines.push('  job limit flags: ' + receipt.jobLimitFlags);
   if (receipt.jobMemberCount !== null && receipt.jobMemberCount !== undefined) {
     lines.push(

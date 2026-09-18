@@ -45,7 +45,7 @@ const EXEC_RUNNER =
 const REVIEW_RUNNER =
   process.env.ORCHESTRA_TEST_REVIEW_RUNNER ||
   path.join(MASTER, 'packs', 'codex', 'hooks', 'orchestra-review.js');
-const STUB_CODEX = path.join(__dirname, 'fixtures', 'stub-codex.js');
+const STUB = path.join(__dirname, 'fixtures', 'stub-codex.js');
 const STUB_HOLDER = path.join(__dirname, 'fixtures', 'stub-jobholder.js');
 
 const jobrun = require(JOBRUN);
@@ -129,6 +129,26 @@ process.on('uncaughtException', (e) => {
   finish();
   process.exit(1);
 });
+
+// The "codex binary" the runners are pointed at. Windows cannot CreateProcess
+// a `.js` file — it fails EFTYPE before anything runs — so there the binary is
+// a `.cmd` shim, exactly as the review-lane and exec-lane suites already do it.
+//
+// FIX (Windows CI, 2026-09-17): this suite handed CODEX_BIN the raw `.js` path
+// and every exec/review case reported `EXEC_UNAVAILABLE — the Codex CLI could
+// not be launched (EFTYPE)`. Copying the shim also earns its keep: a `.cmd`
+// is what an npm-installed `codex` actually is on Windows, so the supervised
+// path now exercises the real cmd.exe routing (engineLaunchSpec's
+// windowsVerbatimArguments branch) and a kill group whose root is cmd.exe with
+// the engine underneath it — the shape the field failure has.
+const STUB_CODEX = (() => {
+  if (process.platform !== 'win32') return STUB;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-jobrun-stubbin-'));
+  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dest = path.join(dir, 'codex.cmd');
+  fs.writeFileSync(dest, '@echo off\r\nnode "' + STUB + '" %*\r\nexit /b %ERRORLEVEL%\r\n', 'utf8');
+  return dest;
+})();
 
 // ------------------------------------------------------------------ helpers
 

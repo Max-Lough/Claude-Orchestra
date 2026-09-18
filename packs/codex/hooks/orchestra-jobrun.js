@@ -540,7 +540,9 @@ const HOLDER_PS1 = [
   '    } finally { CloseHandle(h); }',
   '    return "";',
   '  }',
+  '  public static string MembersError = "";',
   '  public static List<int> Members() {',
+  '    MembersError = "";',
   '    var pids = new List<int>();',
   '    int header = IntPtr.Size == 8 ? 8 : 8;',
   '    int cap = 4096;',
@@ -549,7 +551,10 @@ const HOLDER_PS1 = [
   '    try {',
   '      for (int i = 0; i < len; i++) Marshal.WriteByte(buf, i, 0);',
   '      Marshal.WriteInt32(buf, 0, cap);',
-  '      if (!QueryInformationJobObject(Job, BasicProcessIdList, buf, (uint)len, IntPtr.Zero)) return pids;',
+  '      if (!QueryInformationJobObject(Job, BasicProcessIdList, buf, (uint)len, IntPtr.Zero)) {',
+  '        MembersError = "QueryInformationJobObject failed: " + Marshal.GetLastWin32Error();',
+  '        return pids;',
+  '      }',
   '      int count = Marshal.ReadInt32(buf, 4);',
   '      if (count > cap) count = cap;',
   '      for (int i = 0; i < count; i++) {',
@@ -592,6 +597,7 @@ const HOLDER_PS1 = [
   '  }',
   '  elseif ($line -eq "CENSUS") {',
   '    $members = [OrchestraJob]::Members()',
+  '    if ([OrchestraJob]::MembersError -ne "") { Write-Output ("CENSUS-ERR " + [OrchestraJob]::MembersError) }',
   '    if ($members.Count -gt 0) {',
   '      try { $procCache = @{}; Get-CimInstance Win32_Process | ForEach-Object { $procCache[[int]$_.ProcessId] = $_ } } catch { $procCache = $null }',
   '    }',
@@ -635,6 +641,9 @@ class JobHolder {
     // The LimitFlags the kernel reports for the job once created, as the
     // holder read them back. '' until READY answers.
     this.limitFlags = '';
+    // Set when the holder reported that the job PID query itself failed, so an
+    // empty member list is never mistaken for an empty job.
+    this.membersError = '';
   }
 
   // Spawns the holder and returns as soon as the process exists; `this.ready`
@@ -789,8 +798,12 @@ class JobHolder {
     if (!this._send('CENSUS')) return null;
     const rows = [];
     for (;;) {
-      const line = await this._expect(/^(PROC |CENSUS-END$)/);
+      const line = await this._expect(/^(PROC |CENSUS-ERR |CENSUS-END$)/);
       if (!line || line === 'CENSUS-END') break;
+      if (/^CENSUS-ERR /.test(line)) {
+        this.membersError = line.slice(11);
+        continue;
+      }
       const parts = line.slice(5).split('|');
       const pid = parseInt(parts[0], 10);
       if (!Number.isFinite(pid)) continue;
@@ -928,6 +941,10 @@ async function supervise(cfg) {
     // Windows only: the LimitFlags the kernel reports for the job, read back
     // rather than assumed. '' elsewhere.
     jobLimitFlags: '',
+    // Windows only: how many pids the job held at census time, before the
+    // engine itself is filtered out, and why the query failed if it did.
+    jobMemberCount: null,
+    jobMembersError: '',
     notes: [],
   };
 
@@ -1223,6 +1240,13 @@ async function supervise(cfg) {
     if (members === null) {
       receipt.notes.push('the job census could not be read');
     } else {
+      // The RAW count, before the engine itself is filtered out. An empty
+      // SURVIVORS list next to a process that demonstrably outlived the run is
+      // only explainable with this number: 0 means the job was empty (or the
+      // query failed — see jobMembersError), 1 means it held the engine alone
+      // and nothing it started inherited membership.
+      receipt.jobMemberCount = members.length;
+      if (holder.membersError) receipt.jobMembersError = holder.membersError;
       jobEntries = members
         .filter((r) => r.pid !== child.pid && r.pid !== process.pid)
         .map((r) => censusEntry(r, 'job'));
@@ -1428,6 +1452,12 @@ function censusBlock(receipt, opts) {
   // Windows: the flags the kernel reports, so "reaping = OFF" can be checked
   // against what the job is actually configured to do rather than believed.
   if (receipt.jobLimitFlags) lines.push('  job limit flags: ' + receipt.jobLimitFlags);
+  if (receipt.jobMemberCount !== null && receipt.jobMemberCount !== undefined) {
+    lines.push(
+      '  job held ' + receipt.jobMemberCount + ' process(es) at census time' +
+        (receipt.jobMembersError ? ' (' + receipt.jobMembersError + ')' : '')
+    );
+  }
   if (receipt.mechanismNote) lines.push('  note: ' + receipt.mechanismNote);
   if (receipt.census && receipt.census.unavailable) {
     lines.push('  note: ' + receipt.census.unavailable);

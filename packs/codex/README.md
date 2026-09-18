@@ -282,6 +282,17 @@ starting a long-lived service. `ORCHESTRA_JOBRUN=off` disables supervision
 outright. Both are named in the report header and in the census block: a
 guarantee that silently stopped applying is worse than one never claimed.
 
+**What `--preserve-survivors` promises, and where.** On every platform it
+promises that *this runner* will not kill what the engine started, and will say
+in the census what it left behind. On POSIX that is the whole story and the
+process keeps running. On Windows it is not: a process can belong to job objects
+the runner never created — node's own runtime puts children in one with
+`KILL_ON_JOB_CLOSE` — and those may reap the tree when the supervisor exits,
+whatever this runner does. So on Windows treat the flag as "the runner stood
+down", not as a guarantee the process survives. If an order genuinely needs a
+service to outlive the run on Windows, start it detached from the run entirely
+rather than relying on this flag.
+
 **Inert timeout floor.** An inert tier narrows what must be *verified*, not how
 long the engine takes to explore — a 9-line docs diff is still minutes. Inert
 reviews are floored at `1800000` ms when the cap came from a launcher flag or

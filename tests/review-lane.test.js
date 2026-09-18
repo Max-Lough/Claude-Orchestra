@@ -89,6 +89,14 @@ function git(args, cwd) {
   return (r.stdout || '').trim();
 }
 
+// git(), but a failure is an answer rather than an exception. For POLLING a
+// state that another process is concurrently changing: there, a transient
+// failure is part of the state being polled, not a broken test.
+function gitTry(args, cwd) {
+  const r = spawnSync('git', ['-C', cwd].concat(args), { encoding: 'utf8' });
+  return { ok: r.status === 0, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim() };
+}
+
 // A repository shaped like the one the field failure happened in: a small
 // committed change under review, and a session that kept working afterwards —
 // ~30 untracked plan files and a modified tracked file sitting on top of the
@@ -264,11 +272,24 @@ function sleep(ms) {
 // registering: git holds its own transient lock ("initializing") for the
 // duration of the add, and the runner's replaces it. Waiting for "no lock at
 // all" would now wait forever.
+//
+// FIX (Windows CI, 2026-09-18): this used the throwing git() and died on
+//   fatal: failed to read '.git/worktrees/wt/locked': No such file or directory
+// on one of three Windows jobs for the same commit — the other two passed, so
+// it is a race, not a break. `git worktree list` enumerates `.git/worktrees/*`
+// and then reads each entry's `locked` file, and the runner's own sweep can
+// remove a worktree between those two steps. That failure is part of the state
+// this loop exists to poll, so it retries instead of throwing. The assertion
+// is unchanged: the loop still waits for the real lock and still returns false
+// at the deadline if it never appears.
 async function waitOrchestraLock(repo, timeoutMs) {
   const deadline = Date.now() + (timeoutMs || 30000);
   for (;;) {
-    const blocks = git(['worktree', 'list', '--porcelain'], repo).split(/\n\n+/);
-    if (blocks.slice(1).some((b) => /^locked orchestra review pid \d+/m.test(b))) return true;
+    const listed = gitTry(['worktree', 'list', '--porcelain'], repo);
+    if (listed.ok) {
+      const blocks = listed.stdout.split(/\n\n+/);
+      if (blocks.slice(1).some((b) => /^locked orchestra review pid \d+/m.test(b))) return true;
+    }
     if (Date.now() > deadline) return false;
     await sleep(100);
   }

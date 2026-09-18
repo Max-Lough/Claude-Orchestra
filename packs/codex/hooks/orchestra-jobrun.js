@@ -117,6 +117,18 @@ const { spawn, spawnSync } = require('child_process');
 
 const IS_WINDOWS = process.platform === 'win32';
 
+// Captured at module load, while the parent is certainly still alive.
+//
+// FIX (Windows CI, 2026-09-18): this used to be read inside supervise(), after
+// the holder wait. `process.ppid` is `uv_os_getppid()`, which on Windows finds
+// the parent by walking a process snapshot — so once the parent has exited it
+// can answer 0, and `parentPid > 1` then skipped the watch entirely. Adding the
+// holder wait opened a ~2s window before the read in which a cancelled run's
+// launcher could die, and the cancellation case went from passing to
+// `cancelled:false, parentVanished:false, notes:[]` with the orphan alive.
+// Reading it once at startup cannot race with anything.
+const BOOT_PARENT_PID = process.ppid;
+
 const RECEIPT_SCHEMA = 'orchestra-jobrun/1';
 const DEFAULT_GRACE_MS = 2000;
 // GNU `timeout`'s convention for "the deadline fired", and 127 for "could not
@@ -1026,6 +1038,25 @@ async function supervise(cfg) {
     }
   }
 
+  // Building the job takes a second or two on Windows, and a run can be
+  // cancelled inside that window. Launching an engine for a run nobody is
+  // waiting on would be pure waste — and worse, the tree would then exist with
+  // no one left to notice it.
+  const preLaunchParent = cfg.parentPid > 0 ? cfg.parentPid : BOOT_PARENT_PID;
+  if (preLaunchParent > 1 && !parentAlive(preLaunchParent)) {
+    receipt.cancelled = true;
+    receipt.parentVanished = true;
+    receipt.notes.push(
+      'the parent process (' + preLaunchParent + ') was already gone before the engine was ' +
+        'launched — nothing was started'
+    );
+    receipt.endedAt = new Date().toISOString();
+    receipt.elapsedMs = Date.now() - startedAt;
+    if (holder) holder.close(true);
+    writeReceipt();
+    return receipt;
+  }
+
   // --- launch. stdio is inherited straight through, so the engine writes to
   // the runner's own pipes and this supervisor never buffers a report.
   let child = null;
@@ -1148,7 +1179,11 @@ async function supervise(cfg) {
   // the tree must not outlive it. On Windows killing a parent does NOT kill
   // children, so this poll is the only thing standing between a cancelled run
   // and a permanent orphan.
-  const parentPid = process.ppid;
+  //
+  // The pid comes from the caller when it can say (superviseSync passes its
+  // own), else from the boot-time reading — never from a fresh `process.ppid`
+  // here, which by now may be answering 0 for a parent that has already died.
+  const parentPid = cfg.parentPid > 0 ? cfg.parentPid : BOOT_PARENT_PID;
   const parentWatch = setInterval(() => {
     if (parentPid > 1 && !parentAlive(parentPid)) {
       receipt.cancelled = true;
@@ -1279,6 +1314,10 @@ function superviseSync(bin, args, spawnOpts, sup) {
     cfg.killSurvivors === false ? '--preserve-survivors' : '--kill-survivors',
   ];
   if (cfg.scratchDir) argv.push('--scratch-dir', cfg.scratchDir);
+  // The runner naming itself removes every guess about who the parent is: the
+  // supervisor never has to ask the OS, and cannot be told 0 by a snapshot
+  // taken after the runner died.
+  argv.push('--parent-pid', String(process.pid));
   if (spawnOpts && spawnOpts.windowsVerbatimArguments) argv.push('--windows-verbatim-arguments');
   argv.push('--', bin, ...(args || []));
 
@@ -1458,6 +1497,7 @@ function parseCliArgs(argv) {
     token: '',
     killSurvivors: true,
     scratchDir: '',
+    parentPid: 0,
     windowsVerbatimArguments: false,
     bin: '',
     args: [],
@@ -1474,6 +1514,7 @@ function parseCliArgs(argv) {
     else if (a === '--grace-ms') out.graceMs = parseInt(argv[++i], 10) || DEFAULT_GRACE_MS;
     else if (a === '--token') out.token = argv[++i] || '';
     else if (a === '--scratch-dir') out.scratchDir = argv[++i] || '';
+    else if (a === '--parent-pid') out.parentPid = parseInt(argv[++i], 10) || 0;
     else if (a === '--kill-survivors') out.killSurvivors = true;
     else if (a === '--preserve-survivors') out.killSurvivors = false;
     else if (a === '--windows-verbatim-arguments') out.windowsVerbatimArguments = true;
@@ -1511,6 +1552,7 @@ if (require.main === module) {
     token: cli.token,
     receiptFile: cli.receiptFile,
     scratchDir: cli.scratchDir,
+    parentPid: cli.parentPid,
     windowsVerbatimArguments: cli.windowsVerbatimArguments,
   })
     .then((receipt) => {

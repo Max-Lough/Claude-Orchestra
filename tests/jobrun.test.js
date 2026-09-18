@@ -197,8 +197,24 @@ function readJson(file) {
 // suite keeps its zero dependencies. `unref()` is the whole point: without it
 // the launcher would wait for the child, which is exactly what the Codex
 // command runner does NOT do.
+//
+// FIX (Windows CI, 2026-09-17): `detached` has to differ by platform, and the
+// reason is not cosmetic. libuv puts every NON-detached child of a node
+// process into a job object carrying JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, so
+// node's children die with node. An attached child therefore could not model
+// an orphan on Windows at all — it vanished the moment this launcher exited,
+// and "the orphan is gone" passed vacuously for a process that had never been
+// alive. (The --preserve-survivors twin is what caught it, by failing: the
+// whole reason those twins exist.)
+//
+// A detached child on Windows skips libuv's job, and node does NOT pass
+// CREATE_BREAKAWAY_FROM_JOB, so it stays inside the supervisor's job by
+// inheritance — exactly the real shape. On POSIX the opposite holds: a plain
+// child already outlives its parent, and `detached` would setsid it out of the
+// supervisor's process group, which is the escapee case, not this one.
 function hangLauncher(dir, opts) {
   const o = opts || {};
+  const detach = o.detached === undefined ? process.platform === 'win32' : o.detached;
   const file = path.join(dir, 'launch-orphan.js');
   fs.writeFileSync(
     file,
@@ -207,7 +223,7 @@ function hangLauncher(dir, opts) {
       "const fs = require('fs');",
       "const child = spawn(process.execPath, ['-e', 'setInterval(function () {}, 1000)'], {",
       "  stdio: 'ignore',",
-      '  detached: ' + (o.detached ? 'true' : 'false') + ',',
+      '  detached: ' + (detach ? 'true' : 'false') + ',',
       '});',
       'child.unref();',
       "fs.writeFileSync(process.env.ORPHAN_PID_FILE, String(child.pid), 'utf8');",

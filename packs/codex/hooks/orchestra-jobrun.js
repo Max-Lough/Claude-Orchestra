@@ -115,6 +115,8 @@ const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
+const IS_WINDOWS = process.platform === 'win32';
+
 const RECEIPT_SCHEMA = 'orchestra-jobrun/1';
 const DEFAULT_GRACE_MS = 2000;
 // GNU `timeout`'s convention for "the deadline fired", and 127 for "could not
@@ -127,9 +129,12 @@ const EXIT_SPAWN_FAILED = 127;
 const HOLDER_READY_TIMEOUT_MS = 30000;
 // The parent-death poll. A TaskStop, a `kill -9` on the launcher, or a closed
 // terminal all show up as "my parent is gone"; the tree dies with it.
-const PARENT_POLL_MS = 500;
-
-const IS_WINDOWS = process.platform === 'win32';
+//
+// Windows polls far more slowly because its liveness test costs a process
+// launch (see parentAlive): five seconds is a fine detection latency for a
+// cancelled run, and 0.02% of a poll's duty cycle is nothing next to a
+// two-hour cap.
+const PARENT_POLL_MS = IS_WINDOWS ? 5000 : 500;
 
 // --------------------------------------------------------------- process table
 //
@@ -148,6 +153,31 @@ function isAlive(pid) {
     // EPERM means it exists and is not ours to signal — still alive.
     return !!(e && e.code === 'EPERM');
   }
+}
+
+// FIX (Windows CI, 2026-09-17): isAlive() above is a correct liveness test on
+// POSIX and NOT one on Windows. `process.kill(pid, 0)` is an OpenProcess, and
+// OpenProcess keeps succeeding for a process that has already exited while any
+// handle to it remains open — so a killed parent read as alive forever, the
+// parent watch never fired, and a supervisor whose launcher had been killed
+// sat waiting on the engine instead of reaping it. The cancellation case in
+// tests/jobrun.test.js caught it: `cancelled:false, parentVanished:false` with
+// no notes at all, 15s after the launcher was SIGKILLed.
+//
+// `tasklist` lists only RUNNING processes, so it answers the question asked.
+// It costs a process launch (~60ms), which is why PARENT_POLL_MS is slow on
+// Windows. An answer we cannot get reads as "alive": killing a tree because a
+// diagnostic failed would be far worse than watching one a little longer.
+function parentAlive(pid) {
+  if (!(pid > 0)) return false;
+  if (!IS_WINDOWS) return isAlive(pid);
+  const r = spawnSync('tasklist', ['/FI', 'PID eq ' + pid, '/NH', '/FO', 'CSV'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 20000,
+  });
+  if (r.error || r.status !== 0 || typeof r.stdout !== 'string') return true;
+  return new RegExp('"' + pid + '"').test(r.stdout);
 }
 
 // Linux (and any /proc-carrying kernel): read the table directly. No
@@ -882,8 +912,16 @@ async function supervise(cfg) {
       'kill group but not listed by name';
   } else {
     receipt.census.source = LAST_SNAPSHOT_SOURCE;
+    // FIX (Windows CI, 2026-09-17): this walked from the runner and excluded
+    // only THIS process, so on Windows it reported the census's own
+    // `powershell.exe` and its `conhost.exe` as "debris from earlier work" —
+    // the snapshot tool showing up in its own snapshot. Exclude this
+    // supervisor's whole subtree: at this point it has no legitimate children,
+    // so everything under it belongs to the measurement, not to the machine.
+    const ownSubtree = new Set([process.pid]);
+    for (const r of descendantsOf(tableBefore, process.pid, '')) ownSubtree.add(r.pid);
     receipt.census.before = descendantsOf(tableBefore, process.ppid || process.pid, '')
-      .filter((r) => r.pid !== process.pid)
+      .filter((r) => !ownSubtree.has(r.pid))
       .map((r) => censusEntry(r, 'descendant'));
   }
 
@@ -1031,7 +1069,7 @@ async function supervise(cfg) {
   // and a permanent orphan.
   const parentPid = process.ppid;
   const parentWatch = setInterval(() => {
-    if (parentPid > 1 && !isAlive(parentPid)) {
+    if (parentPid > 1 && !parentAlive(parentPid)) {
       receipt.cancelled = true;
       receipt.parentVanished = true;
       clearInterval(parentWatch);

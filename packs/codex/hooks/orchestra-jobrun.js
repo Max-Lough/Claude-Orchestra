@@ -935,6 +935,11 @@ async function supervise(cfg) {
     timedOut: false,
     cancelled: false,
     parentVanished: false,
+    // Who the cancellation watch is watching, and how that pid was determined.
+    // An unarmed watch (pid 0) is the difference between "nothing cancelled
+    // this run" and "we could not tell", so it is recorded rather than implied.
+    parentPid: 0,
+    parentPidSource: '',
     abandoned: false,
     spawnError: null,
     census: { before: [], survivors: [], killed: [], stubborn: [], source: '', unavailable: '' },
@@ -957,6 +962,10 @@ async function supervise(cfg) {
     }
   };
 
+  // Who to watch for cancellation, and where that answer came from. Filled
+  // from the census snapshot below when the caller did not name a parent.
+  const RESOLVED_PARENT = { pid: cfg.parentPid > 0 ? cfg.parentPid : BOOT_PARENT_PID, source: cfg.parentPid > 0 ? 'caller' : 'process.ppid' };
+
   // --- pre-run census. Descendants of the RUNNER (this supervisor's parent)
   // before the engine launches: normally just this supervisor, and anything
   // else is debris earlier work left behind — which the Director should see
@@ -967,7 +976,24 @@ async function supervise(cfg) {
     receipt.census.unavailable =
       'the platform process table could not be read, so survivors can be killed via the ' +
       'kill group but not listed by name';
-  } else {
+    // FIX (Windows CI, 2026-09-18): who our parent is, from the KERNEL.
+    //
+    // `process.ppid` is `uv_os_getppid()`, and on Windows that is a lookup
+    // through a process snapshot that can answer 0 — reading it at module load
+    // (BOOT_PARENT_PID) was supposed to beat the parent's death to the punch
+    // and still did not hold up: the bare-CLI cancellation case ran 45s with
+    // an empty notes list, so the watch never armed at all. The census
+    // snapshot already contains our own row, and its ParentProcessId is the
+    // same number the kernel would give any other observer. Use it, and fall
+    // back to the libuv reading only if our row is somehow absent.
+    //
+    // superviseSync always passes --parent-pid, so the product path never
+    // depends on any of this; the CLI path now does not either.
+    const ownRow = tableBefore.find((r) => r.pid === process.pid);
+    if (!(cfg.parentPid > 0) && ownRow && ownRow.ppid > 1) {
+      RESOLVED_PARENT.pid = ownRow.ppid;
+      RESOLVED_PARENT.source = receipt.census.source || 'process table';
+    }
     receipt.census.source = LAST_SNAPSHOT_SOURCE;
     // FIX (Windows CI, 2026-09-17): this walked from the runner and excluded
     // only THIS process, so on Windows it reported the census's own
@@ -1059,7 +1085,7 @@ async function supervise(cfg) {
   // cancelled inside that window. Launching an engine for a run nobody is
   // waiting on would be pure waste — and worse, the tree would then exist with
   // no one left to notice it.
-  const preLaunchParent = cfg.parentPid > 0 ? cfg.parentPid : BOOT_PARENT_PID;
+  const preLaunchParent = RESOLVED_PARENT.pid;
   if (preLaunchParent > 1 && !parentAlive(preLaunchParent)) {
     receipt.cancelled = true;
     receipt.parentVanished = true;
@@ -1200,7 +1226,9 @@ async function supervise(cfg) {
   // The pid comes from the caller when it can say (superviseSync passes its
   // own), else from the boot-time reading — never from a fresh `process.ppid`
   // here, which by now may be answering 0 for a parent that has already died.
-  const parentPid = cfg.parentPid > 0 ? cfg.parentPid : BOOT_PARENT_PID;
+  const parentPid = RESOLVED_PARENT.pid;
+  receipt.parentPid = parentPid;
+  receipt.parentPidSource = RESOLVED_PARENT.source;
   const parentWatch = setInterval(() => {
     if (parentPid > 1 && !parentAlive(parentPid)) {
       receipt.cancelled = true;

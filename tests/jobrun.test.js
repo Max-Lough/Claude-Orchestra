@@ -532,9 +532,25 @@ section('4. a TaskStop of the launcher takes the tree with it');
   );
   const rec = trackReceipt(waitReceipt(receipt));
   check(
+    'the cancellation watch was armed, on a parent pid it could actually resolve',
+    !!rec && rec.parentPid > 1,
+    JSON.stringify(rec && { parentPid: rec.parentPid, parentPidSource: rec.parentPidSource })
+  );
+  check(
     'the receipt records the cancellation as a vanished parent, not a clean exit',
     !!rec && rec.parentVanished === true && rec.cancelled === true,
-    JSON.stringify(rec && { cancelled: rec.cancelled, parentVanished: rec.parentVanished, notes: rec.notes })
+    JSON.stringify(
+      rec && {
+        cancelled: rec.cancelled,
+        parentVanished: rec.parentVanished,
+        // Which pid was watched and where the number came from: an unarmed
+        // watch and a watch that never fired look identical without this.
+        parentPid: rec.parentPid,
+        parentPidSource: rec.parentPidSource,
+        endedAt: rec.endedAt,
+        notes: rec.notes,
+      }
+    )
   );
 }
 

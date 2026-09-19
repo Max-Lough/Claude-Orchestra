@@ -31,6 +31,7 @@ cross-compare still degrade to Claude-only exactly as before.
 | `hooks/orchestra-engine-mcp.js` | **The MCP transport** — a zero-dependency stdio MCP server exposing the three runners plus the doctor as typed tools (`orchestra_review`, `orchestra_exec`, `orchestra_crossplan`, `orchestra_doctor`). Registered in the project's root `.mcp.json` by the installer. |
 | `hooks/orchestra-review.js` | Review runner — builds the adversarial brief, drives `codex exec` in a sandbox (optionally in a clean worktree pinned to the commit under review), prints an Orchestra-format verdict. |
 | `hooks/orchestra-exec.js` | Execution runner — builds the Orchestra executor-law brief, drives `codex exec` in a `workspace-write` sandbox in the LIVE tree, audits which paths actually changed, prints an Orchestra-format executor report. One attempt, never auto-retried. Two rungs behind one `--profile` flag (`heavy`, `principal`); they differ only in model and effort. |
+| `hooks/orchestra-jobrun.js` | **The process-tree supervisor** — the kill group every lane's engine invocation runs inside (a Windows Job object with `KILL_ON_JOB_CLOSE` and no `BREAKAWAY_OK`; a POSIX process group elsewhere), plus the per-run process census the runners print. Also a standalone CLI, so the guarantee can be demonstrated against a deliberate hang without Codex in the picture. |
 | `hooks/orchestra-crossplan.js` | Cross-compare architect runner — drives `codex exec` read-only for one phase (draft / critique / revise), with web search on by default for research symmetry with the Claude lane, saves the produced document under `.claude/plans/cross-compare/`, and enforces the report-integrity nonce and a read-only tree fingerprint. |
 | `skills/cross-compare-plan/` | The `/cross-compare-plan` two-architect session — independent drafts, cross-critique, owner revision, blind merge, and (by default) a post-synthesis cross-family audit of the final plan by the GPT lane. |
 
@@ -181,21 +182,24 @@ Environment variables override the file; explicit runner flags override both.
 ```json
 {
   "codex": {
-    "reviewTimeoutMs": 2700000,
+    "reviewTimeoutMs": 5400000,
     "reviewModel": "gpt-5.6-sol",
     "reviewSandbox": "workspace-write",
     "helpersDir": "C:/tools/codex-helpers",
     "worktreeRoot": "C:/tmp/orchestra-review",
     "doNotRun": ["godot", "*.exe --headless"],
     "worktreeWarmupCmd": "godot --headless --import",
-    "integrityIgnore": ["*.import", ".godot/"]
+    "integrityIgnore": ["*.import", ".godot/"],
+    "execKillSurvivors": true,
+    "reviewKillSurvivors": true,
+    "crossplanKillSurvivors": true
   }
 }
 ```
 
 | Key | Effect |
 |---|---|
-| `reviewTimeoutMs` | Wall-clock cap. Reviews that run a real suite need far more than the 45-minute default. |
+| `reviewTimeoutMs` | Wall-clock cap per attempt (default 90 minutes). See "Timeout budgets". |
 | `reviewModel` / `reviewSandbox` | Same as `ORCHESTRA_REVIEW_MODEL` / `ORCHESTRA_REVIEW_SANDBOX`. |
 | `helpersDir` | A directory of known-good files mirrored into the Codex install directory before each run (see "Helper restore"). |
 | `doNotRun` | Commands the reviewer is forbidden to execute. Injected into the brief as a hard prohibition. |
@@ -206,6 +210,7 @@ Environment variables override the file; explicit runner flags override both.
 | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
 | `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
 | `integrityIgnore` / `integrityIgnoreDefaults` | Paths that are expected build/engine churn, added to (or replacing) the built-in list of generated-artifact paths. |
+| `execKillSurvivors` / `reviewKillSurvivors` / `crossplanKillSurvivors` | `true` by default: kill every process that outlived the engine in that lane (see "Process census"). `false` is the per-lane `--preserve-survivors` — the census still runs and the header says which mode was in force. |
 | `helperSiblings` / `requireHelperSiblings` | Files the Codex install must carry next to its executable (default on Windows: `codex-command-runner.exe`, `codex-resources`, `codex-windows-sandbox-setup.exe`). Verified every run — as files where the name says executable, so a directory of the right name does not pass; repaired where a known-good copy is locatable, including one misplaced inside the install itself; `requireHelperSiblings: true` makes a missing one a hard stop. |
 
 ## Reliability machinery
@@ -223,10 +228,75 @@ resolve. Teardown is guaranteed on every exit path, and each run sweeps
 worktrees orphaned by a hard kill. The header names the checkout that produced
 the verdict. Uncommitted work still reviews live.
 
+**Process census and the kill group.** Every engine invocation runs inside a
+kill group the *runner* owns — on Windows a Job object created with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and without `BREAKAWAY_OK`, held open by a
+tiny PowerShell holder process for the run's lifetime; elsewhere a POSIX process
+group. The group is terminated on timeout, on cancellation, when the launcher
+vanishes (a `TaskStop`, a `kill -9`, a closed terminal) and on any crash. On a
+normal exit the runner enumerates the group **and** walks the parent/child table
+down from the engine PID, and reaps whatever is still alive. What it found is
+printed as a `PROCESS CENSUS` block beside the tree audit:
+
+```
+PROCESS CENSUS: kill group = Windows Job object, KILL_ON_JOB_CLOSE, no BREAKAWAY_OK; reaping = on
+  pre-run descendants: none
+  SURVIVORS: none — nothing the engine started outlived it.
+```
+
+Why it exists: Codex 0.154.0 on Windows calls `preserve_descendants()` on the
+non-timeout root-exit branch of its command runner, and its PTY job helper
+strips `KILL_ON_JOB_CLOSE` from the job it builds — so **any child still running
+when a shell command returns outlives the run**. An order that launched
+`Godot_v4.6.3-stable_win64_console.exe --headless` and returned left the engine
+running forever under the sandbox identity, blocking every quiet-machine
+benchmark gate on the project until somebody found it by hand. That is not an
+administrator problem: the owner account can terminate those processes, and
+`windows.sandbox = "elevated"` describes admin-approved sandbox *setup*, not the
+orphan's privileges. So the fix lives in the runner, where the run is owned,
+rather than in the project or in an order's prose.
+
+The job is created and confirmed **before** the engine is launched, and the
+engine is assigned to it before it can have spawned anything, so everything it
+starts inherits membership. That costs a second or two of startup on Windows
+(the holder compiles a P/Invoke shim) and buys an unconditional guarantee
+instead of a race: an earlier version let the shim compile in parallel and a
+fast engine was never assigned at all.
+
+What the mechanism cannot do, stated rather than implied: a process that
+deliberately leaves the group — `CREATE_BREAKAWAY_FROM_JOB` on Windows (which
+needs `BREAKAWAY_OK` on our job, and we never set it), or `setsid()` on POSIX —
+is outside it. Those are caught instead by the census's parent/child walk, the
+documented fallback reaper. Know its limit: the walk goes *down* from the engine
+PID, so it needs every intermediate process to still be listed. On Windows the
+parent PID survives the parent's death, but `Win32_Process` lists only *running*
+processes, so a chain whose middle has already exited (`cmd.exe` → `codex` →
+an orphan) is invisible to it. That is precisely why the job must hold the
+engine from its first instruction rather than catch up later. A survivor the
+runner could not kill is reported as `STILL ALIVE after the kill sweep`, never
+silently.
+
+`--preserve-survivors` (or `codex.execKillSurvivors: false`, and its review /
+cross-plan siblings) censuses without reaping, for an order that is deliberately
+starting a long-lived service. `ORCHESTRA_JOBRUN=off` disables supervision
+outright. Both are named in the report header and in the census block: a
+guarantee that silently stopped applying is worse than one never claimed.
+
+**What `--preserve-survivors` promises, and where.** On every platform it
+promises that *this runner* will not kill what the engine started, and will say
+in the census what it left behind. On POSIX that is the whole story and the
+process keeps running. On Windows it is not: a process can belong to job objects
+the runner never created — node's own runtime puts children in one with
+`KILL_ON_JOB_CLOSE` — and those may reap the tree when the supervisor exits,
+whatever this runner does. So on Windows treat the flag as "the runner stood
+down", not as a guarantee the process survives. If an order genuinely needs a
+service to outlive the run on Windows, start it detached from the run entirely
+rather than relying on this flag.
+
 **Inert timeout floor.** An inert tier narrows what must be *verified*, not how
 long the engine takes to explore — a 9-line docs diff is still minutes. Inert
-reviews are floored at `600000` ms when the cap came from a launcher flag or the
-default; a cap you set yourself is honoured and flagged.
+reviews are floored at `1800000` ms when the cap came from a launcher flag or
+the default; a cap you set yourself is honoured and flagged.
 
 **Git config isolation.** A sandboxed process often cannot read the user's
 global git config, and git then complains on *every* invocation. The runner
@@ -249,10 +319,39 @@ holding known-good copies; before each run the runner mirrors anything missing
 from the Codex install directory and reports what it restored. No filenames are
 hardcoded — the directory you populate defines the repair kit.
 
+**Timeout budgets.** The defaults are set from the field ledger
+(`plans/field-evidence-tug-review-rounds-2026-09-05.md`), not from a guess about
+how long work ought to take, and they are deliberately generous: a cross-vendor
+run should hit its cap only when something is genuinely stuck, never because it
+was a slow-but-normal run.
+
+| Cap | Default | What the ledger measured |
+|---|---|---|
+| `execTimeoutMs` | `7200000` (2 h) | The comparable executor rungs averaged **29.5 min** (`executor-heavy`, 51 runs) and **31.1 min** (`executor-heavy-xhigh`, 8 runs). The old `1800000` sat at roughly the *mean* of that population. This lane is never auto-retried, so a cap that fires costs the whole order and leaves a half-edited tree. |
+| `reviewTimeoutMs` | `5400000` (90 min) | 78 Sol review completions: **20.7 min average, 12–39 min observed**, of which **9–10 min per attempt** is the cold worktree import. The old `2700000` sat barely above the observed maximum. The lane retries once, so a visible timeout now needs two runs past 90 minutes. |
+| `crossplanTimeoutMs` | `3600000` (1 h) | The lane's own tool description said a phase "routinely uses most of" the old `900000`, and this repository's `.claude/orchestra.json` already overrode it to exactly `3600000` by hand. |
+| inert review floor | `1800000` (30 min) | "Inert" narrows what must be *verified*, not how long the engine spends looking — a 9-line docs review once burned a round at `300000`. The old `600000` floor barely covered the cold import. |
+| `worktreeWarmupTimeoutMs` | `1800000` (30 min) | The old `300000` was **below the 9–10 minute cold import it was capping**, so an asset-heavy project had its warmup killed every round and reviewed a half-imported tree. |
+| `probeTimeoutMs` | `180000` (3 min) | A stage-a echo. A probe that merely times out is a warning, not a refusal, so the cost of the raise is bounded to the pathological path. |
+
+Agent wall-clock is long-tailed rather than normal, so each cap is a multiple of
+the measured mean (~2–4×) rather than a computed percentile — the ledger is a
+few dozen to a few hundred runs per lane, which is enough to place a mean and an
+observed range but not a true p99. Raise any of them further for a project whose
+suite is slower; they are all config.
+
+Note the transport side: an `orchestra_*` MCP call blocks for the whole runner
+chain, and the server emits `notifications/progress` every 30 s so a client that
+resets its timeout on progress can hold arbitrarily long. Pre-release
+measurement proved a 1800 s hold; the longer caps above have not been proven end
+to end through a client, so if a long run comes back as a transport error rather
+than a runner report, that seam is the first place to look.
+
 **Timeout as a value, not prose.** A work order saying "use a 30-minute timeout"
 does nothing; only the config does. Set `codex.reviewTimeoutMs`, or have the
 launcher pass `--timeout-ms`. The header prints the cap that was actually
 applied, so a prose-only instruction is visibly ignored instead of silently so.
+The launchers are told never to pass a *smaller* cap to hurry a run along.
 
 **Hard command prohibition.** "Skip the tests" in the brief gets overridden by
 the reviewer's own judgment — it runs them anyway and burns the clock. `--no-tests`
@@ -371,15 +470,15 @@ loudly when it does.
 |---|---|---|
 | `ORCHESTRA_REVIEW_MODEL` | `gpt-5.6-sol` | Pin the OpenAI review model; hard default, not "Codex's own default". |
 | `ORCHESTRA_REVIEW_SANDBOX` | `workspace-write` | Codex sandbox; `read-only` forbids writes but blocks most test runners. |
-| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `2700000` | Wall-clock cap. |
+| `ORCHESTRA_REVIEW_TIMEOUT_MS` | `5400000` | Wall-clock cap per attempt (90 min). See "Timeout budgets". |
 | `ORCHESTRA_REVIEW_IDLE_MS` | `1500` | Idle-precheck settle window; `0` disables. Live-tree reviews only. |
 | `ORCHESTRA_REVIEW_WORKTREE_ROOT` | OS temp dir | Scratch root for a pinned review's worktree. Set-and-unwritable is a hard failure. |
 | `ORCHESTRA_REVIEW_GIT_ISOLATION` | `1` | Isolate git's global config for the review; `0` disables. |
 | `ORCHESTRA_REVIEW_RETRIES` | `1` | Extra attempts after a retryable failure (max 3). |
 | `ORCHESTRA_REVIEW_PROBE` | `1` | Stage-a `codex exec` echo before the real attempt; `0` disables. |
-| `ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS` | `90000` | Cap for that probe. |
+| `ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS` | `180000` | Cap for that probe. |
 | `ORCHESTRA_REVIEW_WARMUP_CMD` | — | Command run in the checkout before the integrity baseline. |
-| `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `300000` | Cap for the warmup. |
+| `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `1800000` | Cap for the warmup. The old `300000` was below the 9–10 minute cold import it was capping. |
 | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
 | `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |
@@ -387,16 +486,20 @@ loudly when it does.
 | `ORCHESTRA_EXEC_HEAVY_EFFORT` | `high` | Heavy-rung reasoning effort (`codex.execHeavyEffort`), sent as `-c model_reasoning_effort=`. |
 | `ORCHESTRA_EXEC_PRINCIPAL_MODEL` | `gpt-6-astra` | Principal-rung execution model (`codex.execPrincipalModel`). Read only when the run selects `--profile principal`. |
 | `ORCHESTRA_EXEC_PRINCIPAL_EFFORT` | `xhigh` | Principal-rung reasoning effort (`codex.execPrincipalEffort`), sent as `-c model_reasoning_effort=`. |
-| `ORCHESTRA_EXEC_TIMEOUT_MS` | `1800000` | Wall-clock cap for an execution run (`codex.execTimeoutMs`; also `--timeout-ms`). It runs your verification — budget a build plus a suite. |
+| `ORCHESTRA_EXEC_TIMEOUT_MS` | `7200000` | Wall-clock cap for an execution run (`codex.execTimeoutMs`; also `--timeout-ms`). It runs your verification — budget a build plus a suite. |
 | `ORCHESTRA_EXEC_SANDBOX` | `workspace-write` | Codex sandbox for execution (`codex.execSandbox`). `read-only` = dry run; the runner warns that no edit can land. |
 | `ORCHESTRA_EXEC_IDLE_MS` | `1500` | Idle-precheck settle window before executing; `0` disables. Shares `codex.idleMs` with review. |
 | `ORCHESTRA_EXEC_GIT_ISOLATION` | `1` | Git-config isolation for the run, with the user's `user.name`/`user.email` copied into the scratch config so ordered commits still work. Shares `codex.gitConfigIsolation`. |
 | `ORCHESTRA_EXEC_PROBE` | `1` | Stage-a echo before the real attempt (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_EXEC_PROBE_TIMEOUT_MS` caps it. |
 | `ORCHESTRA_EXEC_ARGS` | — | Extra args appended to the execution `codex exec`. |
+| `ORCHESTRA_EXEC_KILL_SURVIVORS` | `1` | Kill processes that outlived the engine (`codex.execKillSurvivors`; also `--kill-survivors` / `--preserve-survivors`). |
+| `ORCHESTRA_REVIEW_KILL_SURVIVORS` | `1` | Same for the review lane (`codex.reviewKillSurvivors`). |
+| `ORCHESTRA_CROSSPLAN_KILL_SURVIVORS` | `1` | Same for the cross-compare lane (`codex.crossplanKillSurvivors`). |
+| `ORCHESTRA_JOBRUN` | — | `off` disables process supervision entirely in **all three lanes** — no kill group, no census. Every report header says so; it is never a default. |
 | `CODEX_BIN` | `codex` | Codex executable path (shared by all runners). |
 | `ORCHESTRA_CROSSPLAN_MODEL` | `gpt-6-astra` | Cross-compare GPT-architect model (`codex.crossplanModel`; also the skill's `model=`). |
 | `ORCHESTRA_CROSSPLAN_EFFORT` | `xhigh` | Cross-compare GPT-architect reasoning effort (`codex.crossplanEffort`), sent as `-c model_reasoning_effort=`. The skill's `effort=` overrides per session and routes the Claude lane to the matching tier. |
-| `ORCHESTRA_CROSSPLAN_TIMEOUT_MS` | `900000` | Wall-clock cap per cross-compare phase (`codex.crossplanTimeoutMs`; also `--timeout-ms`). |
+| `ORCHESTRA_CROSSPLAN_TIMEOUT_MS` | `3600000` | Wall-clock cap per cross-compare phase (`codex.crossplanTimeoutMs`; also `--timeout-ms`). |
 | `ORCHESTRA_CROSSPLAN_WEB` | `1` | GPT-lane web search, sent as `-c tools.web_search=true` (`codex.crossplanWeb`; also `--no-web`; flag > env > config > default). On by default so both lanes carry the same research capability; whether either lane USES it is governed by the brief's GROUND TRUTH grant. The provenance header prints the setting. |
 | `ORCHESTRA_CROSSPLAN_PROBE` | `1` | Stage-a echo before each phase (shares `codex.authProbe` / `probeTimeoutMs`); `ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS` caps it. |
 | `ORCHESTRA_CROSSPLAN_ARGS` | — | Extra args appended to the cross-compare `codex exec`. Resume-prone tokens are refused. |
@@ -416,6 +519,7 @@ about the symptom.
 | The install relocated to a new layout (`%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>`), invalidating layout-specific advice. | 2026-08-12, codex-cli ≥ 0.147.0. | Both layouts detected and named in the preflight; repair searches sibling version directories and the other layout. **Unverified upstream:** whether the new layout ships or needs `codex-command-runner.exe` / `codex-resources` at all. The check is therefore a loud warning, not a hard stop, unless you set `requireHelperSiblings`. |
 | `codex-windows-sandbox-setup.exe` is resolved by name rather than relative to the binary, so an install whose directory is not on `PATH` cannot find its own sandbox helper — and fails silently rather than saying so. | 2026-08-12 → 08-18, Windows. | The name is in the default sibling list, verified beside the resolved binary, and repaired from a misplaced copy; the install directory is prepended to the engine's `PATH`; `--doctor` answers the question without running a review. The silence itself is upstream. |
 | `codex exec` exiting 143 (SIGTERM-class) mid-review with no verdict and nothing on stderr. | 2026-08-12 gate, attempt 1. | Full attribution (the runner proves it was not its own timer), plus one automatic retry in a fresh checkout — which is what produced the verdict that round. If the kill originates *inside* codex, only upstream can fix the cause. |
+| A child still running when a shell command's root process exits is *preserved*, not reaped (`preserve_descendants()` on the non-timeout branch of `windows-sandbox-rs/src/bin/command_runner/win.rs`; `utils/pty/src/win/job.rs` strips `KILL_ON_JOB_CLOSE`). An order that launches a headless engine and returns orphans it permanently. | 2026-09-15, Codex 0.154.0, Windows. Godot 4.6.3 processes owned by the sandbox identity outliving every run, blocking quiet-machine benchmark gates. | The runner owns its own Job object (`KILL_ON_JOB_CLOSE`, no `BREAKAWAY_OK`) around the whole invocation, terminates it on timeout/cancel/crash, and censuses plus reaps survivors on normal exit — see "Process census". Upstream still preserves descendants inside its own job; ours encloses it. |
 | The engine explores at length before concluding, so even a trivial diff costs minutes. | Every round. | Timeout floors and honest cap reporting; `doNotRun` / `--no-tests` as hard prohibitions. Not fixable here — it is how the engine works. |
 | Model-side flakiness: an occasional run that produces no final message despite exiting 0. | Occasional. | Classified as a zero-output failure and retried once; reported in the `ATTEMPT LOG` either way, so the lane's real reliability stays visible. |
 

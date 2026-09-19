@@ -12,6 +12,26 @@
  * Behaviour knobs (env):
  *   STUB_CODEX_SLEEP_MS   busy-wait this long before writing anything (used to
  *                         kill the runner mid-review).
+ *   STUB_CODEX_SPAWN_ORPHAN
+ *                         launch a never-exiting child and RETURN while it is
+ *                         still running — the exact field shape the runner's
+ *                         kill group exists for (Codex 0.154.0 on Windows
+ *                         preserves descendants when a shell command's root
+ *                         process exits, so a `godot --headless` launched by
+ *                         an order outlives the order). Spawned before any
+ *                         simulated sleep or death, so the timeout path
+ *                         orphans too.
+ *   STUB_CODEX_ORPHAN_PID_FILE
+ *                         where to write that child's PID, so a test can ask
+ *                         the operating system whether it is still alive
+ *                         after the runner returned.
+ *   STUB_CODEX_ORPHAN_DETACHED
+ *                         force the orphan detached (1) or attached (0),
+ *                         overriding the per-platform default below. On POSIX,
+ *                         detached means its OWN session/process group, which
+ *                         models a descendant that escapes a process-group
+ *                         kill the way CREATE_BREAKAWAY_FROM_JOB would escape
+ *                         a Windows job.
  *   STUB_CODEX_PARTIAL    text streamed to stdout BEFORE that sleep — an engine
  *                         that had already said something when it was killed.
  *   STUB_CODEX_EXIT       exit with this status instead of 0.
@@ -75,7 +95,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const argv = process.argv.slice(2);
 function flag(name) {
@@ -141,6 +161,47 @@ if (/ORCHESTRA_PROBE_OK/.test(brief)) {
   }
   process.stdout.write('ORCHESTRA_PROBE_OK\n');
   process.exit(0);
+}
+
+// The orphan, before anything that could kill this process: an order whose
+// engine dies mid-run has still launched whatever it launched, and that debris
+// is precisely what the runner's census and reaper must account for.
+if (process.env.STUB_CODEX_SPAWN_ORPHAN) {
+  // FIX (Windows CI, 2026-09-17): `detached` has to differ by platform, and
+  // the reason is not cosmetic. libuv puts every NON-detached child of a node
+  // process into a job object carrying JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, so
+  // that node's children die with node. An attached child therefore cannot
+  // model the failure this fixture exists to model: it vanished the moment
+  // this stub exited, and the Windows cases passed vacuously ("the orphan is
+  // gone" is trivially true for a process that was never alive) until the
+  // --preserve-survivors twin caught it by failing.
+  //
+  // A detached child on Windows skips that libuv job — and node does NOT pass
+  // CREATE_BREAKAWAY_FROM_JOB, so the child stays inside the RUNNER's job by
+  // inheritance. That is exactly the real shape: a process that outlives the
+  // command that launched it, still inside the kill group the runner owns.
+  //
+  // On POSIX the opposite holds: a plain child already outlives its parent,
+  // and `detached` would setsid it out of the runner's process group — the
+  // escapee case, which STUB_CODEX_ORPHAN_DETACHED=1 asks for deliberately.
+  const detachDefault = process.platform === 'win32';
+  const detach = process.env.STUB_CODEX_ORPHAN_DETACHED
+    ? process.env.STUB_CODEX_ORPHAN_DETACHED === '1'
+    : detachDefault;
+  const orphan = spawn(process.execPath, ['-e', 'setInterval(function () {}, 1000)'], {
+    stdio: 'ignore',
+    detached: detach,
+  });
+  // Without unref() this process would wait for the child it just launched,
+  // which is the one thing the modelled failure does NOT do.
+  orphan.unref();
+  if (process.env.STUB_CODEX_ORPHAN_PID_FILE) {
+    try {
+      fs.writeFileSync(process.env.STUB_CODEX_ORPHAN_PID_FILE, String(orphan.pid), 'utf8');
+    } catch (_) {
+      /* the test asserts on the PID file; a failure to write shows up there */
+    }
+  }
 }
 
 // Text streamed BEFORE the sleep: a real engine narrates as it works, so an

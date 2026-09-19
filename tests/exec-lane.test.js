@@ -123,6 +123,14 @@ function runExec(fx, extraArgs, extraEnv, opts) {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
         CODEX_HOME: CLEAN_CODEX_HOME,
+        // Process supervision OFF for the bulk of this suite. On Windows the
+        // kill group costs a PowerShell job holder and two Win32_Process
+        // snapshots per run, and this suite invokes the runner ~104 times —
+        // paying for a fixture no case here asserts on would put the job over
+        // its CI timeout. The supervised default path, including the kill
+        // group, the census block and the header line, is covered end to end
+        // against these same runners in tests/jobrun.test.js.
+        ORCHESTRA_JOBRUN: 'off',
         ORCHESTRA_EXEC_IDLE_MS: '0',
         // The executor report shape, so the runner's missing-STATUS note is
         // exercised deliberately (case 8) rather than on every case.

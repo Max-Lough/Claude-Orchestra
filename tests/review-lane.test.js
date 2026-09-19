@@ -89,6 +89,14 @@ function git(args, cwd) {
   return (r.stdout || '').trim();
 }
 
+// git(), but a failure is an answer rather than an exception. For POLLING a
+// state that another process is concurrently changing: there, a transient
+// failure is part of the state being polled, not a broken test.
+function gitTry(args, cwd) {
+  const r = spawnSync('git', ['-C', cwd].concat(args), { encoding: 'utf8' });
+  return { ok: r.status === 0, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim() };
+}
+
 // A repository shaped like the one the field failure happened in: a small
 // committed change under review, and a session that kept working afterwards —
 // ~30 untracked plan files and a modified tracked file sitting on top of the
@@ -182,6 +190,14 @@ function runReview(fx, extraArgs, extraEnv, opts) {
         // to disable; an empty CODEX_HOME keeps the developer's real ~/.codex
         // out of the exact override lists asserted below.
         CODEX_HOME: CLEAN_CODEX_HOME,
+        // Process supervision OFF for the bulk of this suite. On Windows the
+        // kill group costs a PowerShell job holder and two Win32_Process
+        // snapshots per run, and this suite invokes the runner ~76 times —
+        // paying for a fixture no case here asserts on would put the job over
+        // its CI timeout. The supervised default path, including the kill
+        // group, the census block and the header line, is covered end to end
+        // against these same runners in tests/jobrun.test.js.
+        ORCHESTRA_JOBRUN: 'off',
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
         // Expect no helper siblings unless a case says otherwise, so the same
@@ -256,11 +272,24 @@ function sleep(ms) {
 // registering: git holds its own transient lock ("initializing") for the
 // duration of the add, and the runner's replaces it. Waiting for "no lock at
 // all" would now wait forever.
+//
+// FIX (Windows CI, 2026-09-18): this used the throwing git() and died on
+//   fatal: failed to read '.git/worktrees/wt/locked': No such file or directory
+// on one of three Windows jobs for the same commit — the other two passed, so
+// it is a race, not a break. `git worktree list` enumerates `.git/worktrees/*`
+// and then reads each entry's `locked` file, and the runner's own sweep can
+// remove a worktree between those two steps. That failure is part of the state
+// this loop exists to poll, so it retries instead of throwing. The assertion
+// is unchanged: the loop still waits for the real lock and still returns false
+// at the deadline if it never appears.
 async function waitOrchestraLock(repo, timeoutMs) {
   const deadline = Date.now() + (timeoutMs || 30000);
   for (;;) {
-    const blocks = git(['worktree', 'list', '--porcelain'], repo).split(/\n\n+/);
-    if (blocks.slice(1).some((b) => /^locked orchestra review pid \d+/m.test(b))) return true;
+    const listed = gitTry(['worktree', 'list', '--porcelain'], repo);
+    if (listed.ok) {
+      const blocks = listed.stdout.split(/\n\n+/);
+      if (blocks.slice(1).some((b) => /^locked orchestra review pid \d+/m.test(b))) return true;
+    }
     if (Date.now() > deadline) return false;
     await sleep(100);
   }
@@ -600,12 +629,12 @@ function case5() {
 }
 
 function case6() {
-  section('6. Inert reviews get the 600000ms floor');
+  section('6. Inert reviews get the 1800000ms floor');
   const fx = makeDirtyRepo();
   const flagged = runReview(fx, ['--tier', 'inert', '--timeout-ms', '300000']);
   check(
     'a launcher flag below the floor is raised, and says so',
-    /timeout: 600000ms \(flag 300000ms → raised to the 600000ms inert floor\)/.test(flagged.stdout || ''),
+    /timeout: 1800000ms \(flag 300000ms → raised to the 1800000ms inert floor\)/.test(flagged.stdout || ''),
     (flagged.stdout || '').split('\n')[0]
   );
 
@@ -619,20 +648,20 @@ function case6() {
   const userSet = runReview(fx, ['--tier', 'inert'], { ORCHESTRA_REVIEW_TIMEOUT_MS: '120000' });
   check(
     'a cap the user set is honoured, not overridden',
-    /timeout: 120000ms \(env, below the 600000ms inert floor — expect a timeout\)/.test(userSet.stdout || ''),
+    /timeout: 120000ms \(env, below the 1800000ms inert floor — expect a timeout\)/.test(userSet.stdout || ''),
     (userSet.stdout || '').split('\n')[0]
   );
 
   const dflt = runReview(fx, ['--tier', 'inert']);
   check(
-    'the default (2700000ms) already clears the 600000ms inert floor',
-    /timeout: 2700000ms \(default\)/.test(dflt.stdout || ''),
+    'the default (5400000ms) already clears the 1800000ms inert floor',
+    /timeout: 5400000ms \(default\)/.test(dflt.stdout || ''),
     (dflt.stdout || '').split('\n')[0]
   );
 }
 
 function case6b() {
-  section('6b. Zero overrides: the Sol reviewer and the 2700000ms timeout are hard defaults');
+  section('6b. Zero overrides: the Sol reviewer and the 5400000ms timeout are hard defaults');
   // runReview() always forces ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol so every other
   // case exercises a real cross-vendor model name; this case proves the SAME
   // value is what the runner falls back to on its own, with no flag, no env,
@@ -661,8 +690,8 @@ function case6b() {
     'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
   );
   check(
-    'the default timeout is 2700000ms with no flag, env, or config',
-    /timeout: 2700000ms \(default\)/.test(out),
+    'the default timeout is 5400000ms with no flag, env, or config',
+    /timeout: 5400000ms \(default\)/.test(out),
     out.split('\n')[0]
   );
 }
@@ -2005,7 +2034,7 @@ function case26() {
     broken.split('\n').slice(0, 12).join('\n')
   );
 
-  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 });
+  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 }); // deliberately NOT the default, so 'orchestra.json' is provably the source
   // The classic typo: the key one level too high, where nothing reads it.
   fs.writeFileSync(
     path.join(fx.repo, '.claude', 'orchestra.json'),
@@ -2024,7 +2053,7 @@ function case26() {
   );
 
   // Control: the key in the right place lands, and the header says where from.
-  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 });
+  writeProjectConfig(fx, { reviewTimeoutMs: 2700000 }); // deliberately NOT the default, so 'orchestra.json' is provably the source
   const good = runReview(fx, ['--head-ref', fx.head]).stdout || '';
   check(
     'under "codex" it applies, sourced to the file',

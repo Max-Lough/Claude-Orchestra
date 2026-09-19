@@ -18,7 +18,7 @@ The Director's order names the **phase**, the **shared brief** (verbatim text or
 - `brief` — the shared brief, **verbatim**; both architects must receive identical text
 - `out_path` — the document destination, as given (normally under `.claude/plans/cross-compare/<slug>/`)
 - `own_plan_path` / `rival_plan_path` / `critique_path` — exactly the paths the order names for this phase (critique needs own + rival; revise needs own + critique; draft needs none)
-- `effort` / `model` / `timeout_ms` — **only** if the order names them; otherwise the defaults apply (gpt-6-astra, xhigh effort, 900000 ms)
+- `effort` / `model` / `timeout_ms` — **only** if the order names them; otherwise the defaults apply (gpt-6-astra, xhigh effort, 3600000 ms)
 
 The call blocks until the consultation is over — high-effort recon plus a full document routinely takes many minutes, and that is normal. The runner saves the document to `out_path` itself; you never write files.
 

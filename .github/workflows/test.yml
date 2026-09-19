@@ -105,6 +105,16 @@ jobs:
         # asserts on settings resolution, the tree audit, and the no-retry law.
         run: node tests/exec-lane.test.js
 
+      - name: Process-supervision suite
+        # The kill group around every Codex-lane engine invocation. The cases
+        # launch a process that deliberately never exits, let the runner
+        # return, and then ask the operating system whether it is still there —
+        # each with a --preserve-survivors twin, so a process that would have
+        # died on its own fails the twin rather than passing the first case for
+        # the wrong reason. The Windows job holder's line protocol is driven
+        # through a stub on every platform.
+        run: node tests/jobrun.test.js
+
       - name: MCP-lane suite
         # The orchestra-engine MCP server — the typed transport that replaced
         # the launcher shell pipeline. Speaks real JSON-RPC to the server over

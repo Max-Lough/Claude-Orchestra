@@ -90,13 +90,15 @@ function effectiveCapMs(lane, timeoutMsArg) {
   if (num(timeoutMsArg)) return num(timeoutMsArg);
   const cfg = readCodexConfig();
   if (lane === 'review') {
-    // Default matches orchestra-review.js's own runner default (2700000ms).
-    return num(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS) || num(cfg.reviewTimeoutMs) || 2700000;
+    // Default matches orchestra-review.js's own runner default (5400000ms).
+    return num(process.env.ORCHESTRA_REVIEW_TIMEOUT_MS) || num(cfg.reviewTimeoutMs) || 5400000;
   }
   if (lane === 'exec') {
-    return num(process.env.ORCHESTRA_EXEC_TIMEOUT_MS) || num(cfg.execTimeoutMs) || 1800000;
+    // Matches orchestra-exec.js's EXEC_TIMEOUT_MS.
+    return num(process.env.ORCHESTRA_EXEC_TIMEOUT_MS) || num(cfg.execTimeoutMs) || 7200000;
   }
-  return num(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS) || num(cfg.crossplanTimeoutMs) || 900000; // crossplan
+  // Matches orchestra-crossplan.js's CROSSPLAN_TIMEOUT_MS.
+  return num(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS) || num(cfg.crossplanTimeoutMs) || 3600000; // crossplan
 }
 
 // The backstop covers the runner's WHOLE chain, not one attempt: a review may
@@ -110,7 +112,7 @@ function backstopMs(lane, capMs) {
     if (retries === undefined) retries = num(cfg.reviewRetries);
     if (retries === undefined) retries = 1;
     retries = Math.min(retries, 3);
-    const warmup = num(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS) || num(cfg.worktreeWarmupTimeoutMs) || 300000;
+    const warmup = num(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS) || num(cfg.worktreeWarmupTimeoutMs) || 1800000;
     return capMs * (1 + retries) + warmup + 300000;
   }
   if (lane === 'exec') return capMs + 300000; // never auto-retried
@@ -555,11 +557,12 @@ const TOOLS = [
         base_ref: { type: 'string', description: 'Commit the change is measured FROM (with head_ref).' },
         head_ref: { type: 'string', description: 'Commit under review. Always pass when the change is committed — pins the review to a clean checkout.' },
         tier: { type: 'string', enum: ['inert'], description: 'Pass "inert" ONLY when the Director\'s order explicitly declares TIER: inert. Full depth is the default.' },
-        timeout_ms: { type: 'number', description: 'Wall-clock cap per attempt, only when the order names one. Otherwise the project setting "codex": { "reviewTimeoutMs": <ms> } applies, else 2700000; inert floor 600000. The report header states the value and where it came from.' },
+        timeout_ms: { type: 'number', description: 'Wall-clock cap per attempt, only when the order names one. Otherwise the project setting "codex": { "reviewTimeoutMs": <ms> } applies, else 5400000; inert floor 1800000. The default is deliberately generous — the field ledger puts a Sol review at 12-39 minutes with 9-10 of them spent on the cold worktree import — so pass this ONLY when the order names a cap, never to hurry a review along. The report header states the value and where it came from.' },
         no_tests: { type: 'boolean', description: 'Hard-forbid running the suite/build/app. Set it whenever the order says so ANYWHERE — including inside the work_order text; prose alone does not stop the engine. Affected claims come back UNVERIFIED (prohibited).' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the reviewer must not execute. Lift every command the order forbids into this list, wherever the order says it.' },
         allow: { type: 'array', items: { type: 'string' }, description: 'Exact commands the order explicitly PERMITS despite no_tests or a restriction written into the order (e.g. a self-test the brief allows). Lift each one as written; the header reports "allowed commands: N".' },
         warmup_cmd: { type: 'string', description: 'Command run unsandboxed in the fresh pinned checkout before the integrity baseline (e.g. "pnpm install"). Pinned reviews only.' },
+        preserve_survivors: { type: 'boolean', description: 'Leave processes the engine started running instead of killing them when the run ends. Default false: the runner reaps them, and every report carries a PROCESS CENSUS block either way. Pass true ONLY when the order explicitly says it starts a long-lived service that must survive the run — never on your own judgment, because the orphans then become somebody else\'s to find.' },
       },
       required: ['work_order', 'executor_report'],
     },
@@ -591,6 +594,7 @@ const TOOLS = [
       pushForbids(args, a.forbid);
       if (Array.isArray(a.allow)) for (const x of a.allow) if (typeof x === 'string' && x.trim()) args.push('--allow', x);
       if (typeof a.warmup_cmd === 'string' && a.warmup_cmd.trim()) args.push('--warmup-cmd', a.warmup_cmd);
+      if (a.preserve_survivors === true) args.push('--preserve-survivors');
       runRunner(id, 'review', args, progressToken, undefined, dir);
     },
   },
@@ -610,11 +614,12 @@ const TOOLS = [
       properties: {
         work_order: { type: 'string', description: 'The FULL execution work order — goal, scope, constraints, context, verification expectations — verbatim.' },
         profile: { type: 'string', enum: ['heavy', 'principal'], description: 'REQUIRED. Which Codex executor rung runs the order: "heavy" is GPT-5.6 Sol at high effort; "principal" is GPT-6 Astra at xhigh effort. Each launcher passes its own rung and never chooses between them. A call without it is refused before any runner launches — there is no default rung.' },
-        timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one. Default 1800000 — budget a build plus a suite.' },
+        timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one. Default 7200000 (two hours) — an exec order runs the project\'s verification, so budget a build plus a suite on top of the model\'s own thinking, and this lane is never auto-retried. Never pass a smaller value to hurry an order along.' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the executor must not run.' },
         cd: { type: 'string', description: 'Directory the engine executes in. Pass the isolated worktree the order names, or your own working directory whenever you were launched inside a worktree (the runner cannot see where you are: without cd it runs in the main checkout). Omit only when you are in the main checkout.' },
         model: { type: 'string', description: 'Pin a specific model for this run, only when the order names one.' },
         effort: { type: 'string', description: 'Reasoning effort override, only when the order names one.' },
+        preserve_survivors: { type: 'boolean', description: 'Leave processes the engine started running instead of killing them when the run ends. Default false: the runner reaps them, and every report carries a PROCESS CENSUS block either way. Pass true ONLY when the work order explicitly says the order starts a long-lived service that must survive it — never on your own judgment, because the orphans then become somebody else\'s to find.' },
       },
       required: ['work_order', 'profile'],
     },
@@ -663,6 +668,7 @@ const TOOLS = [
       if (typeof a.cd === 'string' && a.cd.trim()) args.push('--cd', a.cd);
       if (effectiveModel) args.push('--model', effectiveModel);
       if (effectiveEffort) args.push('--effort', effectiveEffort);
+      if (a.preserve_survivors === true) args.push('--preserve-survivors');
       runRunner(id, 'exec', args, progressToken, undefined, dir);
     },
   },
@@ -674,8 +680,9 @@ const TOOLS = [
       'from the shared brief; "critique" critiques the rival plan (own_plan_path + rival_plan_path required); ' +
       '"revise" produces plan v2 from own_plan_path + critique_path with a disposition per finding. The produced ' +
       'document is saved to out_path and returned verbatim under a provenance header (DOCUMENT SAVED line). ' +
-      'Blocks until done (default cap 900000 ms; high-effort recon plus a full document routinely uses most of ' +
-      'it). One call per phase; relay a STATUS: CROSSPLAN_UNAVAILABLE as-is — re-dispatch only on the ' +
+      'Blocks until done (default cap 3600000 ms: high-effort recon plus a full document routinely used most ' +
+      'of the old 900000 cap, so it was raised rather than left to fire on its own tail). One call per phase; ' +
+      'relay a STATUS: CROSSPLAN_UNAVAILABLE as-is — re-dispatch only on the ' +
       'Director\'s say-so (the lane is read-only, so a re-dispatch is safe once the condition is fixed).',
     inputSchema: {
       type: 'object',
@@ -688,7 +695,8 @@ const TOOLS = [
         critique_path: { type: 'string', description: 'The critique this architect\'s plan received. Required for revise only.' },
         effort: { type: 'string', description: 'Reasoning effort, only when the order names one (default xhigh).' },
         model: { type: 'string', description: 'Model id, only when the order names one (default gpt-6-astra).' },
-        timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one (default 900000).' },
+        timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one (default 3600000).' },
+        preserve_survivors: { type: 'boolean', description: 'Leave processes the engine started running instead of killing them when the run ends. Default false: the runner reaps them, and every report carries a PROCESS CENSUS block either way. Pass true ONLY when the order explicitly says it starts a long-lived service that must survive the run — never on your own judgment, because the orphans then become somebody else\'s to find.' },
       },
       required: ['phase', 'brief', 'out_path'],
     },
@@ -725,6 +733,7 @@ const TOOLS = [
       if (typeof a.effort === 'string' && a.effort.trim()) args.push('--effort', codexEffort(a.effort));
       if (typeof a.model === 'string' && a.model.trim()) args.push('--model', a.model);
       if (num(a.timeout_ms)) args.push('--timeout-ms', String(num(a.timeout_ms)));
+      if (a.preserve_survivors === true) args.push('--preserve-survivors');
       runRunner(id, 'crossplan', args, progressToken, undefined, dir);
     },
   },
@@ -780,7 +789,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.3.4' },
+          serverInfo: { name: 'orchestra-engine', version: '3.5.0' },
         },
       });
       return;

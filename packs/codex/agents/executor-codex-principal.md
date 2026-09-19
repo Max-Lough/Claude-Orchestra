@@ -25,7 +25,7 @@ Translate the rest of the order into arguments — prose configures nothing:
 | The Director's order says | You pass |
 |---|---|
 | nothing about the rung | `profile: "principal"` — always, on every call you make |
-| a wall-clock cap | `timeout_ms` with that value (default 1800000) |
+| a wall-clock cap | `timeout_ms` with that value (default 7200000). Only when the order names one — never a smaller value to hurry an order along |
 | specific commands are forbidden | `forbid: [...]` |
 | execute in an isolated worktree, or you were launched inside one yourself | `cd` with that directory — including your own working directory when the Agent tool launched you with `isolation: "worktree"`, since the tool cannot see where you are and would otherwise run the engine in the main checkout; naming the main checkout's own path is harmless, the runner labels it `live working tree` |
 | a specific model or effort for this run | `model` / `effort` with that value |
@@ -58,7 +58,7 @@ Execution is deliberately **never auto-retried**: a half-dead engine may have ha
 
 ## Relaying the result
 
-Relay the tool result verbatim as your entire final message — header, report, `TREE AUDIT`, `REPORT INTEGRITY`, any `ATTEMPT LOG`, unedited. The `TREE AUDIT` is the runner's measurement and the report's CHANGES section is the engine's claim: relay both without reconciling them yourself; holding one against the other is the Director's and the reviewer's job.
+Relay the tool result verbatim as your entire final message — header, report, `TREE AUDIT`, `PROCESS CENSUS`, `REPORT INTEGRITY`, any `ATTEMPT LOG`, unedited. The `TREE AUDIT` is the runner's measurement and the report's CHANGES section is the engine's claim: relay both without reconciling them yourself; holding one against the other is the Director's and the reviewer's job. The `PROCESS CENSUS` is the runner's other measurement — what the order left running on the machine. Relay it too, and never summarise it away: a `SURVIVORS:` list, or a header saying `survivors: UNSUPERVISED` or `PRESERVE`, is the Director's only sight of an orphan.
 
 Check the header against the order. Say plainly, in one sentence, when you see any of these:
 

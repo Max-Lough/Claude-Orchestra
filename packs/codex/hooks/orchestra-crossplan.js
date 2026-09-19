@@ -58,17 +58,28 @@
  *   ORCHESTRA_CROSSPLAN_EFFORT      reasoning effort, passed to codex as
  *                                    `-c model_reasoning_effort=<v>`
  *                                    (default "xhigh"; the skill offers xhigh and max)
- *   ORCHESTRA_CROSSPLAN_TIMEOUT_MS  wall-clock cap (default 900000)
+ *   ORCHESTRA_CROSSPLAN_TIMEOUT_MS  wall-clock cap per phase (default 3600000)
  *   ORCHESTRA_CROSSPLAN_WEB         0 disables the engine's web search
  *                                    (default on — research symmetry with
  *                                    the Claude lane; also --no-web)
  *   ORCHESTRA_CROSSPLAN_ARGS        extra `codex exec` args (resume/continue
  *                                    tokens are refused — fresh session law)
  *   ORCHESTRA_CROSSPLAN_PROBE       0 disables the stage-a echo probe
+ *   ORCHESTRA_CROSSPLAN_KILL_SURVIVORS
+ *                                   0 is --preserve-survivors: census the
+ *                                    processes that outlived the engine but
+ *                                    leave them running. 1 (default) kills
+ *                                    them. Read-only bounds what the engine
+ *                                    may WRITE, not what it may LAUNCH.
+ *   ORCHESTRA_JOBRUN                off disables process supervision entirely
+ *                                    — no kill group, no census. Shared with
+ *                                    the review/exec lanes and printed in
+ *                                    every header. See orchestra-jobrun.js.
  *   CODEX_BIN / ORCHESTRA_CODEX_HELPERS  shared with the review/exec lanes
  *   .claude/orchestra.json → "codex": { crossplanModel, crossplanEffort,
  *     crossplanTimeoutMs, crossplanWeb, authProbe, probeTimeoutMs,
- *     helpersDir, integrityIgnore, integrityIgnoreDefaults }
+ *     crossplanKillSurvivors, helpersDir, integrityIgnore,
+ *     integrityIgnoreDefaults }
  */
 'use strict';
 
@@ -101,13 +112,30 @@ const DEFAULT_INTEGRITY_IGNORE = [
 
 const PHASES = ['draft', 'critique', 'revise'];
 
+// The wall-clock cap for ONE consultation phase.
+//
+// The old 900000 (15 min) was already known to be too small by the lane's own
+// documentation: the `orchestra_crossplan` tool description says a phase
+// "routinely uses most of it", and the harness repository's own
+// .claude/orchestra.json carries `{ "codex": { "crossplanTimeoutMs": 3600000 } }`
+// — the owner had already overridden the default by hand, which is the
+// clearest evidence a default can get that it is wrong. A cap that is
+// routinely almost exhausted is a cap that fires on the tail of its own
+// distribution.
+//
+// This lane is an architect at xhigh effort with web search on, asked for a
+// full plan document: recon, then drafting, then a writeup. 3600000 adopts the
+// value the field already chose, and re-dispatch stays safe because the lane
+// is read-only.
+const CROSSPLAN_TIMEOUT_MS = 3600000;
+
 const CONFIG = {
   phase: '',
   model: '',
   modelSource: 'default',
   effort: '',
   effortSource: 'default',
-  timeoutMs: parseInt(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS || '', 10) || 900000,
+  timeoutMs: parseInt(process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS || '', 10) || CROSSPLAN_TIMEOUT_MS,
   timeoutSource: process.env.ORCHESTRA_CROSSPLAN_TIMEOUT_MS ? 'env' : 'default',
   helpersDir: (process.env.ORCHESTRA_CODEX_HELPERS || '').trim(),
   extraArgs: (process.env.ORCHESTRA_CROSSPLAN_ARGS || '').trim(),
@@ -123,9 +151,14 @@ const CONFIG = {
   mcpLabel: '',
   mcpArgs: [],
   probe: process.env.ORCHESTRA_CROSSPLAN_PROBE !== '0',
+  killSurvivors: process.env.ORCHESTRA_CROSSPLAN_KILL_SURVIVORS !== '0',
+  killSurvivorsSource: process.env.ORCHESTRA_CROSSPLAN_KILL_SURVIVORS ? 'env' : 'default',
+  // Supervision itself, not the reaping policy. Off means no kill group and no
+  // census — the only configuration in which this lane can leave an orphan.
+  supervise: (process.env.ORCHESTRA_JOBRUN || '').trim().toLowerCase() !== 'off',
   web: true,
   webSource: 'default',
-  probeTimeoutMs: intOr(process.env.ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS, 90000),
+  probeTimeoutMs: intOr(process.env.ORCHESTRA_CROSSPLAN_PROBE_TIMEOUT_MS, 180000),
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
   outPath: '',
@@ -137,6 +170,11 @@ function intOr(raw, fallback) {
 }
 
 // ------------------------------------------------------------------ helpers
+
+// The kill group around the engine invocation. Shared with the exec and
+// review lanes so the guarantee, the census wording and the receipt shape
+// cannot drift between them — one Codex install, one orphan story.
+const jobrun = require('./orchestra-jobrun');
 
 function parseArgs(argv) {
   const out = {};
@@ -153,6 +191,8 @@ function parseArgs(argv) {
     else if (a === '--timeout-ms') out.timeoutMs = argv[++i];
     else if (a === '--no-probe') out.noProbe = true;
     else if (a === '--no-web') out.noWeb = true;
+    else if (a === '--kill-survivors') out.killSurvivors = true;
+    else if (a === '--preserve-survivors') out.killSurvivors = false;
     else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
@@ -228,22 +268,79 @@ function matchesAny(rel, patterns) {
   return false;
 }
 
-// Launch the engine — same cmd.exe routing as the review/exec runners: node
-// refuses to spawn `.cmd`/`.bat` directly (BatBadBut, CVE-2024-27980), and on
-// Windows a `codex` installed through npm IS a `.cmd` shim.
-function spawnEngine(bin, args, opts) {
+// How the engine is actually launched — same cmd.exe routing as the
+// review/exec runners: node refuses to spawn `.cmd`/`.bat` directly
+// (BatBadBut, CVE-2024-27980), and on Windows a `codex` installed through npm
+// IS a `.cmd` shim. Split out so the SUPERVISED path below makes exactly the
+// same launch decision: a kill group around a differently-spelled command
+// would be a kill group around the wrong process.
+function engineLaunchSpec(bin, args) {
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(bin))) {
     const line = [bin]
       .concat(args)
       .map((a) => '"' + String(a).replace(/"/g, '""') + '"')
       .join(' ');
-    return spawnSync(
-      process.env.ComSpec || 'cmd.exe',
-      ['/d', '/s', '/c', '"' + line + '"'],
-      Object.assign({}, opts, { windowsVerbatimArguments: true })
-    );
+    return {
+      bin: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', '"' + line + '"'],
+      windowsVerbatimArguments: true,
+    };
   }
-  return spawnSync(bin, args, opts);
+  return { bin, args: args.slice(), windowsVerbatimArguments: false };
+}
+
+function spawnEngine(bin, args, opts) {
+  const spec = engineLaunchSpec(bin, args);
+  return spawnSync(
+    spec.bin,
+    spec.args,
+    spec.windowsVerbatimArguments
+      ? Object.assign({}, opts, { windowsVerbatimArguments: true })
+      : opts
+  );
+}
+
+// What the supervised consultation left behind. Read-only bounds what the
+// engine may WRITE, not what it may LAUNCH — an architect that runs a probe
+// command can start a headless process like any other lane, and on Windows
+// Codex preserves descendants when a shell command's root process exits
+// (0.154.0). So this lane gets the same kill group and the same census.
+const CENSUS = { attempted: false, receipt: null, disabled: false, why: '' };
+
+function spawnEngineSupervised(bin, args, opts) {
+  CENSUS.attempted = true;
+  if (!CONFIG.supervise) {
+    CENSUS.disabled = true;
+    CENSUS.why = 'ORCHESTRA_JOBRUN=off';
+    return spawnEngine(bin, args, opts);
+  }
+  const spec = engineLaunchSpec(bin, args);
+  const r = jobrun.superviseSync(
+    spec.bin,
+    spec.args,
+    Object.assign({}, opts, { windowsVerbatimArguments: spec.windowsVerbatimArguments }),
+    {
+      receiptFile: path.join(SCRATCH.dir, 'jobrun.json'),
+      deadlineMs: CONFIG.timeoutMs,
+      killSurvivors: CONFIG.killSurvivors,
+      token: RUN_NONCE,
+      scratchDir: SCRATCH.dir,
+    }
+  );
+  CENSUS.receipt = r.receipt || null;
+  if (r.supervisionError) PREFLIGHT.push('process supervision: ' + r.supervisionError);
+  return r;
+}
+
+// The census block, with the same provenance discipline as the runner's other
+// measurements. Empty before any engine ran.
+function censusReport() {
+  if (!CENSUS.attempted) return '';
+  return jobrun.censusBlock(CENSUS.receipt, {
+    token: RUN_NONCE,
+    disabled: CENSUS.disabled,
+    disabledWhy: CENSUS.why,
+  });
 }
 
 function copyInto(src, dest) {
@@ -1124,6 +1221,14 @@ function settingsBits() {
     'timeout: ' + CONFIG.timeoutMs + 'ms (' + CONFIG.timeoutSource + ')',
     'attempts: 1 (re-dispatch is safe — the lane is read-only)',
     'mcp: ' + (CONFIG.mcpLabel || 'not resolved'),
+    // What this consultation could leave running on the machine. Read-only
+    // bounds what the engine may WRITE, not what it may LAUNCH.
+    'survivors: ' +
+      (!CONFIG.supervise
+        ? 'UNSUPERVISED (ORCHESTRA_JOBRUN=off) — orphans possible'
+        : CONFIG.killSurvivors
+        ? 'kill (' + CONFIG.killSurvivorsSource + ')'
+        : 'PRESERVE (' + CONFIG.killSurvivorsSource + ')'),
   ];
 }
 
@@ -1176,9 +1281,11 @@ function integrityWarning(delta) {
 }
 
 function printDocument(body, warning) {
+  const census = censusReport();
   process.stdout.write(
     engineHeader() + '\n\n' + body.replace(/\s+$/, '') + '\n' +
       (warning ? '\n' + warning + '\n' : '') +
+      (census ? '\n' + census + '\n' : '') +
       '\nREPORT INTEGRITY: verified — the engine echoed run token ' + RUN_NONCE + '.\n'
   );
 }
@@ -1211,7 +1318,12 @@ function printUnavailable(reason, detail, att, suspectBody) {
       '--- previous session; do not save or act on it as this run\'s document) ---\n' +
       indent(boundedDiagnostic(suspectBody, 16000), '  ')
     : '';
-  process.stdout.write(unavailableHeader() + '\n\n' + block + suspect + diag + '\n');
+  // A dead consultation's debris is exactly what a Director needs named, so
+  // the census is on this path too.
+  const census = censusReport();
+  process.stdout.write(
+    unavailableHeader() + '\n\n' + block + (census ? '\n\n' + census : '') + suspect + diag + '\n'
+  );
 }
 
 // ----------------------------------------------------------- exit forensics
@@ -1341,6 +1453,7 @@ function main() {
         '         --out <file> [--own-plan <file>] [--rival-plan <file>]\n' +
         '         [--critique <file>] [--model <id>] [--effort <level>]\n' +
         '         [--timeout-ms <n>] [--no-probe] [--no-web]\n' +
+        '         [--kill-survivors | --preserve-survivors]\n' +
         '\n' +
         '  Runs one cross-compare consultation phase via an OpenAI model driven\n' +
         '  by the Codex CLI, read-only in the project tree. The produced document\n' +
@@ -1399,6 +1512,17 @@ function main() {
       CONFIG.timeoutMs = t;
       CONFIG.timeoutSource = 'flag';
     }
+  }
+  if (
+    !process.env.ORCHESTRA_CROSSPLAN_KILL_SURVIVORS &&
+    codexCfg.crossplanKillSurvivors != null
+  ) {
+    CONFIG.killSurvivors = codexCfg.crossplanKillSurvivors !== false;
+    CONFIG.killSurvivorsSource = 'orchestra.json';
+  }
+  if (args.killSurvivors != null) {
+    CONFIG.killSurvivors = args.killSurvivors !== false;
+    CONFIG.killSurvivorsSource = 'flag';
   }
   if (!process.env.ORCHESTRA_CROSSPLAN_PROBE && codexCfg.authProbe != null) {
     CONFIG.probe = codexCfg.authProbe !== false;
@@ -1573,7 +1697,10 @@ function main() {
   codexArgs.push('-'); // read the brief from stdin
 
   const startedAt = Date.now();
-  const run = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
+  // The cap is the SUPERVISOR's deadline (it can kill a whole tree, where
+  // node's own timer only kills the process it spawned); superviseSync keeps
+  // node's timer on as a backstop a minute later.
+  const run = spawnEngineSupervised(CONFIG.resolvedBin || CONFIG.bin, codexArgs, {
     cwd: CONFIG.projectDir,
     input: fullBrief,
     encoding: 'utf8',

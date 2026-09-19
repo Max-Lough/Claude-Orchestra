@@ -9,6 +9,175 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.5.0 — the cross-vendor caps were set at the mean of what they cap
+
+**Why.** Every Codex-lane wall-clock cap was a guess, and the guesses were low.
+The field ledger this repository already carries
+(`plans/field-evidence-tug-review-rounds-2026-09-05.md`, reconstructed from 78
+Sol reviews and 59 heavy-tier executor runs across the four-day Tug campaign)
+says what the work actually costs:
+
+| Lane | Measured | Old cap |
+|---|---|---|
+| Codex review (Sol, high) | 20.7 min mean, 12–39 min observed, of which 9–10 min is the cold worktree import paid on *every* attempt | 45 min |
+| Comparable executor rungs | 29.5 min mean (`executor-heavy`, 51 runs), 31.1 min (`executor-heavy-xhigh`, 8 runs) | 30 min |
+| Cross-compare phase | the lane's own tool description said a phase "routinely uses most of it" | 15 min |
+
+So the exec cap sat at roughly the **mean** of the population it caps — a cap
+that fires on about half its runs is a coin flip, not a safety net — and the
+review cap sat barely above the observed **maximum**, leaving nothing for a
+longer diff or a colder cache. The cross-compare cap was already being
+overridden by hand: this repository's own `.claude/orchestra.json` contains
+nothing but `{ "codex": { "crossplanTimeoutMs": 3600000 } }`, which is the
+clearest evidence a default can get that it is wrong.
+
+Two of the smaller caps were worse than low. `worktreeWarmupTimeoutMs` was
+`300000` while the same notebook recorded the cold Godot import it exists to
+cover at **9–10 minutes** — a cap set below the measured cost of the very
+command it caps, so an asset-heavy project had its warmup killed every round
+and then reviewed a half-imported tree. And the inert review floor was
+`600000`, barely more than that import, although the floor exists precisely
+because "inert" narrows what must be *verified*, not how long the engine spends
+looking.
+
+**Fixed.** New defaults, each a multiple of the measured mean rather than a
+computed percentile — agent wall-clock is long-tailed, and a few dozen to a few
+hundred runs per lane is enough to place a mean and an observed range but not a
+true p99:
+
+| Setting | Was | Now | Multiple of measured mean |
+|---|---|---|---|
+| `execTimeoutMs` | 1800000 (30 min) | **7200000** (2 h) | ~4× |
+| `reviewTimeoutMs` | 2700000 (45 min) | **5400000** (90 min) | ~4.3× (~2.3× the observed max) |
+| `crossplanTimeoutMs` | 900000 (15 min) | **3600000** (1 h) | the value the field already chose |
+| inert review floor | 600000 (10 min) | **1800000** (30 min) | — |
+| `worktreeWarmupTimeoutMs` | 300000 (5 min) | **1800000** (30 min) | ~3× the measured cold import |
+| `probeTimeoutMs` | 90000 (90 s) | **180000** (3 min) | — |
+
+The exec lane gets the largest multiple on purpose: it is never auto-retried,
+so a cap that fires costs the whole order *and* leaves a half-edited tree for
+the Director to clean up before re-dispatching. The review lane retries once,
+so a user-visible timeout there now needs two runs past 90 minutes.
+
+Nothing about resolution changed: flag > env > `orchestra.json` > default, and
+the header still prints the value with its source, so a cap that came from
+somewhere other than these defaults is as visible as it ever was. Both executor
+launcher definitions and all three MCP tool descriptions now say explicitly
+that `timeout_ms` is for an order that *names* a cap, and is never to be passed
+to hurry a run along.
+
+**Also fixed.** The transport kept its own copy of each lane's default (it
+resolves the cap before the runner starts, to place its kill-backstop above
+it), and the suite guarded only the review lane against drift between the two.
+A stale copy is invisible until a real run goes long enough to hit the tighter
+of the two numbers, at which point the backstop kills a run that was still
+inside its cap. That guard now covers the exec lane as well. Three stale
+documented defaults were corrected in passing: the root README and the
+`orchestra-status` skill both still advertised `reviewTimeoutMs` as `1800000`,
+which it had not been since 3.0.
+
+**Not proven.** An `orchestra_*` MCP call blocks for the whole runner chain, and
+the server emits `notifications/progress` every 30 s so a client that resets its
+timeout on progress can hold arbitrarily long. Pre-release measurement proved a
+1800 s hold (`packs/codex/FIELD-VALIDATION.md`); these caps go well past that
+and the longer holds have not been measured end to end through a client. If a
+long run comes back as an `MCP TRANSPORT ERROR` rather than a runner report,
+that seam is the first place to look — the runner's own timer is not what
+failed.
+
+## 3.4.0 — the Codex lane stopped leaving processes running
+
+**Why.** An order that launched a headless engine and returned left it running
+forever. Codex 0.154.0 on Windows calls `preserve_descendants()` on the
+non-timeout root-exit branch of its command runner
+(`windows-sandbox-rs/src/bin/command_runner/win.rs`), and its PTY job helper
+(`utils/pty/src/win/job.rs`) strips `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` from
+the job it builds — so any child still alive when a shell command returns
+outlives the run. In the field (2026-09-15) that meant Godot 4.6.3 processes
+owned by the sandbox identity accumulating after every Codex-lane order, and
+every quiet-machine benchmark gate on the project blocked until somebody found
+and killed them by hand.
+
+Two things that were *not* the cause, because both were checked and both cost
+time. It is not a privilege problem: the owner account can `Stop-Process` the
+survivors, the process DACL grants Everyone terminate rights, and
+`windows.sandbox = "elevated"` describes admin-approved sandbox *setup*, not
+what the orphan holds. And it is not something an order can fix: prose telling
+an executor to clean up after itself is prose, and the failing case is exactly
+the one where the engine does not get to run its cleanup. The standing
+workaround was to keep any Godot-launching order off the Codex lane entirely,
+which is a whole rung of the executor ladder given up to a process-lifetime bug.
+
+**Fixed.** The runner owns a kill group around the whole invocation, so the
+guarantee does not depend on what Codex does inside it. New
+`packs/codex/hooks/orchestra-jobrun.js` supervises every engine launch in all
+three lanes:
+
+- **Windows** — a Job object this supervisor creates with
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and *without* `BREAKAWAY_OK` or
+  `SILENT_BREAKAWAY_OK`. A nested job cannot escape an outer job's
+  kill-on-close; only `CREATE_BREAKAWAY_FROM_JOB` can, and that requires
+  `BREAKAWAY_OK` on the outer job, which this one never sets. That is why
+  Codex's own job stripping kill-on-close cannot defeat it. The handle is held
+  by a small PowerShell holder process rather than by the supervisor, so losing
+  the supervisor outright — a `kill -9`, a `TaskStop` that does not walk the
+  tree — closes the handle and the kernel reaps the tree.
+- **POSIX** — a new process group (`setsid`), signalled as a group.
+- **Both** — `TerminateJobObject` / group-kill on timeout, on cancellation, on
+  a crash, and when the launcher process vanishes (polled, because on Windows
+  killing a parent does not kill its children). On a normal exit the supervisor
+  enumerates the group (`JobObjectBasicProcessIdList`) and reaps everything in
+  it that is not the engine.
+
+**The documented fallback, because the job is not total.** A process that
+deliberately breaks away, and a process started in the millisecond between
+spawn and job assignment, are outside the group. Both are caught by a second,
+independent pass: a parent/child walk down from the engine PID, keyed on the
+run token, with a creation-time guard against a recycled PID. On Windows the
+parent PID survives the parent's death, so an orphaned Godot is still found
+this way. The two sources are merged, and the census says which found each
+survivor.
+
+**What a Director sees.** Every report — `STATUS: DONE`, `EXEC_UNAVAILABLE`,
+`REVIEW_UNAVAILABLE`, a cross-plan document — now carries a `PROCESS CENSUS`
+block beside the `TREE AUDIT`, measured in-process and stamped with the run's
+own token exactly as the audit is: the kill-group mechanism, any pre-run
+descendants (debris from earlier work, explicitly not attributed to this run),
+and then `SURVIVORS: none` or the PIDs with image names, creation times and
+whether the runner killed them. A survivor that would not die is reported as
+`STILL ALIVE after the kill sweep`, with the consequence named — a machine that
+is not quiet makes the run's timing evidence worthless. No separate scout.
+
+**Opting out, loudly.** `--kill-survivors` is the default and
+`--preserve-survivors` censuses without reaping, for an order deliberately
+starting a long-lived service; per-lane config keys (`execKillSurvivors`,
+`reviewKillSurvivors`, `crossplanKillSurvivors`) and env vars do the same.
+`ORCHESTRA_JOBRUN=off` disables supervision entirely. All three appear in the
+report header (`survivors: kill (default)` / `PRESERVE (flag)` /
+`UNSUPERVISED (ORCHESTRA_JOBRUN=off)`) and in the census block, because a
+guarantee that silently stopped applying is worse than one never claimed.
+
+**Also fixed, found while testing the above.** A kill group that refuses to die
+would have hung the supervisor, and with it the runner that calls it
+synchronously — node's own backstop timer is no help there, since it can only
+signal a process already ignoring signals. Every termination now arms a
+deadline of its own; past it the supervisor writes what it knows
+(`abandoned: true`, and a census block that says the census is incomplete) and
+leaves.
+
+**Tested.** `tests/jobrun.test.js` launches processes that deliberately never
+exit and then asks the operating system whether they are still there, on the
+normal-exit path, the timeout path and the cancelled-launcher path, through the
+CLI and through the real exec and review runners. Each has a
+`--preserve-survivors` twin over the same fixture asserting the process is
+*still alive*, so a process that would have exited on its own fails the twin
+rather than passing the first case for the wrong reason. Both mutations were
+run: disabling the survivor reap fails 4 cases, and no-oping the group
+terminate fails 4 others. The Windows job holder speaks a line protocol, and
+`tests/fixtures/stub-jobholder.js` speaks it too, so the driver — assignment,
+census parsing, a refused kill, a wedged holder that must time out rather than
+hang — is exercised on every platform, not only where PowerShell exists.
+
 ## 3.3.4 — a path with a space in it was not a path claim
 
 **Why.** 3.3.2 taught the exec lane's report-integrity check to hold only

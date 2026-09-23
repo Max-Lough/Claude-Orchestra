@@ -199,7 +199,7 @@ function runReview(fx, extraArgs, extraEnv, opts) {
         // against these same runners in tests/jobrun.test.js.
         ORCHESTRA_JOBRUN: 'off',
         ORCHESTRA_REVIEW_IDLE_MS: '0',
-        ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
+        ORCHESTRA_REVIEW_MODEL: 'gpt-6-sol',
         // Expect no helper siblings unless a case says otherwise, so the same
         // assertions hold on Windows (where the default list is non-empty) as
         // everywhere else. Case 15 sets this explicitly and tests the machinery.
@@ -229,7 +229,7 @@ function runReviewAllowStub(fx, extraArgs, allow, extraEnv) {
       CLAUDE_PROJECT_DIR: fx.repo,
       CODEX_BIN: STUB_BIN,
       ORCHESTRA_REVIEW_IDLE_MS: '0',
-      ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
+      ORCHESTRA_REVIEW_MODEL: 'gpt-6-sol',
       ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
       STUB_CODEX_PROBE_PATH: '.claude/plans/toon-conversion-campaign.md',
     },
@@ -662,10 +662,10 @@ function case6() {
 
 function case6b() {
   section('6b. Zero overrides: the Sol reviewer and the 5400000ms timeout are hard defaults');
-  // runReview() always forces ORCHESTRA_REVIEW_MODEL=gpt-5.6-sol so every other
+  // runReview() always forces ORCHESTRA_REVIEW_MODEL=gpt-6-sol so every other
   // case exercises a real cross-vendor model name; this case proves the SAME
   // value is what the runner falls back to on its own, with no flag, no env,
-  // and no orchestra.json entry at all — "gpt-5.6-sol" is a hard default, not
+  // and no orchestra.json entry at all — "gpt-6-sol" is a hard default, not
   // "whatever Codex's own default happens to be".
   const fx = makeDirtyRepo();
   const env = Object.assign(cleanEnv(), {
@@ -685,8 +685,8 @@ function case6b() {
   );
   const out = r.stdout || '';
   check(
-    'the default model is gpt-5.6-sol with no flag, env, or config',
-    field(out, 'MODEL') === 'gpt-5.6-sol',
+    'the default model is gpt-6-sol with no flag, env, or config',
+    field(out, 'MODEL') === 'gpt-6-sol',
     'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
   );
   check(

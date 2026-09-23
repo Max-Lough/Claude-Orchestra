@@ -9,23 +9,25 @@
  * cross-vendor executor for a problem with concrete prior evidence that
  * Anthropic models struggled on it — never routine work.
  *
- * Two rungs, selected by `--profile` and nothing else:
+ * Three rungs, selected by `--profile` and nothing else:
  *
- *   heavy      (default)   GPT-5.6 Sol at high effort
+ *   heavy      (default)   GPT-6 Sol at high effort
  *   principal              GPT-6 Astra at xhigh effort
+ *   luna                   GPT-6 Luna at xhigh effort (user request only)
  *
  * The rungs differ ONLY in model and effort — same sandbox, same idle
  * precheck, same tree audit, same one-attempt law, same report contract, and
  * each reads its own env vars and config keys. A run that names no profile
- * behaves exactly as this file did before the principal rung existed.
+ * behaves exactly as this file did before the principal rung existed; `luna`
+ * is reached only by naming it.
  *
- * The `executor-codex-heavy` and `executor-codex-principal` subagents (thin
- * Claude launchers) invoke this. The Director itself cannot — the guard
+ * The `executor-codex-heavy`, `executor-codex-principal` and
+ * `executor-codex-luna` subagents (thin Claude launchers) invoke this. The Director itself cannot — the guard
  * blocks its Bash — so execution stays delegated.
  *
  * Usage:
  *   node orchestra-exec.js --work-order <file> \
- *     [--profile heavy|principal] [--model <id>] [--effort <level>] \
+ *     [--profile heavy|principal|luna] [--model <id>] [--effort <level>] \
  *     [--timeout-ms <n>] [--forbid <cmd>]... [--cd <dir>] [--no-probe] \
  *     [--kill-survivors | --preserve-survivors]
  *
@@ -131,10 +133,12 @@
  * nothing:
  *
  *   { "codex": {
- *       "execHeavyModel": "gpt-5.6-sol",
+ *       "execHeavyModel": "gpt-6-sol",
  *       "execHeavyEffort": "high",
  *       "execPrincipalModel": "gpt-6-astra",
  *       "execPrincipalEffort": "xhigh",
+ *       "execLunaModel": "gpt-6-luna",
+ *       "execLunaEffort": "xhigh",
  *       "execTimeoutMs": 7200000,
  *       "execSandbox": "workspace-write",
  *       "execKillSurvivors": true,
@@ -152,7 +156,7 @@
  * helpersDir, and the integrity-ignore keys are SHARED with the review
  * runner — one Codex install, one set of machine facts.)
  *
- *   ORCHESTRA_EXEC_HEAVY_MODEL  Heavy-rung model (default gpt-5.6-sol).
+ *   ORCHESTRA_EXEC_HEAVY_MODEL  Heavy-rung model (default gpt-6-sol).
  *   ORCHESTRA_EXEC_HEAVY_EFFORT Heavy-rung reasoning effort (default high —
  *                               the exceptional-order executor exists to
  *                               converge in one round; passed to codex as
@@ -163,8 +167,11 @@
  *                               Principal-rung reasoning effort (default
  *                               xhigh; Astra's ladder is
  *                               low|medium|high|xhigh|max, with no `none`).
+ *   ORCHESTRA_EXEC_LUNA_MODEL   Luna-rung model (default gpt-6-luna; the rung
+ *                               is user request only).
+ *   ORCHESTRA_EXEC_LUNA_EFFORT  Luna-rung reasoning effort (default xhigh).
  *                               Only the SELECTED profile reads its own pair;
- *                               the other rung's vars are ignored entirely.
+ *                               the other rungs' vars are ignored entirely.
  *   ORCHESTRA_EXEC_TIMEOUT_MS   Max wall-clock for the run (default 7200000 —
  *                               two hours). Execution runs the project's
  *                               verification, so budget it like a build+suite,
@@ -271,19 +278,24 @@ const DEFAULT_INTEGRITY_IGNORE = [
   '.cache/', 'coverage/', '.coverage', '.nyc_output/', '*.log', '*.tmp',
 ];
 
-// The Codex executor rungs. Two named PROFILES, each with its own model,
+// The Codex executor rungs. Three named PROFILES, each with its own model,
 // effort, env vars and config keys — nothing else about the run differs, and
 // there is no effort ladder to select inside a profile (the removed `--tier`
 // flag was exactly that, and is not coming back).
 //
-//   heavy     GPT-5.6 Sol at high     — the exceptional-order rung
+//   heavy     GPT-6 Sol at high       — the exceptional-order rung
 //   principal GPT-6 Astra at xhigh    — the rung above it
+//   luna      GPT-6 Luna at xhigh     — a lighter cross-vendor executor, user
+//                                       request only: reached solely by naming
+//                                       it, never by default or substitution
 //
 // `heavy` is the default, so a run that names no profile behaves exactly as
 // it did before the principal rung existed, down to the config keys it reads.
+// (The luna keys are deliberately not `execLight*`: the installer scrubs
+// `codex.execLightModel` as a deprecated 2.0 key.)
 const EXEC_PROFILES = {
   heavy: {
-    model: 'gpt-5.6-sol',
+    model: 'gpt-6-sol',
     effort: 'high',
     modelEnv: 'ORCHESTRA_EXEC_HEAVY_MODEL',
     effortEnv: 'ORCHESTRA_EXEC_HEAVY_EFFORT',
@@ -297,6 +309,14 @@ const EXEC_PROFILES = {
     effortEnv: 'ORCHESTRA_EXEC_PRINCIPAL_EFFORT',
     modelKey: 'execPrincipalModel',
     effortKey: 'execPrincipalEffort',
+  },
+  luna: {
+    model: 'gpt-6-luna',
+    effort: 'xhigh',
+    modelEnv: 'ORCHESTRA_EXEC_LUNA_MODEL',
+    effortEnv: 'ORCHESTRA_EXEC_LUNA_EFFORT',
+    modelKey: 'execLunaModel',
+    effortKey: 'execLunaEffort',
   },
 };
 const DEFAULT_PROFILE = 'heavy';
@@ -569,8 +589,8 @@ const CONFIG_NOTES = [];
 
 const CODEX_ONLY_KEYS = [
   'execTimeoutMs', 'execHeavyModel', 'execHeavyEffort',
-  'execPrincipalModel', 'execPrincipalEffort', 'execSandbox', 'doNotRun',
-  'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'helpersDir', 'gitConfigIsolation',
+  'execPrincipalModel', 'execPrincipalEffort', 'execLunaModel', 'execLunaEffort',
+  'execSandbox', 'doNotRun', 'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'helpersDir', 'gitConfigIsolation',
   'crossplanModel', 'crossplanEffort', 'engineMcp',
 ];
 
@@ -2240,12 +2260,13 @@ function main() {
   if (args.help) {
     process.stdout.write(
       'Usage: node orchestra-exec.js --work-order <file>\n' +
-        '         [--profile heavy|principal] [--model <id>] [--effort <level>]\n' +
+        '         [--profile heavy|principal|luna] [--model <id>] [--effort <level>]\n' +
         '         [--timeout-ms <n>] [--forbid <cmd>]... [--cd <dir>] [--no-probe]\n' +
         '         [--kill-survivors | --preserve-survivors]\n' +
         '\n' +
-        '  --profile heavy        GPT-5.6 Sol at high effort (default)\n' +
+        '  --profile heavy        GPT-6 Sol at high effort (default)\n' +
         '  --profile principal    GPT-6 Astra at xhigh effort\n' +
+        '  --profile luna         GPT-6 Luna at xhigh effort (user request only)\n' +
         '  --kill-survivors       kill every process that outlived the engine (default)\n' +
         '  --preserve-survivors   census them but leave them running\n' +
         '\n' +
@@ -2269,7 +2290,7 @@ function main() {
   // Which rung is running. An unrecognised --profile is a header fact, not a
   // silent substitution: the run still happens on the default rung, and the
   // PREFLIGHT line tells the launcher its order named something that did not
-  // exist, so a Sol run can never be relayed as an Astra one.
+  // exist, so a Sol run can never be relayed as an Astra or Luna one.
   if (args.profile != null && String(args.profile).trim()) {
     const want = String(args.profile).trim().toLowerCase();
     if (Object.prototype.hasOwnProperty.call(EXEC_PROFILES, want)) {
@@ -2286,7 +2307,7 @@ function main() {
 
   // Resolution, per profile: flag > env > orchestra.json > profile default.
   // Each rung reads its OWN env var and config key, so pinning the principal
-  // rung never moves the heavy one. The heavy rung's keys keep the names they
+  // or luna rung never moves the heavy one (or each other). The heavy rung's keys keep the names they
   // shipped with (codex.execHeavyModel / execHeavyEffort) — projects have them
   // written down. Within a profile there is still one model and one effort;
   // the removed `--tier` flag selected efforts inside a rung and is not back.
@@ -2323,18 +2344,20 @@ function main() {
   // fields; 3.3.0 made `profile` required so the default is now Astra/xhigh,
   // and this PREFLIGHT note is the belt to that brace — a principal launch on
   // another model or effort is either an explicit pin the order named, or the
-  // same field failure recurring.
-  if (CONFIG.profile === 'principal' && CONFIG.model !== profile.model) {
+  // same field failure recurring. Every NAMED (non-default) rung carries the
+  // note — principal and luna alike — since each is reached only by a launcher
+  // that passed it, and a silent pin under one would misattribute the run.
+  if (CONFIG.profile !== DEFAULT_PROFILE && CONFIG.model !== profile.model) {
     PREFLIGHT.push(
-      'profile principal is running model "' + CONFIG.model + '" (' + CONFIG.modelSource +
-        '), not its default ' + profile.model + ' — a principal launch on another model is ' +
+      'profile ' + CONFIG.profile + ' is running model "' + CONFIG.model + '" (' + CONFIG.modelSource +
+        '), not its default ' + profile.model + ' — a ' + CONFIG.profile + ' launch on another model is ' +
         'an explicit pin, never a rung the runner chose; check the order named it'
     );
   }
-  if (CONFIG.profile === 'principal' && CONFIG.effort !== profile.effort) {
+  if (CONFIG.profile !== DEFAULT_PROFILE && CONFIG.effort !== profile.effort) {
     PREFLIGHT.push(
-      'profile principal is running effort "' + CONFIG.effort + '" (' + CONFIG.effortSource +
-        '), not its default ' + profile.effort + ' — a principal launch on another effort is ' +
+      'profile ' + CONFIG.profile + ' is running effort "' + CONFIG.effort + '" (' + CONFIG.effortSource +
+        '), not its default ' + profile.effort + ' — a ' + CONFIG.profile + ' launch on another effort is ' +
         'an explicit pin, never a rung the runner chose; check the order named it'
     );
   }

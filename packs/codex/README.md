@@ -23,14 +23,15 @@ cross-compare still degrade to Claude-only exactly as before.
 |---|---|
 | `agents/reviewer-codex.md` | Thin Haiku launcher; calls the `orchestra_review` MCP tool once and relays the OpenAI verdict verbatim. The default independent reviewer for Claude-authored campaign work. Never reviews the code itself. |
 | `agents/executor-codex-principal.md` | **The top rung of the harness's default executor ladder.** Thin Haiku launcher; calls the `orchestra_exec` MCP tool once with `profile: "principal"` (OpenAI GPT-6 Astra, xhigh reasoning effort by default) and relays the report + tree audit verbatim. Exceptional orders only — many coupled moving parts, an approach the plan cannot settle, or a second bounce at the Opus heavy tier. Never edits anything itself. |
-| `agents/executor-codex-heavy.md` | The cheaper cross-vendor executor, **user request only** — no routing rule reaches it. Same launcher shape with `profile: "heavy"` (OpenAI GPT-5.6 Sol, high reasoning effort by default). Never edits anything itself. |
+| `agents/executor-codex-heavy.md` | The cheaper cross-vendor executor, **user request only** — no routing rule reaches it. Same launcher shape with `profile: "heavy"` (OpenAI GPT-6 Sol, high reasoning effort by default). Never edits anything itself. |
+| `agents/executor-codex-luna.md` | A lighter cross-vendor executor, **user request only** — no routing rule reaches it, `executorEngine` does not select it, and nothing escalates or substitutes into it. Same launcher shape with `profile: "luna"` (OpenAI GPT-6 Luna, xhigh reasoning effort by default). Never edits anything itself. |
 | `agents/architect-codex.md` | Thin Haiku launcher for the `/cross-compare-plan` GPT lane; calls `orchestra_crossplan` once per phase and relays the document's provenance verbatim. Never drafts, critiques, or revises itself. |
 | `agents/architect-claude-xhigh.md` | The `/cross-compare-plan` Claude architect (Fable, fresh context, xhigh effort — the default tier) — drafts, critiques the rival plan, revises under critique, anonymously, within the brief's ground-truth scope. Both lanes always run one identical effort level. |
 | `agents/architect-claude-max.md` | The same architect at max effort — the top rung both vendors expose — dispatched when the session runs `effort=max`. |
 | `agents/plan-synthesizer.md` | The `/cross-compare-plan` blind synthesizer (Opus, fresh context) — merges the two revised plans into the final plan, adjudicates disputes against the tree, escalates only genuine ties. |
 | `hooks/orchestra-engine-mcp.js` | **The MCP transport** — a zero-dependency stdio MCP server exposing the three runners plus the doctor as typed tools (`orchestra_review`, `orchestra_exec`, `orchestra_crossplan`, `orchestra_doctor`). Registered in the project's root `.mcp.json` by the installer. |
 | `hooks/orchestra-review.js` | Review runner — builds the adversarial brief, drives `codex exec` in a sandbox (optionally in a clean worktree pinned to the commit under review), prints an Orchestra-format verdict. |
-| `hooks/orchestra-exec.js` | Execution runner — builds the Orchestra executor-law brief, drives `codex exec` in a `workspace-write` sandbox in the LIVE tree, audits which paths actually changed, prints an Orchestra-format executor report. One attempt, never auto-retried. Two rungs behind one `--profile` flag (`heavy`, `principal`); they differ only in model and effort. |
+| `hooks/orchestra-exec.js` | Execution runner — builds the Orchestra executor-law brief, drives `codex exec` in a `workspace-write` sandbox in the LIVE tree, audits which paths actually changed, prints an Orchestra-format executor report. One attempt, never auto-retried. Three rungs behind one `--profile` flag (`heavy`, `principal`, `luna`); they differ only in model and effort. |
 | `hooks/orchestra-jobrun.js` | **The process-tree supervisor** — the kill group every lane's engine invocation runs inside (a Windows Job object with `KILL_ON_JOB_CLOSE` and no `BREAKAWAY_OK`; a POSIX process group elsewhere), plus the per-run process census the runners print. Also a standalone CLI, so the guarantee can be demonstrated against a deliberate hang without Codex in the picture. |
 | `hooks/orchestra-crossplan.js` | Cross-compare architect runner — drives `codex exec` read-only for one phase (draft / critique / revise), with web search on by default for research symmetry with the Claude lane, saves the produced document under `.claude/plans/cross-compare/`, and enforces the report-integrity nonce and a read-only tree fingerprint. |
 | `skills/cross-compare-plan/` | The `/cross-compare-plan` two-architect session — independent drafts, cross-critique, owner revision, blind merge, and (by default) a post-synthesis cross-family audit of the final plan by the GPT lane. |
@@ -88,26 +89,27 @@ own `git worktree prune` — can unhook a live checkout. A run killed hard
 leaves its lock behind by design; the next run releases it, because the lock
 reason names the owning process.
 
-**Execution** (`executor-codex-principal`, `executor-codex-heavy`): same Codex
-CLI + auth as review, two rungs behind one runner, reached in very different
-ways:
+**Execution** (`executor-codex-principal`, `executor-codex-heavy`,
+`executor-codex-luna`): same Codex CLI + auth as review, three rungs behind one
+runner, reached in very different ways:
 
 | Launcher | `--profile` | Default engine | How an order reaches it |
 |---|---|---|---|
 | `executor-codex-principal` | `principal` | GPT-6 Astra, xhigh effort | **the default ladder's top rung** — `executor` → `executor-heavy` → here, one rung per double bounce. Exceptional orders only, declared at PLAN time |
-| `executor-codex-heavy` | `heavy` (the runner's default) | GPT-5.6 Sol, high effort | **user request only** — the user names it, or `executorEngine: "codex"` makes the Codex lane this project's executor lane. No routing rule reaches it |
+| `executor-codex-heavy` | `heavy` (the runner's default) | GPT-6 Sol, high effort | **user request only** — the user names it, or `executorEngine: "codex"` makes the Codex lane this project's executor lane. No routing rule reaches it |
+| `executor-codex-luna` | `luna` | GPT-6 Luna, xhigh effort | **user request only** — the user names it. `executorEngine: "codex"` does not select it (that means Sol), no routing rule reaches it, and nothing escalates or substitutes into it |
 
 So the harness's escalation path crosses the vendor line at the top: a double
-bounce at the Opus heavy tier goes straight to Astra, past Sol. Neither
-launcher ever escalates itself, and neither is for routine work. The Fable
+bounce at the Opus heavy tier goes straight to Astra, past Sol and Luna. No
+launcher ever escalates itself, and none is for routine work. The Fable
 principal profiles (`executor-principal`, `executor-principal-xhigh`) are
 likewise user-request-only, and stand in — announced, never silently — when
 this pack is absent and the ladder therefore has no top rung.
 
-The two rungs differ in model and effort and in nothing else: same sandbox,
+The rungs differ in model and effort and in nothing else: same sandbox,
 same idle precheck, same tree audit, same one-attempt law, same report
 contract. Each reads only its own env vars and config keys, so pinning one
-never moves the other, and a run that names no profile behaves exactly as the
+never moves another, and a run that names no profile behaves exactly as the
 lane did before the principal rung existed.
 
 **Cross-compare** (`architect-codex` + `architect-claude-xhigh`/`-max` + `plan-synthesizer`):
@@ -120,10 +122,11 @@ for both lanes). No engine selection needed: `/cross-compare-plan` dispatches
 all three roles itself, including the default post-synthesis audit — one extra
 GPT-lane critique of the finished `final-plan.md`.
 
-The Sol reviewer and the heavy executor rung default to `gpt-5.6-sol` at
+The Sol reviewer and the heavy executor rung default to `gpt-6-sol` at
 `high` effort. The principal executor rung and the GPT cross-compare architect
 default to `gpt-6-astra` at `xhigh` effort — Astra's ladder is
-`low|medium|high|xhigh|max` and has no `none` level.
+`low|medium|high|xhigh|max` and has no `none` level. The user-request-only
+Luna executor rung defaults to `gpt-6-luna` at `xhigh` effort.
 
 ## Checking the install — `--doctor`
 
@@ -183,7 +186,7 @@ Environment variables override the file; explicit runner flags override both.
 {
   "codex": {
     "reviewTimeoutMs": 5400000,
-    "reviewModel": "gpt-5.6-sol",
+    "reviewModel": "gpt-6-sol",
     "reviewSandbox": "workspace-write",
     "helpersDir": "C:/tools/codex-helpers",
     "worktreeRoot": "C:/tmp/orchestra-review",
@@ -468,7 +471,7 @@ loudly when it does.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ORCHESTRA_REVIEW_MODEL` | `gpt-5.6-sol` | Pin the OpenAI review model; hard default, not "Codex's own default". |
+| `ORCHESTRA_REVIEW_MODEL` | `gpt-6-sol` | Pin the OpenAI review model; hard default, not "Codex's own default". |
 | `ORCHESTRA_REVIEW_SANDBOX` | `workspace-write` | Codex sandbox; `read-only` forbids writes but blocks most test runners. |
 | `ORCHESTRA_REVIEW_TIMEOUT_MS` | `5400000` | Wall-clock cap per attempt (90 min). See "Timeout budgets". |
 | `ORCHESTRA_REVIEW_IDLE_MS` | `1500` | Idle-precheck settle window; `0` disables. Live-tree reviews only. |
@@ -482,10 +485,12 @@ loudly when it does.
 | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
 | `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |
-| `ORCHESTRA_EXEC_HEAVY_MODEL` | `gpt-5.6-sol` | Heavy-rung execution model (`codex.execHeavyModel`). The key keeps the name it shipped with. |
+| `ORCHESTRA_EXEC_HEAVY_MODEL` | `gpt-6-sol` | Heavy-rung execution model (`codex.execHeavyModel`). The key keeps the name it shipped with. |
 | `ORCHESTRA_EXEC_HEAVY_EFFORT` | `high` | Heavy-rung reasoning effort (`codex.execHeavyEffort`), sent as `-c model_reasoning_effort=`. |
 | `ORCHESTRA_EXEC_PRINCIPAL_MODEL` | `gpt-6-astra` | Principal-rung execution model (`codex.execPrincipalModel`). Read only when the run selects `--profile principal`. |
 | `ORCHESTRA_EXEC_PRINCIPAL_EFFORT` | `xhigh` | Principal-rung reasoning effort (`codex.execPrincipalEffort`), sent as `-c model_reasoning_effort=`. |
+| `ORCHESTRA_EXEC_LUNA_MODEL` | `gpt-6-luna` | Luna-rung execution model (`codex.execLunaModel`). Read only when the run selects `--profile luna`. |
+| `ORCHESTRA_EXEC_LUNA_EFFORT` | `xhigh` | Luna-rung reasoning effort (`codex.execLunaEffort`), sent as `-c model_reasoning_effort=`. |
 | `ORCHESTRA_EXEC_TIMEOUT_MS` | `7200000` | Wall-clock cap for an execution run (`codex.execTimeoutMs`; also `--timeout-ms`). It runs your verification — budget a build plus a suite. |
 | `ORCHESTRA_EXEC_SANDBOX` | `workspace-write` | Codex sandbox for execution (`codex.execSandbox`). `read-only` = dry run; the runner warns that no edit can land. |
 | `ORCHESTRA_EXEC_IDLE_MS` | `1500` | Idle-precheck settle window before executing; `0` disables. Shares `codex.idleMs` with review. |

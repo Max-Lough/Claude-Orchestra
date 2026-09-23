@@ -9,6 +9,47 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.6.0 — a GPT-6 Luna executor on request, Sol moves to GPT-6, and Opus loses its style note
+
+**Why.** OpenAI upgraded Sol from GPT-5.6 to GPT-6, and the harness still
+pinned `gpt-5.6-sol` as a hard default for the Sol reviewer and the
+user-request-only Sol executor. The owner also wanted GPT-6 Luna available to
+steer work to without putting it on any default path. And the Opus-as-Director
+directive ("keep every order and explanation concise, basic, and clear") was
+added for Opus 5, which wrote long, layered orders; Opus 5.5 does not, and a
+style note for a problem that is gone is scaffolding that should shrink with
+the model.
+
+- **New: `executor-codex-luna` (GPT-6 Luna, xhigh), user request only.** A
+  third exec-lane profile, `luna`, beside `heavy` (Sol) and `principal`
+  (Astra), with its own keys: `codex.execLunaModel` / `codex.execLunaEffort`
+  and `ORCHESTRA_EXEC_LUNA_MODEL` / `ORCHESTRA_EXEC_LUNA_EFFORT` (not
+  `execLight*` — the installer still scrubs `codex.execLightModel` as a
+  deprecated 2.0 key). Nothing reaches it by default: the runner's default
+  profile is still `heavy`, `executorEngine: "codex"` still means Sol, no
+  ladder or steering row names it, and nothing escalates or substitutes into
+  it — it runs when the user names it. Luna-executed work is Codex-authored,
+  so its review goes to the fresh-context Opus `reviewer`. The `orchestra_exec`
+  MCP tool accepts `profile: "luna"` and translates the display name
+  `"GPT-6 Luna"`; its PREFLIGHT note for a non-default model or effort now
+  covers every non-default profile, not only `principal`.
+
+- **Sol is `gpt-6-sol` ("GPT-6 Sol").** The review lane's hard default, the
+  exec lane's `heavy` profile default, the roster display-name alias
+  (`"GPT-6 Sol"` → `gpt-6-sol`), help text, docs, and the tests asserting
+  those defaults all moved. A pin in `orchestra.json` or the environment
+  (`codex.reviewModel`, `codex.execHeavyModel`, `ORCHESTRA_REVIEW_MODEL`,
+  `ORCHESTRA_EXEC_HEAVY_MODEL`) still wins, so a project that pinned
+  `gpt-5.6-sol` keeps running it until the pin is removed. The old display
+  name `"GPT-5.6 Sol"` is no longer translated. Comments recording past field
+  incidents keep the model that actually ran then.
+- **The Opus-only directive is gone** from `ORCHESTRA.md` §1 and the README's
+  mode section. Director mode is unchanged: Fable or Opus directs, anything
+  else runs as a normal agent.
+- **Unchanged: the Anthropic side.** Every Claude agent names its model by
+  alias (`opus`, `fable`, `sonnet`, `haiku`), and the guard matches
+  `opus|fable` anywhere in the model id, so Opus 5.5 needs no edit.
+
 ## 3.5.0 — the cross-vendor caps were set at the mean of what they cap
 
 **Why.** Every Codex-lane wall-clock cap was a guess, and the guesses were low.

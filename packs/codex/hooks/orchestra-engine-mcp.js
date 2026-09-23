@@ -156,16 +156,17 @@ function transportError(id, lines) {
 
 /* --------------------------------------------------- model/effort ids -- */
 
-// A caller may pass a ROSTER display name ("GPT-5.6 Sol"); the Codex CLI
-// wants the model id ("gpt-5.6-sol"). Shakedown 2026-09-02 (PL-18 root
+// A caller may pass a ROSTER display name ("GPT-6 Sol"); the Codex CLI
+// wants the model id ("gpt-6-sol"). Shakedown 2026-09-02 (PL-18 root
 // cause, corrected): forwarding a display name verbatim as `--model` made
 // Codex answer 400 with an entitlement-shaped message for what was actually
 // a name-shape defect. Anything already id-shaped passes through unchanged;
 // unknown display names fall back to lower-case with spaces hyphenated,
 // which is the id convention for every OpenAI model name.
 const CODEX_MODEL_IDS = {
-  'gpt-5.6 sol': 'gpt-5.6-sol',
+  'gpt-6 sol': 'gpt-6-sol',
   'gpt-6 astra': 'gpt-6-astra',
+  'gpt-6 luna': 'gpt-6-luna',
 };
 function codexModelId(name) {
   const s = String(name || '').trim();
@@ -605,15 +606,16 @@ const TOOLS = [
       'working tree, runs verification, and reports in the Orchestra executor format). Blocks until done and ' +
       'returns the full report verbatim — header, STATUS line, report body, TREE AUDIT, REPORT INTEGRITY. ' +
       'Execution is deliberately NEVER auto-retried (a half-dead engine may have half-edited the tree): call ' +
-      'this ONCE per work order and relay a STATUS: EXEC_UNAVAILABLE as-is. Two rungs, chosen by `profile`: ' +
-      '"heavy" (default, GPT-5.6 Sol at high effort) and "principal" (GPT-6 Astra at xhigh effort). Both are ' +
-      'exceptional-order executors, never routine work; which rung a launcher passes is fixed by which launcher ' +
+      'this ONCE per work order and relay a STATUS: EXEC_UNAVAILABLE as-is. Three rungs, chosen by `profile`: ' +
+      '"heavy" (default, GPT-6 Sol at high effort), "principal" (GPT-6 Astra at xhigh effort) and "luna" ' +
+      '(GPT-6 Luna at xhigh effort, user request only). All are exceptional-order executors, never routine ' +
+      'work; which rung a launcher passes is fixed by which launcher ' +
       'it is, and model/effort overrides are for an explicit exceptional order, never a launcher\'s own judgment.',
     inputSchema: {
       type: 'object',
       properties: {
         work_order: { type: 'string', description: 'The FULL execution work order — goal, scope, constraints, context, verification expectations — verbatim.' },
-        profile: { type: 'string', enum: ['heavy', 'principal'], description: 'REQUIRED. Which Codex executor rung runs the order: "heavy" is GPT-5.6 Sol at high effort; "principal" is GPT-6 Astra at xhigh effort. Each launcher passes its own rung and never chooses between them. A call without it is refused before any runner launches — there is no default rung.' },
+        profile: { type: 'string', enum: ['heavy', 'principal', 'luna'], description: 'REQUIRED. Which Codex executor rung runs the order: "heavy" is GPT-6 Sol at high effort; "principal" is GPT-6 Astra at xhigh effort; "luna" is GPT-6 Luna at xhigh effort (user request only). Each launcher passes its own rung and never chooses between them. A call without it is refused before any runner launches — there is no default rung.' },
         timeout_ms: { type: 'number', description: 'Wall-clock cap, only when the order names one. Default 7200000 (two hours) — an exec order runs the project\'s verification, so budget a build plus a suite on top of the model\'s own thinking, and this lane is never auto-retried. Never pass a smaller value to hurry an order along.' },
         forbid: { type: 'array', items: { type: 'string' }, description: 'Specific commands the executor must not run.' },
         cd: { type: 'string', description: 'Directory the engine executes in. Pass the isolated worktree the order names, or your own working directory whenever you were launched inside a worktree (the runner cannot see where you are: without cd it runs in the main checkout). Omit only when you are in the main checkout.' },
@@ -639,10 +641,10 @@ const TOOLS = [
       // launcher re-issues the call with its rung instead of relaying a run
       // on the wrong engine.
       const profile = typeof a.profile === 'string' ? a.profile.trim().toLowerCase() : '';
-      if (profile !== 'heavy' && profile !== 'principal') {
+      if (profile !== 'heavy' && profile !== 'principal' && profile !== 'luna') {
         transportError(id, [
-          'orchestra_exec refused the call: `profile` is required and must be "heavy" (GPT-5.6 Sol, ' +
-            'high) or "principal" (GPT-6 Astra, xhigh); received ' +
+          'orchestra_exec refused the call: `profile` is required and must be "heavy" (GPT-6 Sol, ' +
+            'high), "principal" (GPT-6 Astra, xhigh) or "luna" (GPT-6 Luna, xhigh); received ' +
             (a.profile === undefined ? 'nothing' : JSON.stringify(String(a.profile)).slice(0, 80)) + '.',
           'The runner never launched, no engine ran, and the tree was not touched. Re-issue the same ' +
             'call once with the rung your launcher definition names.',
@@ -789,7 +791,7 @@ function handleMessage(line) {
         result: {
           protocolVersion: (params && params.protocolVersion) || '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'orchestra-engine', version: '3.5.0' },
+          serverInfo: { name: 'orchestra-engine', version: '3.6.0' },
         },
       });
       return;

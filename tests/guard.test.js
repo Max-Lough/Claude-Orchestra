@@ -806,7 +806,7 @@ function case15_twoPointOhKeysIgnored() {
   setManifest(proj, {
     roster: 'new',
     rosterGeneration: 3,
-    seats: { architect: 'gpt-5.6-sol' },
+    seats: { architect: 'gpt-6-sol' },
     projectId: 'abc123',
     installedFiles: ['agents/scout.md'],
     installedStore: { hooks: ['orchestra-guard.js'] },

@@ -98,7 +98,7 @@
  *
  *   { "codex": {
  *       "reviewTimeoutMs": 5400000,
- *       "reviewModel": "gpt-5.6-sol",
+ *       "reviewModel": "gpt-6-sol",
  *       "reviewSandbox": "workspace-write",
  *       "helpersDir": "/path/to/known-good-codex-helpers",
  *       "idleMs": 1500,
@@ -117,7 +117,7 @@
  *                          "codex-windows-sandbox-setup.exe"]
  *   } }
  *
- *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin. Default gpt-5.6-sol — a
+ *   ORCHESTRA_REVIEW_MODEL      OpenAI model to pin. Default gpt-6-sol — a
  *                               hard default, not "Codex's own configured
  *                               default"; the Sol reviewer is the cross-family
  *                               reviewer for Claude-authored work.
@@ -795,8 +795,8 @@ const CODEX_ONLY_KEYS = [
   'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'reviewRetries', 'doNotRun',
   'worktreeRoot', 'worktreeWarmupCmd', 'worktreeWarmupTimeoutMs', 'helpersDir',
   'idleMs', 'gitConfigIsolation', 'execHeavyModel', 'execHeavyEffort',
-  'execPrincipalModel', 'execPrincipalEffort', 'crossplanModel', 'crossplanEffort',
-  'engineMcp',
+  'execPrincipalModel', 'execPrincipalEffort', 'execLunaModel', 'execLunaEffort',
+  'crossplanModel', 'crossplanEffort', 'engineMcp',
 ];
 
 // Whole project config (.claude/orchestra.json). Still fail-open — a missing or
@@ -3570,7 +3570,7 @@ function main() {
   // Flag → env → config are all absent: the Sol reviewer is a hard default,
   // not "Codex's own configured default" — never leave the model unpinned.
   if (!CONFIG.model) {
-    CONFIG.model = 'gpt-5.6-sol';
+    CONFIG.model = 'gpt-6-sol';
   }
   if (!process.env.ORCHESTRA_REVIEW_SANDBOX && typeof codexCfg.reviewSandbox === 'string') {
     CONFIG.sandbox = codexCfg.reviewSandbox.trim();

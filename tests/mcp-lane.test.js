@@ -127,6 +127,12 @@ const CLEAN_CODEX_HOME = (() => {
   return d;
 })();
 
+const CLEAN_LOCALAPPDATA = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-mcp-localappdata-'));
+  cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+})();
+
 // A directory standing in for a broken install target: hooks dir with no
 // runners in it (case: runner not found), plus fixture "runners" with
 // deliberately anomalous behavior (non-zero exit, empty stdout, wedge).
@@ -251,6 +257,10 @@ function mcpSession(opts) {
         // orchestra-review.js now refuses a CODEX_BIN resolving into tests/fixtures (or a shim pointing at it) unless this is set.
         ORCHESTRA_ALLOW_STUB_ENGINE: '1',
         CODEX_HOME: CLEAN_CODEX_HOME,
+        // No Codex desktop runtimes tree, so the openai/codex#46388 stand-in
+        // stays off and the override lists asserted here are the machine's
+        // business on no machine (the exec and review suites test it).
+        LOCALAPPDATA: CLEAN_LOCALAPPDATA,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         ORCHESTRA_EXEC_IDLE_MS: '0',
         ORCHESTRA_REVIEW_MODEL: 'gpt-6-sol',

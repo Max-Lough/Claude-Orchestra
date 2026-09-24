@@ -276,7 +276,14 @@ const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redac
 // moved out to orchestra-install.js so orchestra-exec.js's restoreHelpers()
 // reads the same manifest this runner's doctor does, instead of only this
 // runner knowing about it. See that file for why carriedByPackage exists.
-const { pathUnder, packagedResourceDirs, carriedByPackage, sameName } = require('./orchestra-install');
+const {
+  pathUnder,
+  packagedResourceDirs,
+  carriedByPackage,
+  sameName,
+  runtimeWalkStandIn,
+  withStandIn,
+} = require('./orchestra-install');
 
 // ------------------------------------------------------------------ config
 
@@ -388,6 +395,9 @@ const CONFIG = {
   // name, and an install directory that is not itself on PATH makes them
   // unfindable even when they sit exactly where they belong.
   installDir: '',
+  // openai/codex#46388 workaround, or null — see orchestra-install.js's
+  // runtimeWalkStandIn. Applied to engine launches only (engineEnv()).
+  standIn: null,
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   forbidden: [],
   // Commands the order explicitly permits despite --no-tests / a written
@@ -1627,6 +1637,12 @@ function childEnv(extra) {
     if (!already) env[key] = CONFIG.installDir + (cur ? path.delimiter + cur : '');
   }
   return env;
+}
+
+// The env for a `codex exec` launch: childEnv() plus the runtime-walk stand-in.
+// Git, the warmup command and every other child keep the real LOCALAPPDATA.
+function engineEnv(extra) {
+  return withStandIn(childEnv(extra), CONFIG.standIn);
 }
 
 function runGit(args, cwd) {
@@ -3217,6 +3233,7 @@ function runAuthProbe(dir) {
   // failure this check should surface, and a probe that passed under different
   // conditions from the review would be answering a different question.
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
+  if (CONFIG.standIn) args.push(...CONFIG.standIn.args);
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
@@ -3230,7 +3247,7 @@ function runAuthProbe(dir) {
     encoding: 'utf8',
     timeout: CONFIG.probeTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: childEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
+    env: engineEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
   });
   const elapsed = Date.now() - started;
   const said = (readFileOr(outFile, '') || r.stdout || '').trim();
@@ -3806,6 +3823,9 @@ function main() {
   }
   SCRATCH.dir = scratch.dir;
   armTeardown();
+  // Before the probe: it must launch the engine the way the review will.
+  CONFIG.standIn = runtimeWalkStandIn(SCRATCH.dir);
+  if (CONFIG.standIn) PREFLIGHT.push(CONFIG.standIn.note);
   // Owner stamp: lets a later run tell an abandoned scratch directory (its
   // owner is gone) from one a concurrent review is still using.
   try {
@@ -3987,6 +4007,7 @@ function main() {
     if (CONFIG.model) codexArgs.push('--model', CONFIG.model);
     codexArgs.push('--output-last-message', lastMsgFile);
     if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+    if (CONFIG.standIn) codexArgs.push(...CONFIG.standIn.args);
     // Keep the coexistence boundary last: Codex resolves repeated -c values in
     // order, so ORCHESTRA_REVIEW_ARGS must not be able to re-enable a
     // co-installed Codex-Orchestra's project instructions or hooks.
@@ -4007,7 +4028,7 @@ function main() {
       // The engine runs far more git than this runner does, so the isolated
       // config has to reach IT, not just us — otherwise every command it issues
       // still warns about a global config path the sandbox cannot read.
-      env: childEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
+      env: engineEnv({ ORCHESTRA_ROLE: 'reviewer-codex-external' }),
     }, { dir: attemptDir, attempt: n });
     const elapsed = Date.now() - startedAt;
 

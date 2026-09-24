@@ -123,6 +123,11 @@ function runExec(fx, extraArgs, extraEnv, opts) {
         CLAUDE_PROJECT_DIR: fx.repo,
         CODEX_BIN: STUB_BIN,
         CODEX_HOME: CLEAN_CODEX_HOME,
+        // A developer machine with the Codex desktop app has a runtimes tree
+        // under the real LOCALAPPDATA, which switches the openai/codex#46388
+        // stand-in on and adds an override to every exact list asserted
+        // below. Case 27 opts in on purpose.
+        LOCALAPPDATA: CLEAN_LOCALAPPDATA,
         // Process supervision OFF for the bulk of this suite. On Windows the
         // kill group costs a PowerShell job holder and two Win32_Process
         // snapshots per run, and this suite invokes the runner ~104 times —
@@ -178,6 +183,14 @@ const STUB_BIN = (() => {
 // a fixture config on purpose.
 const CLEAN_CODEX_HOME = (() => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-exec-codex-home-'));
+  cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+})();
+
+// Likewise an empty LOCALAPPDATA: no Codex desktop runtimes tree, so the
+// runtime-walk stand-in stays off unless a case builds one.
+const CLEAN_LOCALAPPDATA = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-exec-localappdata-'));
   cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
   return d;
 })();
@@ -2744,6 +2757,56 @@ function case25() {
   check('normalization fixtures leave the audited tree untouched', git(['status', '--porcelain'], fx.repo) === '');
 }
 
+function case27() {
+  section('27. Codex runtime-walk stand-in (openai/codex#46388): the engine skips the desktop runtimes, its commands keep the real LOCALAPPDATA');
+
+  const fx = makeRepo();
+  const off = runExec(fx, []);
+  const oout = off.stdout || '';
+  check(
+    'no desktop runtimes tree: LOCALAPPDATA reaches the engine unchanged and no override is added',
+    field(oout, 'LOCALAPPDATA').toLowerCase() === CLEAN_LOCALAPPDATA.toLowerCase() &&
+      !/shell_environment_policy/.test(field(oout, 'CONFIG_OVERRIDES')),
+    'LOCALAPPDATA: ' + field(oout, 'LOCALAPPDATA') + '\nCONFIG_OVERRIDES: ' + field(oout, 'CONFIG_OVERRIDES')
+  );
+
+  if (process.platform !== 'win32') {
+    check('the stand-in is Windows-only (skipped here)', true);
+    return;
+  }
+
+  const real = path.join(fx.root, 'localappdata');
+  fs.mkdirSync(path.join(real, 'OpenAI', 'Codex', 'runtimes'), { recursive: true });
+  const on = runExec(fx, [], { LOCALAPPDATA: real });
+  const out = on.stdout || '';
+  const seen = field(out, 'LOCALAPPDATA');
+  check(
+    'the engine is launched with a stand-in LOCALAPPDATA that holds no Codex runtimes tree',
+    !!seen && seen !== '(unset)' && seen.toLowerCase() !== real.toLowerCase() &&
+      field(out, 'LOCALAPPDATA_RUNTIMES') === 'absent',
+    'LOCALAPPDATA: ' + seen + '\nLOCALAPPDATA_RUNTIMES: ' + field(out, 'LOCALAPPDATA_RUNTIMES')
+  );
+  check(
+    'the engine\'s commands get the real LOCALAPPDATA back through shell_environment_policy.set',
+    field(out, 'CONFIG_OVERRIDES').split(' | ').includes(
+      'shell_environment_policy.set.LOCALAPPDATA=' + JSON.stringify(real)
+    ),
+    'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
+  );
+  check(
+    'the coexistence boundary is still the LAST override with the stand-in on',
+    field(out, 'CONFIG_OVERRIDES').split(' | ').slice(-3).join(' | ') ===
+      'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
+  );
+  check(
+    'the header says why the engine\'s LOCALAPPDATA was replaced',
+    /^PREFLIGHT: .*openai\/codex#46388/m.test(out),
+    (out.match(/^PREFLIGHT:.*$/gm) || []).join(' | ') || '(no PREFLIGHT lines)'
+  );
+  check('the run itself completes normally', /STATUS: DONE/.test(out), out.slice(0, 400));
+}
+
 function finish() {
   for (const c of cleanups) {
     try {
@@ -2786,6 +2849,7 @@ async function main() {
   case24();
   case25();
   case26();
+  case27();
 }
 
 main().then(finish, (e) => {

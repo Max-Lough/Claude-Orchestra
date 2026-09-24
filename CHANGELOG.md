@@ -9,6 +9,43 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.6.1 — the Codex engine no longer trips over the desktop app's runtimes (openai/codex#46388)
+
+**Why.** From Codex CLI 0.155.0 the Windows sandbox setup helper walks every
+file under `%LOCALAPPDATA%\OpenAI\Codex\runtimes`, where the Codex desktop app
+keeps its bundled runtimes. It opens each path without the `\\?\` long-path
+prefix, and the desktop app's `cua_node` runtime has four paths over 260
+characters. The setup refresh therefore fails, and every sandboxed command the
+engine runs dies with `helper_unknown_error: setup refresh had errors`. On
+PiratePartyPals (2026-09-23) that sank three Astra exec orders in a row, and
+review runs lost individual commands to it. The runner's own diagnosis blamed
+helper placement, which was wrong. The stale 0.147-era helpers that had been
+sitting in the release's `bin\` predate the walk and were masking the
+regression, and cleaning them out exposed it. Upstream it is still open in
+0.156.1; `LongPathsEnabled=1` does not help, and the other workaround,
+downgrading to 0.154.0, has never been tried with GPT-6.
+
+- **All three runners launch `codex exec` with an empty stand-in
+  `LOCALAPPDATA`** inside their scratch directory. This applies on Windows, and
+  only when the desktop runtimes tree exists. The setup helper then has nothing
+  to walk. Commands the engine runs get the real value back through
+  `-c shell_environment_policy.set.LOCALAPPDATA=…`, so Godot, Python and pip
+  find their files as before. Git, the review warmup command and every other
+  child keep the real `LOCALAPPDATA`. A PREFLIGHT line names the stand-in. The
+  override sits after `ORCHESTRA_*_ARGS` and before the coexistence boundary,
+  which stays last.
+- **Proven on codex-cli 0.155.1.** `codex sandbox` fails with the real
+  `LOCALAPPDATA` and succeeds with the stand-in. A live exec order (GPT-6
+  Astra) wrote a file by shell command, saw the real `LOCALAPPDATA` and the
+  Godot directory, and its three setup refreshes logged `errors=[]`, from the
+  same `codex-resources` helper that had failed every refresh since 2026-09-20.
+- **Tests.** Exec case 27 and review case 32 cover the stand-in. The exec,
+  review and MCP suites now pin `LOCALAPPDATA` to an empty directory, so a
+  developer machine with the desktop app installed cannot change the exact
+  override lists they assert.
+- Remove the stand-in once the oldest Codex the harness supports carries the
+  upstream fix.
+
 ## 3.6.0 — a GPT-6 Luna executor on request, Sol moves to GPT-6, and Opus loses its style note
 
 **Why.** OpenAI upgraded Sol from GPT-5.6 to GPT-6, and the harness still

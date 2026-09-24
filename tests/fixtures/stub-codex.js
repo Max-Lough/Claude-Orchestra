@@ -37,6 +37,10 @@
  *   STUB_CODEX_EXIT       exit with this status instead of 0.
  *   STUB_CODEX_TOUCH      relative path(s) to create inside --cd, comma-split
  *                         (integrity test).
+ *   STUB_CODEX_READ       relative path inside --cd whose content the report
+ *                         echoes as READ_FILE, read BEFORE any TOUCH — how a
+ *                         test sees what a previous run left for this one
+ *                         (the review lane's warm import cache).
  *   STUB_CODEX_PROBE_PATH repo-relative path the stub tries to read out of the
  *                         checked-out commit — the live-tree failure mode
  *                         ("exists on disk, but not in <sha>").
@@ -246,6 +250,15 @@ if (process.env.STUB_CODEX_STDERR) {
 // Touch BEFORE any simulated death, so a failing invocation can model an
 // engine that mutated the tree and then died — the exact debris shape the
 // exec runner's tree audit exists to report.
+let readFile = '(not asked)';
+if (process.env.STUB_CODEX_READ) {
+  try {
+    readFile = fs.readFileSync(path.join(cd, process.env.STUB_CODEX_READ), 'utf8').trim();
+  } catch (_) {
+    readFile = '(absent)';
+  }
+}
+
 for (const rel of (process.env.STUB_CODEX_TOUCH || '').split(',').map((s) => s.trim()).filter(Boolean)) {
   try {
     const dest = path.join(cd, rel);
@@ -341,6 +354,10 @@ const briefMarkers = [
   // asked the engine to write is exactly the gap this marker closes.
   'THIS IS A PRINCIPAL ORDER',
   'DECISIONS',
+  // Every rung's fix order sweeps the finding's class, not just the instance.
+  'FIX THE CLASS, NOT THE INSTANCE',
+  'REPORT THE CLASS, NOT THE FIRST INSTANCE',
+  'CLASS SWEEP',
   'WORK ORDER',
 ]
   .filter((m) => brief.includes(m));
@@ -418,6 +435,7 @@ const report = [
       ? credentialHelpers.stdout.split(/\r?\n/).filter(Boolean).join(' | ')
       : '(unset)'),
   'BRIEF_MARKERS: ' + (briefMarkers.join(' | ') || '(none)'),
+  'READ_FILE: ' + readFile,
   'HEAD: ' + head.stdout,
   'DIRTY_COUNT: ' + dirtyLines.length,
   'DIRTY_PATHS: ' + (dirtyLines.join(' | ') || '(none)'),

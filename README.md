@@ -139,7 +139,9 @@ It resolves the real `codex` binary, names the install layout, verifies the help
 
 ## Review, campaigns, and fail-loud fallback (ORCHESTRA.md §5)
 
-A **campaign** is one contiguous user goal from INTAKE through its final REPORT — it may span several related executor orders or commits, and ends before any handoff, merge, release, deploy, or switch to an unrelated goal. Every campaign must receive **at least one** independent review; the Director may batch related completed goals into one cross-family review, but must run it before the earliest campaign-ending event. A batch is one cohesive diff, names every included goal, and uses exact base/head refs when committed — commit before review, pass `head_ref` by default, never review a moving tree.
+A **campaign** is one contiguous user goal from INTAKE through its final REPORT — it may span several related executor orders or commits, and ends before any handoff, merge, release, deploy, or switch to an unrelated goal. Every campaign must receive **at least one** independent review, and by default it gets exactly one: the Director batches related completed goals into one cross-family review over the campaign's cohesive diff, run before the earliest campaign-ending event. Every review pays a fixed cost whatever its size, so an order is reviewed on its own only when later orders build on it, when deliverables are heterogeneous, or when you ask. A batch is one cohesive diff, names every included goal, and uses exact base/head refs when committed — commit before review, pass `head_ref` by default, never review a moving tree.
+
+**Fix orders sweep the class, not the instance.** A reviewer lists every sibling of a finding it can see; the executor that takes the fix order, at any rung, searches its scope for the rest, fixes them all, and reports a `CLASS SWEEP`. The field ledger's longest REVISE chains were one sibling per round, fixed one at a time.
 
 Routing follows the author's vendor: Claude-authored work goes to `reviewer-codex` (Sol) when the `codex` pack is installed; Codex-authored work goes to the fresh-context Opus `reviewer`. A reviewer returns `APPROVE`, `REVISE`, or `REVIEW_UNAVAILABLE` and never fixes the change itself.
 
@@ -164,7 +166,7 @@ Then it runs `reviewer` in fresh context, repeats the alarm in the campaign's fi
 
 **Route by how hard the thinking is, not by how big the diff is.** Sonnet is not the small-task rung, it's the tight-spec rung: an order goes to `executor-mechanical` only because nothing about its *meaning* is still open. A two-line change with an unresolved question belongs on `executor`; a thousand-line codemod with an airtight spec does not. Between `executor` and `executor-heavy` the model doesn't change at all — only the effort — so scale up when the reasoning is hard, not when the output is long.
 
-The ladder crosses the vendor line at the top rung: a double bounce at the heavy tier escalates straight to Astra, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS and, on escalated orders, sweeps the whole class of each reviewer finding rather than the cited instance.
+The ladder crosses the vendor line at the top rung: a double bounce at the heavy tier escalates straight to Astra, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS. Like every rung, it sweeps the whole class of each reviewer finding rather than the cited instance.
 
 **Everything else on the bench is user request only.** The Fable principal profiles (`executor-principal`, `executor-principal-xhigh`), the Sol executor (`executor-codex-heavy`) and the Luna executor (`executor-codex-luna`) are installed and fully functional, but no routing rule reaches them. They run when you name them in conversation, or when `executorEngine: "codex"` in `.claude/orchestra.json` makes the Codex lane this project's executor lane — the durable form of the same request. That Codex lane means Sol: the Luna executor runs only when you name it, and nothing escalates or substitutes into it. The Director never promotes an order into them on its own judgment.
 
@@ -213,6 +215,7 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `codex.probeTimeoutMs` | integer | `180000` | Cap for that probe. |
 | `codex.worktreeWarmupCmd` | string | `""` | Optional command run in a pinned worktree before the integrity baseline. |
 | `codex.worktreeWarmupTimeoutMs` | integer | `1800000` | Cap for the warmup command. The old `300000` was below the 9–10 minute cold import it capped. |
+| `codex.worktreeCache` | string[] \| `false` | auto: `[".godot"]` when `project.godot` is present, else none | Git-ignored, project-relative directories carried from one pinned review to the next so the import starts warm instead of cold. `false` or `[]` turns it off. |
 | `codex.integrityIgnoreDefaults` | boolean | `true` | Include the built-in generated-artifact ignore list. |
 | `codex.integrityIgnore` | string[] | `[]` | Additional tree-audit ignore patterns. |
 | `codex.helperSiblings` | string[] | Windows: the three names above; else `[]` | Files the Codex install must carry directly beside its executable. |

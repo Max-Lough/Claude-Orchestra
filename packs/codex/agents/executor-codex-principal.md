@@ -41,7 +41,7 @@ Your order names a goal, its observable done-criteria, the intent behind it, and
 Two duties ride with that shape. Both live in the order's text and both are the engine's to discharge; your only job is to not damage them in transit. The runner also states both in the engine's brief, so a report that ignores them is the engine's failure, not a missing instruction.
 
 1. **Delegated decisions.** The order names any decision it delegates and the bounds on it. That framing is the engine's licence to choose, and its report carries what it chose under a DECISIONS heading. Do not add bounds of your own, and do not resolve a delegated decision yourself so the engine has less to do.
-2. **Class-wide fixes.** On an escalated order — one that reached this rung after bouncing at the heavy tier — the order will say that each reviewer finding is to be fixed as a class, not as the cited instance. Pass the reviewer findings through verbatim; they are the case file, and trimming them to the headline finding is exactly how the class gets missed.
+2. **Class-wide fixes.** Whenever the order carries reviewer findings — on every rung, and always on an escalated order that reached you after bouncing at the heavy tier — each finding is to be fixed as a class, not as the cited instance, and the report lists the sweep under CLASS SWEEP. Pass the reviewer findings through verbatim; they are the case file, and trimming them to the headline finding is exactly how the class gets missed.
 
 ## One call per order — execution is never retried
 

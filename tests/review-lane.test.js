@@ -2813,6 +2813,106 @@ async function main() {
   case30();
   case31();
   case32();
+  case33();
+  case34();
+}
+
+// Field ledger 2026-09-05: the long REVISE chains surfaced one instance of a
+// class per round. The reviewer now lists every sibling it can find, so the
+// fix order built from its findings can sweep the class in one round.
+function case34() {
+  section('34. The review brief asks for the whole class of a finding');
+  const fx = makeDirtyRepo();
+  const out = runReview(fx, ['--base-ref', fx.base, '--head-ref', fx.head]).stdout || '';
+  check(
+    'the review brief tells the engine to report the whole class of a finding',
+    /REPORT THE CLASS, NOT THE FIRST INSTANCE/.test(field(out, 'BRIEF_MARKERS')),
+    'BRIEF_MARKERS: ' + field(out, 'BRIEF_MARKERS')
+  );
+}
+
+// The warm import cache (field ledger, 2026-09-05: 9-10 minutes of cold Godot
+// import paid on every pinned review). What must hold: a clean run leaves its
+// git-ignored import directory for the next fresh checkout; a failed run never
+// does; a non-ignored directory is never carried; a traversal-shaped config
+// entry is refused; and a live-tree review never touches the cache at all.
+function case33() {
+  section('33. Warm import cache carries .godot/ between pinned reviews, and nothing else');
+  const fx = makeDirtyRepo();
+  fs.writeFileSync(path.join(fx.repo, 'project.godot'), '[application]\n');
+  fs.writeFileSync(path.join(fx.repo, '.gitignore'), '.godot/\n');
+  git(['add', 'project.godot', '.gitignore'], fx.repo);
+  git(['commit', '-qm', 'godot project'], fx.repo);
+  const head = git(['rev-parse', 'HEAD'], fx.repo);
+  const wtRoot = path.join(fx.root, 'wt-root');
+  const cached = '.godot/imported/asset.ctex';
+  const pinned = ['--head-ref', head, '--worktree-root', wtRoot, '--no-retry'];
+  const storeFile = () => {
+    const stores = fs.existsSync(wtRoot)
+      ? fs.readdirSync(wtRoot).filter((d) => d.startsWith('orchestra-cache-review-'))
+      : [];
+    return stores.length === 1 ? path.join(wtRoot, stores[0], '.godot', 'imported', 'asset.ctex') : '';
+  };
+
+  const first = runReview(fx, pinned, { STUB_CODEX_READ: cached, STUB_CODEX_TOUCH: cached }).stdout || '';
+  check(
+    'the first review of a Godot project imports cold, and says why the cache applies',
+    /import cache: \.godot cold .*\(auto: project\.godot\)/.test(first) &&
+      field(first, 'READ_FILE') === '(absent)' && /^VERDICT: APPROVE$/m.test(first),
+    first.slice(0, 1500)
+  );
+  check(
+    'a Godot project reviewed with no warmup command is told to set one',
+    /Godot project with no warmup command/.test(first) && /worktreeWarmupCmd/.test(first),
+    first.slice(0, 1500)
+  );
+  check('a clean run puts its import directory in the store', !!storeFile() && fs.existsSync(storeFile()), wtRoot);
+  check(
+    'the store is not mistaken for an abandoned scratch directory',
+    !/reclaimed \d+ abandoned/.test(runReview(fx, ['--worktree-root', wtRoot]).stdout || '') &&
+      !!storeFile(),
+    wtRoot
+  );
+
+  const second = runReview(fx, pinned, { STUB_CODEX_READ: cached }).stdout || '';
+  check(
+    'the next pinned review starts warm: the fresh checkout already holds the last import',
+    /import cache: \.godot warm \(auto: project\.godot\)/.test(second) &&
+      field(second, 'READ_FILE') === 'stub was here',
+    second.slice(0, 1500)
+  );
+  check('a seeded cache is not an integrity warning', !/INTEGRITY WARNING/.test(second), second.slice(0, 1500));
+
+  const failed = runReview(fx, pinned, { STUB_CODEX_READ: cached, STUB_CODEX_EXIT: '3' }).stdout || '';
+  check(
+    'a run whose engine did not exit cleanly does not put its cache back',
+    field(failed, 'READ_FILE') === 'stub was here' && !fs.existsSync(storeFile() || path.join(wtRoot, 'x')),
+    failed.slice(0, 1500)
+  );
+
+  const live = runReview(fx, ['--worktree-root', wtRoot], { STUB_CODEX_READ: cached }).stdout || '';
+  check('a live-tree review never uses the cache', !/import cache:/.test(live), live.slice(0, 1500));
+
+  writeProjectConfig(fx, { worktreeCache: ['.claude'] });
+  const tracked = runReview(fx, pinned).stdout || '';
+  check(
+    'a directory that is not git-ignored is never carried',
+    /import cache NOT used for \.claude/.test(tracked) && /import cache: none usable/.test(tracked),
+    tracked.slice(0, 1500)
+  );
+
+  writeProjectConfig(fx, { worktreeCache: ['../escape', '/abs', '.git/hooks'] });
+  const hostile = runReview(fx, pinned).stdout || '';
+  check(
+    'traversal, absolute and .git entries are refused, and the refusal is stated',
+    /"codex\.worktreeCache" must be false or a list/.test(hostile) && !/import cache:/.test(hostile) &&
+      !fs.existsSync(path.join(fx.root, 'escape')),
+    hostile.slice(0, 1500)
+  );
+
+  writeProjectConfig(fx, { worktreeCache: false });
+  const off = runReview(fx, pinned).stdout || '';
+  check('worktreeCache: false turns the cache off', !/import cache:/.test(off), off.slice(0, 1500));
 }
 
 function case32() {

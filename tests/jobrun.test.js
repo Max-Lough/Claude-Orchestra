@@ -483,9 +483,23 @@ section('4. a TaskStop of the launcher takes the tree with it');
 
   // A launcher that spawns the supervisor and is then killed outright, with
   // no chance to clean up — which is what a TaskStop, a closed terminal, or a
-  // `kill -9` on the agent process all look like from here. On Windows,
-  // killing a parent does not kill its children, so nothing but the
-  // supervisor's own parent watch stands between this and a permanent orphan.
+  // `kill -9` on the agent process all look like from here.
+  //
+  // FIX (2026-09-24): on Windows the launcher starts the supervisor DETACHED.
+  // libuv puts a node process's non-detached children in a KILL_ON_JOB_CLOSE
+  // job, so killing a node launcher takes its supervisor down in the same
+  // instant, and the supervisor's own children go with it: the tree dies, but
+  // nothing is left to write a receipt, so the receipt check below could never
+  // pass (a scratch replay: supervisor gone 1.5s after the kill, `endedAt`
+  // empty 45s later). That cascade is the product path's behaviour, and it
+  // reaps the tree. The parent watch exists for a supervisor that OUTLIVES its
+  // launcher, and only a detached supervisor does, so that is what this case
+  // now drives on Windows. On POSIX nothing kills a child with its parent, so
+  // the plain launch already exercises the watch there.
+  const launchSupervisor =
+    process.platform === 'win32'
+      ? "require('child_process').spawn(process.execPath, process.argv.slice(1), { stdio: 'ignore', detached: true }); setInterval(function () {}, 1000)"
+      : "require('child_process').spawnSync(process.execPath, process.argv.slice(1), { stdio: 'ignore' })";
   const driver = path.join(dir, 'driver.js');
   fs.writeFileSync(
     driver,
@@ -493,7 +507,7 @@ section('4. a TaskStop of the launcher takes the tree with it');
       "const { spawn, spawnSync } = require('child_process');",
       'const launcherPid = spawn(process.execPath, [',
       '  "-e",',
-      '  "require(\'child_process\').spawnSync(process.execPath, process.argv.slice(1), { stdio: \'ignore\' })",',
+      '  ' + JSON.stringify(launchSupervisor) + ',',
       '  ' + JSON.stringify(JOBRUN) + ',',
       '  "--receipt", ' + JSON.stringify(receipt) + ',',
       '  "--", process.execPath, ' + JSON.stringify(launcher),
@@ -922,6 +936,7 @@ function runRest() {
           ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
           STUB_CODEX_SPAWN_ORPHAN: '1',
           STUB_CODEX_ORPHAN_PID_FILE: pidFile,
+          STUB_CODEX_ORPHAN_DELAY_MS: '1000',
         }),
       }
     );
@@ -989,6 +1004,9 @@ function runExec(fx, extraArgs, extraEnv) {
         CODEX_BIN: STUB_CODEX,
         ORCHESTRA_EXEC_IDLE_MS: '0',
         STUB_CODEX_FIRST_LINE: 'STATUS: DONE',
+        // An orphan launched after startup, as a real engine's commands are —
+        // not one racing the job assignment (see the stub).
+        STUB_CODEX_ORPHAN_DELAY_MS: '1000',
       },
       extraEnv || {}
     ),

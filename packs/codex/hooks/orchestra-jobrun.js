@@ -977,6 +977,13 @@ async function supervise(cfg) {
     receipt.census.unavailable =
       'the platform process table could not be read, so survivors can be killed via the ' +
       'kill group but not listed by name';
+  } else {
+    // FIX (2026-09-24): this `else` was lost in 9e2148d, which put everything
+    // below inside the `!tableBefore` branch. A readable table therefore never
+    // took the pre-run census and never resolved the parent from the kernel
+    // (receipts said `parentPidSource: "process.ppid"`), and an unreadable one
+    // would have thrown on `tableBefore.find`.
+    //
     // FIX (Windows CI, 2026-09-18): who our parent is, from the KERNEL.
     //
     // `process.ppid` is `uv_os_getppid()`, and on Windows that is a lookup
@@ -993,7 +1000,7 @@ async function supervise(cfg) {
     const ownRow = tableBefore.find((r) => r.pid === process.pid);
     if (!(cfg.parentPid > 0) && ownRow && ownRow.ppid > 1) {
       RESOLVED_PARENT.pid = ownRow.ppid;
-      RESOLVED_PARENT.source = receipt.census.source || 'process table';
+      RESOLVED_PARENT.source = LAST_SNAPSHOT_SOURCE || 'process table';
     }
     receipt.census.source = LAST_SNAPSHOT_SOURCE;
     // FIX (Windows CI, 2026-09-17): this walked from the runner and excluded
@@ -1004,7 +1011,7 @@ async function supervise(cfg) {
     // so everything under it belongs to the measurement, not to the machine.
     const ownSubtree = new Set([process.pid]);
     for (const r of descendantsOf(tableBefore, process.pid, '')) ownSubtree.add(r.pid);
-    receipt.census.before = descendantsOf(tableBefore, process.ppid || process.pid, '')
+    receipt.census.before = descendantsOf(tableBefore, RESOLVED_PARENT.pid > 1 ? RESOLVED_PARENT.pid : process.pid, '')
       .filter((r) => !ownSubtree.has(r.pid))
       .map((r) => censusEntry(r, 'descendant'));
   }
@@ -1125,6 +1132,19 @@ async function supervise(cfg) {
 
   receipt.targetPid = child.pid || 0;
   receipt.targetStarted = new Date().toISOString();
+  // FIX (2026-09-24): listen for the exit NOW, before anything below awaits.
+  // This used to be attached after `await holder.assign()`, and an engine that
+  // exited inside that await emitted its 'exit' to nobody — EventEmitter does
+  // not replay — so the supervisor sat on a finished run until the deadline
+  // (reproduced by delaying the assignment 1.5s under a fast stub engine: the
+  // exec runner hung with its engine long gone).
+  const exited = new Promise((resolve) => {
+    child.on('error', (e) => {
+      receipt.spawnError = { code: (e && e.code) || '', message: (e && e.message) || String(e) };
+      resolve({ code: null, signal: null });
+    });
+    child.on('exit', (code, signal) => resolve({ code, signal }));
+  });
   // FIX (Windows CI, 2026-09-18): these were recorded with the parent watch,
   // below, so they only ever reached the FINAL receipt — and the failure they
   // exist to explain is a supervisor that never writes one. The reading came
@@ -1135,9 +1155,17 @@ async function supervise(cfg) {
   writeReceipt(); // the pre-receipt: a supervisor killed from here on still
   // leaves the caller a PID to sweep.
 
-  // The holder is already READY, so this answers in milliseconds — and it runs
-  // before the engine can have spawned anything, which is the whole point:
-  // everything the engine starts from here inherits job membership.
+  // The holder is already READY, so this answers in milliseconds, and
+  // everything the engine starts from here on inherits job membership.
+  //
+  // It is a race all the same: the engine is already running while the answer
+  // is on its way, so a child it spawns inside that window is not in the job.
+  // Codex never does that — it runs commands only after a model round-trip,
+  // seconds in — but an engine that forked at startup under a loaded machine
+  // could lose a child to it (Windows CI, 2026-09-24: a stub that spawned its
+  // orphan at startup behind a `.cmd` shim left "job held 0 process(es)" and a
+  // live orphan). Closing it for good means starting the engine suspended,
+  // which node cannot do.
   //
   // No pid means the launch itself failed (ENOENT, EACCES): there is nothing to
   // put in the job, and asking would stall on an answer that cannot come.
@@ -1209,14 +1237,6 @@ async function supervise(cfg) {
     const err = killPid(child.pid, 'SIGKILL');
     if (err) receipt.notes.push('target terminate failed: ' + err);
   };
-
-  const exited = new Promise((resolve) => {
-    child.on('error', (e) => {
-      receipt.spawnError = { code: (e && e.code) || '', message: (e && e.message) || String(e) };
-      resolve({ code: null, signal: null });
-    });
-    child.on('exit', (code, signal) => resolve({ code, signal }));
-  });
 
   let deadlineTimer = null;
   if (receipt.deadlineMs > 0) {

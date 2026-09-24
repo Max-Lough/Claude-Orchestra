@@ -21,6 +21,10 @@
  *                         an order outlives the order). Spawned before any
  *                         simulated sleep or death, so the timeout path
  *                         orphans too.
+ *   STUB_CODEX_ORPHAN_DELAY_MS
+ *                         wait this long before launching that child — the
+ *                         shape of a real engine, whose commands come after a
+ *                         model round-trip rather than at startup.
  *   STUB_CODEX_ORPHAN_PID_FILE
  *                         where to write that child's PID, so a test can ask
  *                         the operating system whether it is still alive
@@ -67,7 +71,10 @@
  *                         comma-split entries to put in a CHANGES section of
  *                         the report WITHOUT touching anything — models an
  *                         engine claiming edits it never made.
- *   STUB_CODEX_BRANCH     `git checkout -B <name>` inside --cd before
+ *   STUB_CODEX_CLAIM_CHANGES_FILE
+ *                         the same, read from a file — for payloads too big
+ *                         for an environment variable on Linux (128 KB).
+ *   STUB_CODEX_BRANCH    `git checkout -B <name>` inside --cd before
  *                         reporting — models a ref/branch operation (no file
  *                         touched, HEAD's commit unchanged) so the tree audit
  *                         can be checked for measuring the branch, not just
@@ -192,6 +199,16 @@ if (process.env.STUB_CODEX_SPAWN_ORPHAN) {
   const detach = process.env.STUB_CODEX_ORPHAN_DETACHED
     ? process.env.STUB_CODEX_ORPHAN_DETACHED === '1'
     : detachDefault;
+  // FIX (Windows CI, 2026-09-24): a real engine launches commands only after a
+  // model round-trip, seconds after the runner put it in the kill group. An
+  // orphan forked in the stub's first milliseconds instead races that job
+  // assignment (see orchestra-jobrun.js), and on a loaded runner it sometimes
+  // won: "job held 0 process(es)", SURVIVORS none, orphan alive. The delay
+  // models the real shape; the race itself is documented where it lives.
+  const orphanDelay = parseInt(process.env.STUB_CODEX_ORPHAN_DELAY_MS || '', 10);
+  if (Number.isFinite(orphanDelay) && orphanDelay > 0) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, orphanDelay);
+  }
   const orphan = spawn(process.execPath, ['-e', 'setInterval(function () {}, 1000)'], {
     stdio: 'ignore',
     detached: detach,
@@ -370,7 +387,20 @@ const nonceToEcho = process.env.STUB_CODEX_OMIT_NONCE
   ? ''
   : process.env.STUB_CODEX_NONCE_VALUE || (nonceMatch ? nonceMatch[1] : '');
 
-const claimedChanges = (process.env.STUB_CODEX_CLAIM_CHANGES || '')
+// STUB_CODEX_CLAIM_CHANGES_FILE carries the same thing through a file. Linux
+// refuses to exec with any single environment string of 128 KB or more
+// (MAX_ARG_STRLEN), so a payload that size in the variable never reaches the
+// runner there at all: the spawn fails with E2BIG in milliseconds and a timing
+// check reads that as "fast" (Ubuntu CI, 2026-09-24: "hostile 2ms", no output).
+let claimSource = process.env.STUB_CODEX_CLAIM_CHANGES || '';
+if (process.env.STUB_CODEX_CLAIM_CHANGES_FILE) {
+  try {
+    claimSource = fs.readFileSync(process.env.STUB_CODEX_CLAIM_CHANGES_FILE, 'utf8');
+  } catch (_) {
+    /* no claims; the assertion on the report catches it */
+  }
+}
+const claimedChanges = claimSource
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);

@@ -9,6 +9,46 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.7.1 — process supervision: the Windows fixes CI had been failing on since 3.4
+
+**Why.** `tests/jobrun.test.js` had been red on every Windows job since #43
+merged (2026-09-19), and #44–#46 merged over it. The job also stopped at the
+first failing step, so mcp-lane, install and guard never ran on Windows. Most
+of the red was in the tests, but two of the causes were real bugs in the
+supervisor, which ships into every project with the codex pack.
+
+- **Restored a lost `else` in `orchestra-jobrun.js`.** 9e2148d moved the
+  pre-run census and the kernel parent lookup inside `if (!tableBefore)`. A
+  readable process table therefore never took the census and never resolved
+  the parent from the kernel (receipts said `parentPidSource: "process.ppid"`),
+  and an unreadable one would have thrown on `tableBefore.find`.
+- **An engine that exits during job assignment no longer hangs the run.** The
+  exit listener was attached after `await holder.assign()`, so an engine that
+  finished inside that await emitted its `exit` to nobody, and the supervisor
+  waited for the deadline. Reproduced by delaying the assignment 1.5s under a
+  fast engine; with the fix the run returns and the receipt says the engine was
+  never assigned.
+- **Documented the assignment race.** A child the engine spawns before
+  assignment lands is not in the job. Codex runs commands only after a model
+  round-trip, but the test stub forked its orphan at startup and sometimes won
+  on a loaded runner ("job held 0 process(es)", orphan alive). The stub now
+  launches it after `STUB_CODEX_ORPHAN_DELAY_MS`, as a real engine would.
+- **The Windows cancellation case now drives a detached supervisor.** Node
+  kills a process's non-detached children with it (libuv's KILL_ON_JOB_CLOSE
+  job), so killing the launcher took the supervisor down before it could write
+  a receipt. The tree still died, which is the product behaviour, but the
+  receipt check could never pass. The parent watch exists for a supervisor that
+  outlives its launcher, so that is what the case now exercises.
+- **The Ubuntu "400,000-space" checks were never timing anything.** Linux
+  refuses to exec with a single environment string of 128 KB or more, so the
+  payload passed through `STUB_CODEX_CLAIM_CHANGES` failed to spawn in 2ms. It
+  now travels in `STUB_CODEX_CLAIM_CHANGES_FILE`.
+- **CI runs every suite even after one fails** (`if: ${{ !cancelled() }}`), so
+  one red suite can no longer hide the others.
+
+Local Windows: jobrun 51/0 in four consecutive runs (it was 50/1), and exec,
+review, mcp, install, guard, scan and frontmatter are all green.
+
 ## 3.7.0 — fix orders sweep the class, reviews batch per campaign, and pinned reviews start warm
 
 **Why.** The Tug-of-War ledger (`plans/field-evidence-tug-review-rounds-2026-09-05.md`)

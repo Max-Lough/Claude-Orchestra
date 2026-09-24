@@ -247,7 +247,7 @@ const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redac
 // manifest reader, so this runner's restoreHelpers() (below) knows what the
 // install's own manifest already carries before copying a helpersDir entry
 // over it. See orchestra-install.js for the failure this closes.
-const { packagedResourceDirs, carriedByPackage } = require('./orchestra-install');
+const { packagedResourceDirs, carriedByPackage, runtimeWalkStandIn, withStandIn } = require('./orchestra-install');
 // The kill group around the engine invocation. Shared by all three Codex-lane
 // runners so the guarantee, the census wording and the receipt shape cannot
 // drift between them.
@@ -365,6 +365,9 @@ const CONFIG = {
   // some Codex helpers are resolved by NAME rather than relative to the
   // binary. See childEnv().
   installDir: '',
+  // openai/codex#46388 workaround, or null — see orchestra-install.js's
+  // runtimeWalkStandIn. Applied to engine launches only (engineEnv()).
+  standIn: null,
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   execDir: '',
   execDirLabel: '',
@@ -1121,6 +1124,12 @@ function childEnv(extra) {
   return env;
 }
 
+// The env for a `codex exec` launch: childEnv() plus the runtime-walk stand-in.
+// Git and every other child keep the real LOCALAPPDATA.
+function engineEnv(extra) {
+  return withStandIn(childEnv(extra), CONFIG.standIn);
+}
+
 function runGit(args, cwd) {
   return spawnSync('git', args, {
     cwd: cwd || undefined,
@@ -1687,6 +1696,7 @@ const PROBE_TOKEN = 'ORCHESTRA_PROBE_OK';
 function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', CONFIG.sandbox, '--cd', dir, '--output-last-message', outFile];
+  if (CONFIG.standIn) args.push(...CONFIG.standIn.args);
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
@@ -1700,7 +1710,7 @@ function runAuthProbe(dir) {
     encoding: 'utf8',
     timeout: CONFIG.probeTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: childEnv({ ORCHESTRA_ROLE: 'executor-codex-external' }),
+    env: engineEnv({ ORCHESTRA_ROLE: 'executor-codex-external' }),
   });
   const elapsed = Date.now() - started;
   const said = (readFileOr(outFile, '') || r.stdout || '').trim();
@@ -2504,6 +2514,9 @@ function main() {
   // the probe must run under the same conditions the real attempt will.
   CONFIG.installDir = resolved.real ? path.dirname(resolved.path) : '';
   if (resolved.note) PREFLIGHT.push(resolved.note);
+  // Before the probe, for the same reason as installDir above.
+  CONFIG.standIn = runtimeWalkStandIn(SCRATCH.dir);
+  if (CONFIG.standIn) PREFLIGHT.push(CONFIG.standIn.note);
   if (CONFIG.helpersDir) {
     // FIX (field, 2026-09-07): computed here, once, and handed to
     // restoreHelpers() so a helpersDir entry the manifest already carries is
@@ -2577,6 +2590,7 @@ function main() {
   if (CONFIG.effort) codexArgs.push('-c', 'model_reasoning_effort=' + CONFIG.effort);
   codexArgs.push('--output-last-message', lastMsgFile);
   if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+  if (CONFIG.standIn) codexArgs.push(...CONFIG.standIn.args);
   // Keep the coexistence boundary last: Codex resolves repeated -c values in
   // order, so ORCHESTRA_EXEC_ARGS must not be able to re-enable a co-installed
   // Codex-Orchestra's project instructions, hooks, or MCP servers.
@@ -2594,7 +2608,7 @@ function main() {
     encoding: 'utf8',
     timeout: CONFIG.timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
-    env: childEnv({ ORCHESTRA_ROLE: 'executor-codex-external' }),
+    env: engineEnv({ ORCHESTRA_ROLE: 'executor-codex-external' }),
   });
   const elapsed = Date.now() - startedAt;
 

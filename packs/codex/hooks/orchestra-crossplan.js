@@ -89,6 +89,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { boundedDiagnostic, boundedDiagnosticLines } = require('./orchestra-redact');
+const { runtimeWalkStandIn, withStandIn } = require('./orchestra-install');
 
 // Per-run report-integrity token — same law as the exec runner's: the brief
 // requires the engine to echo it on a final REPORT INTEGRITY line, so a
@@ -142,6 +143,9 @@ const CONFIG = {
   bin: (process.env.CODEX_BIN || 'codex').trim(),
   resolvedBin: '',
   installDir: '',
+  // openai/codex#46388 workaround, or null — see orchestra-install.js's
+  // runtimeWalkStandIn. Applied to engine launches only (engineEnv()).
+  standIn: null,
   projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
   gitIsolation: process.env.ORCHESTRA_CROSSPLAN_GIT_ISOLATION !== '0',
   // MCP isolation for the engine child: strip (default) or inherit — an
@@ -798,6 +802,12 @@ function childEnv(extra) {
   return env;
 }
 
+// The env for a `codex exec` launch: childEnv() plus the runtime-walk stand-in.
+// Git and every other child keep the real LOCALAPPDATA.
+function engineEnv(extra) {
+  return withStandIn(childEnv(extra), CONFIG.standIn);
+}
+
 function runGit(args, cwd) {
   return spawnSync('git', args, {
     cwd: cwd || undefined,
@@ -1135,6 +1145,7 @@ const PROBE_TOKEN = 'ORCHESTRA_PROBE_OK';
 function runAuthProbe(dir) {
   const outFile = path.join(SCRATCH.dir, 'probe.txt');
   const args = ['exec', '--sandbox', 'read-only', '--cd', dir, '--output-last-message', outFile];
+  if (CONFIG.standIn) args.push(...CONFIG.standIn.args);
   args.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
   args.push(...CONFIG.mcpArgs);
   if (CONFIG.model) args.push('--model', CONFIG.model);
@@ -1148,7 +1159,7 @@ function runAuthProbe(dir) {
     encoding: 'utf8',
     timeout: CONFIG.probeTimeoutMs,
     maxBuffer: 8 * 1024 * 1024,
-    env: childEnv({ ORCHESTRA_ROLE: 'planner-codex-external' }),
+    env: engineEnv({ ORCHESTRA_ROLE: 'planner-codex-external' }),
   });
   const elapsed = Date.now() - started;
   const said = (readFileOr(outFile, '') || r.stdout || '').trim();
@@ -1642,6 +1653,9 @@ function main() {
   CONFIG.resolvedBin = resolved.path;
   CONFIG.installDir = resolved.real ? path.dirname(resolved.path) : '';
   if (resolved.note) PREFLIGHT.push(resolved.note);
+  // Before the probe: it must launch the engine the way the real run will.
+  CONFIG.standIn = runtimeWalkStandIn(SCRATCH.dir);
+  if (CONFIG.standIn) PREFLIGHT.push(CONFIG.standIn.note);
   if (CONFIG.helpersDir) {
     const restore = restoreHelpers(CONFIG.helpersDir, CONFIG.installDir);
     if (restore.restored.length) {
@@ -1690,6 +1704,7 @@ function main() {
   if (CONFIG.web) codexArgs.push('-c', 'tools.web_search=true');
   codexArgs.push('--output-last-message', lastMsgFile);
   if (CONFIG.extraArgs) codexArgs.push(...CONFIG.extraArgs.split(/\s+/).filter(Boolean));
+  if (CONFIG.standIn) codexArgs.push(...CONFIG.standIn.args);
   // These last-value-wins overrides are the boundary with a co-installed
   // Codex-Orchestra. User extra args cannot turn project orchestration back on.
   codexArgs.push('-c', 'features.hooks=false', '-c', 'project_doc_max_bytes=0');
@@ -1706,7 +1721,7 @@ function main() {
     encoding: 'utf8',
     timeout: CONFIG.timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
-    env: childEnv({ ORCHESTRA_ROLE: 'planner-codex-external' }),
+    env: engineEnv({ ORCHESTRA_ROLE: 'planner-codex-external' }),
   });
   const elapsed = Date.now() - startedAt;
 

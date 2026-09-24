@@ -430,6 +430,14 @@ const report = [
   // a directory already leading it was not prepended a second time. Single
   // line by construction: PATH cannot contain a newline.
   'PATH_FULL: ' + ((process.env.PATH || process.env.Path || '').replace(/[\r\n]/g, ' ') || '(empty)'),
+  // The LOCALAPPDATA the engine was launched with, and whether the Codex desktop
+  // runtimes tree is visible under it — the openai/codex#46388 stand-in.
+  'LOCALAPPDATA: ' + (process.env.LOCALAPPDATA || '(unset)'),
+  'LOCALAPPDATA_RUNTIMES: ' +
+    (process.env.LOCALAPPDATA &&
+    fs.existsSync(path.join(process.env.LOCALAPPDATA, 'OpenAI', 'Codex', 'runtimes'))
+      ? 'present'
+      : 'absent'),
   'GIT_CONFIG_GLOBAL: ' + (process.env.GIT_CONFIG_GLOBAL || '(unset)'),
   'GIT_CONFIG_NOSYSTEM: ' + (process.env.GIT_CONFIG_NOSYSTEM || '(unset)'),
   'PROBE_PATH: ' + (probePath || '(none)'),

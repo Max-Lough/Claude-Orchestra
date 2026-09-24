@@ -3,7 +3,8 @@
 // Shared between orchestra-review.js and orchestra-exec.js: reading the
 // install's own manifest for where Codex ships its Windows helpers, and
 // deciding whether a helpersDir repair-kit entry duplicates what that
-// manifest already carries. Moved out of orchestra-review.js (2026-09-07) so
+// manifest already carries. The runtime-walk stand-in at the bottom is shared
+// by all three runners, orchestra-crossplan.js included. Moved out of orchestra-review.js (2026-09-07) so
 // both runners' restoreHelpers() read the same manifest the doctor does,
 // rather than the review runner alone knowing about it — see
 // carriedByPackage below for why that mattered.
@@ -155,4 +156,64 @@ function carriedByPackage(name, packaged) {
   );
 }
 
-module.exports = { pathUnder, packagedResourceDirs, carriedByPackage, sameName };
+// WORKAROUND (2026-09-24; codex-cli 0.155.0 through at least 0.156.1 —
+// openai/codex#46388). From 0.155.0 the Windows sandbox setup helper walks
+// every descendant of %LOCALAPPDATA%\OpenAI\Codex\runtimes — the Codex desktop
+// app's bundled runtimes, none of which the CLI uses — and opens each with a
+// plain CreateFileW, no `\\?\` prefix. One path past MAX_PATH fails the whole
+// setup refresh, and every sandboxed command the engine tries then dies with
+// "helper_unknown_error: setup refresh had errors" (PiratePartyPals,
+// 2026-09-23: three Astra orders in a row, and a runner diagnosis that blamed
+// helper placement). The desktop app's cua_node runtime ships four such paths;
+// LongPathsEnabled does not help, because the helper is not longPathAware.
+//
+// The helper finds that tree through the LOCALAPPDATA it inherits from codex,
+// so the engine gets an empty stand-in, and the commands the engine runs get
+// the real value back through shell_environment_policy.set — Godot, Python and
+// pip keep their files there. Null when there is nothing to do: not Windows,
+// no runtimes tree, or nowhere to put the stand-in. Remove once the oldest
+// Codex this harness supports carries the upstream fix.
+function runtimeWalkStandIn(scratchDir) {
+  if (process.platform !== 'win32' || !scratchDir) return null;
+  const real = String(process.env.LOCALAPPDATA || '');
+  if (!real) return null;
+  try {
+    if (!fs.statSync(path.join(real, 'OpenAI', 'Codex', 'runtimes')).isDirectory()) return null;
+  } catch (_) {
+    return null;
+  }
+  const dir = path.join(scratchDir, 'localappdata');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (_) {
+    return null;
+  }
+  return {
+    dir,
+    // A TOML basic string: every escape JSON.stringify emits is one TOML accepts.
+    args: ['-c', 'shell_environment_policy.set.LOCALAPPDATA=' + JSON.stringify(real)],
+    note:
+      'LOCALAPPDATA stood in for the engine (' + dir + ') so the Codex sandbox setup ' +
+      'does not walk the desktop app runtimes under ' + real + ' (openai/codex#46388); ' +
+      'commands the engine runs still get the real value',
+  };
+}
+
+// Point an engine env block's LOCALAPPDATA at the stand-in. Windows variable
+// names are case-insensitive and a copied block keeps the key's original case,
+// so replace that key rather than add a second one beside it.
+function withStandIn(env, standIn) {
+  if (!standIn) return env;
+  const key = Object.keys(env).find((k) => k.toUpperCase() === 'LOCALAPPDATA') || 'LOCALAPPDATA';
+  env[key] = standIn.dir;
+  return env;
+}
+
+module.exports = {
+  pathUnder,
+  packagedResourceDirs,
+  carriedByPackage,
+  sameName,
+  runtimeWalkStandIn,
+  withStandIn,
+};

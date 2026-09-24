@@ -168,11 +168,21 @@ function cleanEnv() {
   const fold = process.platform === 'win32';
   for (const k of Object.keys(process.env)) {
     const key = fold ? k.toUpperCase() : k;
-    if (key === 'GIT_CONFIG_GLOBAL' || /^ORCHESTRA_/.test(key)) continue;
+    if (key === 'GIT_CONFIG_GLOBAL' || key === 'LOCALAPPDATA' || /^ORCHESTRA_/.test(key)) continue;
     out[k] = process.env[k];
   }
+  // A developer machine with the Codex desktop app has a runtimes tree under
+  // the real LOCALAPPDATA, which switches the openai/codex#46388 stand-in on
+  // and adds an engine override the cases here do not expect. Case 32 opts in.
+  out.LOCALAPPDATA = CLEAN_LOCALAPPDATA;
   return out;
 }
+
+const CLEAN_LOCALAPPDATA = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-review-localappdata-'));
+  cleanups.push(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+})();
 
 function runReview(fx, extraArgs, extraEnv, opts) {
   const args = [RUNNER, '--work-order', fx.wo, '--executor-report', fx.er].concat(extraArgs || []);
@@ -2802,6 +2812,35 @@ async function main() {
   case29();
   case30();
   case31();
+  case32();
+}
+
+function case32() {
+  section('32. Codex runtime-walk stand-in (openai/codex#46388) reaches the review engine too');
+  if (process.platform !== 'win32') {
+    check('the stand-in is Windows-only (skipped here)', true);
+    return;
+  }
+  const fx = makeDirtyRepo();
+  const real = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-review-realappdata-'));
+  cleanups.push(() => fs.rmSync(real, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(real, 'OpenAI', 'Codex', 'runtimes'), { recursive: true });
+  const r = runReview(fx, ['--tier', 'inert', '--no-tests'], { LOCALAPPDATA: real });
+  const out = r.stdout || '';
+  const seen = field(out, 'LOCALAPPDATA');
+  check(
+    'the review engine is launched with a stand-in LOCALAPPDATA that holds no Codex runtimes tree',
+    !!seen && seen.toLowerCase() !== real.toLowerCase() && field(out, 'LOCALAPPDATA_RUNTIMES') === 'absent',
+    'LOCALAPPDATA: ' + seen + '\nLOCALAPPDATA_RUNTIMES: ' + field(out, 'LOCALAPPDATA_RUNTIMES')
+  );
+  check(
+    'the review engine\'s commands get the real LOCALAPPDATA back through shell_environment_policy.set',
+    field(out, 'CONFIG_OVERRIDES').split(' | ').includes(
+      'shell_environment_policy.set.LOCALAPPDATA=' + JSON.stringify(real)
+    ),
+    'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
+  );
+  check('the review itself still produced a verdict', /^VERDICT: APPROVE$/m.test(out), out.slice(0, 400));
 }
 
 main().then(finish, (e) => {

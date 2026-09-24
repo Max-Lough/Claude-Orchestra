@@ -199,7 +199,7 @@ function case1() {
     'CWD: ' + field(out, 'CWD'));
   check(
     'the default model is Sol',
-    field(out, 'MODEL') === 'gpt-5.6-sol' && /model: gpt-5\.6-sol \(default\)/.test(out),
+    field(out, 'MODEL') === 'gpt-6-sol' && /model: gpt-6-sol \(default\)/.test(out),
     'MODEL: ' + field(out, 'MODEL') + ' — ' + out.split('\n')[0]
   );
   check(
@@ -254,13 +254,13 @@ function case2() {
   section('2. Explicit override precedence for model and effort: flag > env > config > default');
   const fx = makeRepo();
   writeProjectConfig(fx, {
-    codex: { execHeavyModel: 'gpt-5.6-sol-pinned', execTimeoutMs: 1234567 },
+    codex: { execHeavyModel: 'gpt-6-sol-pinned', execTimeoutMs: 1234567 },
   });
   const cfg = runExec(fx, []);
   check(
     'orchestra.json (codex.execHeavyModel) supplies the model and is credited',
-    field(cfg.stdout || '', 'MODEL') === 'gpt-5.6-sol-pinned' &&
-      /model: gpt-5\.6-sol-pinned \(orchestra\.json\)/.test(cfg.stdout || ''),
+    field(cfg.stdout || '', 'MODEL') === 'gpt-6-sol-pinned' &&
+      /model: gpt-6-sol-pinned \(orchestra\.json\)/.test(cfg.stdout || ''),
     (cfg.stdout || '').split('\n')[0]
   );
   check(
@@ -315,8 +315,8 @@ function case2() {
   const tout = tiered.stdout || '';
   check(
     '--tier is rejected as an unknown flag: does not select a model of its own',
-    field(tout, 'MODEL') === 'gpt-5.6-sol-pinned' &&
-      /model: gpt-5\.6-sol-pinned \(orchestra\.json\)/.test(tout.split('\n')[0]),
+    field(tout, 'MODEL') === 'gpt-6-sol-pinned' &&
+      /model: gpt-6-sol-pinned \(orchestra\.json\)/.test(tout.split('\n')[0]),
     'MODEL: ' + field(tout, 'MODEL') + ' — ' + tout.split('\n')[0]
   );
   check(
@@ -870,6 +870,7 @@ function case17() {
   const launchers = [
     ['packs/codex/agents/executor-codex-heavy.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/executor-codex-principal.md', 'mcp__orchestra-engine__orchestra_exec'],
+    ['packs/codex/agents/executor-codex-luna.md', 'mcp__orchestra-engine__orchestra_exec'],
     ['packs/codex/agents/reviewer-codex.md', 'mcp__orchestra-engine__orchestra_review'],
   ];
   for (const [rel, tool] of launchers) {
@@ -912,8 +913,8 @@ function case18() {
   const dflt = runExec(fx, []);
   check(
     'no --profile is the heavy rung, unchanged: Sol at high effort',
-    field(dflt.stdout || '', 'MODEL') === 'gpt-5.6-sol' &&
-      /profile: heavy, model: gpt-5\.6-sol \(default\), effort: high/.test(dflt.stdout || ''),
+    field(dflt.stdout || '', 'MODEL') === 'gpt-6-sol' &&
+      /profile: heavy, model: gpt-6-sol \(default\), effort: high/.test(dflt.stdout || ''),
     (dflt.stdout || '').split('\n')[0]
   );
 
@@ -963,7 +964,7 @@ function case18() {
   const principalKeysOnHeavy = runExec(pinnedPrincipal, []);
   check(
     'codex.execPrincipalModel/Effort do not leak into the heavy rung',
-    field(principalKeysOnHeavy.stdout || '', 'MODEL') === 'gpt-5.6-sol' &&
+    field(principalKeysOnHeavy.stdout || '', 'MODEL') === 'gpt-6-sol' &&
       /effort: high/.test((principalKeysOnHeavy.stdout || '').split('\n')[0]),
     (principalKeysOnHeavy.stdout || '').split('\n')[0]
   );
@@ -997,7 +998,7 @@ function case18() {
   const envOnHeavy = runExec(fx, [], { ORCHESTRA_EXEC_PRINCIPAL_MODEL: 'astra-from-env' });
   check(
     'ORCHESTRA_EXEC_PRINCIPAL_MODEL does not reach the heavy rung',
-    field(envOnHeavy.stdout || '', 'MODEL') === 'gpt-5.6-sol',
+    field(envOnHeavy.stdout || '', 'MODEL') === 'gpt-6-sol',
     (envOnHeavy.stdout || '').split('\n')[0]
   );
 
@@ -1008,13 +1009,13 @@ function case18() {
   const bout = bogus.stdout || '';
   check(
     'an unknown --profile falls back to heavy rather than inventing an engine',
-    field(bout, 'MODEL') === 'gpt-5.6-sol' && /profile: heavy/.test(bout),
+    field(bout, 'MODEL') === 'gpt-6-sol' && /profile: heavy/.test(bout),
     bout.split('\n')[0]
   );
   check(
     'an unknown --profile is announced in PREFLIGHT, naming what did not exist',
     /^PREFLIGHT: unknown --profile "astra"/m.test(bout) &&
-      /known profiles: heavy, principal/.test(bout),
+      /known profiles: heavy, principal, luna/.test(bout),
     (bout.match(/^PREFLIGHT:.*$/m) || ['no PREFLIGHT line'])[0]
   );
 
@@ -1071,6 +1072,7 @@ function case19() {
     'agents/executor-principal.md',
     'agents/executor-principal-xhigh.md',
     'packs/codex/agents/executor-codex-heavy.md',
+    'packs/codex/agents/executor-codex-luna.md',
   ]) {
     const d = frontmatter(rel);
     check(
@@ -1183,9 +1185,9 @@ function case19() {
     'the vendor-crossing escalation sentence is missing'
   );
   check(
-    'ORCHESTRA.md marks the Fable and Sol executors user-request-only',
+    'ORCHESTRA.md marks the Fable, Sol and Luna executors user-request-only',
     /\*\*Everything else on the bench is user request only\*\*/.test(protocol) &&
-      /`executor-principal`, `executor-principal-xhigh`\) and the Sol executor/.test(protocol),
+      /`executor-principal`, `executor-principal-xhigh`\), the Sol executor \(`executor-codex-heavy`\) and the Luna executor/.test(protocol),
     'the user-request-only paragraph is missing or reworded'
   );
   check(
@@ -1270,6 +1272,182 @@ function case20() {
   }
 }
 
+// The third Codex executor rung: GPT-6 Luna, USER REQUEST ONLY. It is a
+// profile like the other two — its own model, effort, env vars and config
+// keys — but nothing reaches it by default: no --profile is still Sol, the
+// Luna keys never leak into the other rungs (nor theirs into it), and the
+// doctrine files that route orders never put it on a ladder.
+function case26() {
+  section('26. Luna rung: a third, user-request-only profile with isolated keys');
+
+  const fx = makeRepo();
+
+  const luna = runExec(fx, ['--profile', 'luna']);
+  const lout = luna.stdout || '';
+  check(
+    '--profile luna is GPT-6 Luna at xhigh effort by default',
+    field(lout, 'MODEL') === 'gpt-6-luna' &&
+      /profile: luna, model: gpt-6-luna \(default\), effort: xhigh/.test(lout),
+    lout.split('\n')[0]
+  );
+  check(
+    'the luna rung reaches the engine as a real run, not a refusal',
+    /STATUS: DONE/.test(lout) && /^EXEC ENGINE: OpenAI/m.test(lout),
+    lout.slice(0, 300)
+  );
+  check(
+    'the luna rung sends its effort to codex, not just to the header',
+    field(lout, 'CONFIG_OVERRIDES') ===
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    'CONFIG_OVERRIDES: ' + field(lout, 'CONFIG_OVERRIDES')
+  );
+  check(
+    'a luna run on its defaults carries no off-default PREFLIGHT note',
+    !/PREFLIGHT:.*is running (model|effort)/.test(lout),
+    (lout.match(/^PREFLIGHT:.*$/gm) || []).join(' | ') || '(no PREFLIGHT lines)'
+  );
+  const lMarkers = field(lout, 'BRIEF_MARKERS');
+  check(
+    'a luna order is step-shaped: no principal charter, no DECISIONS section',
+    !/THIS IS A PRINCIPAL ORDER/.test(lMarkers) && !/DECISIONS/.test(lMarkers) && /WORK ORDER/.test(lMarkers),
+    'BRIEF_MARKERS: ' + lMarkers
+  );
+
+  // Precedence on the luna rung: flag > env > orchestra.json > default.
+  const cfgFx = makeRepo();
+  writeProjectConfig(cfgFx, { codex: { execLunaModel: 'luna-pinned', execLunaEffort: 'high' } });
+  const fromCfg = runExec(cfgFx, ['--profile', 'luna']);
+  check(
+    'codex.execLunaModel/Effort supply the luna rung, and are credited',
+    field(fromCfg.stdout || '', 'MODEL') === 'luna-pinned' &&
+      /model: luna-pinned \(orchestra\.json\), effort: high/.test(fromCfg.stdout || ''),
+    (fromCfg.stdout || '').split('\n')[0]
+  );
+  const fromEnv = runExec(cfgFx, ['--profile', 'luna'], {
+    ORCHESTRA_EXEC_LUNA_MODEL: 'luna-from-env',
+    ORCHESTRA_EXEC_LUNA_EFFORT: 'medium',
+  });
+  check(
+    'ORCHESTRA_EXEC_LUNA_* outrank orchestra.json on the luna rung, and are credited',
+    field(fromEnv.stdout || '', 'MODEL') === 'luna-from-env' &&
+      /model: luna-from-env \(env\), effort: medium/.test(fromEnv.stdout || ''),
+    (fromEnv.stdout || '').split('\n')[0]
+  );
+  const fromFlag = runExec(cfgFx, ['--profile', 'luna', '--model', 'luna-flag', '--effort', 'low'], {
+    ORCHESTRA_EXEC_LUNA_MODEL: 'luna-from-env',
+    ORCHESTRA_EXEC_LUNA_EFFORT: 'medium',
+  });
+  const ffOut = fromFlag.stdout || '';
+  check(
+    'explicit --model/--effort outrank env and orchestra.json on the luna rung',
+    field(ffOut, 'MODEL') === 'luna-flag' && /model: luna-flag \(flag\), effort: low/.test(ffOut),
+    ffOut.split('\n')[0]
+  );
+  check(
+    'a luna launch on a non-default model gets a PREFLIGHT note naming the pin',
+    /PREFLIGHT: profile luna is running model "luna-flag" \(flag\), not its default gpt-6-luna/.test(ffOut),
+    (ffOut.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+  check(
+    'a luna launch on a non-default effort gets a PREFLIGHT note naming the pin',
+    /PREFLIGHT: profile luna is running effort "low" \(flag\), not its default xhigh/.test(ffOut),
+    (ffOut.match(/^PREFLIGHT:.*$/gm) || []).join(' | ')
+  );
+
+  // Key isolation, every direction. Luna keys never move Sol or Astra — in
+  // particular a project that configures Luna has NOT made Luna its default.
+  const lunaKeysOnHeavy = runExec(cfgFx, []);
+  check(
+    'codex.execLunaModel/Effort do not leak into the heavy rung (no --profile is still Sol)',
+    field(lunaKeysOnHeavy.stdout || '', 'MODEL') === 'gpt-6-sol' &&
+      /profile: heavy, model: gpt-6-sol \(default\), effort: high/.test(lunaKeysOnHeavy.stdout || ''),
+    (lunaKeysOnHeavy.stdout || '').split('\n')[0]
+  );
+  const lunaKeysOnPrincipal = runExec(cfgFx, ['--profile', 'principal']);
+  check(
+    'codex.execLunaModel/Effort do not leak into the principal rung',
+    field(lunaKeysOnPrincipal.stdout || '', 'MODEL') === 'gpt-6-astra' &&
+      /effort: xhigh/.test((lunaKeysOnPrincipal.stdout || '').split('\n')[0]),
+    (lunaKeysOnPrincipal.stdout || '').split('\n')[0]
+  );
+  const lunaEnvOnHeavy = runExec(fx, [], { ORCHESTRA_EXEC_LUNA_MODEL: 'luna-from-env' });
+  check(
+    'ORCHESTRA_EXEC_LUNA_MODEL does not reach the heavy rung',
+    field(lunaEnvOnHeavy.stdout || '', 'MODEL') === 'gpt-6-sol',
+    (lunaEnvOnHeavy.stdout || '').split('\n')[0]
+  );
+  const lunaEnvOnPrincipal = runExec(fx, ['--profile', 'principal'], { ORCHESTRA_EXEC_LUNA_MODEL: 'luna-from-env' });
+  check(
+    'ORCHESTRA_EXEC_LUNA_MODEL does not reach the principal rung',
+    field(lunaEnvOnPrincipal.stdout || '', 'MODEL') === 'gpt-6-astra',
+    (lunaEnvOnPrincipal.stdout || '').split('\n')[0]
+  );
+
+  const otherKeys = makeRepo();
+  writeProjectConfig(otherKeys, {
+    codex: {
+      execHeavyModel: 'sol-pinned', execHeavyEffort: 'medium',
+      execPrincipalModel: 'astra-pinned', execPrincipalEffort: 'max',
+    },
+  });
+  const otherOnLuna = runExec(otherKeys, ['--profile', 'luna'], {
+    ORCHESTRA_EXEC_HEAVY_MODEL: 'sol-from-env',
+    ORCHESTRA_EXEC_PRINCIPAL_MODEL: 'astra-from-env',
+  });
+  check(
+    'heavy and principal keys and env vars do not leak into the luna rung',
+    field(otherOnLuna.stdout || '', 'MODEL') === 'gpt-6-luna' &&
+      /model: gpt-6-luna \(default\), effort: xhigh/.test(otherOnLuna.stdout || ''),
+    (otherOnLuna.stdout || '').split('\n')[0]
+  );
+
+  const known = runExec(fx, ['--profile', 'moon']);
+  check(
+    'an unknown --profile still falls back to heavy (never luna) and lists luna as known',
+    field(known.stdout || '', 'MODEL') === 'gpt-6-sol' &&
+      /known profiles: heavy, principal, luna/.test(known.stdout || ''),
+    (known.stdout || '').match(/^PREFLIGHT:.*$/m) || ['no PREFLIGHT line']
+  );
+
+  // Doctrine: the launcher and the Director's protocol keep Luna off every
+  // default path.
+  const read = (rel) => fs.readFileSync(path.join(MASTER, rel), 'utf8');
+  const launcher = read('packs/codex/agents/executor-codex-luna.md');
+  const desc = (/^description: (.*)$/m.exec(launcher) || [])[1] || '';
+  check(
+    'executor-codex-luna: description declares USER REQUEST ONLY and no top-rung claim',
+    /USER REQUEST ONLY/.test(desc) && !/\bthe top rung of the default\b|\bTOP RUNG OF THE DEFAULT\b/.test(desc),
+    desc.slice(0, 200)
+  );
+  check(
+    'executor-codex-luna: a haiku launcher that passes profile "luna" on every call',
+    /^model: haiku$/m.test(launcher) && /`profile: "luna"` — always, on every call you make/.test(launcher),
+    (launcher.match(/^(model|tools): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-codex-luna: routes its review to the Opus reviewer, never reviewer-codex',
+    /Luna-executed order is Codex-authored, so its review goes to the fresh-context Opus `reviewer`, never to `reviewer-codex`/.test(launcher),
+    'the cross-family review line is missing'
+  );
+  check(
+    'executor-codex-luna: flags a PREFLIGHT off-default pin against gpt-6-luna/xhigh',
+    /`gpt-6-luna`\/`xhigh`/.test(launcher),
+    'the PREFLIGHT relay rule is missing'
+  );
+  const protocol = read('ORCHESTRA.md');
+  check(
+    'ORCHESTRA.md lists the Luna executor as user-request-only',
+    /\| Luna executor †‡ \| `executor-codex-luna` \| GPT-6 Luna, xhigh \|/.test(protocol) &&
+      /the Luna executor \(`executor-codex-luna`\)\. No routing rule reaches them/.test(protocol),
+    'the Luna roster row or user-request-only mention is missing'
+  );
+  check(
+    'ORCHESTRA.md keeps Luna off the escalation ladder and the steering table',
+    !/→ `executor-codex-luna`/.test(protocol) && !/\| \*\*up[^\n]*executor-codex-luna/.test(protocol),
+    'executor-codex-luna appears on a default route'
+  );
+}
+
 // ------------------------------------------------------------------ driver
 
 // 21. FIX (field, 2026-09-06): three failures with one root — the scratch git
@@ -1300,7 +1478,7 @@ function case21() {
   fs.mkdirSync(codexHome, { recursive: true });
   fs.writeFileSync(
     path.join(codexHome, 'config.toml'),
-    'model = "gpt-5.6-sol"\n\n[mcp_servers.alpha]\ncommand = "node"\n\n' +
+    'model = "gpt-6-sol"\n\n[mcp_servers.alpha]\ncommand = "node"\n\n' +
       '[mcp_servers.beta.env]\nX = "1"\n\n[mcp_servers."odd name"]\ncommand = "node"\n'
   );
   const r = runExec(fx, [], { GIT_CONFIG_GLOBAL: globalCfg, CODEX_HOME: codexHome });
@@ -2607,6 +2785,7 @@ async function main() {
   case23();
   case24();
   case25();
+  case26();
 }
 
 main().then(finish, (e) => {

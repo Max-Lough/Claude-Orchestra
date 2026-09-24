@@ -244,7 +244,7 @@ function case5_packSelectionAndMcpMerge() {
   check('install with --packs codex succeeds', ok(r), out(r));
 
   const c = census(target);
-  check('pack agents installed', c.includes('.claude/agents/reviewer-codex.md') && c.includes('.claude/agents/executor-codex-heavy.md'), c.join('\n'));
+  check('pack agents installed', c.includes('.claude/agents/reviewer-codex.md') && c.includes('.claude/agents/executor-codex-heavy.md') && c.includes('.claude/agents/executor-codex-luna.md'), c.join('\n'));
   check('pack hooks installed', c.includes('.claude/hooks/orchestra-review.js') && c.includes('.claude/hooks/orchestra-engine-mcp.js'), c.join('\n'));
   check('pack skill installed', c.includes('.claude/skills/cross-compare-plan/SKILL.md'), c.join('\n'));
 
@@ -259,7 +259,7 @@ function case5_packSelectionAndMcpMerge() {
   const rDrop = install(target, ['--no-packs']);
   check('deselecting the pack succeeds', ok(rDrop), out(rDrop));
   const cAfter = census(target);
-  check('pack agents removed', !cAfter.includes('.claude/agents/reviewer-codex.md'), cAfter.join('\n'));
+  check('pack agents removed', !cAfter.includes('.claude/agents/reviewer-codex.md') && !cAfter.includes('.claude/agents/executor-codex-luna.md'),cAfter.join('\n'));
   check('pack skill removed', !cAfter.includes('.claude/skills/cross-compare-plan/SKILL.md'), cAfter.join('\n'));
   const mcpAfter = readJson(path.join(target, '.mcp.json'));
   check('pack MCP server removed on deselect', !mcpAfter.mcpServers || !mcpAfter.mcpServers['orchestra-engine'], JSON.stringify(mcpAfter));
@@ -495,7 +495,7 @@ function case12_scrubDeprecatedKeys() {
       execModel: 'gpt-5.6-terra',
       execEffort: 'medium',
       execLightModel: 'gpt-5.6-mini',
-      reviewModel: 'gpt-5.6-sol',
+      reviewModel: 'gpt-6-sol',
     },
   });
 
@@ -507,7 +507,7 @@ function case12_scrubDeprecatedKeys() {
     check('deprecated top-level key "' + key + '" removed', !(key in manifest), JSON.stringify(manifest));
   }
   check('unrelated custom key preserved', manifest.myCustomKey === 'keep-me', JSON.stringify(manifest));
-  check('codex block preserved minus its three deprecated keys', manifest.codex && manifest.codex.reviewModel === 'gpt-5.6-sol' && !('execModel' in manifest.codex) && !('execEffort' in manifest.codex) && !('execLightModel' in manifest.codex), JSON.stringify(manifest.codex));
+  check('codex block preserved minus its three deprecated keys', manifest.codex && manifest.codex.reviewModel === 'gpt-6-sol' && !('execModel' in manifest.codex) && !('execEffort' in manifest.codex) && !('execLightModel' in manifest.codex), JSON.stringify(manifest.codex));
   check('scrub is reported, one line per removed key', /scrubbed deprecated key "roster"/.test(out(r)) && /scrubbed deprecated key "codex\.execModel"/.test(out(r)), out(r));
 }
 

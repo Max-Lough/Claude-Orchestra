@@ -253,7 +253,7 @@ function mcpSession(opts) {
         CODEX_HOME: CLEAN_CODEX_HOME,
         ORCHESTRA_REVIEW_IDLE_MS: '0',
         ORCHESTRA_EXEC_IDLE_MS: '0',
-        ORCHESTRA_REVIEW_MODEL: 'gpt-5.6-sol',
+        ORCHESTRA_REVIEW_MODEL: 'gpt-6-sol',
         ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
         ORCHESTRA_EXEC_ARGS: '',
         ORCHESTRA_REVIEW_ARGS: '',
@@ -479,9 +479,9 @@ async function case4b() {
   const exec = ((list.result && list.result.tools) || []).find((t) => t.name === 'orchestra_exec');
   const prop = exec && exec.inputSchema.properties && exec.inputSchema.properties.profile;
   check(
-    'the schema exposes profile as a two-value enum',
+    'the schema exposes profile as a three-value enum (heavy, principal, luna)',
     prop && prop.type === 'string' &&
-      JSON.stringify((prop.enum || []).slice().sort()) === JSON.stringify(['heavy', 'principal']),
+      JSON.stringify((prop.enum || []).slice().sort()) === JSON.stringify(['heavy', 'luna', 'principal']),
     JSON.stringify(prop)
   );
   // FIX (field, 2026-09-06): profile used to be optional with a silent Sol
@@ -524,13 +524,38 @@ async function case4b() {
       /never launched/.test(dflt) && !/EXEC ENGINE/.test(dflt),
     dflt.slice(0, 400)
   );
+  check(
+    'the refusal names every valid profile, luna included',
+    /"heavy"/.test(dflt) && /"principal"/.test(dflt) && /"luna"/.test(dflt),
+    dflt.slice(0, 400)
+  );
+  const bogusRes = await s.rpc('tools/call', {
+    name: 'orchestra_exec',
+    arguments: { work_order: 'Report only.', profile: 'moon', timeout_ms: 60000 },
+  }, 180000);
+  const bogus = resultText(bogusRes);
+  check(
+    'an unknown profile is refused by the transport, never mapped onto a rung',
+    bogusRes.result && bogusRes.result.isError &&
+      /^MCP TRANSPORT ERROR/.test(bogus) && /received "moon"/.test(bogus) && !/EXEC ENGINE/.test(bogus),
+    bogus.slice(0, 400)
+  );
+  const luna = resultText(await s.rpc('tools/call', {
+    name: 'orchestra_exec',
+    arguments: { work_order: 'Report only.', profile: 'luna', timeout_ms: 60000 },
+  }, 180000));
+  check(
+    'profile luna reaches the runner and runs GPT-6 Luna at xhigh',
+    /profile: luna/.test(luna) && field(luna, 'MODEL') === 'gpt-6-luna' && /effort: xhigh/.test(luna),
+    luna.split('\n')[0]
+  );
   const heavy = resultText(await s.rpc('tools/call', {
     name: 'orchestra_exec',
     arguments: { work_order: 'Report only.', profile: 'heavy', timeout_ms: 60000 },
   }, 180000));
   check(
     'profile heavy is the Sol rung',
-    /profile: heavy/.test(heavy) && field(heavy, 'MODEL') === 'gpt-5.6-sol',
+    /profile: heavy/.test(heavy) && field(heavy, 'MODEL') === 'gpt-6-sol',
     heavy.split('\n')[0]
   );
 
@@ -543,6 +568,15 @@ async function case4b() {
     'the roster display name "GPT-6 Astra" is sent to codex as gpt-6-astra',
     field(named, 'MODEL') === 'gpt-6-astra',
     'MODEL: ' + field(named, 'MODEL')
+  );
+  const namedLuna = resultText(await s.rpc('tools/call', {
+    name: 'orchestra_exec',
+    arguments: { work_order: 'Report only.', profile: 'luna', model: 'GPT-6 Luna', timeout_ms: 60000 },
+  }, 180000));
+  check(
+    'the roster display name "GPT-6 Luna" is sent to codex as gpt-6-luna',
+    field(namedLuna, 'MODEL') === 'gpt-6-luna',
+    'MODEL: ' + field(namedLuna, 'MODEL')
   );
 
   s.close();

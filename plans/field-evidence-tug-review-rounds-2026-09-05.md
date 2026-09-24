@@ -116,17 +116,20 @@ per attempt, per the notebook) is paid every round.
 - 3.1.0: `executor-principal` / `executor-principal-xhigh` (Fable high / xhigh) added as the
   top rung; §3.5 ladder made explicit; the principal carries two duties the chains showed were
   missing — decisions the order delegates, and class-wide fixes of reviewer findings.
+- 3.7.0: the class-sweep clause for every executor rung (Claude profiles, specialists, and the
+  Codex exec brief), with a CLASS SWEEP report section; both reviewers list every instance of a
+  finding's class; review batched per campaign by default; and a warm import cache for pinned
+  reviews in place of worktree reuse (a fresh checkout per attempt, carrying only the
+  git-ignored `.godot/` across runs).
 
 ## Proposed, not applied (owner decision)
 
-- Class-sweep clause for every fix order at every tier, not only the principal: "fix the
-  finding and every sibling instance in scope; list the sweep".
-- Review orders that ask the reviewer to enumerate the whole class when it finds one instance
-  ("list every instance of this class you can find, not the first").
+- ~~Class-sweep clause for every fix order at every tier~~ — applied in 3.7.0.
+- ~~Reviewers enumerate the whole class of a finding~~ — applied in 3.7.0.
 - A refuted *report* claim whose underlying code is correct graded MINOR, not MAJOR, unless
   the work order itself required the claim.
 - Route-up heuristic for PLAN time: if the acceptance criterion is an exhaustive enumeration a
   reviewer can extend, start at heavy (or principal) with an enumeration table in the order,
   and never declare the inert tier on a range touching data, tests, or `.tres` files.
-- Reviewer worktree reuse across rounds of one branch, to stop paying the cold import every
-  round (a review-runner change; larger).
+- ~~Reviewer worktree reuse across rounds of one branch~~ — addressed in 3.7.0 by the warm
+  import cache instead, which keeps a fresh checkout per attempt.

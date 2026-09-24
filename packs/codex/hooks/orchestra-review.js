@@ -110,6 +110,7 @@
  *       "probeTimeoutMs": 180000,
  *       "worktreeWarmupCmd": "godot --headless --import",
  *       "worktreeWarmupTimeoutMs": 1800000,
+ *       "worktreeCache": [".godot"],
  *       "integrityIgnore": ["*.import", ".godot/"],
  *       "integrityIgnoreDefaults": true,
  *       "requireHelperSiblings": false,
@@ -193,6 +194,14 @@
  *                               Cap for the warmup (default 1800000 — the
  *                               field ledger put a cold Godot import at 9-10
  *                               minutes, and the old 300000 cap was below it).
+ *   ORCHESTRA_REVIEW_WORKTREE_CACHE
+ *                               Comma-separated, project-relative, git-ignored
+ *                               directories carried from one pinned review to
+ *                               the next so the import starts warm (default:
+ *                               auto — `.godot` when project.godot is present;
+ *                               empty string = off). Stored beside the scratch
+ *                               directories as orchestra-cache-review-<key>;
+ *                               delete that to force a cold import.
  *   ORCHESTRA_REVIEW_GIT_ISOLATION
  *                               1 (default) runs every git the review touches —
  *                               the runner's own and the engine's — against a
@@ -433,6 +442,14 @@ const CONFIG = {
   // review then ran against a half-imported tree. 1800000 covers that import
   // with headroom for a cold `pnpm install` or a first-run asset build.
   warmupTimeoutMs: intOr(process.env.ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS, 1800000),
+  // Import-cache directories carried between pinned reviews (see "warm import
+  // cache"). null = auto-detect from the engine's marker file; [] = off.
+  worktreeCache:
+    process.env.ORCHESTRA_REVIEW_WORKTREE_CACHE != null
+      ? process.env.ORCHESTRA_REVIEW_WORKTREE_CACHE.split(',').map(validCacheRel).filter(Boolean)
+      : null,
+  worktreeCacheSource: process.env.ORCHESTRA_REVIEW_WORKTREE_CACHE != null ? 'env' : 'default',
+  cacheLabel: '',
   integrityIgnore: [],
   integrityIgnoreDefaults: true,
   // Env override exists for the same reason every other setting here has one:
@@ -803,7 +820,7 @@ const CONFIG_NOTES = [];
 // can absorb.
 const CODEX_ONLY_KEYS = [
   'reviewModel', 'reviewTimeoutMs', 'reviewSandbox', 'reviewRetries', 'doNotRun',
-  'worktreeRoot', 'worktreeWarmupCmd', 'worktreeWarmupTimeoutMs', 'helpersDir',
+  'worktreeRoot', 'worktreeWarmupCmd', 'worktreeWarmupTimeoutMs', 'worktreeCache', 'helpersDir',
   'idleMs', 'gitConfigIsolation', 'execHeavyModel', 'execHeavyEffort',
   'execPrincipalModel', 'execPrincipalEffort', 'execLunaModel', 'execLunaEffort',
   'crossplanModel', 'crossplanEffort', 'engineMcp',
@@ -893,6 +910,10 @@ const SCRATCH = {
   dir: '',
   gitConfigFile: '',
   worktrees: [],
+  // Import-cache directories seeded into a pinned worktree (see "warm import
+  // cache"): { dir, store, keep }. Put back into the store at teardown, before
+  // the worktree that holds them is removed.
+  caches: [],
   repoTop: '',
   torndown: false,
 };
@@ -1819,6 +1840,8 @@ function createPinnedWorktree(repoTop, headRef, attemptDir) {
 function teardownScratch() {
   if (SCRATCH.torndown) return;
   SCRATCH.torndown = true;
+  // Before the worktrees go: their import caches move out, or they die with them.
+  persistImportCaches();
   if (SCRATCH.repoTop) {
     for (const wt of SCRATCH.worktrees) {
       // Ours, and locked by us: unlock first or `remove --force` refuses it
@@ -1861,6 +1884,142 @@ function armTeardown() {
       });
     } catch (_) {
       /* signal not supported on this platform */
+    }
+  }
+}
+
+// ------------------------------------------------- warm import cache
+//
+// FIX (field ledger, 2026-09-05): every pinned review paid a 9-10 minute cold
+// Godot import, because a fresh checkout has no `.godot/` — 78 Sol reviews,
+// every round of every REVISE chain, the same import from nothing. The engine's
+// own import is incremental: handed the previous run's `.godot/`, it re-imports
+// only what changed. So the runner keeps that directory between reviews of the
+// same project, and each fresh checkout starts warm.
+//
+// A cache, not a reused worktree, deliberately. Each attempt still gets a
+// brand-new checkout of the pinned commit — the property retries and the
+// integrity check rest on — and only a git-IGNORED directory is ever carried
+// across, so nothing the commit under review contains can come from a cache.
+// Every move is a rename within one scratch root, so it costs nothing however
+// large the cache is, and a concurrent review of the same project that loses
+// the race for it simply imports cold. Only an attempt whose engine exited
+// cleanly (and whose warmup, if any, completed) puts its cache back: a
+// half-written import from a killed run is never inherited.
+
+// Must NOT start with SCRATCH_PREFIX: the orphan sweep reclaims those.
+const CACHE_PREFIX = 'orchestra-cache-review-';
+
+// Engines whose first open of a checkout writes an import cache, detected by a
+// marker file in the project directory. Used only when the project names no
+// `worktreeCache` of its own.
+const ENGINE_IMPORT_CACHES = [{ marker: 'project.godot', dirs: ['.godot'] }];
+
+// A cache entry is a project-relative directory. Absolute paths, `..`, and
+// anything under .git would let a config value point the rename somewhere a
+// review must never write.
+function validCacheRel(raw) {
+  const rel = String(raw || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!rel || path.isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) return '';
+  const parts = rel.split('/');
+  if (parts.some((p) => !p || p === '.' || p === '..')) return '';
+  if (parts[0] === '.git') return '';
+  return rel;
+}
+
+// Which directories this project's reviews carry across, and why.
+function resolveImportCache(reviewDir) {
+  if (CONFIG.worktreeCache !== null) {
+    return { dirs: CONFIG.worktreeCache, source: CONFIG.worktreeCacheSource };
+  }
+  for (const eng of ENGINE_IMPORT_CACHES) {
+    if (fs.existsSync(path.join(reviewDir, eng.marker))) {
+      return { dirs: eng.dirs, source: 'auto: ' + eng.marker };
+    }
+  }
+  return { dirs: [], source: 'none detected' };
+}
+
+// One store per project, beside the run's scratch directory.
+function importCacheStore(rel) {
+  const key = crypto
+    .createHash('sha1')
+    .update(realOrSelf(CONFIG.projectDir))
+    .digest('hex')
+    .slice(0, 12);
+  return path.join(path.dirname(SCRATCH.dir), CACHE_PREFIX + key, encodeURIComponent(rel));
+}
+
+// Move each cached directory into the fresh checkout. Returns the header label,
+// or '' when this project carries no cache.
+function seedImportCache(reviewDir) {
+  const { dirs, source } = resolveImportCache(reviewDir);
+  if (!dirs.length) return { label: '', entries: [] };
+  const warm = [];
+  const cold = [];
+  const refused = [];
+  const entries = [];
+  for (const rel of dirs) {
+    // Ignored, and nothing under it tracked: otherwise the cache would put
+    // content into the checkout that the pinned commit does not contain.
+    const ignored = runGit(['-C', reviewDir, 'check-ignore', '-q', rel + '/']).status === 0;
+    const tracked = (gitOut(['-C', reviewDir, 'ls-files', '--', rel]) || '').trim();
+    if (!ignored || tracked) {
+      refused.push(rel);
+      continue;
+    }
+    const dir = path.join(reviewDir, rel);
+    const store = importCacheStore(rel);
+    try {
+      fs.mkdirSync(path.dirname(dir), { recursive: true });
+      // The commit under review decides what the parent path IS: a tracked
+      // symlink there would carry the cache (and the teardown move) outside
+      // the checkout. Contained or not used.
+      const parent = realOrSelf(path.dirname(dir));
+      const top = realOrSelf(reviewDir);
+      if (parent !== top && !parent.startsWith(top + path.sep)) {
+        refused.push(rel);
+        continue;
+      }
+      fs.renameSync(store, dir);
+      warm.push(rel);
+    } catch (_) {
+      // No cache yet, or a concurrent review of this project holds it.
+      cold.push(rel);
+    }
+    const entry = { dir, store, keep: false };
+    SCRATCH.caches.push(entry);
+    entries.push(entry);
+  }
+  if (refused.length) {
+    PREFLIGHT.push(
+      'import cache NOT used for ' + refused.join(', ') + ': not git-ignored, holds tracked ' +
+        'files, or resolves outside the checkout — a cache may only carry directories the ' +
+        'commit under review cannot contain'
+    );
+  }
+  const parts = [];
+  if (warm.length) parts.push(warm.join(', ') + ' warm');
+  if (cold.length) parts.push(cold.join(', ') + ' cold (first run, or held by a concurrent review)');
+  if (!parts.length) parts.push('none usable');
+  return { label: parts.join('; ') + ' (' + source + ')', entries };
+}
+
+// Teardown half: put each kept cache back. Synchronous, best effort, and never
+// the review's outcome — a cache that fails to persist costs the next review
+// one cold import, nothing more.
+function persistImportCaches() {
+  for (const c of SCRATCH.caches) {
+    if (!c.keep) continue;
+    try {
+      const st = fs.lstatSync(c.dir);
+      if (!st.isDirectory() || st.isSymbolicLink()) continue;
+      fs.mkdirSync(path.dirname(c.store), { recursive: true });
+      // An older copy a concurrent review put back; this run's is newer.
+      fs.rmSync(c.store, { recursive: true, force: true });
+      fs.renameSync(c.dir, c.store);
+    } catch (_) {
+      /* the next review imports cold */
     }
   }
 }
@@ -2851,6 +3010,15 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
     '   flaw in adjacent code, robustness beyond the order\'s scope. The bucket is',
     '   about provenance, not severity: a GAP may be graded MAJOR and still be a',
     '   GAP. When honestly torn, choose BREACH.',
+    '7. REPORT THE CLASS, NOT THE FIRST INSTANCE. When a finding is one',
+    '   instance of a class — an unenforced guarantee, an unhandled edge, a',
+    '   stale statement, a hand-kept list that drifted, a fixture that proves',
+    '   less than it claims — search the change\'s scope for its siblings',
+    '   before you write the verdict, and list every instance in that finding,',
+    '   or say you searched and it is the only one. The fix order is built from',
+    '   your findings verbatim: an instance you saw and did not list costs a',
+    '   whole review round. If the executor report carries a CLASS SWEEP, audit',
+    '   it the same way — a sibling it missed is a finding against the sweep.',
     '',
     'OUTPUT — emit EXACTLY this structure and nothing after it. Do not wrap it',
     'in code fences.',
@@ -2859,7 +3027,8 @@ function buildBrief(workOrder, executorReport, tier, verification, forbidden, sc
     '',
     'FINDINGS',
     '- [CRITICAL|MAJOR|MINOR] [BREACH|GAP] <path:line> — <defect> — <concrete',
-    '  failure scenario: given X, Y happens instead of Z>',
+    '  failure scenario: given X, Y happens instead of Z> — <class siblings:',
+    '  every other path:line of the same class, or "searched; only instance">',
     '- ...or "none"',
     '',
     'CLAIMS CHECKED',
@@ -3357,6 +3526,7 @@ function settingsBits() {
         : 'PRESERVE (' + CONFIG.killSurvivorsSource + ')')
   );
   if (CONFIG.reviewDirLabel) bits.push('checkout: ' + CONFIG.reviewDirLabel);
+  if (CONFIG.cacheLabel) bits.push('import cache: ' + CONFIG.cacheLabel);
   return bits;
 }
 
@@ -3649,6 +3819,22 @@ function main() {
     codexCfg.worktreeWarmupTimeoutMs != null
   ) {
     CONFIG.warmupTimeoutMs = intOr(codexCfg.worktreeWarmupTimeoutMs, CONFIG.warmupTimeoutMs);
+  }
+  if (process.env.ORCHESTRA_REVIEW_WORKTREE_CACHE == null && codexCfg.worktreeCache != null) {
+    // false or [] turns the cache off; a list replaces auto-detection outright.
+    const raw = codexCfg.worktreeCache === false ? [] : stringList(codexCfg.worktreeCache);
+    CONFIG.worktreeCache = raw.map(validCacheRel).filter(Boolean);
+    CONFIG.worktreeCacheSource = 'orchestra.json';
+    if (
+      (codexCfg.worktreeCache !== false && !Array.isArray(codexCfg.worktreeCache)) ||
+      CONFIG.worktreeCache.length !== raw.length
+    ) {
+      PREFLIGHT.push(
+        '"codex.worktreeCache" must be false or a list of project-relative directories ' +
+          '(no absolute paths, no "..", nothing under .git); ignored entries: ' +
+          JSON.stringify(codexCfg.worktreeCache)
+      );
+    }
   }
   if (codexCfg.integrityIgnoreDefaults === false) CONFIG.integrityIgnoreDefaults = false;
   CONFIG.integrityIgnore = (CONFIG.integrityIgnoreDefaults ? DEFAULT_INTEGRITY_IGNORE : [])
@@ -3969,8 +4155,27 @@ function main() {
           'it is reviewing). Pass --head-ref to get it.'
       );
     } else {
+      // Seed the import cache first, so the warmup (or the engine's own first
+      // open) is incremental instead of cold. Pinned mode only, like the
+      // warmup: the live tree already has its cache and must not be written.
+      if (CONFIG.headRef) {
+        const seed = seedImportCache(att.reviewDir);
+        att.caches = seed.entries;
+        if (seed.label) CONFIG.cacheLabel = seed.label;
+      }
       const warm = runWarmup(att.reviewDir);
+      att.warmupFailed = !!(warm && !warm.ok);
       if (warm) PREFLIGHT.push((n > 1 ? 'attempt ' + n + ': ' : '') + warm.note);
+      if (
+        !warm && n === 1 && CONFIG.headRef &&
+        fs.existsSync(path.join(att.reviewDir, 'project.godot'))
+      ) {
+        PREFLIGHT.push(
+          'Godot project with no warmup command: the first import runs inside the review ' +
+            'budget and after the integrity baseline. Set "codex": { "worktreeWarmupCmd": ' +
+            '"<godot binary> --headless --import" } in .claude/orchestra.json.'
+        );
+      }
     }
 
     // Is anything else still writing the tree? A review of a tree in motion
@@ -4036,6 +4241,10 @@ function main() {
     att.stderr = run.stderr || '';
     att.stdout = run.stdout || '';
     att.class = classifyExit(run, elapsed);
+    // Only a clean run leaves an import cache worth inheriting.
+    if (att.class.kind === 'ok' && !att.warmupFailed) {
+      for (const c of att.caches || []) c.keep = true;
+    }
 
     // Prefer the clean final-message file; fall back to stdout if the flag was
     // a no-op on this version. A body is a verdict even when the exit status

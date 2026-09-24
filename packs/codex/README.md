@@ -192,6 +192,7 @@ Environment variables override the file; explicit runner flags override both.
     "worktreeRoot": "C:/tmp/orchestra-review",
     "doNotRun": ["godot", "*.exe --headless"],
     "worktreeWarmupCmd": "godot --headless --import",
+    "worktreeCache": [".godot"],
     "integrityIgnore": ["*.import", ".godot/"],
     "execKillSurvivors": true,
     "reviewKillSurvivors": true,
@@ -211,7 +212,8 @@ Environment variables override the file; explicit runner flags override both.
 | `engineMcp` | `strip` (default) disables every MCP server in the user's Codex config plus the apps connector for the engine child, in every lane; `inherit` leaves the engine's MCP config alone. |
 | `reviewRetries` | Extra attempts after a failure that might go differently (default `1`, max `3`). Each retry gets a fresh checkout; the chain reports as one outcome. |
 | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
-| `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 5-minute cap). For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
+| `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 30-minute cap). A pinned review of a Godot project with none set says so in its preflight. For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
+| `worktreeCache` | Git-ignored, project-relative directories carried from one pinned review to the next (default: auto — `.godot` when `project.godot` is present, else none; `false` or `[]` = off). See "Warm import cache". |
 | `integrityIgnore` / `integrityIgnoreDefaults` | Paths that are expected build/engine churn, added to (or replacing) the built-in list of generated-artifact paths. |
 | `execKillSurvivors` / `reviewKillSurvivors` / `crossplanKillSurvivors` | `true` by default: kill every process that outlived the engine in that lane (see "Process census"). `false` is the per-lane `--preserve-survivors` — the census still runs and the header says which mode was in force. |
 | `helperSiblings` / `requireHelperSiblings` | Files the Codex install must carry next to its executable (default on Windows: `codex-command-runner.exe`, `codex-resources`, `codex-windows-sandbox-setup.exe`). Verified every run — as files where the name says executable, so a directory of the right name does not pass; repaired where a known-good copy is locatable, including one misplaced inside the install itself; `requireHelperSiblings: true` makes a missing one a hard stop. |
@@ -230,6 +232,24 @@ SHA plus a tree that moved past it spends the whole budget on
 resolve. Teardown is guaranteed on every exit path, and each run sweeps
 worktrees orphaned by a hard kill. The header names the checkout that produced
 the verdict. Uncommitted work still reviews live.
+
+**Warm import cache.** A fresh checkout of a Godot project has no `.godot/`,
+so every pinned review used to pay the 9–10 minute cold import again — the
+field ledger counted it on 78 consecutive Sol reviews. The runner now keeps
+that directory between reviews of the same project: before the warmup it moves
+the previous run's copy into the new checkout, and at teardown it moves it back.
+The engine's import is incremental, so only what changed since the last review
+is re-imported. The header says which it was (`import cache: .godot warm` /
+`cold`). It is a cache, not a reused worktree: every attempt is still a
+brand-new checkout of the pinned commit, only a directory that is git-ignored
+and holds no tracked files is ever carried, and only a run whose engine exited
+cleanly (and whose warmup, if any, completed) puts its copy back — a killed
+run's half-written import is never inherited. Each move is a rename inside the
+scratch root, so a multi-gigabyte cache costs nothing to carry; a concurrent
+review of the same project that loses the race for it imports cold. The store
+lives beside the scratch directories as `orchestra-cache-review-<key>`; delete
+it to force a cold import. Set `worktreeCache` for other engines' caches, or
+`false` to turn it off. Live-tree reviews never touch it.
 
 **Process census and the kill group.** Every engine invocation runs inside a
 kill group the *runner* owns — on Windows a Job object created with
@@ -482,6 +502,7 @@ loudly when it does.
 | `ORCHESTRA_REVIEW_PROBE_TIMEOUT_MS` | `180000` | Cap for that probe. |
 | `ORCHESTRA_REVIEW_WARMUP_CMD` | — | Command run in the checkout before the integrity baseline. |
 | `ORCHESTRA_REVIEW_WARMUP_TIMEOUT_MS` | `1800000` | Cap for the warmup. The old `300000` was below the 9–10 minute cold import it was capping. |
+| `ORCHESTRA_REVIEW_WORKTREE_CACHE` | auto | Comma-separated directories for the warm import cache (overrides `worktreeCache`); empty string = off. |
 | `ORCHESTRA_CODEX_HELPERS` | — | Helper-restore source directory. |
 | `ORCHESTRA_CODEX_HELPER_SIBLINGS` | Windows: `codex-command-runner.exe,codex-resources,codex-windows-sandbox-setup.exe`; none elsewhere | Comma-separated files the install must carry next to its executable. Empty string expects none. Overrides `helperSiblings` in project config, so a machine whose install legitimately differs needs no committed-config edit. |
 | `ORCHESTRA_REVIEW_ARGS` | — | Extra args appended to `codex exec`. |

@@ -1245,6 +1245,14 @@ function case20() {
     /WORK ORDER/.test(heavyMarkers),
     'BRIEF_MARKERS: ' + heavyMarkers
   );
+  // Field ledger 2026-09-05: long REVISE chains were one sibling per round,
+  // because each fix order was read as "fix the cited line". The class-sweep
+  // rule is shared executor law, so every rung's engine is told it.
+  check(
+    'a heavy order carries the class-sweep rule and its CLASS SWEEP section',
+    /FIX THE CLASS, NOT THE INSTANCE/.test(heavyMarkers) && /CLASS SWEEP/.test(heavyMarkers),
+    'BRIEF_MARKERS: ' + heavyMarkers
+  );
 
   const principal = runExec(fx, ['--profile', 'principal']);
   const pMarkers = field(principal.stdout || '', 'BRIEF_MARKERS');
@@ -1261,6 +1269,11 @@ function case20() {
   check(
     'the principal brief still carries the shared executor law and the work order',
     /WORK ORDER/.test(pMarkers),
+    'BRIEF_MARKERS: ' + pMarkers
+  );
+  check(
+    'a principal order carries the class-sweep rule too — the launcher promises it',
+    /FIX THE CLASS, NOT THE INSTANCE/.test(pMarkers) && /CLASS SWEEP/.test(pMarkers),
     'BRIEF_MARKERS: ' + pMarkers
   );
   check(

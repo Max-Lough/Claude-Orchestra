@@ -9,6 +9,55 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.7.0 — fix orders sweep the class, reviews batch per campaign, and pinned reviews start warm
+
+**Why.** The Tug-of-War ledger (`plans/field-evidence-tug-review-rounds-2026-09-05.md`)
+put 62 REVISE rounds, about 40–60 hours of rework, into four days. Its longest
+chains had one shape: the reviewer reported one instance of a class, the
+executor fixed exactly that instance because its law says "nothing but the
+order", and the next fresh review found the sibling. D2 took nine rounds that
+way. Only the principal rung was told to sweep the class, and only on escalated
+orders, so the tiers doing most of the fixing never were. The same ledger
+showed each Sol review paying a 9–10 minute cold Godot import on every round,
+and a protocol that allowed batching review without making it the default.
+
+- **Every executor rung sweeps the class.** `executor`, `executor-mechanical`,
+  `executor-heavy`, `executor-heavy-xhigh`, both specialists, and the Codex
+  exec brief (all profiles) carry a new rule: when an order carries reviewer
+  findings, search the order's scope for every sibling of each finding, fix
+  them all, and report a `CLASS SWEEP` section. The sweep never widens scope.
+  Siblings outside scope go to CONCERNS by path for the Director to route. The
+  principal profiles' existing sweep now applies to every order with findings,
+  not only escalated ones.
+- **Reviewers list the class, not the first instance.** `reviewer` and the Sol
+  review brief tell the reviewer to list every sibling it can find in each
+  finding (or say it searched and there are none), and to audit an executor's
+  `CLASS SWEEP` the same way. A fix order built from those findings verbatim
+  then covers the class in one round.
+- **Review is batched per campaign by default.** `ORCHESTRA.md` §4/§5 and
+  `/orchestra-plan` make one review over the campaign's cohesive diff the
+  default. An order is reviewed alone only when later orders build on it, when
+  deliverables are heterogeneous, or when the user asks. The gate itself is
+  unchanged: every campaign is still reviewed before it ends.
+- **Warm import cache for pinned reviews.** Before the warmup, the review
+  runner moves the previous run's `.godot/` into the fresh checkout, and moves
+  it back at teardown. Godot's import is incremental, so a review re-imports
+  only what changed. It is auto-detected from `project.godot` and set with
+  `codex.worktreeCache` / `ORCHESTRA_REVIEW_WORKTREE_CACHE` (`false` or empty
+  turns it off). The header reports `import cache: … warm | cold`. This is a
+  cache, not the worktree reuse the ledger proposed. Every attempt still gets a
+  brand-new checkout, only a git-ignored directory holding no tracked files is
+  carried, and only a cleanly exited run (with a completed warmup) puts its copy
+  back. Entries that are absolute, contain `..`, or point under `.git` are
+  refused. A pinned review of a Godot project with no `worktreeWarmupCmd` now
+  says so in its preflight.
+- **Tests.** Review case 33 (cache: cold then warm, not an integrity warning,
+  not kept after an unclean exit, live tree untouched, non-ignored and hostile
+  entries refused, off switch), review case 34 and exec case 20 (the class
+  rules reach both engines). The stub engine gains `STUB_CODEX_READ`.
+- **Docs.** The pack README's warmup row said "5-minute cap"; it has been 30
+  minutes since 3.4.0.
+
 ## 3.6.1 — the Codex engine no longer trips over the desktop app's runtimes (openai/codex#46388)
 
 **Why.** From Codex CLI 0.155.0 the Windows sandbox setup helper walks every

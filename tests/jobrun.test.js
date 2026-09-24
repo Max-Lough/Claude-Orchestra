@@ -141,12 +141,25 @@ process.on('uncaughtException', (e) => {
 // path now exercises the real cmd.exe routing (engineLaunchSpec's
 // windowsVerbatimArguments branch) and a kill group whose root is cmd.exe with
 // the engine underneath it — the shape the field failure has.
+//
+// FIX (Windows CI, 2026-09-24): the shim pauses ~1s before starting node. The
+// runner assigns cmd.exe to the kill group just AFTER spawning it, and cmd.exe
+// otherwise launches node within milliseconds, so on a loaded runner node was
+// sometimes born before the assignment landed, outside the job, and every
+// process under it with it ("job held 0 process(es)", orphan alive). That race
+// is real for an npm-installed Codex and is documented in orchestra-jobrun.js;
+// these cases measure the kill group itself, so the shim gives the assignment
+// the head start a native codex.exe always has.
 const STUB_CODEX = (() => {
   if (process.platform !== 'win32') return STUB;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-jobrun-stubbin-'));
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   const dest = path.join(dir, 'codex.cmd');
-  fs.writeFileSync(dest, '@echo off\r\nnode "' + STUB + '" %*\r\nexit /b %ERRORLEVEL%\r\n', 'utf8');
+  fs.writeFileSync(
+    dest,
+    '@echo off\r\nping -n 2 127.0.0.1 >nul\r\nnode "' + STUB + '" %*\r\nexit /b %ERRORLEVEL%\r\n',
+    'utf8'
+  );
   return dest;
 })();
 
@@ -936,7 +949,6 @@ function runRest() {
           ORCHESTRA_CODEX_HELPER_SIBLINGS: '',
           STUB_CODEX_SPAWN_ORPHAN: '1',
           STUB_CODEX_ORPHAN_PID_FILE: pidFile,
-          STUB_CODEX_ORPHAN_DELAY_MS: '1000',
         }),
       }
     );
@@ -1004,9 +1016,6 @@ function runExec(fx, extraArgs, extraEnv) {
         CODEX_BIN: STUB_CODEX,
         ORCHESTRA_EXEC_IDLE_MS: '0',
         STUB_CODEX_FIRST_LINE: 'STATUS: DONE',
-        // An orphan launched after startup, as a real engine's commands are —
-        // not one racing the job assignment (see the stub).
-        STUB_CODEX_ORPHAN_DELAY_MS: '1000',
       },
       extraEnv || {}
     ),

@@ -1159,13 +1159,16 @@ async function supervise(cfg) {
   // everything the engine starts from here on inherits job membership.
   //
   // It is a race all the same: the engine is already running while the answer
-  // is on its way, so a child it spawns inside that window is not in the job.
-  // Codex never does that — it runs commands only after a model round-trip,
-  // seconds in — but an engine that forked at startup under a loaded machine
-  // could lose a child to it (Windows CI, 2026-09-24: a stub that spawned its
-  // orphan at startup behind a `.cmd` shim left "job held 0 process(es)" and a
-  // live orphan). Closing it for good means starting the engine suspended,
-  // which node cannot do.
+  // is on its way, so a child it spawns inside that window is not in the job,
+  // and neither is anything under that child. A native codex.exe never loses
+  // it: it runs commands only after a model round-trip, seconds in. An
+  // npm-installed Codex can, because `codex` is then a `.cmd` shim whose
+  // cmd.exe starts node within milliseconds, so on a loaded machine node,
+  // codex.exe and every command can be born outside the kill group (Windows
+  // CI, 2026-09-24, with a `.cmd` stub: "job held 0 process(es)", orphan
+  // alive). Point CODEX_BIN at the native codex.exe to rule it out. Closing it
+  // here would take a suspended start, which node cannot do, or a sweep of the
+  // engine's early descendants into the job.
   //
   // No pid means the launch itself failed (ENOENT, EACCES): there is nothing to
   // put in the job, and asking would stall on an answer that cannot come.

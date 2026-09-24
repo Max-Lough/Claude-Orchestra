@@ -28,11 +28,17 @@ supervisor, which ships into every project with the codex pack.
   waited for the deadline. Reproduced by delaying the assignment 1.5s under a
   fast engine; with the fix the run returns and the receipt says the engine was
   never assigned.
-- **Documented the assignment race.** A child the engine spawns before
-  assignment lands is not in the job. Codex runs commands only after a model
-  round-trip, but the test stub forked its orphan at startup and sometimes won
-  on a loaded runner ("job held 0 process(es)", orphan alive). The stub now
-  launches it after `STUB_CODEX_ORPHAN_DELAY_MS`, as a real engine would.
+- **Documented the assignment race.** The engine is assigned to the kill
+  group just after it is spawned, so a child it starts before that lands is
+  outside the job, along with everything under it. A native `codex.exe` never
+  loses this race: it runs commands only after a model round-trip. An
+  npm-installed Codex can, because `codex` is then a `.cmd` shim that starts
+  node within milliseconds. That is what the intermittent CI failures in jobrun
+  §8/§9 were: the test's `.cmd` stub lost the race on a loaded runner ("job
+  held 0 process(es)", orphan alive). The stub shim now pauses ~1s before
+  starting node, so those cases measure the kill group itself. **Known
+  limitation:** with an npm-installed Codex on Windows, point `CODEX_BIN` at
+  the native `codex.exe`.
 - **The Windows cancellation case now drives a detached supervisor.** Node
   kills a process's non-detached children with it (libuv's KILL_ON_JOB_CLOSE
   job), so killing the launcher took the supervisor down before it could write

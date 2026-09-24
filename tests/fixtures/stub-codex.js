@@ -21,10 +21,6 @@
  *                         an order outlives the order). Spawned before any
  *                         simulated sleep or death, so the timeout path
  *                         orphans too.
- *   STUB_CODEX_ORPHAN_DELAY_MS
- *                         wait this long before launching that child — the
- *                         shape of a real engine, whose commands come after a
- *                         model round-trip rather than at startup.
  *   STUB_CODEX_ORPHAN_PID_FILE
  *                         where to write that child's PID, so a test can ask
  *                         the operating system whether it is still alive
@@ -199,16 +195,6 @@ if (process.env.STUB_CODEX_SPAWN_ORPHAN) {
   const detach = process.env.STUB_CODEX_ORPHAN_DETACHED
     ? process.env.STUB_CODEX_ORPHAN_DETACHED === '1'
     : detachDefault;
-  // FIX (Windows CI, 2026-09-24): a real engine launches commands only after a
-  // model round-trip, seconds after the runner put it in the kill group. An
-  // orphan forked in the stub's first milliseconds instead races that job
-  // assignment (see orchestra-jobrun.js), and on a loaded runner it sometimes
-  // won: "job held 0 process(es)", SURVIVORS none, orphan alive. The delay
-  // models the real shape; the race itself is documented where it lives.
-  const orphanDelay = parseInt(process.env.STUB_CODEX_ORPHAN_DELAY_MS || '', 10);
-  if (Number.isFinite(orphanDelay) && orphanDelay > 0) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, orphanDelay);
-  }
   const orphan = spawn(process.execPath, ['-e', 'setInterval(function () {}, 1000)'], {
     stdio: 'ignore',
     detached: detach,

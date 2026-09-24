@@ -141,12 +141,25 @@ process.on('uncaughtException', (e) => {
 // path now exercises the real cmd.exe routing (engineLaunchSpec's
 // windowsVerbatimArguments branch) and a kill group whose root is cmd.exe with
 // the engine underneath it — the shape the field failure has.
+//
+// FIX (Windows CI, 2026-09-24): the shim pauses ~1s before starting node. The
+// runner assigns cmd.exe to the kill group just AFTER spawning it, and cmd.exe
+// otherwise launches node within milliseconds, so on a loaded runner node was
+// sometimes born before the assignment landed, outside the job, and every
+// process under it with it ("job held 0 process(es)", orphan alive). That race
+// is real for an npm-installed Codex and is documented in orchestra-jobrun.js;
+// these cases measure the kill group itself, so the shim gives the assignment
+// the head start a native codex.exe always has.
 const STUB_CODEX = (() => {
   if (process.platform !== 'win32') return STUB;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestra-jobrun-stubbin-'));
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   const dest = path.join(dir, 'codex.cmd');
-  fs.writeFileSync(dest, '@echo off\r\nnode "' + STUB + '" %*\r\nexit /b %ERRORLEVEL%\r\n', 'utf8');
+  fs.writeFileSync(
+    dest,
+    '@echo off\r\nping -n 2 127.0.0.1 >nul\r\nnode "' + STUB + '" %*\r\nexit /b %ERRORLEVEL%\r\n',
+    'utf8'
+  );
   return dest;
 })();
 
@@ -483,9 +496,23 @@ section('4. a TaskStop of the launcher takes the tree with it');
 
   // A launcher that spawns the supervisor and is then killed outright, with
   // no chance to clean up — which is what a TaskStop, a closed terminal, or a
-  // `kill -9` on the agent process all look like from here. On Windows,
-  // killing a parent does not kill its children, so nothing but the
-  // supervisor's own parent watch stands between this and a permanent orphan.
+  // `kill -9` on the agent process all look like from here.
+  //
+  // FIX (2026-09-24): on Windows the launcher starts the supervisor DETACHED.
+  // libuv puts a node process's non-detached children in a KILL_ON_JOB_CLOSE
+  // job, so killing a node launcher takes its supervisor down in the same
+  // instant, and the supervisor's own children go with it: the tree dies, but
+  // nothing is left to write a receipt, so the receipt check below could never
+  // pass (a scratch replay: supervisor gone 1.5s after the kill, `endedAt`
+  // empty 45s later). That cascade is the product path's behaviour, and it
+  // reaps the tree. The parent watch exists for a supervisor that OUTLIVES its
+  // launcher, and only a detached supervisor does, so that is what this case
+  // now drives on Windows. On POSIX nothing kills a child with its parent, so
+  // the plain launch already exercises the watch there.
+  const launchSupervisor =
+    process.platform === 'win32'
+      ? "require('child_process').spawn(process.execPath, process.argv.slice(1), { stdio: 'ignore', detached: true }); setInterval(function () {}, 1000)"
+      : "require('child_process').spawnSync(process.execPath, process.argv.slice(1), { stdio: 'ignore' })";
   const driver = path.join(dir, 'driver.js');
   fs.writeFileSync(
     driver,
@@ -493,7 +520,7 @@ section('4. a TaskStop of the launcher takes the tree with it');
       "const { spawn, spawnSync } = require('child_process');",
       'const launcherPid = spawn(process.execPath, [',
       '  "-e",',
-      '  "require(\'child_process\').spawnSync(process.execPath, process.argv.slice(1), { stdio: \'ignore\' })",',
+      '  ' + JSON.stringify(launchSupervisor) + ',',
       '  ' + JSON.stringify(JOBRUN) + ',',
       '  "--receipt", ' + JSON.stringify(receipt) + ',',
       '  "--", process.execPath, ' + JSON.stringify(launcher),

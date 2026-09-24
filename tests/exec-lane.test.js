@@ -2474,10 +2474,20 @@ function case24() {
   //     Both hostile shapes are timed against a baseline run of the same
   //     fixture, so the assertion is a delta and not a wall-clock guess about
   //     this machine.
+  // The claim travels in a FILE, baseline included so every run is measured
+  // the same way: Linux will not exec with a 128 KB+ environment string, so
+  // the 400,000-space payloads below never reached the runner through
+  // STUB_CODEX_CLAIM_CHANGES there, and "hostile 2ms" was a failed spawn, not a
+  // fast strip (Ubuntu CI, 2026-09-24).
+  function claimFileEnv(fx, claim) {
+    const file = path.join(fx.root, 'claims.txt');
+    fs.writeFileSync(file, claim, 'utf8');
+    return { STUB_CODEX_CLAIM_CHANGES_FILE: file };
+  }
   function timedRun(claim) {
     const fxt = makeRepo();
     const t0 = Date.now();
-    const out = (runExec(fxt, [], { STUB_CODEX_CLAIM_CHANGES: claim }).stdout || '');
+    const out = (runExec(fxt, [], claimFileEnv(fxt, claim)).stdout || '');
     return { ms: Date.now() - t0, out };
   }
   // The shapes below cost
@@ -2639,9 +2649,7 @@ function case24() {
   const fx14 = makeRepo();
   const t14 = Date.now();
   const unavailOut =
-    (runExec(fx14, [], {
-      STUB_CODEX_CLAIM_CHANGES: 'app.js — ' + ' '.repeat(400000) + 'word',
-    }).stdout || '');
+    (runExec(fx14, [], claimFileEnv(fx14, 'app.js — ' + ' '.repeat(400000) + 'word')).stdout || '');
   const unavailMs = Date.now() - t14;
   check(
     'a false claim carrying a 400,000-space run still reports EXEC_UNAVAILABLE within a baseline run (indent strip is linear)',

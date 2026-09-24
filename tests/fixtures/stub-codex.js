@@ -67,7 +67,10 @@
  *                         comma-split entries to put in a CHANGES section of
  *                         the report WITHOUT touching anything — models an
  *                         engine claiming edits it never made.
- *   STUB_CODEX_BRANCH     `git checkout -B <name>` inside --cd before
+ *   STUB_CODEX_CLAIM_CHANGES_FILE
+ *                         the same, read from a file — for payloads too big
+ *                         for an environment variable on Linux (128 KB).
+ *   STUB_CODEX_BRANCH    `git checkout -B <name>` inside --cd before
  *                         reporting — models a ref/branch operation (no file
  *                         touched, HEAD's commit unchanged) so the tree audit
  *                         can be checked for measuring the branch, not just
@@ -370,7 +373,20 @@ const nonceToEcho = process.env.STUB_CODEX_OMIT_NONCE
   ? ''
   : process.env.STUB_CODEX_NONCE_VALUE || (nonceMatch ? nonceMatch[1] : '');
 
-const claimedChanges = (process.env.STUB_CODEX_CLAIM_CHANGES || '')
+// STUB_CODEX_CLAIM_CHANGES_FILE carries the same thing through a file. Linux
+// refuses to exec with any single environment string of 128 KB or more
+// (MAX_ARG_STRLEN), so a payload that size in the variable never reaches the
+// runner there at all: the spawn fails with E2BIG in milliseconds and a timing
+// check reads that as "fast" (Ubuntu CI, 2026-09-24: "hostile 2ms", no output).
+let claimSource = process.env.STUB_CODEX_CLAIM_CHANGES || '';
+if (process.env.STUB_CODEX_CLAIM_CHANGES_FILE) {
+  try {
+    claimSource = fs.readFileSync(process.env.STUB_CODEX_CLAIM_CHANGES_FILE, 'utf8');
+  } catch (_) {
+    /* no claims; the assertion on the report catches it */
+  }
+}
+const claimedChanges = claimSource
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);

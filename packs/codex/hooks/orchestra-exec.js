@@ -4,10 +4,10 @@
  *
  * Drives an OpenAI model through the Codex CLI to CARRY OUT a work order —
  * edits, commands, builds, tests — in the project working tree. The default
- * Orchestra executors are the Claude `executor` (Sonnet), `executor-heavy`
- * (Opus) and `executor-principal` (Fable); this engine is the exceptional-case
- * cross-vendor executor for a problem with concrete prior evidence that
- * Anthropic models struggled on it — never routine work.
+ * Orchestra executors are the Claude `executor-mechanical` (Sonnet),
+ * `executor` and `executor-heavy` (Opus); this engine's `principal` profile
+ * (Astra) is the ladder's top rung, preferred over the Fable
+ * `executor-principal` at that level. Never routine work.
  *
  * Three rungs, selected by `--profile` and nothing else:
  *

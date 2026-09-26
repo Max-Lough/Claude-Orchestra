@@ -103,8 +103,11 @@ So the harness's escalation path crosses the vendor line at the top: a double
 bounce at the Opus heavy tier goes straight to Astra, past Sol and Luna. No
 launcher ever escalates itself, and none is for routine work. The Fable
 principal profiles (`executor-principal`, `executor-principal-xhigh`) are
-likewise user-request-only, and stand in — announced, never silently — when
-this pack is absent and the ladder therefore has no top rung.
+off the default route too: the Director prefers Astra at the principal level
+and sends a principal order to Fable only when it needs a strong top-down view
+of many intersecting relationships or a native Anthropic model (Claude-side
+tooling, steerability), when the user asks, or — announced, never silently —
+when this pack is absent and the ladder therefore has no top rung.
 
 The rungs differ in model and effort and in nothing else: same sandbox,
 same idle precheck, same tree audit, same one-attempt law, same report

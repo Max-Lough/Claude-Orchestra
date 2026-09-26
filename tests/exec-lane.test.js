@@ -1074,29 +1074,43 @@ function case18() {
 // agent description that quietly re-promotes a demoted profile would change
 // where every escalated order goes, with no test red and no runtime error.
 function case19() {
-  section('19. Executor ladder doctrine: Astra on top, Fable and Sol demoted');
+  section('19. Executor ladder doctrine: Astra on top, Fable by exception, Sol demoted');
 
   const read = (rel) => fs.readFileSync(path.join(MASTER, rel), 'utf8');
   const frontmatter = (rel) => (/^description: (.*)$/m.exec(read(rel)) || [])[1] || '';
 
   // 1. The demoted profiles must SAY they are demoted, in the description —
-  //    that string is what the Director's agent picker actually sees.
-  for (const rel of [
-    'agents/executor-principal.md',
-    'agents/executor-principal-xhigh.md',
-    'packs/codex/agents/executor-codex-heavy.md',
-    'packs/codex/agents/executor-codex-luna.md',
-  ]) {
+  //    that string is what the Director's agent picker actually sees. The
+  //    Fable principals are reachable by routing, but only by the two named
+  //    exceptions; a description that drops them would let Fable become the
+  //    principal default again and spend the scarcer allowance.
+  const demoted = {
+    'agents/executor-principal.md': /BY EXCEPTION ONLY/,
+    'agents/executor-principal-xhigh.md': /BY EXCEPTION ONLY/,
+    'packs/codex/agents/executor-codex-heavy.md': /USER REQUEST ONLY/,
+    'packs/codex/agents/executor-codex-luna.md': /USER REQUEST ONLY/,
+  };
+  for (const [rel, marker] of Object.entries(demoted)) {
     const d = frontmatter(rel);
     check(
-      rel + ': description declares USER REQUEST ONLY',
-      /USER REQUEST ONLY/.test(d),
+      rel + ': description declares ' + marker.source,
+      marker.test(d),
       d.slice(0, 200)
     );
     check(
       rel + ': description does not claim to be the top rung of the ladder',
       !/\bthe top rung of the default\b|\bTOP RUNG OF THE DEFAULT\b/.test(d),
       d.slice(0, 200)
+    );
+  }
+  for (const rel of ['agents/executor-principal.md', 'agents/executor-principal-xhigh.md']) {
+    const d = frontmatter(rel);
+    check(
+      rel + ': description prefers Astra and names both Fable exceptions',
+      /prefers executor-codex-principal/.test(d) &&
+        /top-down view/.test(d) &&
+        /native Anthropic model/.test(d),
+      d.slice(0, 300)
     );
   }
 
@@ -1198,10 +1212,17 @@ function case19() {
     'the vendor-crossing escalation sentence is missing'
   );
   check(
-    'ORCHESTRA.md marks the Fable, Sol and Luna executors user-request-only',
-    /\*\*Everything else on the bench is user request only\*\*/.test(protocol) &&
-      /`executor-principal`, `executor-principal-xhigh`\), the Sol executor \(`executor-codex-heavy`\) and the Luna executor/.test(protocol),
+    'ORCHESTRA.md marks the Sol and Luna executors user-request-only',
+    /\*\*Everything else on the bench is user request only\*\* — the Sol executor \(`executor-codex-heavy`\) and the Luna executor/.test(protocol),
     'the user-request-only paragraph is missing or reworded'
+  );
+  check(
+    'ORCHESTRA.md prefers Astra at the principal level and limits Fable to two exceptions',
+    /\*\*Astra first; Fable by exception\.\*\*/.test(protocol) &&
+      /\*\*The order turns on a strong top-down view\*\*/.test(protocol) &&
+      /\*\*A native Anthropic model matters to the order\*\*/.test(protocol) &&
+      /Difficulty, size, or a double bounce is not a Fable reason/.test(protocol),
+    'the Astra-first paragraph is missing or reworded'
   );
   check(
     'ORCHESTRA.md 3.5 carries the full five-rung escalation ladder',

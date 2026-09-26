@@ -9,6 +9,33 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.8.0 — Astra first at the principal level; Fable only by two named exceptions
+
+**Why.** Astra's usage allowance is far larger than Fable's, so every principal
+order Fable runs spends the scarcer budget. Until now the Fable principal
+profiles were "user request only", which left no sanctioned route for the few
+orders where Fable is the better tool, and gave the Director no rule for
+weighing the two when a user left the choice to it.
+
+- **ORCHESTRA.md §2 gains "Astra first; Fable by exception."** At the principal
+  level the Director prefers `executor-codex-principal` (Astra) whenever it can
+  do the work. It routes a principal order to `executor-principal` / `-xhigh`
+  only when (1) the order turns on a strong top-down view of many intersecting,
+  dynamic, or complex relationships, or (2) a native Anthropic model matters
+  (Claude-side tooling the Codex lane cannot reach, or a Claude model's
+  steerability). It names which exception applies in the plan and the REPORT.
+  Difficulty, size, or a double bounce alone still go to Astra. §3.5 escalation
+  and §8.1 bundling point at the same rule.
+- **The Fable principal descriptions now read BY EXCEPTION ONLY** (not USER
+  REQUEST ONLY) and name both exceptions, because the description is what the
+  Director's agent picker sees. The user request and the announced
+  Astra-unavailable substitution are unchanged. The Sol and Luna executors stay
+  user request only.
+- README, `packs/codex/README.md`, `/orchestra-plan` and the exec runner's
+  header comment say the same. `tests/exec-lane.test.js` §19 pins the new
+  paragraph and the description markers so the preference can't drift back
+  unnoticed.
+
 ## 3.7.1 — process supervision: the Windows fixes CI had been failing on since 3.4
 
 **Why.** `tests/jobrun.test.js` had been red on every Windows job since #43

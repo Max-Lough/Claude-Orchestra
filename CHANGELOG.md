@@ -31,6 +31,14 @@ weighing the two when a user left the choice to it.
   Director's agent picker sees. The user request and the announced
   Astra-unavailable substitution are unchanged. The Sol and Luna executors stay
   user request only.
+- **Dropped a stale route from the Fable profiles' own text.** Both said an
+  order could reach them "because `executorEngine` selects it", but no
+  `executorEngine` value selects a Fable profile (`"codex"` means Sol).
+- **Removed an unqualified route into Fable from §8.1.** Oversized orders were
+  told to split "or route to `executor-heavy` (or `executor-principal`)",
+  which offered Fable with no condition and contradicted the old user-request-only
+  rule. This is the likely way a Director sent an order to a Fable executor
+  that nobody asked for. It now points at the principal rung under the Astra-first rule.
 - README, `packs/codex/README.md`, `/orchestra-plan` and the exec runner's
   header comment say the same. `tests/exec-lane.test.js` §19 pins the new
   paragraph and the description markers so the preference can't drift back

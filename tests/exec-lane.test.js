@@ -1179,10 +1179,12 @@ function case19() {
   );
 
   // The bounded rung (trial): Sonnet 5.5 pinned by exact model id between the
-  // mechanical rung and the default. Its routing conditions live in the
-  // description; rule 6 / the UNVERIFIED section, the sharpened rules 1, 5
-  // and 10, and the mis-route paragraph are the law delta. All of them are
-  // pinned here.
+  // mechanical rung and the default. Pins: the rung's identity (name, model,
+  // effort, tools); the presence of each of its four routing conditions and
+  // six exclusion phrases in its description and in the ORCHESTRA.md steering
+  // row; its escalation status (off the 3.5 chain, side-entry sentences); and
+  // one phrase per law delta versus executor.md. Not every sentence of the
+  // agent file is pinned; README and CHANGELOG are unpinned by house practice.
   const bounded = read('agents/executor-bounded.md');
   const boundedFm = frontmatter('agents/executor-bounded.md');
   check(
@@ -1195,8 +1197,8 @@ function case19() {
     /^model: claude-sonnet-5-5$/m.test(bounded) && /^effort: high$/m.test(bounded),
     (bounded.match(/^(model|effort): .*$/gm) || []).join(' | ')
   );
-  // The routing conditions ARE the rung: each clause of the description is
-  // pinned on its own so a weakened or deleted condition names itself.
+  // The routing conditions ARE the rung: each condition and exclusion phrase
+  // of the description is pinned on its own so a deleted one names itself.
   const boundedClauses = [
     ['all four conditions must hold', 'all four hold'],
     ['condition 1: names the checks that prove it done', 'names the checks that prove it done'],
@@ -1232,17 +1234,21 @@ function case19() {
     /^UNVERIFIED$/m.test(boundedReport),
     boundedReport.slice(0, 200) || 'no fenced report-format block found'
   );
-  // The other law deltas versus executor.md, each pinned inside the rule (or
-  // paragraph) that carries it: a sentence that drifts to another rule, or
-  // vanishes in a reflow, names itself here instead of passing silently.
+  // One phrase per law delta versus executor.md, each pinned inside the rule
+  // (or paragraph) that carries it: a pinned phrase that drifts to another
+  // rule, or vanishes in a reflow, names itself here. The rest of each rule's
+  // text is not pinned.
   const boundedRule = (n) => (bounded.match(new RegExp('^' + n + '\\. \\*\\*.*$', 'm')) || [''])[0];
   const misRoute = (bounded.match(/^That routing is a claim made at PLAN time.*$/m) || [''])[0];
   const lawIntro = (bounded.match(/^You share the Executor's law.*$/m) || [''])[0];
   for (const [name, text, phrase] of [
     ['rule 1 stops once the asked-for work is done and checked', boundedRule(1),
       'When the work the order asked for is done and checked, stop and report.'],
-    ['the intro declares rule 6 added and rules 1, 5 and 10 sharpened', lawIntro,
-      'with one rule added (rule 6) and three sharpened (rules 1, 5 and 10)'],
+    ['the intro declares rule 6 added and rules 1, 2, 5 and 10 sharpened', lawIntro,
+      'with one rule added (rule 6) and four sharpened (rules 1, 2, 5 and 10)'],
+    ['rule 2 lets a wrong picture of the code proceed only when done is unchanged',
+      boundedRule(2),
+      'On this rung the exception also covers an order whose picture of the code is wrong'],
     ['rule 5 refuses a syntax-only or failed-to-start check', boundedRule(5),
       'A syntax-only check, or a check command that failed to start, does not count'],
     ['rule 6 makes each claim name what established it', boundedRule(6),
@@ -1267,9 +1273,10 @@ function case19() {
     );
   }
 
-  // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin every
-  //    claim an order's routing, and executor-bounded's escalation status,
-  //    actually turns on — one check per clause.
+  // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the
+  //    presence of the phrases an order's routing, and executor-bounded's
+  //    escalation status, turn on — one check per pinned phrase, so a deleted
+  //    phrase names itself. Not every sentence of ORCHESTRA.md is pinned.
   const protocol = read('ORCHESTRA.md');
   check(
     'ORCHESTRA.md makes executor (Opus medium) the default rung',

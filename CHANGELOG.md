@@ -60,7 +60,13 @@ a reason to drop the model.
   check that exercises the change; a syntax-only check does not count). Rule 1
   adds the guide's scope sentence: when the work is done and checked, stop and
   report. Rule 10 adds that a budget never justifies skipping a read or a
-  check.
+  check. Rule 2 keeps executor.md's text and adds a tie-breaker: an order
+  whose picture of the code is wrong in a way that leaves what done means,
+  and how its checks prove it, unchanged (a file at another path, a helper
+  under another name) is worked from what is actually there and listed under
+  DEVIATIONS with the evidence; a difference that changes what done means or
+  how the checks prove it is still BLOCKED. One rule added (6), four
+  sharpened (1, 2, 5 and 10).
 - **The ladder ripple.** The new rung is named wherever text enumerates the
   executor ladder or the Sonnet rungs: the `executor`, `executor-mechanical`,
   `executor-heavy` and `executor-heavy-xhigh` descriptions, the three Codex

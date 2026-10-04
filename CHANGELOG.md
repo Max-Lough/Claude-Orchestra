@@ -21,14 +21,19 @@ open but whose *done* was checkable had no cheaper home than Opus. Sonnet 5.5
 at high effort ran as the default `executor` from 2026-09-29 to 10-02 (trial
 1, ten counted rows). Tight-spec orders, CI diagnosis and fix rounds were
 strong. Three rows came back REVISE, all of one shape: a confident claim about
-behavior no check had exercised ("nothing else calls this", "the other tools
-are unaffected"). That is the failure a rung should be built around, not a
+behavior no check had exercised ("framing is id-driven", "tools unaffected",
+"invisible in production", an unchecked "renders identically"). That is the failure a rung should be built around, not a
 reason to drop the model.
 
 - **`executor-bounded`: Sonnet 5.5 (pinned `claude-sonnet-5-5`), high effort.**
-  It sits between `executor-mechanical` and `executor` in the ladder, which is
-  now `executor-mechanical` → `executor-bounded` → `executor` →
-  `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`.
+  The rung order is now `executor-mechanical` → `executor-bounded` →
+  `executor` → `executor-heavy` → `executor-heavy-xhigh` →
+  `executor-codex-principal`, but the §3.5 escalation chain is unchanged
+  (`executor-mechanical` → `executor` → `executor-heavy` →
+  `executor-heavy-xhigh` → `executor-codex-principal`). `executor-bounded` is
+  a side entry, never an escalation target: an order that bounces off it, or
+  that it returns BLOCKED as mis-routed, goes to `executor`. Its own condition
+  4 (never an escalation) would otherwise contradict the chain.
   `executor` stays Opus medium and stays THE DEFAULT; nothing about the
   default changes.
 - **Four routing conditions, all required.** The order names the checks that
@@ -41,7 +46,9 @@ reason to drop the model.
   doubt, the order goes to `executor`. `ORCHESTRA.md` §2 gains the company row,
   the **down (bounded)** steering row, and a paragraph asking the one extra
   question: can the order's own checks see whether the change is right? §3.5
-  gets the six-rung ladder and §8.3 the effort pin. The Sonnet line now names
+  gains the side-entry sentence (the chain itself is unchanged), §8.3 the
+  effort pin, and §4 REVIEW now says "scoped fix order" so "bounded" no longer
+  reads as the role name. The Sonnet line now names
   both rungs: `executor-mechanical` is the tight-spec rung and
   `executor-bounded` the checkable-done rung.
 - **Law deltas versus `executor.md`**, after Anthropic's *Prompting Claude
@@ -56,11 +63,14 @@ reason to drop the model.
   executor ladder or the Sonnet rungs: the `executor`, `executor-mechanical`,
   `executor-heavy` and `executor-heavy-xhigh` descriptions, the three Codex
   executor launchers, `orchestra-status`, and the README's company table,
-  steering section and layout count.
+  steering section and layout count. The Codex pack's stale `notes` string
+  (printed on every codex-pack install) and an `orchestra-exec.js` comment
+  both still called `executor` Sonnet; both now say Opus medium.
 - **Rollback note.** Re-installing an older harness over 3.8.0 leaves
   `.claude/agents/executor-bounded.md` in place, untracked by
-  `orchestra-install.json` (verified by an install probe at a8ba469). A
-  rollback must delete that file by hand.
+  `orchestra-install.json` (verified by an install probe at a8ba469), and an
+  older installer's `--uninstall` leaves it behind too. A rollback must delete
+  that file by hand.
 
 ## 3.7.1 — process supervision: the Windows fixes CI had been failing on since 3.4
 

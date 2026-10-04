@@ -4,8 +4,8 @@
  *
  * Drives an OpenAI model through the Codex CLI to CARRY OUT a work order —
  * edits, commands, builds, tests — in the project working tree. The default
- * Orchestra executors are the Claude `executor` (Sonnet), `executor-heavy`
- * (Opus) and `executor-principal` (Fable); this engine is the exceptional-case
+ * Orchestra executors are the Claude `executor` (Opus medium), `executor-heavy`
+ * (Opus high) and `executor-principal` (Fable); this engine is the exceptional-case
  * cross-vendor executor for a problem with concrete prior evidence that
  * Anthropic models struggled on it — never routine work.
  *

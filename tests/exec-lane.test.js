@@ -1194,11 +1194,29 @@ function case19() {
     /^model: claude-sonnet-5-5$/m.test(bounded) && /^effort: high$/m.test(bounded),
     (bounded.match(/^(model|effort): .*$/gm) || []).join(' | ')
   );
-  check(
-    'executor-bounded falls through to executor (Opus medium) and requires all four conditions',
-    /executor \(Opus medium\)/.test(boundedFm) && /all four hold/.test(boundedFm),
-    boundedFm.slice(0, 200)
-  );
+  // The routing conditions ARE the rung: each clause of the description is
+  // pinned on its own so a weakened or deleted condition names itself.
+  const boundedClauses = [
+    ['all four conditions must hold', 'all four hold'],
+    ['condition 1: names the checks that prove it done', 'names the checks that prove it done'],
+    ['condition 2: the checks can observe whether the change is correct', 'those checks can observe whether the change is correct'],
+    ['exclusion: rendering or visual equivalence', 'rendering or visual equivalence'],
+    ['exclusion: caching or invalidation', 'caching or invalidation'],
+    ['exclusion: concurrency or timing', 'concurrency or timing'],
+    ['exclusion: hostile input or server-side validation', 'hostile input or server-side validation'],
+    ['exclusion: a contract with another process', 'a contract with another process'],
+    ['exclusion: a data migration', 'a data migration'],
+    ['condition 3: at most two named subsystems', 'at most two named subsystems'],
+    ['condition 4: neither an escalation nor a root-cause investigation the plan depends on', 'neither an escalation nor a root-cause investigation the plan depends on'],
+    ['doubt falls through to executor (Opus medium)', 'executor (Opus medium)'],
+  ];
+  for (const [name, phrase] of boundedClauses) {
+    check(
+      'executor-bounded description pins ' + name,
+      boundedFm.includes(phrase),
+      'missing from the description: ' + phrase
+    );
+  }
   check(
     'executor-bounded carries rule 6, every claim carries its evidence',
     /\*\*Every claim carries its evidence\.\*\*/.test(bounded),
@@ -1239,15 +1257,37 @@ function case19() {
     'the user-request-only paragraph is missing or reworded'
   );
   check(
-    'ORCHESTRA.md 3.5 carries the full six-rung escalation ladder',
-    /`executor-mechanical` → `executor-bounded` → `executor` → `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`/.test(protocol),
+    'ORCHESTRA.md 3.5 carries the full five-rung escalation ladder',
+    /`executor-mechanical` → `executor` → `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`/.test(protocol),
     (protocol.match(/^5\. \*\*Escalate.*$/m) || ['no rule 5'])[0].slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md 3.5 keeps executor-bounded off the escalation chain as a side entry',
+    /`executor-bounded` sits beside this chain, not on it: it is never an escalation target, and an order that bounces off it, or that it returns BLOCKED as mis-routed, goes to `executor`\./.test(protocol) &&
+      !/escalate one rung \([^)]*executor-bounded/.test(protocol),
+    (protocol.match(/^5\. \*\*Escalate.*$/m) || ['no rule 5'])[0].slice(0, 400)
   );
   check(
     'ORCHESTRA.md steers down to executor-bounded with its own row',
     /^\| \*\*down \(bounded\)\*\* \| `executor-bounded` \(Sonnet 5\.5, high; trial\) \|/m.test(protocol),
     (protocol.match(/^\| \*\*down.*$/gm) || ['no down row']).join(' | ').slice(0, 300)
   );
+  const downRow = (protocol.match(/^\| \*\*down \(bounded\)\*\*.*$/m) || [''])[0];
+  for (const phrase of [
+    'Never when correctness rests on',
+    'rendering or visual equivalence',
+    'caching or invalidation',
+    'concurrency or timing',
+    'hostile input or server-side validation',
+    'a contract with another process',
+    'a data migration',
+  ]) {
+    check(
+      'ORCHESTRA.md steering row for executor-bounded excludes: ' + phrase,
+      downRow.includes(phrase),
+      'missing from the down (bounded) row: ' + phrase
+    );
+  }
   check(
     'ORCHESTRA.md asks the bounded-rung question, can the order\'s own checks see whether the change is right',
     /can the order's own checks see whether the change is right\?/.test(protocol),

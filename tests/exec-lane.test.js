@@ -1178,6 +1178,39 @@ function case19() {
     'the mis-routing escape hatch is missing'
   );
 
+  // The bounded rung (trial): Sonnet 5.5 pinned by exact model id between the
+  // mechanical rung and the default. Its routing conditions live in the
+  // description and its rule 6 / UNVERIFIED section are the law delta, so
+  // all of them are pinned here.
+  const bounded = read('agents/executor-bounded.md');
+  const boundedFm = frontmatter('agents/executor-bounded.md');
+  check(
+    'executor-bounded is named executor-bounded and cannot spawn agents',
+    /^name: executor-bounded$/m.test(bounded) && /^disallowedTools: Agent$/m.test(bounded),
+    (bounded.match(/^(name|disallowedTools): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-bounded is Sonnet 5.5 (pinned model id) at high effort',
+    /^model: claude-sonnet-5-5$/m.test(bounded) && /^effort: high$/m.test(bounded),
+    (bounded.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-bounded falls through to executor (Opus medium) and requires all four conditions',
+    /executor \(Opus medium\)/.test(boundedFm) && /all four hold/.test(boundedFm),
+    boundedFm.slice(0, 200)
+  );
+  check(
+    'executor-bounded carries rule 6, every claim carries its evidence',
+    /\*\*Every claim carries its evidence\.\*\*/.test(bounded),
+    'the evidence rule did not survive into the bounded rung'
+  );
+  const boundedReport = (bounded.match(/Structure it exactly like this:\n\n```\n([\s\S]*?)\n```/) || [])[1] || '';
+  check(
+    'executor-bounded report format has an UNVERIFIED section inside the report block',
+    /^UNVERIFIED$/m.test(boundedReport),
+    boundedReport.slice(0, 200) || 'no fenced report-format block found'
+  );
+
   // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the two
   //    claims an order's routing actually turns on.
   const protocol = read('ORCHESTRA.md');

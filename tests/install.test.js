@@ -106,6 +106,7 @@ const EXPECTED_LEGACY_CENSUS = [
   '.claude/.gitattributes',
   '.claude/ORCHESTRA.md',
   '.claude/agents/detective.md',
+  '.claude/agents/executor-bounded.md',
   '.claude/agents/executor-heavy-xhigh.md',
   '.claude/agents/executor-heavy.md',
   '.claude/agents/executor-mechanical.md',

@@ -9,8 +9,9 @@
  * `executor-heavy` / `-xhigh` (Opus high / xhigh). This engine's `principal`
  * profile (GPT-6 Astra) is the top rung of that ladder; its other profiles
  * (Sol, Luna) are user request only, Sol also when `executorEngine` selects
- * the Codex lane. Never routine work unless `executorEngine` makes the Codex
- * lane this project's executor lane.
+ * the Codex lane. Never routine work unless `executorEngine`, or an
+ * in-conversation instruction for one session or order, makes the Codex lane
+ * the executor lane.
  *
  * Three profiles, selected by `--profile` and nothing else:
  *

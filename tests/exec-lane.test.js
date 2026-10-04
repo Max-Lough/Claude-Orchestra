@@ -1274,9 +1274,10 @@ function case19() {
   }
 
   // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the
-  //    presence of the phrases an order's routing, and executor-bounded's
-  //    escalation status, turn on — one check per pinned phrase, so a deleted
-  //    phrase names itself. Not every sentence of ORCHESTRA.md is pinned.
+  //    presence of selected phrases an order's routing, and executor-bounded's
+  //    escalation status, turn on — one check per pinned phrase (except three
+  //    pre-existing checks that each pin two phrases), so a deleted phrase
+  //    usually names itself. Not every sentence of ORCHESTRA.md is pinned.
   const protocol = read('ORCHESTRA.md');
   check(
     'ORCHESTRA.md makes executor (Opus medium) the default rung',

@@ -9,6 +9,59 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
+
+**Branch-only until its field trial passes.** This entry describes a trial
+build on `claude/eager-brahmagupta-ei435u`. It is not on `main`, and `main`
+keeps shipping 3.7.1 until the trial closes with a pass.
+
+**Why.** `executor-mechanical` takes orders with nothing left open, and
+`executor` (Opus, medium) takes everything else, so an order whose *how* was
+open but whose *done* was checkable had no cheaper home than Opus. Sonnet 5.5
+at high effort ran as the default `executor` from 2026-09-29 to 10-02 (trial
+1, ten counted rows). Tight-spec orders, CI diagnosis and fix rounds were
+strong. Three rows came back REVISE, all of one shape: a confident claim about
+behavior no check had exercised ("nothing else calls this", "the other tools
+are unaffected"). That is the failure a rung should be built around, not a
+reason to drop the model.
+
+- **`executor-bounded`: Sonnet 5.5 (pinned `claude-sonnet-5-5`), high effort.**
+  It sits between `executor-mechanical` and `executor` in the ladder, which is
+  now `executor-mechanical` → `executor-bounded` → `executor` →
+  `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`.
+  `executor` stays Opus medium and stays THE DEFAULT; nothing about the
+  default changes.
+- **Four routing conditions, all required.** The order names the checks that
+  prove it done; those checks can observe whether the change is correct, so its
+  correctness does not rest on rendering or visual equivalence, caching or
+  invalidation, concurrency or timing, hostile input or server-side
+  validation, a contract with another process, or a data migration; it touches
+  at most two named subsystems; and it is neither an escalation nor a
+  root-cause investigation the plan depends on. When any condition is in
+  doubt, the order goes to `executor`. `ORCHESTRA.md` §2 gains the company row,
+  the **down (bounded)** steering row, and a paragraph asking the one extra
+  question: can the order's own checks see whether the change is right? §3.5
+  gets the six-rung ladder and §8.3 the effort pin. The Sonnet line now names
+  both rungs: `executor-mechanical` is the tight-spec rung and
+  `executor-bounded` the checkable-done rung.
+- **Law deltas versus `executor.md`**, after Anthropic's *Prompting Claude
+  Sonnet 5.5*. Rule 6 is new: every claim carries its evidence, and a claim the
+  run did not establish goes under a new `UNVERIFIED` report section, worded as
+  an open question. Rule 5 adopts the guide's verification paragraph (run a
+  check that exercises the change; a syntax-only check does not count). Rule 1
+  adds the guide's scope sentence: when the work is done and checked, stop and
+  report. Rule 10 adds that a budget never justifies skipping a read or a
+  check.
+- **The ladder ripple.** The new rung is named wherever text enumerates the
+  executor ladder or the Sonnet rungs: the `executor`, `executor-mechanical`,
+  `executor-heavy` and `executor-heavy-xhigh` descriptions, the three Codex
+  executor launchers, `orchestra-status`, and the README's company table,
+  steering section and layout count.
+- **Rollback note.** Re-installing an older harness over 3.8.0 leaves
+  `.claude/agents/executor-bounded.md` in place, untracked by
+  `orchestra-install.json` (verified by an install probe at a8ba469). A
+  rollback must delete that file by hand.
+
 ## 3.7.1 — process supervision: the Windows fixes CI had been failing on since 3.4
 
 **Why.** `tests/jobrun.test.js` had been red on every Windows job since #43

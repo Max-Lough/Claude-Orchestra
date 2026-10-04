@@ -1222,7 +1222,9 @@ function case19() {
   check(
     'ORCHESTRA.md routes by thinking difficulty, not diff size',
     /Route by how hard the thinking is, not by how big the diff is/.test(protocol) &&
-      /Sonnet is not the small-task rung; it is the tight-spec rung/.test(protocol),
+      /Sonnet is not the small-task rung: `executor-mechanical` is the tight-spec rung and `executor-bounded` the checkable-done rung/.test(
+        protocol
+      ),
     'the route-by-thinking rule is missing — this is the rule that keeps Sonnet from being overloaded'
   );
   check(
@@ -1237,9 +1239,24 @@ function case19() {
     'the user-request-only paragraph is missing or reworded'
   );
   check(
-    'ORCHESTRA.md 3.5 carries the full five-rung escalation ladder',
-    /`executor-mechanical` → `executor` → `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`/.test(protocol),
+    'ORCHESTRA.md 3.5 carries the full six-rung escalation ladder',
+    /`executor-mechanical` → `executor-bounded` → `executor` → `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`/.test(protocol),
     (protocol.match(/^5\. \*\*Escalate.*$/m) || ['no rule 5'])[0].slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md steers down to executor-bounded with its own row',
+    /^\| \*\*down \(bounded\)\*\* \| `executor-bounded` \(Sonnet 5\.5, high; trial\) \|/m.test(protocol),
+    (protocol.match(/^\| \*\*down.*$/gm) || ['no down row']).join(' | ').slice(0, 300)
+  );
+  check(
+    'ORCHESTRA.md asks the bounded-rung question, can the order\'s own checks see whether the change is right',
+    /can the order's own checks see whether the change is right\?/.test(protocol),
+    'the observability question that gates the bounded rung is missing'
+  );
+  check(
+    'ORCHESTRA.md 8.3 pins executor-bounded at high effort',
+    /`executor-bounded` at high/.test(protocol),
+    (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 300)
   );
   check(
     'ORCHESTRA.md requires the Astra-unavailable substitution to be announced',

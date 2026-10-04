@@ -1,6 +1,6 @@
 ---
 name: executor-mechanical
-description: Orchestra mechanical executor (Sonnet, high effort). RESERVED for orders that are routine and mechanical, or whose goal and instructions are airtight — a rename ripple, a mechanical refactor, a codemod, applying a spelled-out patch, a well-trodden test addition. Not for anything needing judgment about what the order meant. The default executor is executor (Opus medium); when in doubt the order goes there, not here. Executes precise work orders exactly as scoped and reports results factually.
+description: Orchestra mechanical executor (Sonnet, high effort). RESERVED for orders that are routine and mechanical, or whose goal and instructions are airtight — a rename ripple, a mechanical refactor, a codemod, applying a spelled-out patch, a well-trodden test addition. Not for anything needing judgment about what the order meant. The default executor is executor (Opus medium); when in doubt the order goes there, not here. An order with an open how and a checkable done goes to executor-bounded (Sonnet 5.5) when its conditions hold. Executes precise work orders exactly as scoped and reports results factually.
 disallowedTools: Agent
 model: sonnet
 effort: high

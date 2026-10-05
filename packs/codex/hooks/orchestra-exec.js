@@ -4,12 +4,16 @@
  *
  * Drives an OpenAI model through the Codex CLI to CARRY OUT a work order —
  * edits, commands, builds, tests — in the project working tree. The default
- * Orchestra executors are the Claude `executor` (Sonnet), `executor-heavy`
- * (Opus) and `executor-principal` (Fable); this engine is the exceptional-case
- * cross-vendor executor for a problem with concrete prior evidence that
- * Anthropic models struggled on it — never routine work.
+ * ladder's Claude executors are `executor-mechanical` (Sonnet) and
+ * `executor-bounded` (Sonnet 5.5), `executor` (Opus medium, the default) and
+ * `executor-heavy` / `-xhigh` (Opus high / xhigh). This engine's `principal`
+ * profile (GPT-6 Astra) is the top rung of that ladder; its other profiles
+ * (Sol, Luna) are user request only, Sol also when `executorEngine` selects
+ * the Codex lane. Never routine work unless `executorEngine`, or an
+ * in-conversation instruction for one session or order, makes the Codex lane
+ * the executor lane.
  *
- * Three rungs, selected by `--profile` and nothing else:
+ * Three profiles, selected by `--profile` and nothing else:
  *
  *   heavy      (default)   GPT-6 Sol at high effort
  *   principal              GPT-6 Astra at xhigh effort

@@ -1178,8 +1178,106 @@ function case19() {
     'the mis-routing escape hatch is missing'
   );
 
-  // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the two
-  //    claims an order's routing actually turns on.
+  // The bounded rung (trial): Sonnet 5.5 pinned by exact model id between the
+  // mechanical rung and the default. Pins: the rung's identity (name, model,
+  // effort, tools); the presence of each of its four routing conditions and
+  // six exclusion phrases in its description and in the ORCHESTRA.md steering
+  // row; its escalation status (off the 3.5 chain, side-entry sentences); and
+  // one phrase per law delta versus executor.md. Not every sentence of the
+  // agent file is pinned; README and CHANGELOG are unpinned by house practice.
+  const bounded = read('agents/executor-bounded.md');
+  const boundedFm = frontmatter('agents/executor-bounded.md');
+  check(
+    'executor-bounded is named executor-bounded and cannot spawn agents',
+    /^name: executor-bounded$/m.test(bounded) && /^disallowedTools: Agent$/m.test(bounded),
+    (bounded.match(/^(name|disallowedTools): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-bounded is Sonnet 5.5 (pinned model id) at high effort',
+    /^model: claude-sonnet-5-5$/m.test(bounded) && /^effort: high$/m.test(bounded),
+    (bounded.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  // The routing conditions ARE the rung: each condition and exclusion phrase
+  // of the description is pinned on its own so a deleted one names itself.
+  const boundedClauses = [
+    ['all four conditions must hold', 'all four hold'],
+    ['condition 1: names the checks that prove it done', 'names the checks that prove it done'],
+    ['condition 2: the checks can observe whether the change is correct', 'those checks can observe whether the change is correct'],
+    ['exclusion: rendering or visual equivalence', 'rendering or visual equivalence'],
+    ['exclusion: caching or invalidation', 'caching or invalidation'],
+    ['exclusion: concurrency or timing', 'concurrency or timing'],
+    ['exclusion: hostile input or server-side validation', 'hostile input or server-side validation'],
+    ['exclusion: a contract with another process', 'a contract with another process'],
+    ['exclusion: a data migration', 'a data migration'],
+    ['condition 3: at most two named subsystems', 'at most two named subsystems'],
+    ['condition 4: neither an escalation nor a root-cause investigation the plan depends on', 'neither an escalation nor a root-cause investigation the plan depends on'],
+    [
+      'doubt falls through to executor (Opus medium)',
+      'When any condition is in doubt the order goes to executor (Opus medium)',
+    ],
+  ];
+  for (const [name, phrase] of boundedClauses) {
+    check(
+      'executor-bounded description pins ' + name,
+      boundedFm.includes(phrase),
+      'missing from the description: ' + phrase
+    );
+  }
+  check(
+    'executor-bounded carries rule 6, every claim carries its evidence',
+    /\*\*Every claim carries its evidence\.\*\*/.test(bounded),
+    'the evidence rule did not survive into the bounded rung'
+  );
+  const boundedReport = (bounded.match(/Structure it exactly like this:\n\n```\n([\s\S]*?)\n```/) || [])[1] || '';
+  check(
+    'executor-bounded report format has an UNVERIFIED section inside the report block',
+    /^UNVERIFIED$/m.test(boundedReport),
+    boundedReport.slice(0, 200) || 'no fenced report-format block found'
+  );
+  // One phrase per law delta versus executor.md, each pinned inside the rule
+  // (or paragraph) that carries it: a pinned phrase that drifts to another
+  // rule, or vanishes in a reflow, names itself here. The rest of each rule's
+  // text is not pinned.
+  const boundedRule = (n) => (bounded.match(new RegExp('^' + n + '\\. \\*\\*.*$', 'm')) || [''])[0];
+  const misRoute = (bounded.match(/^That routing is a claim made at PLAN time.*$/m) || [''])[0];
+  const lawIntro = (bounded.match(/^You share the Executor's law.*$/m) || [''])[0];
+  for (const [name, text, phrase] of [
+    ['rule 1 stops once the asked-for work is done and checked', boundedRule(1),
+      'When the work the order asked for is done and checked, stop and report.'],
+    ['the intro declares rule 6 added and rules 1, 2, 5 and 10 sharpened', lawIntro,
+      'with one rule added (rule 6) and four sharpened (rules 1, 2, 5 and 10)'],
+    ['rule 2 lets a wrong picture of the code proceed only when done is unchanged',
+      boundedRule(2),
+      'On this rung the exception also covers an order whose picture of the code is wrong'],
+    ['rule 5 refuses a syntax-only or failed-to-start check', boundedRule(5),
+      'A syntax-only check, or a check command that failed to start, does not count'],
+    ['rule 6 makes each claim name what established it', boundedRule(6),
+      'Each such claim names what established it in this run'],
+    ['rule 6 sends an unestablished claim to UNVERIFIED', boundedRule(6),
+      'A claim you did not establish goes under UNVERIFIED, worded as an open question'],
+    ['rule 6 keeps unestablished claims out of every report section', boundedRule(6),
+      'CHANGES, VERIFICATION, DEVIATIONS, CLASS SWEEP or CONCERNS'],
+    ['rule 10 never lets a budget skip a read or a check', boundedRule(10),
+      'A budget never justifies skipping a read or a check.'],
+    ['the mis-route paragraph returns BLOCKED naming the unseen property', misRoute,
+      'report STATUS: BLOCKED naming the property and why the checks cannot see it'],
+    ['the mis-route paragraph lists the properties through a data migration', misRoute,
+      'another process, a data migration'],
+    ['the mis-route paragraph finishes a peripheral case and lists it under UNVERIFIED', misRoute,
+      'If it is peripheral, finish the order and list it under UNVERIFIED.'],
+  ]) {
+    check(
+      'executor-bounded law delta: ' + name,
+      text.includes(phrase),
+      'missing: ' + phrase + '\n' + (text.slice(0, 200) || 'the carrying rule or paragraph is gone')
+    );
+  }
+
+  // 4. ORCHESTRA.md is the Director's own copy of the ladder. Pin the
+  //    presence of selected phrases an order's routing, and executor-bounded's
+  //    escalation status, turn on — one check per pinned phrase (except three
+  //    pre-existing checks that each pin two phrases), so a deleted phrase
+  //    usually names itself. Not every sentence of ORCHESTRA.md is pinned.
   const protocol = read('ORCHESTRA.md');
   check(
     'ORCHESTRA.md makes executor (Opus medium) the default rung',
@@ -1189,7 +1287,9 @@ function case19() {
   check(
     'ORCHESTRA.md routes by thinking difficulty, not diff size',
     /Route by how hard the thinking is, not by how big the diff is/.test(protocol) &&
-      /Sonnet is not the small-task rung; it is the tight-spec rung/.test(protocol),
+      /Sonnet is not the small-task rung: `executor-mechanical` is the tight-spec rung and `executor-bounded` the checkable-done rung/.test(
+        protocol
+      ),
     'the route-by-thinking rule is missing — this is the rule that keeps Sonnet from being overloaded'
   );
   check(
@@ -1207,6 +1307,103 @@ function case19() {
     'ORCHESTRA.md 3.5 carries the full five-rung escalation ladder',
     /`executor-mechanical` → `executor` → `executor-heavy` → `executor-heavy-xhigh` → `executor-codex-principal`/.test(protocol),
     (protocol.match(/^5\. \*\*Escalate.*$/m) || ['no rule 5'])[0].slice(0, 300)
+  );
+  const escalateRule = (protocol.match(/^5\. \*\*Escalate.*$/m) || [''])[0];
+  check(
+    'ORCHESTRA.md 3.5 escalation chain does not pass through executor-bounded',
+    escalateRule !== '' && !/escalate one rung \([^)]*executor-bounded/.test(escalateRule),
+    escalateRule.slice(0, 400) || 'no rule 5'
+  );
+  for (const [name, sentence] of [
+    ['3.5 makes executor-bounded a side entry, never an escalation target',
+      '`executor-bounded` sits beside this chain, not on it: it is never an escalation target.'],
+    ['3.5 keeps bounded fix rounds on the rung and sends a double bounce or mis-route to executor',
+      'Its fix rounds stay with it, as on any rung (§8.5); an order that bounces off it twice, ' +
+        'or that it or a review shows was mis-routed, goes to `executor`.'],
+  ]) {
+    check(
+      'ORCHESTRA.md ' + name,
+      escalateRule.includes(sentence),
+      'missing from rule 5: ' + sentence
+    );
+  }
+  check(
+    'ORCHESTRA.md steers down to executor-bounded with its own row',
+    /^\| \*\*down \(bounded\)\*\* \| `executor-bounded` \(Sonnet 5\.5, high; trial\) \|/m.test(protocol),
+    (protocol.match(/^\| \*\*down.*$/gm) || ['no down row']).join(' | ').slice(0, 300)
+  );
+  const companyRow =
+    (protocol.match(/^\| Bounded executor \| `executor-bounded` \|.*$/m) || [''])[0];
+  for (const [name, phrase] of [
+    ['is Sonnet 5.5 at high effort, on trial', '| Sonnet 5.5, high (trial) |'],
+    ['requires the order to name the checks that prove it',
+      'the order names the checks that prove it'],
+    ['requires those checks to observe whether the change is right',
+      'those checks can observe whether the change is right'],
+  ]) {
+    check(
+      'ORCHESTRA.md company row for executor-bounded ' + name,
+      companyRow.includes(phrase),
+      'missing from the company row: ' + phrase + '\n' +
+        (companyRow.slice(0, 200) || 'no company row')
+    );
+  }
+  const downRow = (protocol.match(/^\| \*\*down \(bounded\)\*\*.*$/m) || [''])[0];
+  for (const phrase of [
+    'Never when correctness rests on',
+    'rendering or visual equivalence',
+    'caching or invalidation',
+    'concurrency or timing',
+    'hostile input or server-side validation',
+    'a contract with another process',
+    'a data migration',
+  ]) {
+    check(
+      'ORCHESTRA.md steering row for executor-bounded excludes: ' + phrase,
+      downRow.includes(phrase),
+      'missing from the down (bounded) row: ' + phrase
+    );
+  }
+  for (const [name, phrase] of [
+    ['condition 1, the order names the checks that prove it done',
+      'the order names the checks that prove it done'],
+    ['condition 2, those checks can observe whether the change is right',
+      'those checks can observe whether the change is right'],
+    ['condition 3, it touches at most two named subsystems',
+      'it touches at most two named subsystems'],
+    ['condition 4, neither an escalation nor a plan-critical root-cause investigation',
+      'neither an escalation nor a root-cause investigation the plan depends on'],
+  ]) {
+    check(
+      'ORCHESTRA.md steering row for executor-bounded requires ' + name,
+      downRow.includes(phrase),
+      'missing from the down (bounded) row: ' + phrase
+    );
+  }
+  check(
+    'ORCHESTRA.md asks the bounded-rung question, can the order\'s own checks see whether the change is right',
+    /can the order's own checks see whether the change is right\?/.test(protocol),
+    'the observability question that gates the bounded rung is missing'
+  );
+  const boundedPara =
+    (protocol.match(/^\*\*The bounded rung asks one more question.*$/m) || [''])[0];
+  for (const [name, sentence] of [
+    ['sends an order in doubt on any bounded condition to executor',
+      'When any bounded condition is in doubt, it goes to `executor`.'],
+    ['requires a bounded order to name its checks and state its routing basis',
+      'An order to `executor-bounded` names its checks under verification and states its ' +
+        'routing basis (which conditions held and why), so a bounce can be read against it.'],
+  ]) {
+    check(
+      'ORCHESTRA.md bounded-rung paragraph ' + name,
+      boundedPara.includes(sentence),
+      'missing from the bounded-rung paragraph: ' + sentence
+    );
+  }
+  check(
+    'ORCHESTRA.md 8.3 pins executor-bounded at high effort',
+    /`executor-bounded` at high/.test(protocol),
+    (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 300)
   );
   check(
     'ORCHESTRA.md requires the Astra-unavailable substitution to be announced',

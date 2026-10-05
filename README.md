@@ -101,6 +101,7 @@ The guard applies the same positive-evidence rule independently: it reads the se
 | Scout | `scout` | Haiku | read-only *where/what* mapping; cheap, fan out freely |
 | Detective | `detective` | Opus | read-only *why/how* investigation; one question per case, evidence chains, confidence grade |
 | Mechanical executor | `executor-mechanical` | Sonnet, high | routine mechanical orders, and orders whose goal and instructions are airtight |
+| Bounded executor | `executor-bounded` | Sonnet 5.5, high (trial) | orders with an open *how* and a checkable *done*: the order names the checks that prove it, and those checks can observe whether the change is right |
 | Executor | `executor` | Opus, medium | **the default** — every order that isn't specifically routed elsewhere |
 | Heavy executor | `executor-heavy` / `executor-heavy-xhigh` | Opus high / xhigh | the same model at more effort — hard, split-resistant, or escalated work; chosen at PLAN time |
 | Principal executor † | `executor-codex-principal` | GPT-6 Astra, xhigh | **the top rung of the default ladder** — exceptional orders: many coupled moving parts, an approach the plan cannot settle, or a second bounce at the Opus heavy tier |
@@ -155,18 +156,21 @@ Then it runs `reviewer` in fresh context, repeats the alarm in the campaign's fi
 
 ## Executor steering
 
-`executor` (Opus, medium) is the default: an order lands there unless the plan has a specific reason to put it elsewhere. From there it moves in one of three directions, all decided at PLAN time and never self-promoted.
+`executor` (Opus, medium) is the default: an order lands there unless the plan has a specific reason to put it elsewhere. From there it moves in one of four directions, all decided at PLAN time and never self-promoted.
 
 | Route | Agent | Model | When |
 |---|---|---|---|
 | down | `executor-mechanical` | Sonnet, high | routine mechanical orders, or orders whose goal and instructions are airtight — a rename ripple, a codemod, a spelled-out patch, a well-trodden test addition |
+| down (bounded) | `executor-bounded` | Sonnet 5.5, high (trial) | what done means is settled and checkable even though the how is open — the order names the checks that prove it done, those checks can observe whether the change is right, it touches at most two named subsystems, and it is neither an escalation nor a root-cause investigation the plan depends on. Never when correctness rests on rendering or visual equivalence, caching or invalidation, concurrency or timing, hostile input or server-side validation, a contract with another process, or a data migration |
 | **default** | `executor` | Opus, medium | **everything else** |
 | up (effort) | `executor-heavy` → `executor-heavy-xhigh` | Opus high → xhigh | the thinking is hard — algorithmically hard cores, coupled cross-subsystem changes, risk-first probes, or a bounce at the rung below |
 | up (vendor) | `executor-codex-principal` † | GPT-6 Astra, xhigh | long-winded or highly detailed work worth spinning up the Codex lane for — many coupled moving parts that resist splitting, an approach the plan cannot settle in advance, or a second bounce at the heavy tier |
 
-**Route by how hard the thinking is, not by how big the diff is.** Sonnet is not the small-task rung, it's the tight-spec rung: an order goes to `executor-mechanical` only because nothing about its *meaning* is still open. A two-line change with an unresolved question belongs on `executor`; a thousand-line codemod with an airtight spec does not. Between `executor` and `executor-heavy` the model doesn't change at all — only the effort — so scale up when the reasoning is hard, not when the output is long.
+**Route by how hard the thinking is, not by how big the diff is.** Sonnet is not the small-task rung: `executor-mechanical` is the tight-spec rung and `executor-bounded` the checkable-done rung. An order goes to `executor-mechanical` only because nothing about its *meaning* is still open. A two-line change with an unresolved question belongs on `executor`; a thousand-line codemod with an airtight spec does not. Between `executor` and `executor-heavy` the model doesn't change at all — only the effort — so scale up when the reasoning is hard, not when the output is long.
 
-The ladder crosses the vendor line at the top rung: a double bounce at the heavy tier escalates straight to Astra, one rung per double bounce (ORCHESTRA.md §3.5). A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS. Like every rung, it sweeps the whole class of each reviewer finding rather than the cited instance.
+**The bounded rung asks one more question: can the order's own checks see whether the change is right?** Sonnet 5.5 carries an open *how* well and an unobservable *right* badly — in its 2026-09/10 field trial as the default executor, all three REVISE rows were confident claims about behavior no check had exercised — so an order whose correctness lives outside its checks goes to `executor` however small it is. When any bounded condition is in doubt, it goes to `executor`. An order to `executor-bounded` names its checks under verification and states its routing basis (which conditions held and why), so a bounce can be read against it.
+
+The ladder crosses the vendor line at the top rung: a double bounce at the heavy tier escalates straight to Astra, one rung per double bounce (ORCHESTRA.md §3.5). `executor-bounded` sits beside this chain, not on it: it is never an escalation target. Its fix rounds stay with it, as on any rung (ORCHESTRA.md §8.5); an order that bounces off it twice, or that it or a review shows was mis-routed, goes to `executor`. A principal order names any decision it delegates and the bounds on it; the principal records the choice under DECISIONS. Like every rung, it sweeps the whole class of each reviewer finding rather than the cited instance.
 
 **Everything else on the bench is user request only.** The Fable principal profiles (`executor-principal`, `executor-principal-xhigh`), the Sol executor (`executor-codex-heavy`) and the Luna executor (`executor-codex-luna`) are installed and fully functional, but no routing rule reaches them. They run when you name them in conversation, or when `executorEngine: "codex"` in `.claude/orchestra.json` makes the Codex lane this project's executor lane — the durable form of the same request. That Codex lane means Sol: the Luna executor runs only when you name it, and nothing escalates or substitutes into it. The Director never promotes an order into them on its own judgment.
 
@@ -293,7 +297,7 @@ The 3.0 installer refuses a `roster: "new"` target outright rather than attempti
 Orchestra/
 ├── README.md, CHANGELOG.md, VERSION, ORCHESTRA.md
 ├── install.js / install.ps1 / install.sh   ← idempotent installer/uninstaller
-├── agents/            ← the nine core Claude agents + specialists/
+├── agents/            ← the ten core Claude agents + specialists/
 ├── hooks/orchestra-guard.js  ← PreToolUse hook enforcing Director law
 ├── skills/             ← orchestra-status, orchestra-plan, orchestra-review
 ├── tests/               ← harness tests (master-only; never stamped into projects)

@@ -1259,6 +1259,158 @@ function case28_companyLaw() {
   }
 }
 
+// Lead budget clock (3.9.0, WO-3). The main-session SendMessage fixture is a
+// real captured hook input (tests/fixtures/sendmessage-hook-input.json): the
+// target is tool_input.to (mirrored into recipient) and there is no agent_id.
+const SEND_FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'sendmessage-hook-input.json'), 'utf8'));
+
+function directorSendTo(agentId) {
+  const input = JSON.parse(JSON.stringify(SEND_FIXTURE));
+  delete input._note;
+  input.tool_input.to = agentId;
+  input.tool_input.recipient = agentId;
+  return input;
+}
+
+function case29_leadBudgetClock() {
+  section('29. Lead budget clock: creation, per-type counts, Director restart, trips, fail-open, concurrency');
+
+  check('the captured SendMessage fixture is a main-session call (no agent_id / agent_type)',
+    SEND_FIXTURE.tool_name === 'SendMessage' && !('agent_id' in SEND_FIXTURE) && !('agent_type' in SEND_FIXTURE) &&
+      typeof SEND_FIXTURE.tool_input.to === 'string',
+    JSON.stringify(SEND_FIXTURE).slice(0, 300));
+
+  const DENY_TEXT = /^Orchestra: lead budget crossed \((\d+ minutes of \d+|\d+ dispatches of \d+)\)\. Write your status file and return STATUS: CHECKPOINT now\.$/;
+
+  for (const lead of ['lead', 'lead-xhigh']) {
+    const proj = tmpdir('orchestra-guard-');
+    const id = 'a' + lead.replace(/-/g, '') + '0001';
+    const stateFile = path.join(proj, '.claude', 'orchestra-leads', id + '.json');
+    const readState = () => JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const call = (tool, ti) => decisionOf(runGuard(proj, { tool_name: tool, agent_id: id, agent_type: lead, tool_input: ti }));
+
+    check(lead + ': no state file before the first counted call', !fs.existsSync(stateFile), '');
+    const before = Date.now();
+    const d1 = call('Agent', leadSpawn('executor'));
+    check(lead + ': first Agent dispatch -> allow', d1.decision === 'allow', JSON.stringify(d1));
+    const s1 = readState();
+    check(lead + ': the first counted call creates the state file, segment started now',
+      s1.segmentStart >= before && s1.segmentStart <= Date.now(), JSON.stringify(s1));
+    check(lead + ': per-type counts after one executor dispatch',
+      JSON.stringify(s1.segment) === '{"executor":1}' && JSON.stringify(s1.lifetime) === '{"executor":1}', JSON.stringify(s1));
+
+    call('Agent', leadSpawn('scout'));
+    call('Agent', leadSpawn('executor'));
+    const dSend = call('SendMessage', { to: 'aexecutor0001', message: 'fix it' });
+    check(lead + ': a lead SendMessage -> allow', dSend.decision === 'allow', JSON.stringify(dSend));
+    const s2 = readState();
+    check(lead + ': counts by type, with the lead SendMessage counted as resume',
+      s2.segment.executor === 2 && s2.segment.scout === 1 && s2.segment.resume === 1 && s2.lifetime.resume === 1,
+      JSON.stringify(s2));
+    // A non-dispatch tool is never counted.
+    call('Write', { file_path: '.claude/plans/leads/x/status.md', content: 'x' });
+    check(lead + ': a status-file write is not counted', JSON.stringify(readState().segment) === JSON.stringify(s2.segment), JSON.stringify(readState()));
+
+    // Director resume: the captured main-session SendMessage, retargeted.
+    const old = Object.assign({}, s2, { segmentStart: Date.now() - 90 * 60000 });
+    fs.writeFileSync(stateFile, JSON.stringify(old), 'utf8');
+    const tRestart = Date.now();
+    const dDir = decisionOf(runGuard(proj, directorSendTo(id)));
+    check(lead + ': Director SendMessage to the lead -> allow (decision unchanged)', dDir.decision === 'allow', JSON.stringify(dDir));
+    const s3 = readState();
+    check(lead + ': Director SendMessage restarts the segment', s3.segmentStart >= tRestart && JSON.stringify(s3.segment) === '{}', JSON.stringify(s3));
+    check(lead + ': ...and keeps lifetime', JSON.stringify(s3.lifetime) === JSON.stringify(s2.lifetime), JSON.stringify(s3));
+
+    // A Director SendMessage to an unknown id changes nothing.
+    const leadsDir = path.dirname(stateFile);
+    const listBefore = fs.readdirSync(leadsDir).sort().join(',');
+    const contentBefore = fs.readFileSync(stateFile, 'utf8');
+    const dUnknown = decisionOf(runGuard(proj, directorSendTo('a-not-a-lead')));
+    check(lead + ': Director SendMessage to an unknown id -> allow, no file created, state untouched',
+      dUnknown.decision === 'allow' && fs.readdirSync(leadsDir).sort().join(',') === listBefore &&
+        fs.readFileSync(stateFile, 'utf8') === contentBefore, fs.readdirSync(leadsDir).join(','));
+    // A send by name (not an agent id) is also no restart.
+    const dByName = decisionOf(runGuard(proj, directorSendTo(lead)));
+    check(lead + ': Director SendMessage by name changes nothing', dByName.decision === 'allow' && fs.readFileSync(stateFile, 'utf8') === contentBefore, '');
+    // A SUBAGENT's SendMessage to the lead id is not a Director resume.
+    const fromSub = directorSendTo(id);
+    fromSub.agent_id = 'aother0001';
+    fromSub.agent_type = 'my-own-agent';
+    runGuard(proj, fromSub);
+    check(lead + ': a subagent SendMessage to the lead id does not restart it', fs.readFileSync(stateFile, 'utf8') === contentBefore, '');
+
+    // Minutes trip, for Agent and SendMessage, with the exact text.
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: Date.now() - 121 * 60000, segment: { executor: 1 }, lifetime: { executor: 5 } }), 'utf8');
+    for (const [tool, ti] of [['Agent', leadSpawn('executor')], ['SendMessage', { to: 'x', message: 'y' }]]) {
+      const d = call(tool, ti);
+      check(lead + ': minutes budget crossed -> ' + tool + ' denied with the exact text',
+        d.decision === 'deny' && DENY_TEXT.test(d.reason) && /\(121 minutes of 120\)/.test(d.reason), d.reason);
+    }
+    check(lead + ': a denied dispatch is not counted', readState().segment.executor === 1 && readState().lifetime.executor === 5, JSON.stringify(readState()));
+
+    // Dispatch trip at the default 20.
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: Date.now(), segment: { executor: 12, resume: 8 }, lifetime: { executor: 30, resume: 8 } }), 'utf8');
+    for (const [tool, ti] of [['Agent', leadSpawn('scout')], ['SendMessage', { to: 'x', message: 'y' }]]) {
+      const d = call(tool, ti);
+      check(lead + ': 20 dispatches already in the segment -> ' + tool + ' denied with the exact text',
+        d.decision === 'deny' && DENY_TEXT.test(d.reason) && /\(20 dispatches of 20\)/.test(d.reason), d.reason);
+    }
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: Date.now(), segment: { executor: 19 }, lifetime: { executor: 19 } }), 'utf8');
+    check(lead + ': the 20th dispatch is still allowed', call('Agent', leadSpawn('scout')).decision === 'allow', JSON.stringify(readState()));
+
+    // Corrupt state fails open and is left alone.
+    fs.writeFileSync(stateFile, '{ not json', 'utf8');
+    const dCorrupt = call('Agent', leadSpawn('executor'));
+    check(lead + ': corrupt state -> allow (fail open), file untouched', dCorrupt.decision === 'allow' && fs.readFileSync(stateFile, 'utf8') === '{ not json', JSON.stringify(dCorrupt));
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: 'yesterday', segment: {}, lifetime: {} }), 'utf8');
+    check(lead + ': malformed state shape -> allow', call('Agent', leadSpawn('executor')).decision === 'allow', '');
+  }
+
+  // Budgets come from orchestra.json leads.maxMinutes / leads.maxDispatches.
+  const pc = tmpdir('orchestra-guard-');
+  setManifest(pc, { leads: { maxMinutes: 5, maxDispatches: 2 } });
+  const cfgCall = (tool, ti) => decisionOf(runGuard(pc, { tool_name: tool, agent_id: 'acfg0001', agent_type: 'lead', tool_input: ti }));
+  cfgCall('Agent', leadSpawn('executor'));
+  cfgCall('SendMessage', { to: 'x', message: 'y' });
+  const dCfg = cfgCall('Agent', leadSpawn('executor'));
+  check('leads.maxDispatches from orchestra.json is honoured', dCfg.decision === 'deny' && /\(2 dispatches of 2\)/.test(dCfg.reason), dCfg.reason);
+  fs.writeFileSync(path.join(pc, '.claude', 'orchestra-leads', 'acfg0001.json'), JSON.stringify({ segmentStart: Date.now() - 6 * 60000, segment: {}, lifetime: {} }), 'utf8');
+  const dCfgMin = cfgCall('Agent', leadSpawn('executor'));
+  check('leads.maxMinutes from orchestra.json is honoured', dCfgMin.decision === 'deny' && /\(6 minutes of 5\)/.test(dCfgMin.reason), dCfgMin.reason);
+
+  // An unsafe agent id never becomes a path; the call is allowed uncounted.
+  const pu = tmpdir('orchestra-guard-');
+  const dUnsafe = decisionOf(runGuard(pu, { tool_name: 'Agent', agent_id: '../../evil', agent_type: 'lead', tool_input: leadSpawn('executor') }));
+  check('an unsafe agent_id -> allow, no state written', dUnsafe.decision === 'allow' && !fs.existsSync(path.join(pu, '.claude', 'orchestra-leads')), JSON.stringify(dUnsafe));
+
+  // Two concurrent dispatches from one lead: neither crashes, the state stays
+  // parseable, and at least one is counted (a race may undercount).
+  const pp = tmpdir('orchestra-guard-');
+  const script = [
+    "const { spawn } = require('child_process');",
+    'const [guard, proj] = process.argv.slice(1);',
+    "const input = JSON.stringify({ tool_name: 'Agent', agent_id: 'apar0001', agent_type: 'lead', tool_input: { subagent_type: 'executor', prompt: 'x', run_in_background: false } });",
+    'const env = Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: proj }); delete env.ORCHESTRA_PAUSE;',
+    'const runs = [0, 1].map(() => new Promise((res) => {',
+    "  const c = spawn(process.execPath, [guard], { env }); let out = '';",
+    "  c.stdout.on('data', (d) => (out += d)); c.on('close', (code) => res({ code, out }));",
+    '  c.stdin.end(input);',
+    '}));',
+    'Promise.all(runs).then((r) => console.log(JSON.stringify(r)));',
+  ].join('\n');
+  const rPar = spawnSync(process.execPath, ['-e', script, GUARD, pp], { encoding: 'utf8', timeout: 30000 });
+  let results = [];
+  try { results = JSON.parse(rPar.stdout); } catch (_) { /* reported below */ }
+  check('two concurrent lead dispatches both exit 0 and allow',
+    results.length === 2 && results.every((r) => r.code === 0 && r.out.trim() === ''), rPar.stdout + rPar.stderr);
+  let parState = null;
+  try { parState = JSON.parse(fs.readFileSync(path.join(pp, '.claude', 'orchestra-leads', 'apar0001.json'), 'utf8')); } catch (_) { /* reported below */ }
+  check('after two concurrent dispatches the state is parseable and counts 1 or 2',
+    parState && parState.segment.executor >= 1 && parState.segment.executor <= 2, JSON.stringify(parState));
+  const leftovers = fs.readdirSync(path.join(pp, '.claude', 'orchestra-leads')).filter((f) => /\.tmp$/.test(f));
+  check('no temp files are left behind', leftovers.length === 0, leftovers.join(','));
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1299,6 +1451,7 @@ try {
   case26_pauseNameNormalization();
   case27_pauseOrderingSubagentException();
   case28_companyLaw();
+  case29_leadBudgetClock();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

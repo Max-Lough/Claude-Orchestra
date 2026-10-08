@@ -199,6 +199,8 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `directorPlanPatterns` | string[] (globs) | `[]` | Additional Director-owned plan paths (beyond `.claude/plans/*.md`). |
 | `directorMemoryPatterns` | string[] (globs) | `[]` | Additional Director-owned memory paths (beyond `CLAUDE.md`/`CLAUDE.local.md`/auto-memory). |
 | `leadAllowedAgents` | string[] | `[]` | Agent types a lead may dispatch beyond its built-in team — project specialists. Never another lead. |
+| `leads.maxMinutes` | number | `120` | A lead's segment budget in minutes; past it the guard denies the lead's next dispatch with a checkpoint instruction. |
+| `leads.maxDispatches` | number | `20` | A lead's segment budget in dispatches (`Agent` calls plus `SendMessage` resumes). |
 | `installedPermissions` | `{file,entry}[]` | `[]` | Installer-owned `permissions.allow` entries; present only when tracking is active. |
 | `installedDeny` | `{file,entry}[]` | `[]` | Installer-owned `permissions.deny` entries. |
 | `userOwnedPermissions` | string[] | `[]` | User claims exempting an exact permission string from installer cleanup. |
@@ -267,6 +269,7 @@ Settings-level hooks fire inside subagents too, and their input names the callin
 - **Leads never edit code.** A `lead` or `lead-xhigh` may `Write`/`Edit` only `.md` files under `.claude/plans/leads/` (its status file and ledger), with the plan carve-out's symlink and hardlink containment. Bash, PowerShell, Grep and Glob are denied.
 - **A lead dispatches only its team:** `scout`, `detective`, every executor rung up to `executor-codex-principal` and `executor-principal-max`, `reviewer` and `reviewer-codex`, plus `leadAllowedAgents`. Never another lead, a Fable executor, a user-request-only Codex executor or a planning lane. A model override is denied, and so is any spawn that doesn't set `run_in_background: false` exactly, because an unset flag starts the child in the background.
 - **Every other Orchestra agent never spawns.** An `Agent` call from an executor, scout, detective, reviewer or Codex launcher is denied.
+- **A lead's budget clock forces check-ins.** The guard keeps one file per lead, `.claude/orchestra-leads/<agent_id>.json`, created on its first dispatch. It counts the lead's dispatches by agent type, per segment and over its lifetime, with a lead's `SendMessage` counted as `resume`. Once a segment passes `leads.maxMinutes` (default 120) or `leads.maxDispatches` (default 20), the lead's next `Agent` or `SendMessage` is denied: `Orchestra: lead budget crossed (…). Write your status file and return STATUS: CHECKPOINT now.` A main-session `SendMessage` to the lead's agent id starts a fresh segment and keeps the lifetime counts, which the Director checks against the lead's reported orders and rework. The clock never keys on `SubagentStart`, which also fires whenever a child's reply wakes the lead. Any state error fails open. No new hook registration is needed, because the guard's existing `PreToolUse` entry sees every call.
 
 ## Ledger and plans
 

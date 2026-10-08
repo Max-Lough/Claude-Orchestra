@@ -63,6 +63,21 @@ platform probes: `plans/team-leads-probe-results.md`.
   The rules key on agent type alone, a pause file stands them down, and
   non-Orchestra agent types and the Director are unchanged. The stale comment
   claiming PreToolUse fires only for the main session is gone.
+- **A budget clock makes a lead check in.** The guard keeps
+  `.claude/orchestra-leads/<agent_id>.json` per lead. It is created on the
+  lead's first dispatch, counts dispatches by agent type per segment and over
+  the lead's lifetime (a lead's `SendMessage` counts as `resume`), and denies
+  the lead's next `Agent` or `SendMessage` once the segment passes
+  `leads.maxMinutes` (120) or `leads.maxDispatches` (20), with an instruction
+  to write status and return `STATUS: CHECKPOINT`. A main-session
+  `SendMessage` to the lead's agent id restarts the segment and keeps the
+  lifetime counts. The target field (`tool_input.to`, mirrored into
+  `recipient`) was pinned from a real captured hook input, now the test
+  fixture. The clock never keys on `SubagentStart`: WO-0 found it also fires
+  every time a child's reply re-wakes the lead. State errors fail open, and no
+  hook registration changes. The Codex exec runner lists
+  `.claude/orchestra-leads/` as harness-owned, so its brief doesn't present
+  the lead's state file as project dirt.
 
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 

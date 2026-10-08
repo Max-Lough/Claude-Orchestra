@@ -1390,6 +1390,7 @@ const HARNESS_OWNED = [
   '.claude/orchestra-ledger.jsonl',
   '.claude/orchestra-pool-readings.jsonl',
   '.claude/orchestra-manual-readings.md',
+  '.claude/orchestra-leads/', // the guard's per-lead budget clock (3.9.0)
   '.claude/orchestra/',
 ];
 

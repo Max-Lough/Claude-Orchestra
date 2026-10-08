@@ -456,6 +456,10 @@ function compileGlobsTightening(arr) {
   return { patterns, invalid };
 }
 
+function positiveOr(v, fallback) {
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
 function arrOfStrings(arr) {
   return (Array.isArray(arr) ? arr : []).filter((s) => typeof s === 'string');
 }
@@ -474,6 +478,8 @@ function loadPolicy() {
     planPatternsRaw: [],
     memoryPatterns: [],
     leadAllowedAgents: [],
+    leadMaxMinutes: 120,
+    leadMaxDispatches: 20,
   };
   try {
     const manifestPath = path.join(projectDir(), '.claude', CONFIG_BASENAME);
@@ -488,6 +494,7 @@ function loadPolicy() {
     }
 
     const g = compileGlobsTightening(cfg ? cfg.directorBlockedPatterns : null);
+    const leads = cfg && cfg.leads && typeof cfg.leads === 'object' ? cfg.leads : {};
     const rawPlanPatterns =
       cfg && Array.isArray(cfg.directorPlanPatterns) && cfg.directorPlanPatterns.length <= MAX_PATTERN_ARRAY_LEN
         ? arrOfStrings(cfg.directorPlanPatterns)
@@ -501,6 +508,8 @@ function loadPolicy() {
       planPatterns: cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [],
       memoryPatterns: cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [],
       leadAllowedAgents: cfg ? arrOfStrings(cfg.leadAllowedAgents).slice(0, MAX_PATTERN_ARRAY_LEN) : [],
+      leadMaxMinutes: positiveOr(leads.maxMinutes, empty.leadMaxMinutes),
+      leadMaxDispatches: positiveOr(leads.maxDispatches, empty.leadMaxDispatches),
     });
   } catch (_) {
     return Object.assign({}, empty);
@@ -1103,9 +1112,121 @@ function subagentLaw(input, toolName, policy) {
           'child in the background. Run parallel work as several Agent calls in one message.'
       );
     }
-    return allow();
+    return leadBudget(input.agent_id, target, policy);
   }
-  if (toolName === 'SendMessage') return allow();
+  // A lead's SendMessage resumes a child, which is rework (D6) that never
+  // passes through Agent, so it counts under `resume`.
+  if (toolName === 'SendMessage') return leadBudget(input.agent_id, 'resume', policy);
+}
+
+// ------------------------------------------------------- lead budget clock
+//
+// One state file per lead, .claude/orchestra-leads/<agent_id>.json, outside
+// the lead's writable .claude/plans/leads/:
+//   { segmentStart: <epoch ms>, segment: { <type>: n }, lifetime: { <type>: n } }
+// Created on the lead's first counted call (Agent or SendMessage), so the
+// clock starts at the first dispatch. A main-session SendMessage to that
+// agent id restarts the segment and keeps `lifetime` (restartLeadSegment()).
+// SubagentStart is deliberately not used: it also fires every time a child's
+// reply re-wakes the lead (WO-0 3a, 3c), so it can't tell a Director resume
+// from a child wake. Any state error fails open; parallel dispatches may race
+// and undercount — it is a tripwire, not an accountant.
+
+const LEADS_STATE_REL = path.join('.claude', 'orchestra-leads');
+const SAFE_AGENT_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+function leadStatePath(agentId) {
+  if (typeof agentId !== 'string' || !SAFE_AGENT_ID.test(agentId)) return null;
+  return path.join(projectDir(), LEADS_STATE_REL, agentId + '.json');
+}
+
+function isCounts(o) {
+  return !!o && typeof o === 'object' && !Array.isArray(o) &&
+    Object.keys(o).every((k) => Number.isFinite(o[k]) && o[k] >= 0);
+}
+
+// The parsed state, null when there is none yet, or undefined when it is
+// unreadable or malformed (fail open).
+function readLeadState(file) {
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    return e && e.code === 'ENOENT' ? null : undefined;
+  }
+  try {
+    const s = JSON.parse(raw);
+    return s && Number.isFinite(s.segmentStart) && isCounts(s.segment) && isCounts(s.lifetime)
+      ? s
+      : undefined;
+  } catch (_) {
+    return undefined;
+  }
+}
+
+function writeLeadState(file, state) {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + '.' + process.pid + '-' + Date.now() + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(state), 'utf8');
+    try {
+      fs.renameSync(tmp, file);
+    } catch (_) {
+      try { fs.unlinkSync(tmp); } catch (_e) { /* best effort */ }
+    }
+  } catch (_) {
+    /* a lost count is acceptable; the clock is a tripwire */
+  }
+}
+
+function leadBudget(agentId, key, policy) {
+  const file = leadStatePath(agentId);
+  if (!file) return allow();
+  let state = readLeadState(file);
+  if (state === undefined) return allow();
+  if (state === null) state = { segmentStart: Date.now(), segment: {}, lifetime: {} };
+
+  const minutes = (Date.now() - state.segmentStart) / 60000;
+  const dispatched = Object.keys(state.segment).reduce((n, k) => n + state.segment[k], 0);
+  let crossed = '';
+  if (minutes > policy.leadMaxMinutes) {
+    crossed = Math.floor(minutes) + ' minutes of ' + policy.leadMaxMinutes;
+  } else if (dispatched >= policy.leadMaxDispatches) {
+    crossed = dispatched + ' dispatches of ' + policy.leadMaxDispatches;
+  }
+  if (crossed) {
+    return deny(
+      'Orchestra: lead budget crossed (' + crossed + '). Write your status file and return ' +
+        'STATUS: CHECKPOINT now.'
+    );
+  }
+  state.segment[key] = (state.segment[key] || 0) + 1;
+  state.lifetime[key] = (state.lifetime[key] || 0) + 1;
+  writeLeadState(file, state);
+  return allow();
+}
+
+// Main session only: a SendMessage to an agent id with a lead state file is a
+// Director resume, so that lead gets a fresh segment. The target is
+// tool_input.to, mirrored into tool_input.recipient (captured input:
+// tests/fixtures/sendmessage-hook-input.json). A send by name matches no
+// state file and changes nothing; the lead then trips on its next dispatch
+// and checkpoints at once, which is visible and safe. Never decides the call.
+function restartLeadSegment(toolInput) {
+  try {
+    const ti = toolInput && typeof toolInput === 'object' ? toolInput : {};
+    for (const id of new Set([ti.to, ti.recipient])) {
+      const file = leadStatePath(id);
+      if (!file) continue;
+      const state = readLeadState(file);
+      if (!state) continue;
+      state.segmentStart = Date.now();
+      state.segment = {};
+      writeLeadState(file, state);
+    }
+  } catch (_) {
+    /* fail open */
+  }
 }
 
 function main(raw) {
@@ -1161,8 +1282,12 @@ function main(raw) {
   if (pauseStatus.state === 'active') return allow();
   if (pauseStatus.state === 'ignored') policy.pauseIgnoredReason = pauseStatus.reason;
 
-  // Company law for subagents (who may spawn whom, what a lead may write).
+  // Company law for subagents (who may spawn whom, what a lead may write),
+  // and the one main-session side effect of the lead budget clock.
   subagentLaw(input, toolName, policy);
+  if (!input.agent_id && !input.agent_type && toolName === 'SendMessage') {
+    restartLeadSegment(input.tool_input);
+  }
 
   // Otherwise subagent calls are never restricted for Director-law purposes.
   // Settings PreToolUse hooks fire inside subagents too, with agent_id and

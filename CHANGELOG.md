@@ -50,6 +50,19 @@ platform probes: `plans/team-leads-probe-results.md`.
   starts with `Orchestra`, so a user's own file of that name is never touched.
   Before this, a rename left the old file registered in every updated
   project (the 3.0 port's finding F6).
+- **Company law for subagents, in the guard.** Settings hooks fire inside
+  subagents with `agent_type` naming the caller, and an `Agent(type)`
+  allowlist in a subagent definition is ignored, so the guard is the
+  enforcement point. A lead may write only `.md` under `.claude/plans/leads/`
+  (the plan carve-out's containment, reused), may not use Bash, PowerShell,
+  Grep or Glob, and may dispatch only its team plus `leadAllowedAgents`: never
+  another lead, a Fable executor, a user-request-only Codex executor or a
+  planning lane. A lead spawn must set `run_in_background: false` exactly,
+  because an unset flag backgrounds the child (WO-0 3a), and it may not
+  override the model. Every other Orchestra agent's `Agent` call is denied.
+  The rules key on agent type alone, a pause file stands them down, and
+  non-Orchestra agent types and the Director are unchanged. The stale comment
+  claiming PreToolUse fires only for the main session is gone.
 
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 

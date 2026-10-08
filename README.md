@@ -2,7 +2,7 @@
 
 A transferable multi-agent harness for Claude Code. It casts the session model as a **Director** who never touches the code, and routes all actual work through a fixed company of specialist subagents — Claude models by default, plus an optional cross-vendor (OpenAI/Codex) lane for independent review and exceptional-case execution.
 
-The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block. The guard is model-aware: Director law binds only when it identifies a director model (Fable or Opus) at the helm; any other session model runs as plain Claude Code, with no denials. Two authoring carve-outs let the Director write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md`/`CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution — but the managed `<!-- ORCHESTRA:BEGIN/END -->` block inside `CLAUDE.md` stays off-limits even there.
+The Director is **hard-blocked by a PreToolUse hook** from editing files, running commands, or searching the codebase — delegation is enforced by the harness, not promised by a prompt. Subagents are unaffected by the block; only a short company law binds Orchestra's own subagents (who may spawn whom, and what a lead may write — see "Company law for subagents"). The guard is model-aware: Director law binds only when it identifies a director model (Fable or Opus) at the helm; any other session model runs as plain Claude Code, with no denials. Two authoring carve-outs let the Director write **plan files** (markdown under `.claude/plans/`) and **memory files** (`CLAUDE.md`/`CLAUDE.local.md`, auto-memory) itself — both are Director thinking, not execution — but the managed `<!-- ORCHESTRA:BEGIN/END -->` block inside `CLAUDE.md` stays off-limits even there.
 
 This is the **3.0 protocol**: a compact, legacy-only harness. The 2.0 control plane (tickets, a router, class registry, verifier, quartermaster, the `roster: "new"` project mode) is gone — see [`CHANGELOG.md`](CHANGELOG.md) and "Migrating from 2.x" below. What's left is `ORCHESTRA.md` (the protocol, ~90 lines), eight Claude agents, three bundled skills, a session-model guard, and the optional `codex` pack.
 
@@ -198,6 +198,7 @@ Absence of the file means all defaults; unknown keys are preserved and ignored, 
 | `directorAllowedTools` | string[] | `[]` | Exact built-in tool names removed from the default Director blocklist. |
 | `directorPlanPatterns` | string[] (globs) | `[]` | Additional Director-owned plan paths (beyond `.claude/plans/*.md`). |
 | `directorMemoryPatterns` | string[] (globs) | `[]` | Additional Director-owned memory paths (beyond `CLAUDE.md`/`CLAUDE.local.md`/auto-memory). |
+| `leadAllowedAgents` | string[] | `[]` | Agent types a lead may dispatch beyond its built-in team — project specialists. Never another lead. |
 | `installedPermissions` | `{file,entry}[]` | `[]` | Installer-owned `permissions.allow` entries; present only when tracking is active. |
 | `installedDeny` | `{file,entry}[]` | `[]` | Installer-owned `permissions.deny` entries. |
 | `userOwnedPermissions` | string[] | `[]` | User claims exempting an exact permission string from installer cleanup. |
@@ -258,6 +259,14 @@ Verification is deliberately paid twice — the executor verifies, the reviewer 
 The Director may `Write`/`Edit` markdown directly under `.claude/plans/` (the plan is its own artifact — routing it through an executor loses fidelity) and edit `CLAUDE.md`/`CLAUDE.local.md`/auto-memory directly (a memory entry distills the current conversation, which only the Director holds) — both fenced by symlink-resolved containment and hardlink checks, and the managed `<!-- ORCHESTRA:BEGIN/END -->` block always survives an edit intact. `directorPlanPatterns`/`directorMemoryPatterns` add further glob-matched locations.
 
 Pause the harness for a plain session (a quick one-liner, debugging the harness itself) with `.claude/orchestra.pause` or `ORCHESTRA_PAUSE=1` — **out-of-band only**: in a Director session (Fable or Opus identified) the guard denies any tool call that would create or edit that file, from the Director or its subagents; a NORMAL-mode session is not policed. Create it yourself, in your own terminal.
+
+### Company law for subagents
+
+Settings-level hooks fire inside subagents too, and their input names the calling agent's type, so the guard also enforces a few invariants on Orchestra's own subagents. They key on the agent type alone, independent of the Director-model check; a genuine pause file stands them down, and agent types the harness doesn't ship are untouched.
+
+- **Leads never edit code.** A `lead` or `lead-xhigh` may `Write`/`Edit` only `.md` files under `.claude/plans/leads/` (its status file and ledger), with the plan carve-out's symlink and hardlink containment. Bash, PowerShell, Grep and Glob are denied.
+- **A lead dispatches only its team:** `scout`, `detective`, every executor rung up to `executor-codex-principal` and `executor-principal-max`, `reviewer` and `reviewer-codex`, plus `leadAllowedAgents`. Never another lead, a Fable executor, a user-request-only Codex executor or a planning lane. A model override is denied, and so is any spawn that doesn't set `run_in_background: false` exactly, because an unset flag starts the child in the background.
+- **Every other Orchestra agent never spawns.** An `Agent` call from an executor, scout, detective, reviewer or Codex launcher is denied.
 
 ## Ledger and plans
 

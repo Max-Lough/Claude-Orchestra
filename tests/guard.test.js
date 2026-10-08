@@ -1119,6 +1119,146 @@ function case27_pauseOrderingSubagentException() {
   );
 }
 
+// Company law (3.9.0, WO-2): settings hooks fire inside subagents with
+// agent_id + agent_type, so the guard enforces who may spawn whom and what a
+// lead may write. Keyed on agent_type alone — no transcript is passed, so
+// every decision here is independent of the Director-model check.
+function subagentCall(agentType, toolName, toolInput) {
+  return { tool_name: toolName, agent_id: 'a1b2c3d4-' + agentType, agent_type: agentType, tool_input: toolInput || {} };
+}
+
+function leadSpawn(subagentType, extra) {
+  return Object.assign({ subagent_type: subagentType, prompt: 'x', run_in_background: false }, extra || {});
+}
+
+function case28_companyLaw() {
+  section('28. Company law: lead writes, lead tools, lead spawns, non-spawning roles, pause');
+
+  for (const lead of ['lead', 'lead-xhigh']) {
+    const proj = tmpdir('orchestra-guard-');
+    fs.mkdirSync(path.join(proj, '.claude', 'plans', 'leads', 'auth'), { recursive: true });
+    const dec = (tool, input) => decisionOf(runGuard(proj, subagentCall(lead, tool, input)));
+
+    // Writes: .md under .claude/plans/leads/** only.
+    for (const tool of ['Write', 'Edit', 'MultiEdit']) {
+      const d = dec(tool, { file_path: '.claude/plans/leads/auth/status.md', content: 'x', old_string: 'a', new_string: 'b', edits: [] });
+      check(lead + ' ' + tool + ' of its status file -> allow', d.decision === 'allow', JSON.stringify(d));
+    }
+    for (const [label, file] of [
+      ['source code', 'src/index.js'],
+      ['a non-.md file under leads/', '.claude/plans/leads/auth/status.txt'],
+      ['a plan outside leads/', '.claude/plans/campaign.md'],
+      ['a path that climbs out of leads/', '.claude/plans/leads/../campaign.md'],
+      ['CLAUDE.md', 'CLAUDE.md'],
+    ]) {
+      const d = dec('Write', { file_path: file, content: 'x' });
+      check(lead + ' Write of ' + label + ' -> deny', d.decision === 'deny' && /a lead never edits code/.test(d.reason), JSON.stringify(d));
+    }
+    const nb = dec('NotebookEdit', { notebook_path: '.claude/plans/leads/auth/n.ipynb', new_source: 'x' });
+    check(lead + ' NotebookEdit -> deny', nb.decision === 'deny', JSON.stringify(nb));
+
+    // Tools a lead never uses.
+    for (const tool of ['Bash', 'PowerShell', 'Grep', 'Glob']) {
+      const d = dec(tool, { command: 'ls', pattern: 'x' });
+      check(lead + ' ' + tool + ' -> deny', d.decision === 'deny' && /a lead does not use/.test(d.reason), JSON.stringify(d));
+    }
+    const read = dec('Read', { file_path: 'src/index.js' });
+    check(lead + ' Read -> allow', read.decision === 'allow', JSON.stringify(read));
+
+    // Spawns.
+    for (const t of ['scout', 'executor-mechanical-haiku', 'executor', 'executor-principal-max', 'reviewer-codex']) {
+      const d = dec('Agent', leadSpawn(t));
+      check(lead + ' -> ' + t + ' with run_in_background: false -> allow', d.decision === 'allow', JSON.stringify(d));
+    }
+    for (const t of ['lead', 'lead-xhigh', 'executor-fable', 'executor-fable-xhigh', 'executor-codex-heavy', 'architect-codex', 'general-purpose']) {
+      const d = dec('Agent', leadSpawn(t));
+      check(lead + ' -> ' + t + ' -> deny (outside the team)', d.decision === 'deny' && /outside a lead's team/.test(d.reason), JSON.stringify(d));
+    }
+    const untyped = dec('Agent', { prompt: 'x', run_in_background: false });
+    check(lead + ' -> untyped Agent -> deny', untyped.decision === 'deny', JSON.stringify(untyped));
+    const model = dec('Agent', leadSpawn('executor', { model: 'opus' }));
+    check(lead + ' model override -> deny', model.decision === 'deny' && /model/.test(model.reason), JSON.stringify(model));
+    const unset = dec('Agent', { subagent_type: 'executor', prompt: 'x' });
+    check(lead + ' run_in_background unset -> deny', unset.decision === 'deny' && /run_in_background: false/.test(unset.reason), JSON.stringify(unset));
+    for (const v of [true, 'false', 0, null]) {
+      const d = dec('Agent', leadSpawn('executor', { run_in_background: v }));
+      check(lead + ' run_in_background ' + JSON.stringify(v) + ' -> deny', d.decision === 'deny', JSON.stringify(d));
+    }
+
+    // leadAllowedAgents extends the team, but never to another lead.
+    setManifest(proj, { leadAllowedAgents: ['modeler', 'lead'] });
+    const spec = dec('Agent', leadSpawn('modeler'));
+    check(lead + ' -> leadAllowedAgents specialist -> allow', spec.decision === 'allow', JSON.stringify(spec));
+    const nested = dec('Agent', leadSpawn('lead'));
+    check(lead + ' -> lead stays denied even when leadAllowedAgents names it', nested.decision === 'deny', JSON.stringify(nested));
+  }
+
+  // Lead write containment: a junction/symlink out of leads/ and a hardlink.
+  const proj = tmpdir('orchestra-guard-');
+  const outside = tmpdir('orchestra-guard-outside-');
+  fs.mkdirSync(path.join(proj, '.claude', 'plans', 'leads'), { recursive: true });
+  let linked = true;
+  try {
+    fs.symlinkSync(outside, path.join(proj, '.claude', 'plans', 'leads', 'esc'), 'junction');
+  } catch (e) {
+    try {
+      fs.symlinkSync(outside, path.join(proj, '.claude', 'plans', 'leads', 'esc'), 'dir');
+    } catch (e2) {
+      linked = false;
+      check('lead write through a symlink escape denied', true, 'SKIPPED — cannot create a symlink/junction (' + (e2 && e2.message) + ')');
+    }
+  }
+  if (linked) {
+    const d = decisionOf(runGuard(proj, subagentCall('lead', 'Write', { file_path: '.claude/plans/leads/esc/status.md', content: 'x' })));
+    check('lead write through a junction out of the project -> deny', d.decision === 'deny', JSON.stringify(d));
+  }
+  const hl = tryHardlink(GUARD, path.join(proj, '.claude', 'plans', 'leads', 'evil.md'));
+  if (hl.ok) {
+    const d = decisionOf(runGuard(proj, subagentCall('lead', 'Edit', { file_path: '.claude/plans/leads/evil.md', old_string: 'a', new_string: 'b' })));
+    check('lead edit of a leads/*.md hardlinked to the guard -> deny (hardlinked target)', d.decision === 'deny' && /hardlinked target/.test(d.reason), JSON.stringify(d));
+  } else {
+    check('lead hardlink escape denied', true, 'SKIPPED — could not create a hardlink (' + hl.reason + ')');
+  }
+
+  // Orchestra roles that never spawn; everything else of theirs untouched.
+  const p2 = tmpdir('orchestra-guard-');
+  for (const t of ['scout', 'detective', 'executor', 'executor-mechanical-haiku', 'executor-heavy-xhigh', 'executor-principal', 'executor-fable', 'reviewer', 'reviewer-codex', 'executor-codex-principal']) {
+    const d = decisionOf(runGuard(p2, subagentCall(t, 'Agent', leadSpawn('scout'))));
+    check(t + ' Agent -> deny', d.decision === 'deny' && /does not spawn agents/.test(d.reason), JSON.stringify(d));
+  }
+  const exEdit = decisionOf(runGuard(p2, subagentCall('executor', 'Edit', { file_path: 'src/a.js', old_string: 'a', new_string: 'b' })));
+  check('executor Edit -> allow (Director law never binds subagents)', exEdit.decision === 'allow', JSON.stringify(exEdit));
+  const exBash = decisionOf(runGuard(p2, subagentCall('executor', 'Bash', { command: 'npm test' })));
+  check('executor Bash -> allow', exBash.decision === 'allow', JSON.stringify(exBash));
+
+  // Agent types the harness doesn't ship are untouched.
+  for (const [tool, input] of [['Agent', { subagent_type: 'x', prompt: 'x' }], ['Write', { file_path: 'src/a.js', content: 'x' }], ['Bash', { command: 'ls' }]]) {
+    const d = decisionOf(runGuard(p2, subagentCall('my-own-agent', tool, input)));
+    check('non-Orchestra agent type ' + tool + ' -> allow', d.decision === 'allow', JSON.stringify(d));
+  }
+
+  // Main-session Director behavior is unchanged: it may launch a lead in the
+  // background, with no run_in_background and no agent identity.
+  const p3 = tmpdir('orchestra-guard-');
+  const transcript = writeTranscript(p3, [assistantTurn('claude-opus-5-5')]);
+  const dirSpawn = decisionOf(runGuard(p3, { tool_name: 'Agent', tool_input: { subagent_type: 'lead', prompt: 'x' }, transcript_path: transcript }));
+  check('Director Agent -> lead (background) -> allow, unchanged', dirSpawn.decision === 'allow', JSON.stringify(dirSpawn));
+
+  // A genuine pause file stands every company rule down.
+  const p4 = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(p4, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(p4, '.claude', 'orchestra.pause'), '', 'utf8');
+  for (const [type, tool, input] of [
+    ['lead', 'Write', { file_path: 'src/a.js', content: 'x' }],
+    ['lead', 'Bash', { command: 'ls' }],
+    ['lead', 'Agent', { subagent_type: 'lead', prompt: 'x' }],
+    ['executor', 'Agent', { subagent_type: 'scout', prompt: 'x' }],
+  ]) {
+    const d = decisionOf(runGuard(p4, subagentCall(type, tool, input)));
+    check('pause file: ' + type + ' ' + tool + ' -> allow', d.decision === 'allow', JSON.stringify(d));
+  }
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1158,6 +1298,7 @@ try {
   case25_isSidechainStrictBoolean();
   case26_pauseNameNormalization();
   case27_pauseOrderingSubagentException();
+  case28_companyLaw();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

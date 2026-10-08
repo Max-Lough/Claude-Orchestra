@@ -4,10 +4,12 @@
  *
  * Enforces Director law: the main session (the Director) may not edit files,
  * run commands, or search the codebase — those belong to the scout, detective,
- * and executor subagents. Subagent tool calls are exempt.
+ * and executor subagents. Subagent tool calls are exempt from Director law;
+ * a short company law (subagentLaw()) binds Orchestra's own subagent types.
  *
- * The settings.json matcher fires this hook on every main-session tool call;
- * this script is the single source of truth for what the Director may do.
+ * The settings.json matcher fires this hook on every tool call, the main
+ * session's and its subagents' alike; this script is the single source of
+ * truth for what the Director, and each Orchestra subagent type, may do.
  *
  * -------------------------------------------------------------- model-aware
  *
@@ -471,6 +473,7 @@ function loadPolicy() {
     planPatterns: [],
     planPatternsRaw: [],
     memoryPatterns: [],
+    leadAllowedAgents: [],
   };
   try {
     const manifestPath = path.join(projectDir(), '.claude', CONFIG_BASENAME);
@@ -497,6 +500,7 @@ function loadPolicy() {
       planPatternsRaw: rawPlanPatterns,
       planPatterns: cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [],
       memoryPatterns: cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [],
+      leadAllowedAgents: cfg ? arrOfStrings(cfg.leadAllowedAgents).slice(0, MAX_PATTERN_ARRAY_LEN) : [],
     });
   } catch (_) {
     return Object.assign({}, empty);
@@ -822,8 +826,10 @@ function pauseFileStatus(root) {
 // project, and BOTH routes require a .md extension on the resolved path. A
 // match that resolves to a link-unsafe target (linkSafety()) is refused, not
 // silently downgraded to "not a plan file".
+// `plansRel` narrows the default root (a lead may write only under
+// .claude/plans/leads/ — see subagentLaw()); it defaults to .claude/plans.
 // Returns 'none' | 'allow' | 'hardlink'.
-function classifyPlanOperation(toolName, toolInput, planPatterns) {
+function classifyPlanOperation(toolName, toolInput, planPatterns, plansRel) {
   if (!FILE_WRITE_TOOLS.has(toolName)) return 'none';
   if (!toolInput || typeof toolInput !== 'object') return 'none';
   if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '') return 'none';
@@ -848,7 +854,7 @@ function classifyPlanOperation(toolName, toolInput, planPatterns) {
   }
 
   // Default carve-out: .claude/plans/**/*.md
-  const plansRoot = path.join(root, '.claude', PLANS_DIRNAME);
+  const plansRoot = path.join(root, plansRel || path.join('.claude', PLANS_DIRNAME));
   const realPlansRoot = realish(plansRoot);
   const relToPlans = path.relative(realPlansRoot, realResolved);
   const inPlansDir =
@@ -983,6 +989,125 @@ function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
   }
 }
 
+// ------------------------------------------------------------ company law
+//
+// Settings-level PreToolUse hooks also fire inside subagents, and the input
+// then carries agent_id plus agent_type: the frontmatter name of the CALLING
+// agent, on an Agent call too (plans/team-leads-probe-results.md 1a, 1c). An
+// Agent(type) allowlist in a subagent definition is ignored and frontmatter
+// hooks are skipped in untrusted folders, so this guard is where "who may
+// spawn whom" is enforced. These rules key on a positively identified
+// Orchestra agent type, independent of the Director-model check; a genuine
+// pause file stands them down, and agent types the harness doesn't ship are
+// untouched.
+
+const LEAD_TYPES = new Set(['lead', 'lead-xhigh']);
+
+// Who a lead may dispatch. Never another lead (leads don't nest), a Fable
+// profile (user request only), a user-request-only Codex executor, or a
+// planning lane: an order that needs one comes back to the Director as an
+// ESCALATION. leadAllowedAgents in orchestra.json adds project specialists.
+const LEAD_TEAM = new Set([
+  'scout',
+  'detective',
+  'executor-mechanical-haiku',
+  'executor-mechanical',
+  'executor-bounded',
+  'executor',
+  'executor-heavy',
+  'executor-heavy-xhigh',
+  'executor-codex-principal',
+  'executor-principal',
+  'executor-principal-max',
+  'reviewer',
+  'reviewer-codex',
+]);
+
+// Orchestra agents that never spawn: every executor rung, recon, review and
+// the Codex launchers.
+const NON_SPAWNING = new Set([
+  'scout',
+  'detective',
+  'executor-mechanical-haiku',
+  'executor-mechanical',
+  'executor-bounded',
+  'executor',
+  'executor-heavy',
+  'executor-heavy-xhigh',
+  'executor-principal',
+  'executor-principal-max',
+  'executor-fable',
+  'executor-fable-xhigh',
+  'reviewer',
+  'reviewer-codex',
+  'executor-codex-principal',
+  'executor-codex-heavy',
+  'executor-codex-luna',
+]);
+
+const LEAD_PLANS_REL = path.join('.claude', PLANS_DIRNAME, 'leads');
+const LEAD_DENIED_TOOLS = new Set(['Bash', 'PowerShell', 'Grep', 'Glob']);
+
+function denyCompany(msg) {
+  deny('Orchestra: ' + msg);
+}
+
+// Returns without deciding when no company rule applies to this call.
+function subagentLaw(input, toolName, policy) {
+  const type = input.agent_type;
+  if (typeof type !== 'string') return;
+  if (NON_SPAWNING.has(type)) {
+    if (toolName !== 'Agent') return;
+    return denyCompany(
+      type + ' does not spawn agents. Finish your order and name what else is needed ' +
+        'under CONCERNS; the Director (or your lead) dispatches it.'
+    );
+  }
+  if (!LEAD_TYPES.has(type)) return;
+
+  if (PAUSE_WRITE_TOOLS.has(toolName)) {
+    const plan = classifyPlanOperation(toolName, input.tool_input, [], LEAD_PLANS_REL);
+    if (plan === 'allow') return allow();
+    if (plan === 'hardlink') return denyHardlinkedTarget(toolName, policy);
+    return denyCompany(
+      'a lead never edits code. ' + toolName + ' is allowed only for .md files under ' +
+        '.claude/plans/leads/ (your status file and ledger). Route the change to an executor.'
+    );
+  }
+  if (LEAD_DENIED_TOOLS.has(toolName)) {
+    return denyCompany(
+      'a lead does not use ' + toolName + '. Send a scout for searches and an executor for ' +
+        'commands.'
+    );
+  }
+  if (toolName === 'Agent') {
+    const ti = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
+    const target = ti.subagent_type;
+    const onTeam =
+      LEAD_TEAM.has(target) ||
+      (typeof target === 'string' && !LEAD_TYPES.has(target) && policy.leadAllowedAgents.includes(target));
+    if (!onTeam) {
+      return denyCompany(
+        (typeof target === 'string' ? target : 'an untyped agent') + ' is outside a lead\'s team. ' +
+          'Write your status file and return STATUS: ESCALATION with TRIGGER: rung outside the team.'
+      );
+    }
+    if (ti.model !== undefined && ti.model !== null && ti.model !== '') {
+      return denyCompany(
+        'a lead does not override an agent\'s model. Pick the rung whose model you need.'
+      );
+    }
+    if (ti.run_in_background !== false) {
+      return denyCompany(
+        'a lead sets run_in_background: false on every Agent call; an unset flag starts the ' +
+          'child in the background. Run parallel work as several Agent calls in one message.'
+      );
+    }
+    return allow();
+  }
+  if (toolName === 'SendMessage') return allow();
+}
+
 function main(raw) {
   // Escape hatch (user-controlled). ORCHESTRA_PAUSE=1 is checked first,
   // independent of the (possibly unparseable) input payload.
@@ -1036,10 +1161,12 @@ function main(raw) {
   if (pauseStatus.state === 'active') return allow();
   if (pauseStatus.state === 'ignored') policy.pauseIgnoredReason = pauseStatus.reason;
 
-  // Subagent calls are never restricted for Director-law purposes. Project-
-  // settings PreToolUse hooks only fire for the main session in current
-  // Claude Code, but if this input carries subagent identity (agent_id /
-  // agent_type), exempt it explicitly.
+  // Company law for subagents (who may spawn whom, what a lead may write).
+  subagentLaw(input, toolName, policy);
+
+  // Otherwise subagent calls are never restricted for Director-law purposes.
+  // Settings PreToolUse hooks fire inside subagents too, with agent_id and
+  // agent_type on the input; Director law binds only the main session.
   if ((input.agent_id || input.agent_type) && toolName !== 'Agent') return allow();
 
   if (typeof toolName !== 'string') return allow();

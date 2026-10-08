@@ -17,8 +17,8 @@ Three smaller pieces ride along:
 
 - a **Haiku 5.5 mechanical executor** (`executor-mechanical-haiku`), trialled beside the Sonnet
   mechanical rung for fully spelled-out orders;
-- **guard-enforced company law for subagents**: who may spawn whom, what a lead may write, and a
-  budget clock that forces leads to check in;
+- **company law for subagents**: who may spawn whom (frontmatter for non-leads, the guard for leads),
+  what a lead may write, and a budget clock that forces leads to check in;
 - **the Anthropic principal rung moves to Opus 5.5** at xhigh and max (D13). The Fable
   substitute rule is retired, and the Fable profiles become user-request-only `executor-fable`
   and `executor-fable-xhigh`.
@@ -80,8 +80,9 @@ single-lead campaign doesn't need it.
 
 **D5. The guard enforces who may spawn whom.** An `Agent(type)` allowlist is ignored in subagent
 definitions. Frontmatter hooks are skipped in untrusted folders. Settings-level hooks fire inside
-subagents and carry `agent_type`, so `hooks/orchestra-guard.js` is the enforcement point (rule
-table below). These are small invariants about facts a model cannot attest to itself, not a
+subagents and carry `agent_type`, so `hooks/orchestra-guard.js` enforces what frontmatter cannot:
+a lead's write scope and team (rule table below). Non-lead agents are kept from `Agent` by their own
+frontmatter (guard trim, owner 2026-10-08). These are small invariants about facts a model cannot attest to itself, not a
 control plane.
 
 **D6. Sizing: cap what a charter consumes, not only what it plans (owner: 8 stays as a simple
@@ -526,11 +527,12 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
     for the main session") with what the docs now say.
 - **Acceptance:** guard tests cover every row of the rule table, for both lead types:
   - allowed and denied lead writes, including `.md`-only and symlink/hardlink escapes;
-  - lead Bash/Grep/Glob denied;
+  - lead Bash/Grep/Glob denied (moved to frontmatter by the guard trim; pinned in exec-lane);
   - lead `Agent` allowlist hit and miss; lead → lead and lead → any Fable profile denied; model
     override denied; `run_in_background` unset or `true` denied, exactly `false` allowed;
-  - `leadAllowedAgents` extending the list;
-  - Orchestra executors' `Agent` denied; non-Orchestra types untouched;
+  - `leadAllowedAgents` extending the list (dropped by the guard trim);
+  - Orchestra executors' `Agent` denied (moved to frontmatter by the guard trim; pinned in exec-lane);
+    non-Orchestra types untouched;
   - pause file standing everything down.
 - **Verification:** TIER: full — the guard suite plus all others.
 - **Depends on:** WO-0 probes 1c, 1d

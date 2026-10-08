@@ -1121,9 +1121,9 @@ function case27_pauseOrderingSubagentException() {
   );
 }
 
-// Company law (3.9.0, WO-2): settings hooks fire inside subagents with
-// agent_id + agent_type, so the guard enforces who may spawn whom and what a
-// lead may write. Keyed on agent_type alone — no transcript is passed, so
+// Company law (3.9.0, WO-2, trimmed): settings hooks fire inside subagents
+// with agent_id + agent_type, so the guard enforces what frontmatter cannot —
+// a lead's write scope and team. Non-lead agents are left to their frontmatter. Keyed on agent_type alone — no transcript is passed, so
 // every decision here is independent of the Director-model check.
 function subagentCall(agentType, toolName, toolInput) {
   return { tool_name: toolName, agent_id: 'a1b2c3d4-' + agentType, agent_type: agentType, tool_input: toolInput || {} };
@@ -1134,7 +1134,7 @@ function leadSpawn(subagentType, extra) {
 }
 
 function case28_companyLaw() {
-  section('28. Company law: lead writes, lead tools, lead spawns, non-spawning roles, pause');
+  section('28. Company law for leads: writes, spawns, non-leads left to frontmatter, pause');
 
   for (const lead of ['lead', 'lead-xhigh']) {
     const proj = tmpdir('orchestra-guard-');
@@ -1401,9 +1401,9 @@ function case29_leadBudgetClock() {
   check('no temp files are left behind', leftovers.length === 0, leftovers.join(','));
 }
 
-// Review round 1 (Sol REVISE) regressions: the non-spawning rule covers every
-// agent that is ours, not a hand list; the clock's state never leaves the
-// project through a link; count keys can't collide with Object.prototype.
+// Review-round regressions that survive the guard trim: the clock's state
+// never leaves the project through a link, and a lead never writes the pause
+// path, whatever the Director-model evidence.
 function case30_reviewRound1() {
   section('30. Clock and lead-write hardening: junctioned state dir, a lead writing the pause path');
 

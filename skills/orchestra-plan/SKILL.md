@@ -21,8 +21,9 @@ Turn a goal into a plan file under `.claude/plans/` — the Director's own noteb
    - **Principal orders are the exception, not the escape hatch (§8.1).** When the gate above would cut one coherent change into fragments that only make sense together (many coupled seams), or when the territory cannot be planned before it is explored (recon and implementation inseparable), write ONE goal-shaped order for the principal rung — `executor-codex-principal` (Astra), or `executor-principal` (Opus 5.5, xhigh; `executor-principal-max` for the hardest) where the Astra rung is unavailable or the user asked for it: goal, observable done-criteria, the intent behind it, explicit boundaries (what must not change), the case file to paste, and the full cadence package (numbered parts, progress file, tool-call budget). Difficulty alone is a heavy-tier reason, not a principal one.
 5. **Tier each order (§8.3).** Per order: `TIER: full` unless provably inert (docs/comments/formatting, zero behavior impact) → `TIER: inert`; when unsure, full. Tier narrows what a reviewer must verify — it never picks which engine reviews it; that routing happens at REVIEW time under §5 (Claude-authored → Sol when the `codex` pack is installed, else `reviewer`; Codex-authored → `reviewer`). If an order needs a non-default review timeout or must forbid running something, state it in the order as a flag for the launcher to pass (`--timeout-ms`, `--no-tests`, `--forbid`); prose alone configures nothing. Do not shorten the cap for an inert round: the tier narrows what gets verified, not how long the engine takes to look, and the runner floors inert reviews at 1800000ms regardless.
 6. **Schedule campaign review (§4 REVIEW, §5).** Default to **one** review checkpoint covering the whole campaign's cohesive diff, before its final REPORT. Add an earlier checkpoint only for an order later orders build on (a defect there would propagate), or where deliverables are heterogeneous, and say which reason applies. Name the checkpoints in the plan; for any checkpoint whose work will be committed before its review, require the base and head SHAs at execution time so the launcher can pass `--base-ref`/`--head-ref` and the review reads a clean checkout instead of a working tree carrying the session's own plan files and notes.
-7. **Write `.claude/plans/<kebab-slug>.md` yourself**, in the template below.
-8. **Present.** Phases, order count, parallelism, risks, and where sign-off matters — a few plain beats plus the file path. Get sign-off before EXECUTE when the work is large or risky.
+7. **Charter leads where they pay (ORCHESTRA.md §2 Leads).** A sub-goal of three or more orders, or one that needs its own review cycle, may become a LEAD CHARTER instead of orders you direct yourself: one cohesive sub-goal whose diff makes sense as one review, at most 8 chartered orders (a bigger goal becomes sequential charters), `lead` by default and `lead-xhigh` for the hardest. Parallel charters get disjoint scopes and separate branches, and the plan ends with a merge order plus, for two or more leads, the integration review. Below the threshold, keep the orders flat.
+8. **Write `.claude/plans/<kebab-slug>.md` yourself**, in the template below.
+9. **Present.** Phases, order count, parallelism, risks, and where sign-off matters — a few plain beats plus the file path. Get sign-off before EXECUTE when the work is large or risky.
 
 ## Plan file template
 
@@ -62,6 +63,28 @@ Date: <date> · Status: DRAFT | APPROVED | IN FLIGHT | DONE
 
 ## Risks
 - <risk → mitigation or probe order>
+```
+
+## Lead charter template
+
+Paste it whole into the lead's prompt; leads share no memory with you.
+
+```
+LEAD CHARTER: <lead name>
+Lead tier:        lead | lead-xhigh — <why this tier>
+Goal:             <one paragraph>
+Intent:           <why this matters; what a good trade-off looks like>
+Done-criteria:    - [ ] <observable criterion> ...
+Scope:            <paths/globs the sub-campaign may touch>
+Must not change:  <files, contracts, behaviors>
+Branch:           <lead branch> in worktree <path> (created by your setup order)
+Context:          <pasted findings, decisions, constraints — leads share no memory>
+Chartered orders: <n> (hard cap 8) — <one line per planned WO>
+Rework budget:    <n> (default: half of chartered orders rounded up, minimum 2)
+Delegated:        <decisions the lead may make, with bounds — or none>
+Extra triggers:   <charter-specific return triggers — or none>
+Status file:      .claude/plans/leads/<name>/status.md
+Ledger:           .claude/plans/leads/<name>/ledger.md
 ```
 
 Keep the ledger habit (§8.3.5): as orders complete, record tool calls, parts, wall-clock, and verification runs in `.claude/plans/ledger.md` — it calibrates the next plan's sizing.

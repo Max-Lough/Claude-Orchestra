@@ -1565,6 +1565,88 @@ function case19() {
     escalateRule.includes('or `executor-principal-max` when the Astra rung is unavailable'),
     escalateRule.slice(0, 400)
   );
+  // Leads (3.9.0 trial): two Opus tiers, one law. Pins the frontmatter the
+  // platform acts on (tools, model, effort, maxTurns), the clauses WO-0
+  // forced (run_in_background: false; no report while a reply is
+  // outstanding), the report and status shapes the Director reads, and the
+  // Director's own clauses in ORCHESTRA.md.
+  const leadDoc = read('agents/lead.md');
+  const leadXDoc = read('agents/lead-xhigh.md');
+  const bodyOf = (t) => t.replace(/^---\n[\s\S]*?\n---\n/, '');
+  for (const [rel, t, name, effort] of [
+    ['agents/lead.md', leadDoc, 'lead', 'high'],
+    ['agents/lead-xhigh.md', leadXDoc, 'lead-xhigh', 'xhigh'],
+  ]) {
+    const tools = (/^tools: (.*)$/m.exec(t) || [])[1] || '';
+    check(
+      rel + ': is ' + name + ', Opus at ' + effort + ', maxTurns 60',
+      new RegExp('^name: ' + name + '$', 'm').test(t) && /^model: opus$/m.test(t) &&
+        new RegExp('^effort: ' + effort + '$', 'm').test(t) && /^maxTurns: 60$/m.test(t),
+      (t.match(/^(name|model|effort|maxTurns): .*$/gm) || []).join(' | ')
+    );
+    check(
+      rel + ': tools are exactly Agent, Read, Write, Edit, SendMessage (no Bash, Grep, Glob)',
+      tools.split(/,\s*/).sort().join(',') === 'Agent,Edit,Read,SendMessage,Write' &&
+        !/\b(Bash|PowerShell|Grep|Glob)\b/.test(tools),
+      tools
+    );
+  }
+  check('lead-xhigh carries the identical law to lead', bodyOf(leadXDoc) === bodyOf(leadDoc), 'the two lead bodies differ');
+  const leadRule = (n) => (leadDoc.match(new RegExp('^' + n + '\\. \\*\\*.*$', 'm')) || [''])[0];
+  for (const [name, text, phrase] of [
+    ['never edits code', leadRule(1), '**You never edit code.**'],
+    ['writes only under .claude/plans/leads/', leadRule(1), '`.claude/plans/leads/<your name>/`'],
+    ['every Agent call sets run_in_background: false', leadRule(2), '**Every `Agent` call sets `run_in_background: false`.**'],
+    ['parallel work is several Agent calls in one message', leadRule(2), 'Run parallel work as several `Agent` calls in one message.'],
+    ['never sets model', leadRule(2), 'Never set `model`'],
+    ['counts plan growth', leadRule(5), '**Plan growth** = orders planned now − orders chartered'],
+    ['counts rework', leadRule(5), '**Rework** = every executor run on an order after its first, plus every re-review after a REVISE'],
+    ['never arbitrates past a REVISE', leadRule(6), '**Never arbitrate past a REVISE.**'],
+    ['never reports while a reply is outstanding', leadRule(7), 'Never report while a reply you asked for is outstanding.'],
+    ['writes status at every milestone with seq +1', leadRule(8), 'add 1 to `seq` each write'],
+  ]) {
+    check('lead law: ' + name, text.includes(phrase), 'missing: ' + phrase + '\n' + (text.slice(0, 160) || 'the carrying rule is gone'));
+  }
+  // The law's team list and the guard's LEAD_TEAM must name the same agents.
+  const guardSrc = read('hooks/orchestra-guard.js');
+  const guardTeam = (((/const LEAD_TEAM = new Set\(\[([\s\S]*?)\]\)/.exec(guardSrc) || [])[1] || '').match(/'[^']+'/g) || [])
+    .map((q) => q.slice(1, -1)).sort();
+  const lawTeam = ((leadRule(3).split('**')[2] || '').split(', plus')[0].match(/`[^`]+`/g) || []).map((q) => q.slice(1, -1)).sort();
+  check('lead law team list matches the guard LEAD_TEAM', guardTeam.length > 0 && guardTeam.join(',') === lawTeam.join(','),
+    'guard: ' + guardTeam.join(',') + '\nlaw:   ' + lawTeam.join(','));
+  const leadReport = (leadDoc.match(/^## Report format[\s\S]*?```\n([\s\S]*?)\n```/m) || [])[1] || '';
+  for (const label of ['STATUS: DONE | CHECKPOINT | ESCALATION | BLOCKED', 'TRIGGER:', 'AGENT ID:', 'DONE-CRITERIA',
+    'GROWTH', 'REWORK', 'REVIEW:', 'BRANCH:', 'DECISIONS:', 'ASSUMPTIONS:', 'CLARIFY:', 'NEXT:']) {
+    check('lead report format carries ' + label, leadReport.includes(label), leadReport.slice(0, 200) || 'no report block');
+  }
+  check('lead status schema carries seq and state', /^lead: <name> · tier: high \| xhigh · seq: <n, \+1 per write> · state:/m.test(leadDoc), 'status schema line missing');
+  check('lead returns CHECKPOINT on a budget-clock denial and after a maxTurns stop',
+    /"lead budget crossed": return STATUS: CHECKPOINT with TRIGGER: budget clock/.test(leadDoc) &&
+      /STATUS: CHECKPOINT with TRIGGER: maxTurns/.test(leadDoc), 'a checkpoint trigger is missing');
+  const leadsPara = (protocol.match(/^\*\*Leads \(trial[\s\S]*?(?=\n\n)/m) || [''])[0];
+  for (const [name, phrase] of [
+    ['the threshold', 'A sub-goal of three or more work orders, or one that needs its own review cycle'],
+    ['flat direction below it', 'Below that threshold, direct flat as above.'],
+    ['the 8-order cap', 'at most 8 chartered work orders'],
+    ['background launch', 'Launch each lead in the background'],
+    ['the CronCreate check-in', 'keep one `CronCreate` check-in (default every 45 min)'],
+    ['a stale seq', 'flag a `seq` unchanged across two check-ins'],
+    ['the dispatch-count cross-check', 'compare the guard\'s dispatch counts'],
+    ['no silent continuation on an escalation', 'Never let it continue silently.'],
+    ['resume by agent id', '**Resume by agent id**'],
+    ['the maxTurns-stop resume', 'A lead stopped by `maxTurns` leaves no report'],
+    ['leads never edit code', 'Leads never edit code'],
+    ['interactive only', 'interactive sessions only'],
+  ]) {
+    check('ORCHESTRA.md Leads paragraph: ' + name, leadsPara.includes(phrase), 'missing: ' + phrase);
+  }
+  check('ORCHESTRA.md requires an integration review for two or more leads',
+    /a campaign with two or more leads also ends with one integration review/.test(protocol) &&
+      /pointed at the seams between their scopes/.test(protocol),
+    'the integration-review clause is missing from §5');
+  check('ORCHESTRA.md Leads paragraph stays one short block (≤ 8 lines; the plan budgets ~25 for all lead text)',
+    leadsPara.split('\n').length <= 8, leadsPara.split('\n').length + ' lines');
+
   check(
     'ORCHESTRA.md 8.3 pins executor-principal at xhigh and executor-principal-max at max',
     /`executor-principal` and `executor-fable-xhigh` at xhigh, `executor-principal-max` at max/.test(protocol),

@@ -98,6 +98,7 @@ The guard applies the same positive-evidence rule independently: it reads the se
 | Role | Agent | Model | Purpose |
 |---|---|---|---|
 | Director | this session | Fable / Opus | decompose, decide, arbitrate, synthesize, talk to the user; never implement |
+| Lead | `lead` / `lead-xhigh` | Opus high / xhigh (trial) | a mini-director for one chartered sub-goal: plans, routes, reviews and fixes inside its charter, returns a short report; never edits code |
 | Scout | `scout` | Haiku | read-only *where/what* mapping; cheap, fan out freely |
 | Detective | `detective` | Opus | read-only *why/how* investigation; one question per case, evidence chains, confidence grade |
 | Mechanical executor | `executor-mechanical` | Sonnet, high | routine mechanical orders, and orders whose goal and instructions are airtight |
@@ -155,6 +156,16 @@ Routing follows the author's vendor: Claude-authored work goes to `reviewer-code
 > ⚠ CROSS-FAMILY REVIEW UNAVAILABLE — Sol did not review this campaign: `<reason>`. Falling back to fresh-context Anthropic review; work continues.
 
 Then it runs `reviewer` in fresh context, repeats the alarm in the campaign's final REPORT with the fallback verdict and commands actually run, and never describes the campaign as Sol-reviewed. `reviewer`'s own fallback verdict opens with `⚠ CROSS-FAMILY REVIEW FALLBACK — Sol did not review this campaign; this is a fresh-context Anthropic fallback.` This is why `orchestra_doctor` runs once at INTAKE when the pack is installed — so an unavailable Sol lane surfaces at the start of a campaign, not its end. Full text: `ORCHESTRA.md` §5.
+
+## Leads (trial, 3.9.0)
+
+A long campaign fills the Director's context with every executor report, scout audit and review verdict. A **lead** takes one large sub-goal off its hands: an Opus mini-director that plans the work orders, routes executors, runs scouts and cross-family reviews, drives fix rounds, and returns a report of about 25 lines. The Director keeps the end goal, watches for drift and runaway work, and integrates.
+
+- **When.** A sub-goal of three or more work orders, or one that needs its own review cycle. Below that, the Director directs flat as before. `lead` (Opus, high) is the default tier; `lead-xhigh` is for the hardest goals. The Director writes a LEAD CHARTER (`/orchestra-plan` has the template) with at most 8 chartered orders.
+- **Watching without listening.** A lead runs in the background and sends nothing until it returns. It overwrites `.claude/plans/leads/<name>/status.md` at every milestone, and the Director reads it on a `CronCreate` check-in (default every 45 min) while any lead runs.
+- **Runaway safeguards, four layers.** The lead's own return triggers, including plan-growth (above +2) and rework-budget caps; the guard's budget clock, which forces a CHECKPOINT every segment ("Company law for subagents"); `maxTurns: 60` in the lead's frontmatter; and the Director's check-in.
+- **Review.** Leads review their own work per charter, routed by author vendor. A campaign with two or more leads ends with one Director integration review aimed at the seams between them.
+- **Interactive only.** Headless runs drop background work after 10 minutes, and cron needs an open session, so leads are not for `-p` runs.
 
 ## Executor steering
 

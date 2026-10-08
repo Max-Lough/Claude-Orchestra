@@ -16,12 +16,13 @@ Then the facts. Under a Director, dispatch **one scout mission** carrying the ch
 1. **Pause state** — does `.claude/orchestra.pause` exist? Is `ORCHESTRA_PAUSE=1` set in the environment?
 2. **Guard wiring** — does `.claude/settings.json` contain a PreToolUse entry whose command references `orchestra-guard.js`? Does `.claude/hooks/orchestra-guard.js` exist?
 3. **Protocol** — does `.claude/ORCHESTRA.md` exist? What harness version does its header carry (`Installed by the Orchestra harness (vX.Y.Z)` in the first lines; installs stamped before versioning carry none)? Does `CLAUDE.md` contain the `<!-- ORCHESTRA:BEGIN` marker?
-4. **Company** — which of `scout.md`, `detective.md`, `executor-mechanical.md`, `executor-mechanical-haiku.md`, `executor-bounded.md`, `executor.md`, `executor-heavy.md`, `executor-heavy-xhigh.md`, `executor-principal.md`, `executor-principal-max.md`, `executor-fable.md`, `executor-fable-xhigh.md`, `reviewer.md` (core) and `reviewer-codex.md`, `executor-codex-heavy.md`, `executor-codex-principal.md`, `executor-codex-luna.md`, `architect-claude-xhigh.md`, `architect-claude-max.md`, `architect-codex.md`, `plan-synthesizer.md` (codex pack) are present in `.claude/agents/`? List any other `.md` files there as specialists.
+4. **Company** — which of `scout.md`, `detective.md`, `executor-mechanical.md`, `executor-mechanical-haiku.md`, `executor-bounded.md`, `executor.md`, `executor-heavy.md`, `executor-heavy-xhigh.md`, `executor-principal.md`, `executor-principal-max.md`, `executor-fable.md`, `executor-fable-xhigh.md`, `reviewer.md`, `lead.md`, `lead-xhigh.md` (core) and `reviewer-codex.md`, `executor-codex-heavy.md`, `executor-codex-principal.md`, `executor-codex-luna.md`, `architect-claude-xhigh.md`, `architect-claude-max.md`, `architect-codex.md`, `plan-synthesizer.md` (codex pack) are present in `.claude/agents/`? List any other `.md` files there as specialists.
 5. **Packs** — what does `.claude/orchestra-install.json` record under `packs` and `specialists` (absent = a pre-packs install, or none selected)? For the `codex` pack, do `.claude/hooks/orchestra-review.js`, `.claude/hooks/orchestra-exec.js`, and `.claude/hooks/orchestra-crossplan.js` exist?
 6. **Skills** — which skill directories exist under `.claude/skills/`? (Core: the `orchestra-*` set. From the `codex` pack: `cross-compare-plan`.)
 7. **Config** — from `.claude/orchestra.json` (absent = all defaults): `executorEngine` (default `claude`), counts of `directorBlockedPatterns`, `directorPlanPatterns`, and `directorMemoryPatterns`, any `directorAllowedTools`, whether a `verification` manifest exists (quote its `full` command if so), and any `codex` block (report `reviewModel` [default `gpt-6-sol`], `reviewTimeoutMs` [default 5400000], `execHeavyModel`/`execHeavyEffort` [defaults `gpt-6-sol`/`high`], `execPrincipalModel`/`execPrincipalEffort` [defaults `gpt-6-astra`/`xhigh`], `execLunaModel`/`execLunaEffort` [defaults `gpt-6-luna`/`xhigh`], `helpersDir`, `worktreeRoot`, `worktreeWarmupCmd`, and the counts of `doNotRun` and `integrityIgnore` entries; note explicitly when `authProbe` or `reviewRetries` has been turned off, since both are on by default and disabling them removes a reliability net).
 8. **Sol lane availability** — whenever the `codex` pack is installed (not only when a config routes there): is the Codex CLI on PATH (`command -v codex` or a version check; respect `CODEX_BIN` if set)? Do **not** run `orchestra-review.js --doctor` for this report: the doctor repairs the Codex install (it copies files into it), and this report changes nothing. Name repair as a fix instead.
 9. **Plans** — does `.claude/plans/` exist, how many `.md` files does it hold, and is `ledger.md` among them?
+10. **Leads** — which directories exist under `.claude/plans/leads/`? For each, quote the first line of its `status.md` (name, tier, `seq`, state). How many files are under `.claude/orchestra-leads/` (the guard's per-lead budget clocks)?
 
 ## Report
 
@@ -32,7 +33,7 @@ ORCHESTRA STATUS
 Mode:         DIRECTOR (Fable|Opus) | NORMAL (<model>)
 Enforcement:  active | paused (.claude/orchestra.pause) | paused (ORCHESTRA_PAUSE=1) | guard not wired
 Protocol:     .claude/ORCHESTRA.md <present (vX.Y.Z | unversioned)|MISSING> · CLAUDE.md import <present|MISSING>
-Company:      scout <✓|✗> detective <✓|✗> executor-mechanical <✓|✗> executor-mechanical-haiku <✓|✗> executor-bounded <✓|✗> executor <✓|✗> executor-heavy <✓|✗> executor-heavy-xhigh <✓|✗> executor-principal <✓|✗> executor-principal-max <✓|✗> executor-fable <✓|✗> executor-fable-xhigh <✓|✗> reviewer <✓|✗> · specialists: <names | none>
+Company:      scout <✓|✗> detective <✓|✗> executor-mechanical <✓|✗> executor-mechanical-haiku <✓|✗> executor-bounded <✓|✗> executor <✓|✗> executor-heavy <✓|✗> executor-heavy-xhigh <✓|✗> executor-principal <✓|✗> executor-principal-max <✓|✗> executor-fable <✓|✗> executor-fable-xhigh <✓|✗> reviewer <✓|✗> lead <✓|✗> lead-xhigh <✓|✗> · specialists: <names | none>
 Packs:        <names | none> (codex roles: reviewer-codex <✓|✗> executor-codex-principal <✓|✗> executor-codex-heavy <✓|✗> executor-codex-luna <✓|✗> architect-claude-xhigh/-max <✓|✗> architect-codex <✓|✗> plan-synthesizer <✓|✗>)
 Skills:       <skill names | none>
 Executor:     claude (default) | claude (configured) | codex (Sol lane: available | UNAVAILABLE (<reason>))
@@ -41,6 +42,7 @@ Codex config: review model <id | default gpt-6-sol> · review timeout <ms | defa
 Policy:       blocked-patterns <n> · allowed-tools <names | none> · plan-patterns <n> · memory-patterns <n>
 Verification: manifest present (full: <command>) | no manifest
 Plans:        <n> plan file(s) · ledger <present|none>
+Leads:        <name (tier, seq <n>, <state>) — .claude/plans/leads/<name>/status.md, one per lead | none> · clocks <n>
 ```
 
 Below the block add a single `FINDINGS:` line ONLY for inconsistencies, each with its one-line fix:

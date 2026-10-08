@@ -78,6 +78,25 @@ platform probes: `plans/team-leads-probe-results.md`.
   hook registration changes. The Codex exec runner lists
   `.claude/orchestra-leads/` as harness-owned, so its brief doesn't present
   the lead's state file as project dirt.
+- **Leads: `lead` (Opus, high) and `lead-xhigh` (Opus, xhigh), one law.** A
+  long campaign filled the Director's context with every executor report,
+  scout audit and review verdict. A lead takes one chartered sub-goal of
+  three or more orders (or with its own review cycle), plans and routes its
+  orders, runs scouts and cross-family reviews, drives fix rounds, and returns
+  a report of about 25 lines with ASSUMPTIONS and CLARIFY sections. Its tools
+  are `Agent, Read, Write, Edit, SendMessage`, and it has `maxTurns: 60`,
+  which sits above one 20-dispatch segment so the budget clock fires first.
+  The law makes every spawn set `run_in_background: false` and forbids a
+  report while a resumed child's reply is outstanding (WO-0 3a, 3c). It counts
+  plan growth (above +2 is an ESCALATION) and rework against a budget, and
+  overwrites a status file with a `seq` at every milestone. `ORCHESTRA.md` §2
+  gains the Leads paragraph: the threshold, the tier choice, the 8-order
+  charter cap, background launch, the 45-minute `CronCreate` check-in, the
+  dispatch-count cross-check, the Director's options on an escalation, and
+  resume by agent id, including after a `maxTurns` stop. §4 gains the merge
+  order, and §5 an integration review for campaigns with two or more leads.
+  `/orchestra-plan` carries the LEAD CHARTER template, and `/orchestra-status`
+  lists leads with their status lines.
 
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 

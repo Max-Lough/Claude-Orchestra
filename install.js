@@ -74,6 +74,8 @@ const AGENTS = [
   'executor-fable.md',
   'executor-fable-xhigh.md',
   'reviewer.md',
+  'lead.md',
+  'lead-xhigh.md',
 ];
 
 // Core agents a past release shipped and a later one dropped or renamed.

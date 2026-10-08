@@ -148,9 +148,16 @@ the readout unattributable.
 restore in-process teammates, teammates get no worktree isolation, and enabling teams turns named
 subagents into teammates.
 
-**D11. Fable runs only at the user's request (owner).** Fable reaches a session two ways only:
-the user starts the Director on Fable, or the user names a Fable executor. Nothing else reaches
-Fable.
+**D11. Fable runs only at the user's request (owner).** Fable reaches a session three ways
+only, all user-initiated:
+
+1. the user starts the Director on Fable;
+2. the user names a Fable executor;
+3. the user runs `/cross-compare-plan`. Its Claude architects (`architect-claude-xhigh` and
+   `-max`, codex pack) are Fable by design, and the skill runs only when the user asks for it.
+   This lane is unchanged.
+
+Nothing else reaches Fable.
 
 - The two Fable profiles are renamed `executor-fable` (high) and `executor-fable-xhigh`, and are
   USER REQUEST ONLY.
@@ -466,9 +473,12 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 - **Constraints:**
   - The principal charter and duties are unchanged.
   - Astra stays the default top rung while the `codex` pack runs.
-  - No Fable profile is reachable by any routing rule.
+  - No Fable executor is reachable by any routing rule.
+  - The cross-compare architects stay Fable. That lane is user-invoked (D11), and WO-1b does not
+    touch it.
 - **Acceptance:**
-  - A repository-wide grep finds no routing text that sends work to Fable.
+  - A repository-wide grep finds no routing text that sends work to Fable, outside the
+    user-invoked `/cross-compare-plan` lane.
   - An update install over a 3.8.0 project leaves no `executor-principal-xhigh.md` and keeps a
     user-authored one.
   - All suites are green.
@@ -636,6 +646,8 @@ naming). Veto any of them before WO-1b.
 - Leads: Opus high and Opus xhigh only, picked by the Director by goal complexity. Never Fable.
 - Fable: user request only (the Director model the user starts with, or a Fable profile the user
   names). The Fable substitute for an unavailable Astra rung is retired.
+- `/cross-compare-plan` keeps its Fable architects. It runs only when the user invokes it, so it
+  counts as user-requested.
 - The Anthropic principal rung is Opus 5.5 at xhigh and max.
 - The 8-work-order cap stays as a hard ceiling. D6's consumption counters do the real capping.
 - Haiku mechanical rung: details as specified.

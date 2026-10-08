@@ -683,11 +683,6 @@ Astra-first default if Opus matches or beats it on comparable orders.
 None blocking. D13 lists the calls made without an explicit ruling (Astra stays the default top,
 escalation from `executor-heavy-xhigh` goes to `executor-principal-max`, the model pin, and
 naming). Veto any of them before WO-1b.
-
-The WO-0 amendments below were also made without an explicit ruling on each mechanism: the clock
-restarting on a Director `SendMessage` instead of `SubagentStart`, `maxTurns: 60`, and the
-guard-enforced `run_in_background: false`. Veto any of them before WO-2.
-
 ## WO-0 amendments (2026-10-08)
 
 The probes confirmed everything except two assumptions. The plan is amended as follows:
@@ -720,3 +715,6 @@ The probes confirmed everything except two assumptions. The plan is amended as f
 - Budget defaults stand for the trial: 120 min / 20 dispatches per lead segment, and a 45-min
   Director check-in.
 - 3.9.0 is branch-only.
+- WO-0 amendments approved: the clock restarts on a Director `SendMessage`, not on
+  `SubagentStart`; leads get `maxTurns: 60`; and the guard enforces `run_in_background: false`
+  on lead spawns.

@@ -1612,6 +1612,22 @@ function case19() {
   ]) {
     check('lead law: ' + name, text.includes(phrase), 'missing: ' + phrase + '\n' + (text.slice(0, 160) || 'the carrying rule is gone'));
   }
+  // Only the leads may start agents, and frontmatter is the enforcement point
+  // for everyone else (the guard rules only on leads): every other shipped
+  // agent either disallows Agent or lists tools without it.
+  const agentFiles = [];
+  for (const dir of ['agents', 'agents/specialists', 'packs/codex/agents']) {
+    for (const f of fs.readdirSync(path.join(MASTER, dir))) if (/\.md$/.test(f)) agentFiles.push(dir + '/' + f);
+  }
+  for (const rel of agentFiles) {
+    const t = read(rel);
+    const name = (/^name: (.*)$/m.exec(t) || [])[1] || rel;
+    if (name === 'lead' || name === 'lead-xhigh') continue;
+    const tools = (/^tools: (.*)$/m.exec(t) || [])[1];
+    const keepsAgentOut = /^disallowedTools: .*\bAgent\b/m.test(t) || (tools !== undefined && !/\bAgent\b/.test(tools));
+    check(rel + ': frontmatter keeps Agent out (only leads start agents)', keepsAgentOut,
+      (t.match(/^(tools|disallowedTools): .*$/gm) || ['no tools/disallowedTools line']).join(' | '));
+  }
   // The law's team list and the guard's LEAD_TEAM must name the same agents.
   const guardSrc = read('hooks/orchestra-guard.js');
   const guardTeam = (((/const LEAD_TEAM = new Set\(\[([\s\S]*?)\]\)/.exec(guardSrc) || [])[1] || '').match(/'[^']+'/g) || [])

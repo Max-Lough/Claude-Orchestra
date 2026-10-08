@@ -252,11 +252,11 @@ harness doesn't ship are untouched.
 | Caller `agent_type` | Tool | Rule |
 |---|---|---|
 | `lead`, `lead-xhigh` | `Edit`, `MultiEdit`, `Write`, `NotebookEdit` | allow only `.md` files under `.claude/plans/leads/**`, with the plan carve-out's existing realpath/symlink/hardlink containment. Deny everything else |
-| `lead`, `lead-xhigh` | `Bash`, `PowerShell`, `Grep`, `Glob` | deny (also absent from their `tools:`, so this is belt and braces) |
-| `lead`, `lead-xhigh` | `Agent` | allow `subagent_type` ∈ LEAD_TEAM ∪ `leadAllowedAgents`; deny a `model` override; deny unless `run_in_background` is exactly `false` (an unset flag backgrounds the child, WO-0 3a); deny once the segment budget is crossed (WO-3) |
+| `lead`, `lead-xhigh` | `Bash`, `PowerShell`, `Grep`, `Glob` | no guard rule: absent from their `tools:` (guard trim, owner 2026-10-08) |
+| `lead`, `lead-xhigh` | `Agent` | allow `subagent_type` ∈ LEAD_TEAM; deny a `model` override; deny unless `run_in_background` is exactly `false` (an unset flag backgrounds the child, WO-0 3a); deny once the segment budget is crossed (WO-3) |
 | `lead`, `lead-xhigh` | `SendMessage` | allow; counted as a `resume` dispatch; deny once the segment budget is crossed (WO-3) |
 | main session (no `agent_id`) | `SendMessage` to a lead's agent id | allow, unchanged; restarts that lead's segment (WO-3) |
-| any Orchestra executor, `scout`, `detective`, `reviewer`, Codex launchers | `Agent` | deny (WO-5 later opens `scout`-only for the heavy and principal executors) |
+| any Orchestra executor, `scout`, `detective`, `reviewer`, Codex launchers | `Agent` | no guard rule: their frontmatter disallows `Agent`, pinned by an exec-lane test (guard trim, owner 2026-10-08). WO-5 adds a guard rule opening `scout`-only for the heavy and principal executors |
 
 LEAD_TEAM: `scout`, `detective`, `executor-mechanical-haiku`, `executor-mechanical`,
 `executor-bounded`, `executor`, `executor-heavy`, `executor-heavy-xhigh`,
@@ -271,7 +271,8 @@ Never on it:
 - the planning lanes.
 
 When a lead's order needs any of those, the lead returns `ESCALATION` and the Director decides.
-`leadAllowedAgents` in `.claude/orchestra.json` adds project specialists.
+`leadAllowedAgents` was built and then dropped in the guard trim (owner, 2026-10-08): no project
+uses a specialist under a lead yet.
 
 ### Segment budget clock and dispatch counts (WO-3)
 
@@ -718,3 +719,6 @@ The probes confirmed everything except two assumptions. The plan is amended as f
 - WO-0 amendments approved: the clock restarts on a Director `SendMessage`, not on
   `SubagentStart`; leads get `maxTurns: 60`; and the guard enforces `run_in_background: false`
   on lead spawns.
+- Guard trim approved (after review round 3): the guard rules only on leads. Rules frontmatter
+  already enforces (non-leads never spawn; leads have no Bash/Grep/Glob) and `leadAllowedAgents`
+  are removed, taking the guard's additions from 308 to ~190 lines.

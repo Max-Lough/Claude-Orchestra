@@ -50,19 +50,20 @@ platform probes: `plans/team-leads-probe-results.md`.
   starts with `Orchestra`, so a user's own file of that name is never touched.
   Before this, a rename left the old file registered in every updated
   project (the 3.0 port's finding F6).
-- **Company law for subagents, in the guard.** Settings hooks fire inside
+- **Company law for leads, in the guard.** Settings hooks fire inside
   subagents with `agent_type` naming the caller, and an `Agent(type)`
-  allowlist in a subagent definition is ignored, so the guard is the
-  enforcement point. A lead may write only `.md` under `.claude/plans/leads/`
-  (the plan carve-out's containment, reused), may not use Bash, PowerShell,
-  Grep or Glob, and may dispatch only its team plus `leadAllowedAgents`: never
-  another lead, a Fable executor, a user-request-only Codex executor or a
-  planning lane. A lead spawn must set `run_in_background: false` exactly,
+  allowlist in a subagent definition is ignored, so the guard enforces what
+  frontmatter cannot: a lead may write only `.md` under `.claude/plans/leads/`
+  (the plan carve-out's containment, reused) and may start only its team,
+  never another lead, a Fable executor, a user-request-only Codex executor or
+  a planning lane. A lead spawn must set `run_in_background: false` exactly,
   because an unset flag backgrounds the child (WO-0 3a), and it may not
-  override the model. Every other Orchestra agent's `Agent` call is denied.
-  The rules key on agent type alone, a pause file stands them down, and
-  non-Orchestra agent types and the Director are unchanged. The stale comment
-  claiming PreToolUse fires only for the main session is gone.
+  override the model. Everything else is frontmatter's job: every other
+  Orchestra agent disallows `Agent` (pinned for every shipped agent by an
+  exec-lane test), and the leads' `tools:` list has no Bash, PowerShell, Grep
+  or Glob. The rules key on agent type alone, a pause file stands them down,
+  and the Director is unchanged. The stale comment claiming PreToolUse fires
+  only for the main session is gone.
 - **A budget clock makes a lead check in.** The guard keeps
   `.claude/orchestra-leads/<agent_id>.json` per lead. It is created on the
   lead's first dispatch, counts dispatches by agent type per segment and over
@@ -119,6 +120,13 @@ platform probes: `plans/team-leads-probe-results.md`.
     and keeps a user's `notes.json`.
   - `executor-heavy-xhigh` no longer calls itself the deepest-reasoning point
     in the company.
+- **Guard trim (owner, after review round 3).** The guard's additions went
+  from 308 lines to about 190. It no longer repeats frontmatter: the
+  non-spawning rule for non-lead agents (and its specialist ownership check)
+  and the leads' Bash/Grep/Glob denial are gone. `leadAllowedAgents` is
+  dropped, because no project uses a specialist under a lead yet. The clock
+  restarts on `tool_input.to` alone. Several round-1 and round-2 fixes above
+  belonged to the removed code and went with it.
 - **Review round 3 (Sol, narrow, APPROVE).** Two minor findings were fixed
   after the approval, without a further review round. Uninstall's clock check
   now matches the guard's own validation (count maps of finite non-negative

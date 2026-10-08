@@ -5,11 +5,11 @@
  * Enforces Director law: the main session (the Director) may not edit files,
  * run commands, or search the codebase — those belong to the scout, detective,
  * and executor subagents. Subagent tool calls are exempt from Director law;
- * a short company law (subagentLaw()) binds Orchestra's own subagent types.
+ * a short company law (subagentLaw()) binds the leads.
  *
  * The settings.json matcher fires this hook on every tool call, the main
  * session's and its subagents' alike; this script is the single source of
- * truth for what the Director, and each Orchestra subagent type, may do.
+ * truth for what the Director, and a lead, may do.
  *
  * -------------------------------------------------------------- model-aware
  *
@@ -56,7 +56,7 @@
  * in this guard: nothing is enforced against a Sonnet/Haiku session, or one
  * whose model cannot yet be determined. The one exception is a lead (lead,
  * lead-xhigh): company law denies its pause-path write by type, in any
- * session (see subagentLaw()). Windows spelling aliases (case, NTFS
+ * session (main()). Windows spelling aliases (case, NTFS
  * ADS suffix, trailing dots/spaces) are normalised before comparison so none
  * of them dodge the deny once it applies.
  *
@@ -479,7 +479,6 @@ function loadPolicy() {
     planPatterns: [],
     planPatternsRaw: [],
     memoryPatterns: [],
-    leadAllowedAgents: [],
     leadMaxMinutes: 120,
     leadMaxDispatches: 20,
   };
@@ -509,14 +508,6 @@ function loadPolicy() {
       planPatternsRaw: rawPlanPatterns,
       planPatterns: cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [],
       memoryPatterns: cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [],
-      // Project specialists only: never a built-in type kept off the lead's
-      // team (another lead, a Fable or user-only Codex executor, a planning
-      // lane), and never the `resume` count key.
-      leadAllowedAgents: cfg
-        ? arrOfStrings(cfg.leadAllowedAgents)
-            .slice(0, MAX_PATTERN_ARRAY_LEN)
-            .filter((t) => !OFF_LEAD_TEAM.has(t))
-        : [],
       leadMaxMinutes: positiveOr(leads.maxMinutes, empty.leadMaxMinutes),
       leadMaxDispatches: positiveOr(leads.maxDispatches, empty.leadMaxDispatches),
     });
@@ -1010,22 +1001,19 @@ function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
 
 // ------------------------------------------------------------ company law
 //
-// Settings-level PreToolUse hooks also fire inside subagents, and the input
-// then carries agent_id plus agent_type: the frontmatter name of the CALLING
-// agent, on an Agent call too (plans/team-leads-probe-results.md 1a, 1c). An
-// Agent(type) allowlist in a subagent definition is ignored and frontmatter
-// hooks are skipped in untrusted folders, so this guard is where "who may
-// spawn whom" is enforced. These rules key on a positively identified
-// Orchestra agent type, independent of the Director-model check; a genuine
-// pause file stands them down, and agent types the harness doesn't ship are
-// untouched.
+// Settings hooks fire inside subagents too, with agent_type naming the
+// CALLING agent (plans/team-leads-probe-results.md 1a, 1c). Frontmatter
+// already keeps Agent from every non-lead Orchestra agent and Bash/Grep/Glob
+// from the leads; what it cannot express is a lead's write scope and which
+// types a lead may start (an Agent(type) allowlist in a subagent definition is
+// ignored). Those rules, and the lead budget clock, live here. They key on
+// agent_type alone, independent of the Director-model check; a genuine pause
+// file stands them down.
 
 const LEAD_TYPES = new Set(['lead', 'lead-xhigh']);
 
-// Who a lead may dispatch. Never another lead (leads don't nest), a Fable
-// profile (user request only), a user-request-only Codex executor, or a
-// planning lane: an order that needs one comes back to the Director as an
-// ESCALATION. leadAllowedAgents in orchestra.json adds project specialists.
+// Who a lead may start. Never another lead, a Fable or user-only Codex
+// executor, or a planning lane: an order needing one is an ESCALATION.
 const LEAD_TEAM = new Set([
   'scout',
   'detective',
@@ -1042,137 +1030,58 @@ const LEAD_TEAM = new Set([
   'reviewer-codex',
 ]);
 
-// Orchestra agents that never spawn: every core and pack agent except the
-// leads. isOrchestraAgent() also covers any installed agent whose definition
-// is ours (specialists, and anything added later), so the rule does not
-// depend on this list staying complete.
-const NON_SPAWNING = new Set([
-  'scout',
-  'detective',
-  'executor-mechanical-haiku',
-  'executor-mechanical',
-  'executor-bounded',
-  'executor',
-  'executor-heavy',
-  'executor-heavy-xhigh',
-  'executor-principal',
-  'executor-principal-max',
-  'executor-fable',
-  'executor-fable-xhigh',
-  'reviewer',
-  'reviewer-codex',
-  'executor-codex-principal',
-  'executor-codex-heavy',
-  'executor-codex-luna',
-  'architect-claude-xhigh',
-  'architect-claude-max',
-  'architect-codex',
-  'plan-synthesizer',
-]);
-
-// Ours when the installed .claude/agents/<type>.md names itself <type> and its
-// description starts with "Orchestra" — the installer's ownership test.
-function isOrchestraAgent(type) {
-  if (NON_SPAWNING.has(type)) return true;
-  if (!SAFE_AGENT_ID.test(type)) return false;
-  try {
-    const text = fs.readFileSync(path.join(projectDir(), '.claude', 'agents', type + '.md'), 'utf8');
-    const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-    if (!fm) return false;
-    const field = (k) =>
-      ((new RegExp('^' + k + ':[ \t]*(.*?)[ \t]*\r?$', 'm').exec(fm[1]) || [])[1] || '').replace(/^["']/, '');
-    return field('name').replace(/["']$/, '') === type && field('description').startsWith('Orchestra');
-  } catch (_) {
-    return false;
-  }
-}
-
-// Built-in types leadAllowedAgents can never add: everything Orchestra ships
-// that is not on LEAD_TEAM, plus the clock's `resume` key.
-const OFF_LEAD_TEAM = new Set(
-  [...LEAD_TYPES, ...NON_SPAWNING, 'resume'].filter((t) => !LEAD_TEAM.has(t))
-);
-
 const LEAD_PLANS_REL = path.join('.claude', PLANS_DIRNAME, 'leads');
-const LEAD_DENIED_TOOLS = new Set(['Bash', 'PowerShell', 'Grep', 'Glob']);
 
-function denyCompany(msg) {
+function denyLead(msg) {
   deny('Orchestra: ' + msg);
 }
 
-// Returns without deciding when no company rule applies to this call.
+// Returns without deciding when the caller is not a lead.
 function subagentLaw(input, toolName, policy) {
-  const type = input.agent_type;
-  if (typeof type !== 'string') return;
-  if (!LEAD_TYPES.has(type)) {
-    if (toolName !== 'Agent' || !isOrchestraAgent(type)) return;
-    return denyCompany(
-      type + ' does not spawn agents. Finish your order and name what else is needed ' +
-        'under CONCERNS; the Director (or your lead) dispatches it.'
-    );
-  }
-
+  if (!LEAD_TYPES.has(input.agent_type)) return;
   if (PAUSE_WRITE_TOOLS.has(toolName)) {
     const plan = classifyPlanOperation(toolName, input.tool_input, [], LEAD_PLANS_REL);
     if (plan === 'allow') return allow();
     if (plan === 'hardlink') return denyHardlinkedTarget(toolName, policy);
-    return denyCompany(
-      'a lead never edits code. ' + toolName + ' is allowed only for .md files under ' +
-        '.claude/plans/leads/ (your status file and ledger). Route the change to an executor.'
-    );
-  }
-  if (LEAD_DENIED_TOOLS.has(toolName)) {
-    return denyCompany(
-      'a lead does not use ' + toolName + '. Send a scout for searches and an executor for ' +
-        'commands.'
-    );
+    return denyLead('a lead writes only .md files under .claude/plans/leads/. Route the change to an executor.');
   }
   if (toolName === 'Agent') {
     const ti = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
-    const target = ti.subagent_type;
-    if (!LEAD_TEAM.has(target) && !policy.leadAllowedAgents.includes(target)) {
-      return denyCompany(
-        (typeof target === 'string' ? target : 'an untyped agent') + ' is outside a lead\'s team. ' +
-          'Write your status file and return STATUS: ESCALATION with TRIGGER: rung outside the team.'
+    if (!LEAD_TEAM.has(ti.subagent_type)) {
+      return denyLead(
+        String(ti.subagent_type) + ' is outside a lead\'s team. Write your status file and return ' +
+          'STATUS: ESCALATION with TRIGGER: rung outside the team.'
       );
     }
     if (ti.model !== undefined && ti.model !== null && ti.model !== '') {
-      return denyCompany(
-        'a lead does not override an agent\'s model. Pick the rung whose model you need.'
-      );
+      return denyLead('a lead does not override an agent\'s model. Pick the rung whose model you need.');
     }
     if (ti.run_in_background !== false) {
-      return denyCompany(
-        'a lead sets run_in_background: false on every Agent call; an unset flag starts the ' +
-          'child in the background. Run parallel work as several Agent calls in one message.'
+      return denyLead(
+        'a lead sets run_in_background: false on every Agent call (unset starts the child in the ' +
+          'background). Run parallel work as several Agent calls in one message.'
       );
     }
-    return leadBudget(input.agent_id, target, policy);
+    return leadBudget(input.agent_id, ti.subagent_type, policy);
   }
-  // A lead's SendMessage resumes a child, which is rework (D6) that never
-  // passes through Agent, so it counts under `resume`.
+  // A lead's SendMessage resumes a child: rework that never passes through Agent.
   if (toolName === 'SendMessage') return leadBudget(input.agent_id, 'resume', policy);
 }
 
 // ------------------------------------------------------- lead budget clock
 //
-// One state file per lead, .claude/orchestra-leads/<agent_id>.json, outside
-// the lead's writable .claude/plans/leads/:
+// .claude/orchestra-leads/<agent_id>.json, outside the lead's writable dir:
 //   { segmentStart: <epoch ms>, segment: { <type>: n }, lifetime: { <type>: n } }
-// Created on the lead's first counted call (Agent or SendMessage), so the
-// clock starts at the first dispatch. A main-session SendMessage to that
-// agent id restarts the segment and keeps `lifetime` (restartLeadSegment()).
-// SubagentStart is deliberately not used: it also fires every time a child's
-// reply re-wakes the lead (WO-0 3a, 3c), so it can't tell a Director resume
-// from a child wake. Any state error fails open; parallel dispatches may race
-// and undercount — it is a tripwire, not an accountant.
+// Created on the lead's first counted call; a main-session SendMessage to the
+// lead's agent id restarts the segment and keeps `lifetime`. Not SubagentStart:
+// it also fires whenever a child's reply wakes the lead (WO-0 3a, 3c). Any
+// state error fails open, and racing parallel dispatches may undercount.
 
 const LEADS_STATE_REL = path.join('.claude', 'orchestra-leads');
 const SAFE_AGENT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
-// Null unless the state file's REAL path is exactly <project>/.claude/
-// orchestra-leads/<agent_id>.json: a junction or symlink along the way must
-// not carry the state outside the project (realish(), as the plan carve-out).
+// Null unless the file's REAL path is exactly that state path, so a junction
+// or symlink cannot carry the state outside the project.
 function leadStatePath(agentId) {
   if (typeof agentId !== 'string' || !SAFE_AGENT_ID.test(agentId)) return null;
   const root = projectDir();
@@ -1181,99 +1090,64 @@ function leadStatePath(agentId) {
   return path.relative(realish(root), realish(file)) === rel ? file : null;
 }
 
-// Count maps have no prototype, so an agent type named `constructor` or
-// `__proto__` is an ordinary key.
-function counts(o) {
-  return Object.assign(Object.create(null), o);
-}
-
 function isCounts(o) {
   return !!o && typeof o === 'object' && !Array.isArray(o) &&
     Object.keys(o).every((k) => Number.isFinite(o[k]) && o[k] >= 0);
 }
 
-// The parsed state, null when there is none yet, or undefined when it is
-// unreadable or malformed (fail open).
+// The state, null when there is none yet, or undefined when unreadable or
+// malformed (fail open).
 function readLeadState(file) {
-  let raw;
   try {
-    raw = fs.readFileSync(file, 'utf8');
+    const s = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return s && Number.isFinite(s.segmentStart) && isCounts(s.segment) && isCounts(s.lifetime) ? s : undefined;
   } catch (e) {
     return e && e.code === 'ENOENT' ? null : undefined;
-  }
-  try {
-    const s = JSON.parse(raw);
-    return s && Number.isFinite(s.segmentStart) && isCounts(s.segment) && isCounts(s.lifetime)
-      ? { segmentStart: s.segmentStart, segment: counts(s.segment), lifetime: counts(s.lifetime) }
-      : undefined;
-  } catch (_) {
-    return undefined;
   }
 }
 
 function writeLeadState(file, state) {
+  const tmp = file + '.' + process.pid + '-' + Date.now() + '.tmp';
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = file + '.' + process.pid + '-' + Date.now() + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(state), { encoding: 'utf8', flag: 'wx' });
-    try {
-      fs.renameSync(tmp, file);
-    } catch (_) {
-      try { fs.unlinkSync(tmp); } catch (_e) { /* best effort */ }
-    }
+    fs.renameSync(tmp, file);
   } catch (_) {
-    /* a lost count is acceptable; the clock is a tripwire */
+    try { fs.unlinkSync(tmp); } catch (_e) { /* best effort */ }
   }
 }
 
 function leadBudget(agentId, key, policy) {
   const file = leadStatePath(agentId);
-  if (!file) return allow();
-  let state = readLeadState(file);
+  const state = file ? readLeadState(file) : undefined;
   if (state === undefined) return allow();
-  if (state === null) state = { segmentStart: Date.now(), segment: counts({}), lifetime: counts({}) };
-
-  const minutes = (Date.now() - state.segmentStart) / 60000;
-  const dispatched = Object.keys(state.segment).reduce((n, k) => n + state.segment[k], 0);
-  let crossed = '';
-  if (minutes > policy.leadMaxMinutes) {
-    crossed = Math.floor(minutes) + ' minutes of ' + policy.leadMaxMinutes;
-  } else if (dispatched >= policy.leadMaxDispatches) {
-    crossed = dispatched + ' dispatches of ' + policy.leadMaxDispatches;
-  }
+  const s = state || { segmentStart: Date.now(), segment: {}, lifetime: {} };
+  const minutes = (Date.now() - s.segmentStart) / 60000;
+  const dispatched = Object.keys(s.segment).reduce((n, k) => n + s.segment[k], 0);
+  const crossed =
+    minutes > policy.leadMaxMinutes ? Math.floor(minutes) + ' minutes of ' + policy.leadMaxMinutes
+      : dispatched >= policy.leadMaxDispatches ? dispatched + ' dispatches of ' + policy.leadMaxDispatches
+        : '';
   if (crossed) {
-    return deny(
-      'Orchestra: lead budget crossed (' + crossed + '). Write your status file and return ' +
-        'STATUS: CHECKPOINT now.'
-    );
+    return deny('Orchestra: lead budget crossed (' + crossed + '). Write your status file and return STATUS: CHECKPOINT now.');
   }
-  state.segment[key] = (state.segment[key] || 0) + 1;
-  state.lifetime[key] = (state.lifetime[key] || 0) + 1;
-  writeLeadState(file, state);
+  s.segment[key] = (s.segment[key] || 0) + 1;
+  s.lifetime[key] = (s.lifetime[key] || 0) + 1;
+  writeLeadState(file, s);
   return allow();
 }
 
-// Main session only: a SendMessage to an agent id with a lead state file is a
-// Director resume, so that lead gets a fresh segment. The target is
-// tool_input.to, mirrored into tool_input.recipient (captured input:
-// tests/fixtures/sendmessage-hook-input.json). A send by name matches no
-// state file and changes nothing; the lead then trips on its next dispatch
-// and checkpoints at once, which is visible and safe. Never decides the call.
+// Main session only: a SendMessage whose `to` is a lead's agent id is a
+// Director resume (captured input: tests/fixtures/sendmessage-hook-input.json).
+// A send by name matches no state file; the lead then trips on its next
+// dispatch and checkpoints at once. Never decides the call.
 function restartLeadSegment(toolInput) {
-  try {
-    const ti = toolInput && typeof toolInput === 'object' ? toolInput : {};
-    for (const id of new Set([ti.to, ti.recipient])) {
-      const file = leadStatePath(id);
-      if (!file) continue;
-      const state = readLeadState(file);
-      if (!state) continue;
-      state.segmentStart = Date.now();
-      state.segment = counts({});
-      writeLeadState(file, state);
-    }
-  } catch (_) {
-    /* fail open */
-  }
+  const file = leadStatePath(toolInput && toolInput.to);
+  const state = file ? readLeadState(file) : null;
+  if (!state) return;
+  state.segmentStart = Date.now();
+  state.segment = {};
+  writeLeadState(file, state);
 }
 
 function main(raw) {
@@ -1333,11 +1207,10 @@ function main(raw) {
   if (pauseStatus.state === 'active') return allow();
   if (pauseStatus.state === 'ignored') policy.pauseIgnoredReason = pauseStatus.reason;
 
-  // Company law for subagents (who may spawn whom, what a lead may write),
-  // and the one main-session side effect of the lead budget clock.
+  // Company law for leads, and the clock's one main-session side effect.
   subagentLaw(input, toolName, policy);
   if (!input.agent_id && !input.agent_type && toolName === 'SendMessage') {
-    restartLeadSegment(input.tool_input);
+    try { restartLeadSegment(input.tool_input); } catch (_) { /* fail open */ }
   }
 
   // Otherwise subagent calls are never restricted for Director-law purposes.

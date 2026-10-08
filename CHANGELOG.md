@@ -119,6 +119,11 @@ platform probes: `plans/team-leads-probe-results.md`.
     and keeps a user's `notes.json`.
   - `executor-heavy-xhigh` no longer calls itself the deepest-reasoning point
     in the company.
+- **Review round 3 (Sol, narrow, APPROVE).** Two minor findings were fixed
+  after the approval, without a further review round. Uninstall's clock check
+  now matches the guard's own validation (count maps of finite non-negative
+  numbers). The pause-path comments and the README now say a lead's write is
+  denied by type in any session.
 
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 

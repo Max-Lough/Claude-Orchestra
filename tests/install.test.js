@@ -674,7 +674,15 @@ function case17_uninstallRemovesLeadClocks() {
   const d2 = path.join(t2, '.claude', 'orchestra-leads');
   fs.mkdirSync(d2, { recursive: true });
   fs.writeFileSync(path.join(d2, 'a1.json'), '{"segmentStart":5,"segment":{"scout":1},"lifetime":{"scout":1}}', 'utf8');
-  const userFiles = { 'notes.md': 'mine', 'notes.json': '{"mine":true}', 'notes.tmp': 'scratch', 'a2.json': '{}' };
+  const userFiles = {
+    'notes.md': 'mine',
+    'notes.json': '{"mine":true}',
+    'notes.tmp': 'scratch',
+    'a2.json': '{}',
+    'a3.json': '{"segmentStart":5,"segment":{"note":"mine"},"lifetime":{}}',
+    'a4.json': '{"segmentStart":5,"segment":{"x":-1},"lifetime":{}}',
+    'a5.json': '{"segmentStart":5,"segment":{"x":{"y":1}},"lifetime":{"z":null}}',
+  };
   for (const [f, c] of Object.entries(userFiles)) fs.writeFileSync(path.join(d2, f), c, 'utf8');
   install(t2, ['--uninstall']);
   check('uninstall removes a clock-shaped file', !fs.existsSync(path.join(d2, 'a1.json')), fs.readdirSync(d2).join(','));

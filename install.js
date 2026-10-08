@@ -118,8 +118,12 @@ function isLeadClockFile(name, file) {
   if (!/^[A-Za-z0-9_-]{1,128}\.json$/.test(name)) return false;
   try {
     const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const isMap = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
-    return isMap(s) && Number.isFinite(s.segmentStart) && isMap(s.segment) && isMap(s.lifetime);
+    // The guard's own validation (readLeadState()/isCounts()): count maps of
+    // finite, non-negative numbers. A file the guard would reject is not ours.
+    const isCounts = (o) =>
+      !!o && typeof o === 'object' && !Array.isArray(o) &&
+      Object.keys(o).every((k) => Number.isFinite(o[k]) && o[k] >= 0);
+    return !!s && Number.isFinite(s.segmentStart) && isCounts(s.segment) && isCounts(s.lifetime);
   } catch (_) {
     return false;
   }

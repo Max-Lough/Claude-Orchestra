@@ -54,7 +54,9 @@
  * Agent handling — but the DENY itself (denySelfPause()) fires only once the
  * model is positively identified as Fable/Opus, same as every other denial
  * in this guard: nothing is enforced against a Sonnet/Haiku session, or one
- * whose model cannot yet be determined. Windows spelling aliases (case, NTFS
+ * whose model cannot yet be determined. The one exception is a lead (lead,
+ * lead-xhigh): company law denies its pause-path write by type, in any
+ * session (see subagentLaw()). Windows spelling aliases (case, NTFS
  * ADS suffix, trailing dots/spaces) are normalised before comparison so none
  * of them dodge the deny once it applies.
  *
@@ -749,7 +751,8 @@ function pauseWriteTargetPath(toolName, toolInput) {
 // Self-pause write detector. In an identified Director session (Fable/Opus)
 // no tool call may create or edit .claude/orchestra.pause: the pause switch
 // is out-of-band only (env var, or the user creating the file directly). The
-// caller applies this only after the model gate; NORMAL-mode sessions are not
+// caller applies this only after the model gate (a lead's write excepted —
+// it is denied by type); NORMAL-mode sessions are not
 // policed. A write whose target resolves to
 // that exact path — OR is nested UNDER it, treating the pause path as a
 // directory — is flagged for denial here, unconditionally, before any
@@ -1293,7 +1296,8 @@ function main(raw) {
 
   // Self-pause: checked before EVERY other carve-out and exemption — before
   // the subagent exemption, before Agent handling, before the pause-exists
-  // short-circuit — but the actual denial fires only once the model is
+  // short-circuit — but, except for a lead's write (denied by type below),
+  // the actual denial fires only once the model is
   // positively identified as the Director (Fable/Opus), same as every other
   // denial in this guard: under 3.0 the guard enforces NOTHING until it has
   // that positive identification, so a Sonnet/Haiku session (or one whose

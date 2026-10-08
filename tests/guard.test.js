@@ -27,7 +27,8 @@
  *      `.claude/orchestra.pause`; the pause switch is out-of-band only:
  *      `ORCHESTRA_PAUSE=1`, or the file pre-existing before the tool call
  *      (created by the user outside the tool loop) — and a genuine pause
- *      releases Agent too. This is Director law, not an absolute rule
+ *      releases Agent too (a lead's write is denied by type in any
+ *      session — company law, case 30). Otherwise this is Director law, not an absolute rule
  *      independent of it: a Sonnet/Haiku session, or one whose model cannot
  *      yet be determined, is unrestricted, same as every other denial here.
  *   5. Both remaining carve-outs (plan/memory) refuse a resolved target
@@ -503,7 +504,8 @@ function case7_pauseHardening() {
   // positively identified Fable/Opus at the helm) — it is NOT an absolute
   // rule independent of Director law. Sonnet, Haiku, and an undetermined
   // model (no transcript, corrupt transcript) all stand down for a pause-file
-  // write, exactly like any other tool call from that session.
+  // write, exactly like any other tool call from that session. (A lead's
+  // write is the exception: company law denies it by type — case 30.)
   const sonnetTranscript = writeTranscript(proj, [assistantTurn('claude-sonnet-4-8')]);
   const rSonnetSelfPause = runGuard(proj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: '' }, transcript_path: sonnetTranscript });
   check(

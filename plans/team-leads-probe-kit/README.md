@@ -19,6 +19,7 @@ about 30 minutes and cost a few dollars: Sonnet main session and probe lead, Hai
 | `agents/probe-turns.md` | `maxTurns: 3`. Spawns workers one per message |
 | `agents/probe-mcp.md` | Calls the read-only `orchestra_doctor` MCP tool once |
 | `agents/probe-haiku-pinned.md` | Worker pinned to `claude-haiku-5-5` |
+| `agents/probe-opus-max.md` | Worker pinned to `claude-opus-5-5` at `effort: max` (the new principal rung's frontmatter) |
 | `probe-models.js` | Prints the model ids served in a transcript |
 
 ## Setup (PowerShell)
@@ -191,6 +192,26 @@ node "$kit\probe-models.js" "<agent_transcript_path>"
 - **6b.** The model id served for `probe-worker` through the `haiku` alias (expect Haiku 5.5 on
   the Anthropic API, Haiku 4.5 on Bedrock, Vertex or Foundry).
 
+## Probe 7: the principal rung's frontmatter (feeds WO-1b)
+
+Run `/agents` in the session first.
+
+- **7a.** `probe-opus-max` is listed. An agent whose frontmatter is rejected never registers, and
+  nothing logs it.
+
+```
+Spawn one probe-opus-max to run: node -e "console.log(1)"
+```
+
+Take its `agent_transcript_path` from the `stop` line and run:
+
+```powershell
+node "$kit\probe-models.js" "<agent_transcript_path>"
+```
+
+- **7b.** The model id served (expect `claude-opus-5-5`). Effort isn't visible in the transcript.
+  Note any warning or error Claude Code printed about `effort: max`.
+
 ## Cleanup
 
 Close the session and delete `$proj`. Nothing in the kit touches the harness repository or your
@@ -223,4 +244,6 @@ Date: · Claude Code: <claude --version> · OS: · Main model: · API: Anthropic
 | 5a MCP tool at depth 2 | | | |
 | 6a pinned claude-haiku-5-5 served as | | | |
 | 6b haiku alias served as | | | |
+| 7a probe-opus-max registers (effort: max accepted) | | | |
+| 7b pinned claude-opus-5-5 served as | | | |
 ```

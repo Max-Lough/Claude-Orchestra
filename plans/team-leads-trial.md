@@ -12,12 +12,15 @@ the work orders, routes executors, runs scouts and cross-family reviews, drives 
 reports back in a few lines. The Director keeps the end goal and spends its context on goal
 drift, runaway work, integration, and the user.
 
-Two smaller pieces ride along:
+Three smaller pieces ride along:
 
 - a **Haiku 5.5 mechanical executor** (`executor-mechanical-haiku`), trialled beside the Sonnet
   mechanical rung for fully spelled-out orders;
 - **guard-enforced company law for subagents**: who may spawn whom, what a lead may write, and a
-  budget clock that forces leads to check in.
+  budget clock that forces leads to check in;
+- **the Anthropic principal rung moves to Opus 5.5** at xhigh and max (D13). The Fable
+  substitute rule is retired, and the Fable profiles become user-request-only `executor-fable`
+  and `executor-fable-xhigh`.
 
 ## Decisions
 
@@ -145,13 +148,45 @@ the readout unattributable.
 restore in-process teammates, teammates get no worktree isolation, and enabling teams turns named
 subagents into teammates.
 
-**D11. Fable runs only at the user's request (owner).** The user sets the Director's model and
-may ask for a Fable profile by name. Nothing else reaches Fable. No lead is Fable, and Fable
-profiles are outside every lead's team.
+**D11. Fable runs only at the user's request (owner).** Fable reaches a session two ways only:
+the user starts the Director on Fable, or the user names a Fable executor. Nothing else reaches
+Fable.
+
+- The two Fable profiles are renamed `executor-fable` (high) and `executor-fable-xhigh`, and are
+  USER REQUEST ONLY.
+- The rule that let the Director substitute a Fable principal for an unavailable Astra rung is
+  **retired (owner)**. D13 takes its place.
+- No lead is Fable, and the Fable profiles are outside every lead's team.
 
 **D12. 3.9.0 is branch-only (owner).** Implement on a trial branch (suggested
 `trial/3.9.0-team-leads`). `main` stays on 3.8.0 until the trial readout passes, and there is no
 PR to `main` before then. The 3.9.0 `CHANGELOG.md` entry opens with that line.
+
+**D13. The Anthropic principal rung is Opus 5.5 at xhigh and max (owner: it scores close to Astra
+on most coding tasks).** Both profiles keep the principal charter and duties unchanged:
+goal-shaped orders, delegated decisions, class-wide fixes, and the exemption from the kind and
+subsystem caps.
+
+| Profile | Model | Effort | Use |
+|---|---|---|---|
+| `executor-principal` | `claude-opus-5-5` (pinned) | xhigh | principal-shaped orders at PLAN time, when the Astra rung is unavailable |
+| `executor-principal-max` | `claude-opus-5-5` (pinned) | max | the hardest principal orders; the escalation target after a double bounce at `executor-heavy-xhigh` when Astra is unavailable |
+
+Calls made here without an explicit owner ruling (veto before WO-1b):
+
+- **Astra stays the default top rung** while the `codex` pack is installed and runnable. The
+  Opus principal rung is the top whenever Astra is unavailable, and also when the user names it.
+  The Director still says in one line that Astra did not run, but this is no longer a
+  substitution of a user-only profile.
+- **Escalation adds effort.** `executor-heavy-xhigh` is already Opus xhigh, so a double bounce
+  there escalates to `executor-principal-max`, not to `executor-principal` (same model and
+  effort).
+- **The model is pinned** to `claude-opus-5-5`, because the case for this rung is about that
+  model. The pin moves only by an explicit edit, not silently with the `opus` alias.
+- **Naming.** `executor-principal` keeps its file name with new content. `executor-principal-max`
+  is new. `executor-principal-xhigh` is retired, and the installer prunes it (WO-1b).
+- **Review lane.** Opus-principal work is Claude-authored, so it goes to Sol review. Only
+  escalation to Astra flips the lane to the Opus `reviewer`.
 
 ## Platform facts this plan relies on
 
@@ -189,7 +224,9 @@ Not documented, so WO-0 probes them:
 - whether a settings hook can deny a subagent's spawn;
 - MCP access at depth 2;
 - whether a `SubagentStart` matcher can target one agent type;
-- which model actually serves `claude-haiku-5-5` and the `haiku` alias.
+- which model actually serves `claude-haiku-5-5` and the `haiku` alias;
+- whether subagent frontmatter accepts `model: claude-opus-5-5` with `effort: max`, and what
+  serves it.
 
 ## Specs
 
@@ -207,17 +244,18 @@ harness doesn't ship are untouched.
 | any Orchestra executor, `scout`, `detective`, `reviewer`, Codex launchers | `Agent` | deny (WO-5 later opens `scout`-only for the heavy and principal executors) |
 
 LEAD_TEAM: `scout`, `detective`, `executor-mechanical-haiku`, `executor-mechanical`,
-`executor-bounded`, `executor`, `executor-heavy`, `executor-heavy-xhigh`, `reviewer`,
-`reviewer-codex`, `executor-codex-principal`.
+`executor-bounded`, `executor`, `executor-heavy`, `executor-heavy-xhigh`,
+`executor-codex-principal`, `executor-principal`, `executor-principal-max`, `reviewer`,
+`reviewer-codex`. Leads use the principal rungs under the same ladder rules as the Director
+(D13).
 
 Never on it:
 - `lead` and `lead-xhigh`, so leads can't nest;
-- every Fable profile (D11);
+- `executor-fable` and `executor-fable-xhigh` (D11);
 - the user-request-only Codex executors (`executor-codex-heavy`, `executor-codex-luna`);
 - the planning lanes.
 
-When a lead's order needs any of those — for example the announced Fable substitute for a
-missing Astra rung (open question 1) — the lead returns `ESCALATION` and the Director decides.
+When a lead's order needs any of those, the lead returns `ESCALATION` and the Director decides.
 `leadAllowedAgents` in `.claude/orchestra.json` adds project specialists.
 
 ### Segment budget clock and dispatch counts (WO-3)
@@ -331,6 +369,9 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
       assumption is confirmed or the plan amended before WO-1 starts.
 - [ ] On the 3.9.0 trial branch, the following ship:
   - `executor-mechanical-haiku`, `lead`, `lead-xhigh`;
+  - `executor-principal` (Opus 5.5 xhigh) and `executor-principal-max` (Opus 5.5 max);
+  - `executor-fable` and `executor-fable-xhigh`, user-request-only, with the Fable substitute
+    rule gone;
   - the guard rules, the budget clock and the dispatch counts.
 
   All eight CI suites are green on the Windows matrix, and `node install.js --lint` is clean.
@@ -348,14 +389,15 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 - **Kind:** measurement
 - **Scope:** a throwaway project with the current harness and `plans/team-leads-probe-kit/`
   installed per its README; no harness edits
-- **Probes:** the kit's probes 1–6 cover:
+- **Probes:** the kit's probes 1–7 cover:
   - identity, matcher scoping and deny on a subagent spawn;
   - `maxTurns` semantics;
   - background lead mechanics: completion wake, `TaskStop` reach, child resume, `SubagentStart`
     on resume;
   - cron while waiting;
   - MCP at depth 2;
-  - the Haiku model actually served.
+  - the Haiku model actually served;
+  - the pinned Opus 5.5 at `effort: max` accepted and served.
 - **Acceptance:** `plans/team-leads-probe-results.md` is filled in from the kit's template. Every
   "no" names the design change it forces, and this plan is amended before WO-1.
 - **Depends on:** none
@@ -381,6 +423,57 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
   - The install suite sees the new agent installed and removed.
 - **Verification:** TIER: full. Run all eight suites plus `node install.js --lint`.
 - **Depends on:** WO-0 probe 6
+
+### WO-1b: Anthropic principal rung on Opus 5.5; Fable user-only; substitute rule retired
+- **Kind:** agent profiles + protocol + installer pruning
+- **Scope:**
+  - **Agents.**
+    - `agents/executor-principal.md`: new content; `model: claude-opus-5-5`, `effort: xhigh`.
+    - `agents/executor-principal-max.md`: new file; same law; `effort: max`.
+    - `agents/executor-fable.md` and `agents/executor-fable-xhigh.md`: the old Fable principal
+      profiles, renamed and USER REQUEST ONLY, with the substitute clause removed.
+    - Delete `agents/executor-principal-xhigh.md`.
+  - **Installer.** `install.js`: update `AGENTS`, and add `RETIRED_AGENTS` (starting with
+    `executor-principal-xhigh.md`). Install, update and uninstall remove a retired file only when
+    its frontmatter `name` matches the retired name and its description starts with
+    `Orchestra`, so a user's own file of that name is never touched. This closes the
+    leftover-file class from the 3.0 port's finding F6 for this rename.
+  - **Protocol, `ORCHESTRA.md`.**
+    - §2 company rows and footnote ‡.
+    - The "When the Astra rung is unavailable" paragraph: the Opus principal rung replaces the
+      Fable substitute.
+    - The "Everything else on the bench is user request only" list.
+    - §3.5: with Astra unavailable, the chain's top is `executor-heavy-xhigh` →
+      `executor-principal-max`.
+    - §8.1 and the §8.3 effort pins.
+  - **Skills, README and pack.**
+    - `skills/orchestra-plan/SKILL.md` (principal-order text), `skills/orchestra-status/SKILL.md`.
+    - `README.md`.
+    - `packs/codex/pack.json` notes and `packs/codex/README.md`: "the Director substitutes the
+      Fable executor-principal" becomes the Opus principal rung.
+    - The descriptions of `executor-heavy`, `executor-heavy-xhigh` and the Codex launchers,
+      wherever they name the principal rung.
+  - **Tests.**
+    - `tests/exec-lane.test.js` §19. Today it pins `executor-principal(-xhigh)` as USER REQUEST
+      ONLY. It now pins:
+      - `executor-fable(-xhigh)` as USER REQUEST ONLY;
+      - `executor-principal(-max)` as pinned `claude-opus-5-5` at xhigh/max, not user-only,
+        and not claiming the default ladder's top while Astra is available;
+      - no Fable-substitute clause anywhere in `ORCHESTRA.md`.
+    - `tests/install.test.js`: the agent file list, plus a retired-agent prune case (pruned when
+      it is ours, left alone when it isn't).
+  - `CHANGELOG.md`.
+- **Constraints:**
+  - The principal charter and duties are unchanged.
+  - Astra stays the default top rung while the `codex` pack runs.
+  - No Fable profile is reachable by any routing rule.
+- **Acceptance:**
+  - A repository-wide grep finds no routing text that sends work to Fable.
+  - An update install over a 3.8.0 project leaves no `executor-principal-xhigh.md` and keeps a
+    user-authored one.
+  - All suites are green.
+- **Verification:** TIER: full
+- **Depends on:** WO-1 (same protocol tables); WO-0 probe 7
 
 ### WO-2: Guard — company law for subagents
 - **Kind:** hook behavior
@@ -455,13 +548,13 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
   - the `ORCHESTRA.md` clauses: integration review, check-in, never edits, the threshold, the
     8-order cap.
 - **Verification:** TIER: full
-- **Depends on:** WO-1, WO-2, WO-3
+- **Depends on:** WO-1, WO-1b, WO-2, WO-3
 
 ### WO-5 (deferred until the leads readout): executor-spawned Haiku scouts
 - **Kind:** profile + guard rule
 - **Scope:**
-  - drop `disallowedTools: Agent` from `executor-heavy` and `executor-heavy-xhigh` (the Fable
-    principal profiles stay closed, D11)
+  - drop `disallowedTools: Agent` from `executor-heavy`, `executor-heavy-xhigh`,
+    `executor-principal` and `executor-principal-max` (the Fable profiles stay closed, D11)
   - a law clause: scouts only for files the executor will not edit and for searchable
     enumeration; scout output is pointers, not facts; a DELEGATED RECON report section
   - a guard row opening `Agent` → `scout` only, no model override
@@ -470,12 +563,14 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 
 ## Sequencing
 
-- Serial: WO-0 → WO-1 → WO-2 → WO-3 → WO-4.
+- Serial: WO-0 → WO-1 → WO-1b → WO-2 → WO-3 → WO-4. WO-1 and WO-1b both edit the protocol's
+  company and steering tables, so they never run in parallel.
 - Gate: WO-0 results must be in before any order is cut. A failed probe amends this plan first.
 
 ## Review checkpoints
 
-- One batched cross-family review over WO-1..WO-4 (commit-pinned base/head on the trial branch).
+- One batched cross-family review over WO-1, WO-1b, WO-2, WO-3 and WO-4 (commit-pinned base/head
+  on the trial branch).
   Agent, skill, `ORCHESTRA.md` and hook changes are behavior, so this is a full-tier review.
 - An earlier checkpoint after WO-2/WO-3 only if WO-4's text ends up depending on guard behavior
   that changed under review.
@@ -507,6 +602,11 @@ arms.
 | False claims stated as fact that reach review | zero | two |
 | Wall-clock and cost per accepted order | recorded | — |
 
+**Principal rung (D13), observed rather than gated.** This is a doctrine change, not a trial
+arm. Log every Opus principal run (xhigh or max): its order shape, review rounds to APPROVE, and
+wall-clock. Compare them at readout with the Astra rows in the field ledger. Revisit the
+Astra-first default if Opus matches or beats it on comparable orders.
+
 ## Risks
 
 - **The probes may disagree with the docs.** WO-0 runs first, and the plan is amended before
@@ -527,20 +627,18 @@ arms.
 
 ## Open questions for the owner
 
-1. D11 says nothing reaches Fable unless the user asks. But `ORCHESTRA.md` §2 (and
-   `executor-principal`'s description) still lets the Director substitute the Fable
-   `executor-principal`, announced, when the Astra rung is unavailable. This plan leaves that
-   rule alone; leads can't reach it either way and escalate instead. Should the substitute rule
-   be retired, so that a missing Astra rung means "ask the user"? If so, it is a separate small
-   change, and it can ride in WO-1's protocol edit.
-2. Budget defaults: 120 min / 20 dispatches per lead segment, and a 45-min Director check-in.
-   They ship as trial defaults and get tuned at readout unless you want other starting numbers.
+None blocking. D13 lists the calls made without an explicit ruling (Astra stays the default top,
+escalation from `executor-heavy-xhigh` goes to `executor-principal-max`, the model pin, and
+naming). Veto any of them before WO-1b.
 
 ## Resolved (owner, 2026-10-08)
 
 - Leads: Opus high and Opus xhigh only, picked by the Director by goal complexity. Never Fable.
 - Fable: user request only (the Director model the user starts with, or a Fable profile the user
-  names).
+  names). The Fable substitute for an unavailable Astra rung is retired.
+- The Anthropic principal rung is Opus 5.5 at xhigh and max.
 - The 8-work-order cap stays as a hard ceiling. D6's consumption counters do the real capping.
 - Haiku mechanical rung: details as specified.
+- Budget defaults stand for the trial: 120 min / 20 dispatches per lead segment, and a 45-min
+  Director check-in.
 - 3.9.0 is branch-only.

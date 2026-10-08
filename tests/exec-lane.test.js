@@ -1133,6 +1133,11 @@ function case19() {
       (t.match(/^.*top execution tier.*$/m) || ['ok'])[0].slice(0, 200)
     );
     check(
+      rel + ': does not claim to be the deepest-reasoning point in the company (executor-principal-max is)',
+      !/deepest[- ]reasoning[^.]*in the company/i.test(frontmatter(rel)),
+      frontmatter(rel).slice(0, 200)
+    );
+    check(
       rel + ': names the principal rung as where a dead end escalates',
       /executor-codex-principal/.test(t),
       'the heavy profile never names its escalation target'

@@ -1475,6 +1475,44 @@ function case30_reviewRound1() {
   check('...and the clock keeps counting afterwards (state not treated as malformed)', after.decision === 'allow' && JSON.parse(fs.readFileSync(path.join(pp, '.claude', 'orchestra-leads', 'aproto0001.json'), 'utf8')).segment.constructor === 3, '');
   const resume = call(leadSpawn('resume'));
   check('leadAllowedAgents cannot admit a type named resume (the SendMessage count key)', resume.decision === 'deny', JSON.stringify(resume));
+
+  // Review round 2: leadAllowedAgents never re-admits a built-in lane kept off
+  // the team; a specialist still gets in.
+  const pf = tmpdir('orchestra-guard-');
+  const offTeam = ['lead', 'lead-xhigh', 'executor-fable', 'executor-fable-xhigh', 'executor-codex-heavy', 'executor-codex-luna',
+    'architect-claude-xhigh', 'architect-claude-max', 'architect-codex', 'plan-synthesizer'];
+  setManifest(pf, { leadAllowedAgents: offTeam.concat(['modeler']) });
+  for (const t of offTeam) {
+    const d = decisionOf(runGuard(pf, subagentCall('lead', 'Agent', leadSpawn(t))));
+    check('leadAllowedAgents cannot re-admit ' + t, d.decision === 'deny' && /outside a lead's team/.test(d.reason), JSON.stringify(d));
+  }
+  const mod = decisionOf(runGuard(pf, subagentCall('lead', 'Agent', leadSpawn('modeler'))));
+  check('leadAllowedAgents still admits a project specialist', mod.decision === 'allow', JSON.stringify(mod));
+
+  // Review round 2: a lead's write to the pause path is denied by type, before
+  // the self-pause branch can stand down on missing or non-Director evidence.
+  for (const [label, transcriptModel] of [['no transcript', null], ['a Sonnet session', 'claude-sonnet-5-5']]) {
+    const pz = tmpdir('orchestra-guard-');
+    const tp = transcriptModel ? writeTranscript(pz, [assistantTurn(transcriptModel)]) : undefined;
+    for (const lead of ['lead', 'lead-xhigh']) {
+      for (const [tool, ti] of [
+        ['Write', { file_path: '.claude/orchestra.pause', content: '' }],
+        ['Edit', { file_path: '.claude/orchestra.pause', old_string: 'a', new_string: 'b' }],
+        ['MultiEdit', { file_path: '.claude/ORCHESTRA.PAUSE.', edits: [] }],
+        ['NotebookEdit', { notebook_path: '.claude/orchestra.pause/x.ipynb', new_source: 'x' }],
+      ]) {
+        const input = subagentCall(lead, tool, ti);
+        if (tp) input.transcript_path = tp;
+        const d = decisionOf(runGuard(pz, input));
+        check(label + ': ' + lead + ' ' + tool + ' of the pause path -> deny', d.decision === 'deny', JSON.stringify(d));
+      }
+    }
+    check(label + ': no pause file was created', !fs.existsSync(path.join(pz, '.claude', 'orchestra.pause')), '');
+    // An executor in a non-Director session is unchanged (Director law, not company law).
+    const ex = subagentCall('executor', 'Write', { file_path: '.claude/orchestra.pause', content: '' });
+    if (tp) ex.transcript_path = tp;
+    check(label + ': an executor pause-path Write keeps its pre-3.9.0 outcome (allow)', decisionOf(runGuard(pz, ex)).decision === 'allow', '');
+  }
 }
 
 // ------------------------------------------------------------------ driver

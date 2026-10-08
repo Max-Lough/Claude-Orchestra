@@ -110,6 +110,21 @@ function isOurRetiredAgent(file, name) {
 // path is unlinked, never followed.
 const LEAD_CLOCKS_DIRNAME = 'orchestra-leads';
 
+// A clock file is `<agent_id>.json` holding the guard's state shape, or a
+// leftover `<agent_id>.json.<pid>-<ms>.tmp` from an interrupted write.
+// Anything else in the directory is the user's.
+function isLeadClockFile(name, file) {
+  if (/^[A-Za-z0-9_-]{1,128}\.json\.\d+-\d+\.tmp$/.test(name)) return true;
+  if (!/^[A-Za-z0-9_-]{1,128}\.json$/.test(name)) return false;
+  try {
+    const s = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const isMap = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
+    return isMap(s) && Number.isFinite(s.segmentStart) && isMap(s.segment) && isMap(s.lifetime);
+  } catch (_) {
+    return false;
+  }
+}
+
 function removeLeadClocks(dir) {
   let st;
   try {
@@ -122,7 +137,8 @@ function removeLeadClocks(dir) {
       fs.unlinkSync(dir);
     } else if (st.isDirectory()) {
       for (const f of fs.readdirSync(dir)) {
-        if (/\.(json|tmp)$/.test(f) && fs.lstatSync(path.join(dir, f)).isFile()) fs.unlinkSync(path.join(dir, f));
+        const p = path.join(dir, f);
+        if (fs.lstatSync(p).isFile() && isLeadClockFile(f, p)) fs.unlinkSync(p);
       }
       if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
     } else {

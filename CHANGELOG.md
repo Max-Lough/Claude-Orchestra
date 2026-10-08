@@ -109,6 +109,16 @@ platform probes: `plans/team-leads-probe-results.md`.
     the clock files.
   - The ‡ footnote and the user-request-only paragraphs no longer read as if
     `executorEngine` could select a Fable executor. It selects Sol alone.
+- **Review round 2 (Sol, REVISE) fixes.**
+  - A lead's write to the pause path is denied by its type. Before this, the
+    self-pause branch ran first and stood down when the Director model wasn't
+    identified, which let a lead pause the guard.
+  - `leadAllowedAgents` can add project specialists only. It can never
+    re-admit a built-in type kept off the lead's team.
+  - Uninstall removes only clock-shaped files from `.claude/orchestra-leads/`
+    and keeps a user's `notes.json`.
+  - `executor-heavy-xhigh` no longer calls itself the deepest-reasoning point
+    in the company.
 
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 

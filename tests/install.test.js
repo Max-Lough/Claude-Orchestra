@@ -284,7 +284,7 @@ function case6_specialists() {
   const target = tmpdir('orchestra-install-');
   const r = install(target, ['--specialists', 'modeler', '--no-packs']);
   check('install with --specialists modeler succeeds', ok(r), out(r));
-  check('specialist file installed alongside the core eight', fs.existsSync(path.join(target, '.claude', 'agents', 'modeler.md')), '');
+  check('specialist file installed alongside the core agents', fs.existsSync(path.join(target, '.claude', 'agents', 'modeler.md')), '');
 
   const state = readJson(path.join(target, '.claude', 'orchestra-install.json'));
   check('orchestra-install.json records the specialist selection', Array.isArray(state.specialists) && state.specialists.includes('modeler'), JSON.stringify(state));
@@ -673,10 +673,14 @@ function case17_uninstallRemovesLeadClocks() {
   install(t2, ['--no-packs', '--no-specialists']);
   const d2 = path.join(t2, '.claude', 'orchestra-leads');
   fs.mkdirSync(d2, { recursive: true });
-  fs.writeFileSync(path.join(d2, 'a1.json'), '{}', 'utf8');
-  fs.writeFileSync(path.join(d2, 'notes.md'), 'mine', 'utf8');
+  fs.writeFileSync(path.join(d2, 'a1.json'), '{"segmentStart":5,"segment":{"scout":1},"lifetime":{"scout":1}}', 'utf8');
+  const userFiles = { 'notes.md': 'mine', 'notes.json': '{"mine":true}', 'notes.tmp': 'scratch', 'a2.json': '{}' };
+  for (const [f, c] of Object.entries(userFiles)) fs.writeFileSync(path.join(d2, f), c, 'utf8');
   install(t2, ['--uninstall']);
-  check('uninstall removes clock files but keeps a non-clock file', !fs.existsSync(path.join(d2, 'a1.json')) && fs.existsSync(path.join(d2, 'notes.md')), '');
+  check('uninstall removes a clock-shaped file', !fs.existsSync(path.join(d2, 'a1.json')), fs.readdirSync(d2).join(','));
+  for (const [f, c] of Object.entries(userFiles)) {
+    check('uninstall keeps the non-clock file ' + f, fs.existsSync(path.join(d2, f)) && fs.readFileSync(path.join(d2, f), 'utf8') === c, '');
+  }
 }
 
 // ------------------------------------------------------------------ driver

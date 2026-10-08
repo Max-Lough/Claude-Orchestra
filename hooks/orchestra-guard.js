@@ -507,11 +507,13 @@ function loadPolicy() {
       planPatternsRaw: rawPlanPatterns,
       planPatterns: cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [],
       memoryPatterns: cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [],
-      // Never another lead (leads don't nest), and never the `resume` count key.
+      // Project specialists only: never a built-in type kept off the lead's
+      // team (another lead, a Fable or user-only Codex executor, a planning
+      // lane), and never the `resume` count key.
       leadAllowedAgents: cfg
         ? arrOfStrings(cfg.leadAllowedAgents)
             .slice(0, MAX_PATTERN_ARRAY_LEN)
-            .filter((t) => t !== 'lead' && t !== 'lead-xhigh' && t !== 'resume')
+            .filter((t) => !OFF_LEAD_TEAM.has(t))
         : [],
       leadMaxMinutes: positiveOr(leads.maxMinutes, empty.leadMaxMinutes),
       leadMaxDispatches: positiveOr(leads.maxDispatches, empty.leadMaxDispatches),
@@ -1082,6 +1084,12 @@ function isOrchestraAgent(type) {
   }
 }
 
+// Built-in types leadAllowedAgents can never add: everything Orchestra ships
+// that is not on LEAD_TEAM, plus the clock's `resume` key.
+const OFF_LEAD_TEAM = new Set(
+  [...LEAD_TYPES, ...NON_SPAWNING, 'resume'].filter((t) => !LEAD_TEAM.has(t))
+);
+
 const LEAD_PLANS_REL = path.join('.claude', PLANS_DIRNAME, 'leads');
 const LEAD_DENIED_TOOLS = new Set(['Bash', 'PowerShell', 'Grep', 'Glob']);
 
@@ -1295,6 +1303,9 @@ function main(raw) {
   // (Set.has() on anything just returns false), so this is safe to run
   // before the `typeof toolName !== 'string'` check further down too.
   if (classifyPauseWrite(toolName, input.tool_input) === 'deny') {
+    // A lead's write rule is company law, keyed on its type alone: it holds
+    // here too, whatever the Director-model evidence says.
+    if (LEAD_TYPES.has(input.agent_type)) return denySelfPause(toolName, policy);
     const pauseModel = latestMainModel(input);
     if (pauseModel.model && DIRECTOR_MODEL.test(pauseModel.model)) {
       return denySelfPause(toolName, policy);

@@ -1,16 +1,16 @@
 # Plan: team leads, a Haiku mechanical rung, and the company law behind them (3.9.0 trial)
 
-Date: 2026-10-08 · Status: DRAFT — owner sign-off needed before EXECUTE
+Date: 2026-10-08 · Status: APPROVED IN PRINCIPLE (owner, 2026-10-08). WO-0 probes run next,
+locally, with `plans/team-leads-probe-kit/`. Implementation is local, on a branch-only 3.9.0.
 
 ## Goal
 
 Let the Director take a basic plan with clear goals and run it to completion over a much longer
 horizon, without its own context filling up with every executor report, scout audit and review
-verdict. The Director hands each large sub-goal to a **lead**. A lead runs on the heavy-tier
-model and acts as a mini-director for that sub-goal: it plans the work orders, routes executors,
-runs scouts and cross-family reviews, and drives fix rounds. It reports back in a few lines. The
-Director keeps the end goal and spends its context on goal drift, runaway work, integration, and
-the user.
+verdict. The Director hands each large sub-goal to a **lead**: an Opus mini-director that plans
+the work orders, routes executors, runs scouts and cross-family reviews, drives fix rounds, and
+reports back in a few lines. The Director keeps the end goal and spends its context on goal
+drift, runaway work, integration, and the user.
 
 Two smaller pieces ride along:
 
@@ -19,22 +19,34 @@ Two smaller pieces ride along:
 - **guard-enforced company law for subagents**: who may spawn whom, what a lead may write, and a
   budget clock that forces leads to check in.
 
-## Decisions (design discussion, 2026-10-07/08)
+## Decisions
 
-**D1. Leads coordinate; they never edit code.** A lead gets `Agent`, `Read`, `SendMessage`, and
-`Write`/`Edit` restricted by the guard to its own plan directory (`.claude/plans/leads/<name>/`).
-It gets no Bash, Grep or Glob. Letting it edit "when it wants to" would undo the design:
+Settled in the design discussion of 2026-10-07/08. Owner rulings are marked.
 
-- Claude Code requires a `Read` before an `Edit`. A lead that edits pulls source files into its
-  own context, which is the pollution this trial removes.
+**D1. Leads coordinate; they never edit code. Two tiers, both Opus (owner).**
+
+| Profile | Model | Chosen when |
+|---|---|---|
+| `lead` | Opus, high | the default for a chartered sub-goal |
+| `lead-xhigh` | Opus, xhigh | the Director judges the goal hardest at charter time: coupled subsystems, a risky migration, an approach the charter can't settle |
+
+The Director picks the tier at charter time by goal complexity. A lead never changes its own
+tier; only the Director re-charters (D6).
+
+A lead gets `Agent`, `Read`, `SendMessage`, and `Write`/`Edit` restricted by the guard to its own
+plan directory. It gets no Bash, Grep or Glob. Letting it edit "when it wants to" would undo the
+design:
+
+- Claude Code requires a `Read` before an `Edit`. A lead that edits pulls source into its own
+  context.
 - A lead-made change skips the executor report, the scout tree audit and the class sweep. The
   lead would also judge its own work.
 - The field ledger's dominant failure was grinding. A lead that can "just fix it" will do that
   instead of routing or escalating.
-- "Never edits" is one guard rule. "Edits only small things" cannot be enforced or audited.
+- "Never edits" is one guard rule. "Edits only small things" can't be enforced or audited.
 
-The cost is one spawn per trivial fix. The Haiku mechanical rung (D8) makes that spawn take
-minutes and cost cents.
+A trivial fix costs one spawn. The Haiku mechanical rung (D8) makes that spawn take minutes and
+cost cents.
 
 **D2. The Director reads lead status when it chooses.** Every message that lands in the
 Director's context is pollution, so leads never send periodic updates. Each lead overwrites one
@@ -46,10 +58,10 @@ only message the Director receives.
 
 | Layer | Mechanism | Catches | Misses |
 |---|---|---|---|
-| 1. Lead self-report | Return triggers in the lead's law (below) | scope or done-criteria change, double REVISE, disagreement, a rung it may not use | a lead that doesn't notice its own drift |
-| 2. Segment budget clock | Guard: a `SubagentStart` hook records when a lead starts or resumes. The lead's `Agent` calls are denied once `leads.maxMinutes` or `leads.maxDispatches` is crossed, with an instruction to write status and return `STATUS: CHECKPOINT` | runaway work. It also turns the clock into the periodic mini-report: a lead must check in every segment | a lead hung inside one long child (no tool calls, so the clock never fires) |
-| 3. `maxTurns` | Platform hard stop in the lead's frontmatter. The run is marked partial and can be resumed | a looping lead that somehow slips layer 2 | the same hung-child case |
-| 4. Director check-in | One recurring `CronCreate` task while any lead runs (default every 45 min). The Director reads each running lead's status file, flags a `seq` that hasn't moved across two check-ins, and checks drift against the charter. It acts only on a problem (`TaskStop`, then resume with a question, or a scout on the lead's worktree) and deletes the task when no lead runs | hung leads, slow drift inside budget | a Director session that is closed (cron needs an open interactive session) |
+| 1. Lead self-report | The lead's return triggers (below), including the D6 consumption caps | scope or done-criteria change, plan growth, rework over budget, double REVISE, disagreement, a rung it may not use | a lead that doesn't notice, or under-reports |
+| 2. Segment budget clock | Guard: `SubagentStart` (spawn *and* resume) starts a segment. The lead's `Agent` calls are denied once `leads.maxMinutes` or `leads.maxDispatches` is crossed, with an instruction to write status and return `STATUS: CHECKPOINT`. The same state file counts dispatches by agent type, which the lead can't write | runaway work. It also makes check-ins periodic: every segment ends in a short report. The counts catch an under-reporting lead (D6) | a lead hung inside one long child (no tool calls, so the clock never fires) |
+| 3. `maxTurns` | Platform hard stop in the lead's frontmatter. The run is marked partial and can be resumed | a looping lead that somehow slips layer 2 | the hung-child case |
+| 4. Director check-in | One recurring `CronCreate` task while any lead runs (default every 45 min). The Director reads each running lead's status file, flags a `seq` that hasn't moved across two check-ins, and checks drift against the charter. It acts only on a problem (`TaskStop`, then resume with a question, or a scout on the lead's worktree) and deletes the task when no lead runs | hung leads, slow drift inside budget | a closed Director session (cron needs an open interactive session) |
 
 The user remains the safeguard over the Director, as today. Layer 2 overruns by at most one
 child's duration, because it fires at the lead's next dispatch.
@@ -59,24 +71,57 @@ lead batches review per charter (§4 REVIEW) and routes the lane by author vendo
 never arbitrates past a REVISE: when its reviewer and executor disagree, it returns
 `ESCALATION`. A campaign with two or more leads ends with one Director review over the full
 campaign diff. The reviewer gets the leads' verdicts and is pointed at the seams between them,
-the "each fragment passed alone, the seams failed" failure that `ORCHESTRA.md` §3.5 already
-names. A single-lead campaign doesn't need it.
+the "each fragment passed alone, the seams failed" failure that `ORCHESTRA.md` §3.5 names. A
+single-lead campaign doesn't need it.
 
 **D5. The guard enforces who may spawn whom.** An `Agent(type)` allowlist is ignored in subagent
-definitions. Frontmatter hooks are skipped in untrusted folders. Settings-level hooks do fire
-inside subagents and carry `agent_type`. So `hooks/orchestra-guard.js` is the enforcement point
-(rule table below). These are small invariants about facts a model cannot attest to itself, not
-a control plane.
+definitions. Frontmatter hooks are skipped in untrusted folders. Settings-level hooks fire inside
+subagents and carry `agent_type`, so `hooks/orchestra-guard.js` is the enforcement point (rule
+table below). These are small invariants about facts a model cannot attest to itself, not a
+control plane.
 
-**D6. Sizing: one lead charter is one review batch.** Here "orders" means work orders: the
-`WO-n` units of `skills/orchestra-plan` (about one executor run of ≤80 tool calls, plus one
-review round). A charter should be one cohesive sub-goal whose diff gets one batched review. The
-soft cap is about 8 work orders. Past that the review diff and the lead's context both get
-large, so the Director splits the goal into sequential leads. The 8 is a starting guess, to be
-calibrated in the trial.
+**D6. Sizing: cap what a charter consumes, not only what it plans (owner: 8 stays as a simple
+hard cap).** Order count is a weak proxy on its own. Eight small orders that sail through can cost
+less than one order that balloons into 1a–1d, each with its own REVISE rounds. The cap has three
+parts.
 
-**D7. Lead reports carry ASSUMPTIONS and CLARIFY.** These guard against context lost at each
-handoff:
+1. **At charter time (Director): shape plus a hard ceiling.**
+   - The charter is one cohesive sub-goal whose diff makes sense as one review.
+   - The tier follows goal complexity (D1).
+   - Hard ceiling: 8 chartered work orders (`WO-n` units of `skills/orchestra-plan`). A bigger
+     goal becomes sequential charters.
+
+2. **At run time (lead): two counters that measure consumption.** Both appear in the status file
+   and in every report.
+   - **Plan growth** = work orders planned now − work orders chartered. A split counts:
+     WO-1 → 1a, 1b, 1c, 1d is +3. Growth above +2 is an `ESCALATION`. So is splitting a piece
+     that was already split, because the order isn't understood yet.
+   - **Rework** = every executor run on an order after its first, plus every re-review after a
+     REVISE. That covers a fix round after REVISE, a bounce, and a retry after BLOCKED or
+     PARTIAL. The budget defaults to half the chartered orders rounded up (minimum 2); the
+     charter may set another number. Going over it is an `ESCALATION`.
+   - The existing per-change rule still applies: two REVISE cycles on one change is an
+     `ESCALATION`.
+   - In the ballooning example, the split to 1a–1d trips growth (+3) before any sub-order runs.
+     A smaller split (+1) whose pieces each take REVISE rounds trips the rework budget instead.
+
+3. **Cross-check the lead can't forge (guard).** The clock's state file counts the lead's
+   dispatches by agent type, per segment and over the lead's lifetime. At each checkpoint the
+   Director compares the executor and reviewer counts with the lead's reported closed orders and
+   rework. A gap is a question for the lead. The clock forces a checkpoint every segment, so a
+   balloon can't run unseen for longer than one segment.
+
+**On a growth or rework escalation, the Director chooses one:**
+- amend the charter (scope or done-criteria);
+- split the remaining work into a new charter;
+- re-charter at `lead-xhigh` (a fresh lead given the old lead's status, ledger and branch);
+- grant one extension, with the reason recorded in the ledger;
+- ask the user.
+
+Continuing silently is not an option.
+
+**D7. Lead reports carry ASSUMPTIONS and CLARIFY (owner).** These guard against context lost at
+each handoff:
 
 - **ASSUMPTIONS:** what the lead assumed where the charter was silent.
 - **CLARIFY:** non-blocking questions for the Director. A blocking question is an `ESCALATION`
@@ -84,27 +129,35 @@ handoff:
 
 The charter carries the intent behind the goal (the why), as principal orders do.
 
-**D8. The Haiku mechanical rung allows one strike.** `executor-mechanical-haiku` (Haiku 5.5
-pinned, high effort) takes only fully spelled-out orders (conditions below). Any BLOCKED,
-PARTIAL or REVISE sends the next round to `executor-mechanical` (Sonnet) with both reports. It
-is never an escalation target and sits beside the §3.5 chain, like `executor-bounded`. Its law
-is deliberately short: launcher field evidence (`plans/orchestra-codex-issues.md` #11,
-`CHANGELOG.md` 1.10.0, "Prose fails") says long prose fails on Haiku, so structure carries the
-weight.
+**D8. The Haiku mechanical rung allows one strike (owner: agreed).** `executor-mechanical-haiku`
+(Haiku 5.5 pinned, high effort) takes only fully spelled-out orders (conditions below). Any
+BLOCKED, PARTIAL or REVISE sends the next round to `executor-mechanical` (Sonnet) with both
+reports. It is never an escalation target and sits beside the §3.5 chain, like
+`executor-bounded`. Its law is deliberately short: launcher field evidence
+(`plans/orchestra-codex-issues.md` #11; `CHANGELOG.md` 1.10.0, "Prose fails") says long prose
+fails on Haiku, so structure carries the weight.
 
 **D9. Executor-spawned Haiku scouts are a deferred arm (WO-5).** They compose with leads at
 depth 3 (Director → lead → executor → scout), but trialling them in the same build would make
-the readout unattributable. Build them after the leads readout.
+the readout unattributable.
 
 **D10. Agent teams are not used.** They are experimental and off by default. `/resume` doesn't
-restore in-process teammates, teammates get no worktree isolation, and enabling teams turns
-named subagents into teammates. Revisit once teams are GA.
+restore in-process teammates, teammates get no worktree isolation, and enabling teams turns named
+subagents into teammates.
+
+**D11. Fable runs only at the user's request (owner).** The user sets the Director's model and
+may ask for a Fable profile by name. Nothing else reaches Fable. No lead is Fable, and Fable
+profiles are outside every lead's team.
+
+**D12. 3.9.0 is branch-only (owner).** Implement on a trial branch (suggested
+`trial/3.9.0-team-leads`). `main` stays on 3.8.0 until the trial readout passes, and there is no
+PR to `main` before then. The 3.9.0 `CHANGELOG.md` entry opens with that line.
 
 ## Platform facts this plan relies on
 
 Taken from current Claude Code docs (sub-agents, hooks, scheduled-tasks, tools-reference,
 agent-teams) on 2026-10-08. Quotes came through a fetch tool, so WO-0 confirms every row that
-matters in the owner's real environment.
+matters in the owner's environment.
 
 - Subagents nest up to three layers below the main session by default
   (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`; `1` turns nesting off). Director → lead → executor →
@@ -113,7 +166,7 @@ matters in the owner's real environment.
   subagent. The main session can `TaskStop` a subagent and later resume it with its full
   history.
 - Settings hooks fire inside subagents. The input carries `agent_id`, plus `agent_type` equal to
-  the frontmatter `name`. `SubagentStart` fires on both spawn and resume.
+  the frontmatter `name`. `SubagentStart` fires on spawn and on resume.
 - In interactive sessions, a subagent waits for its background children before finishing. In
   headless runs it does not, and background waits end after 10 minutes. **Leads are interactive
   only**, and they dispatch their children in the foreground (several `Agent` calls in one
@@ -123,8 +176,7 @@ matters in the owner's real environment.
 - `CronCreate` tasks are session-scoped, have a 1-minute minimum interval, fire only while the
   session is idle (a fire that comes due while busy waits for the turn to end), expire after 7
   days, and are restored on `--resume` if unexpired.
-- The concurrent-subagent cap is 20. With three leads each fanning out, that is the ceiling to
-  respect.
+- The concurrent-subagent cap is 20.
 - The `haiku` alias resolves to Haiku 5.5 on the Anthropic API and to Haiku 4.5 on Bedrock,
   Vertex and Foundry. Haiku 5.5 bills $0.10/$0.50 per MTok up to 100K-token prompts and
   $0.50/$2.50 beyond.
@@ -132,10 +184,12 @@ matters in the owner's real environment.
 Not documented, so WO-0 probes them:
 - whether a session waiting on background subagents counts as idle for cron;
 - what `maxTurns` counts and whether it resets on resume;
-- whether `TaskStop` on a lead also stops its children;
+- whether `TaskStop` on a lead stops its children;
 - whether the `Agent` call's `PreToolUse` input carries the *calling* subagent's `agent_type`;
+- whether a settings hook can deny a subagent's spawn;
 - MCP access at depth 2;
-- whether a `SubagentStart` matcher can target one agent type.
+- whether a `SubagentStart` matcher can target one agent type;
+- which model actually serves `claude-haiku-5-5` and the `haiku` alias.
 
 ## Specs
 
@@ -147,78 +201,92 @@ harness doesn't ship are untouched.
 
 | Caller `agent_type` | Tool | Rule |
 |---|---|---|
-| `lead` | `Edit`, `MultiEdit`, `Write`, `NotebookEdit` | allow only `.md` files under `.claude/plans/leads/**`, with the plan carve-out's existing realpath/symlink/hardlink containment. Deny everything else |
-| `lead` | `Bash`, `PowerShell`, `Grep`, `Glob` | deny (also absent from its `tools:`, so this is belt and braces) |
-| `lead` | `Agent` | allow `subagent_type` ∈ LEAD_TEAM ∪ `leadAllowedAgents`; deny a `model` override; deny once the segment budget is crossed (WO-3) |
+| `lead`, `lead-xhigh` | `Edit`, `MultiEdit`, `Write`, `NotebookEdit` | allow only `.md` files under `.claude/plans/leads/**`, with the plan carve-out's existing realpath/symlink/hardlink containment. Deny everything else |
+| `lead`, `lead-xhigh` | `Bash`, `PowerShell`, `Grep`, `Glob` | deny (also absent from their `tools:`, so this is belt and braces) |
+| `lead`, `lead-xhigh` | `Agent` | allow `subagent_type` ∈ LEAD_TEAM ∪ `leadAllowedAgents`; deny a `model` override; deny once the segment budget is crossed (WO-3) |
 | any Orchestra executor, `scout`, `detective`, `reviewer`, Codex launchers | `Agent` | deny (WO-5 later opens `scout`-only for the heavy and principal executors) |
 
 LEAD_TEAM: `scout`, `detective`, `executor-mechanical-haiku`, `executor-mechanical`,
 `executor-bounded`, `executor`, `executor-heavy`, `executor-heavy-xhigh`, `reviewer`,
 `reviewer-codex`, `executor-codex-principal`.
 
-Never on it: `lead`, so leads can't nest. Also excluded are the user-request-only profiles
-(`executor-principal`, `executor-principal-xhigh`, `executor-codex-heavy`,
-`executor-codex-luna`) and the planning lanes. When a lead needs one of those, including the
-Fable substitute for a missing Astra rung, it returns `ESCALATION` and the Director decides.
+Never on it:
+- `lead` and `lead-xhigh`, so leads can't nest;
+- every Fable profile (D11);
+- the user-request-only Codex executors (`executor-codex-heavy`, `executor-codex-luna`);
+- the planning lanes.
+
+When a lead's order needs any of those — for example the announced Fable substitute for a
+missing Astra rung (open question 1) — the lead returns `ESCALATION` and the Director decides.
 `leadAllowedAgents` in `.claude/orchestra.json` adds project specialists.
 
-### Segment budget clock (WO-3)
+### Segment budget clock and dispatch counts (WO-3)
 
-- **Start.** On `SubagentStart` with `agent_type` `lead`, write
-  `{ "segmentStart": <epoch ms>, "dispatches": 0 }` to `.claude/orchestra-leads/<agent_id>.json`
-  (atomic temp-and-rename). Resume fires `SubagentStart` again, so each resumed segment gets a
-  fresh budget.
-- **Check.** On a `lead`'s `PreToolUse` `Agent` call, increment `dispatches`. If minutes since
-  `segmentStart` exceed `leads.maxMinutes` (default 120) or `dispatches` exceed
-  `leads.maxDispatches` (default 20), deny with:
+- **State.** One file per lead, `.claude/orchestra-leads/<agent_id>.json`:
+  `{ "segmentStart": <epoch ms>, "segment": { "<agent type>": n }, "lifetime": { "<agent type>": n } }`.
+  It is written with an atomic temp-and-rename and sits outside the lead's writable
+  `.claude/plans/leads/`.
+- **Start.** On `SubagentStart` with `agent_type` `lead` or `lead-xhigh`, set `segmentStart` to
+  now and clear `segment`. Keep `lifetime` and create it if absent. Resume fires `SubagentStart`
+  again, so each resumed segment gets a fresh budget.
+- **Check.** On a lead's `PreToolUse` `Agent` call, increment `segment` and `lifetime` for the
+  requested `subagent_type`. If minutes since `segmentStart` exceed `leads.maxMinutes` (default
+  120), or the segment total exceeds `leads.maxDispatches` (default 20), deny with:
   `Orchestra: lead budget crossed (<which>). Write your status file and return STATUS: CHECKPOINT now.`
+- **Director reads.** At each checkpoint the Director reads this file (an artifact its agent
+  points to; the lead's report names its `agent_id`) and compares `lifetime` with the lead's
+  reported closed orders and rework (D6.3).
 - **Failure modes.**
   - Unreadable or missing state fails open; layers 3 and 4 still hold.
   - Parallel dispatches may race and undercount. It is a tripwire, not an accountant.
-- **Scope.** No other state, no ledger, nothing for the Director to keep in sync. The directory
-  sits outside `.claude/plans/leads/`, so a lead cannot write it.
 
 ### Lead charter (Director → lead; added to `skills/orchestra-plan`)
 
 ```
 LEAD CHARTER: <lead name>
-Goal:            <one paragraph>
-Intent:          <why this matters; what a good trade-off looks like>
-Done-criteria:   - [ ] <observable criterion> ...
-Scope:           <paths/globs the sub-campaign may touch>
-Must not change: <files, contracts, behaviors>
-Branch:          <lead branch> in worktree <path> (created by the Director's setup order)
-Context:         <pasted findings, decisions, constraints — leads share no memory>
-Size:            <planned work orders, soft cap ~8>
-Delegated:       <decisions the lead may make, with bounds — or none>
-Extra triggers:  <charter-specific return triggers — or none>
-Status file:     .claude/plans/leads/<name>/status.md
-Ledger:          .claude/plans/leads/<name>/ledger.md
+Lead tier:        lead | lead-xhigh — <why this tier>
+Goal:             <one paragraph>
+Intent:           <why this matters; what a good trade-off looks like>
+Done-criteria:    - [ ] <observable criterion> ...
+Scope:            <paths/globs the sub-campaign may touch>
+Must not change:  <files, contracts, behaviors>
+Branch:           <lead branch> in worktree <path> (created by the Director's setup order)
+Context:          <pasted findings, decisions, constraints — leads share no memory>
+Chartered orders: <n> (hard cap 8) — <one line per planned WO>
+Rework budget:    <n> (default: half of chartered orders rounded up, minimum 2)
+Delegated:        <decisions the lead may make, with bounds — or none>
+Extra triggers:   <charter-specific return triggers — or none>
+Status file:      .claude/plans/leads/<name>/status.md
+Ledger:           .claude/plans/leads/<name>/ledger.md
 ```
 
 ### Status file (lead overwrites at every milestone; Director reads)
 
 ```
-lead: <name> · seq: <n, +1 per write> · state: RUNNING | CHECKPOINT | ESCALATION | DONE
-orders: <done>/<planned> · in flight: <WO-id → agent | none>
-reviews: <verdicts so far, e.g. 2 APPROVE / 1 REVISE> · open findings: <n>
+lead: <name> · tier: high | xhigh · seq: <n, +1 per write> · state: RUNNING | CHECKPOINT | ESCALATION | DONE
+orders: closed <c> / planned <p> (chartered <n>, growth <p−n> of +2) · in flight: <WO-id → agent | none>
+rework: <r> of <budget> · reviews: <verdicts so far, e.g. 2 APPROVE / 1 REVISE> · open findings: <n>
 branch: <branch> @ <short sha, from the last executor report>
 blockers: <none | one line>
 next: <one line>
 ```
 
-A milestone is: an order closed, a review verdict received, or a checkpoint or return. The lead
-has no clock (no Bash), so staleness comes from `seq` not moving across two Director check-ins.
+A milestone is: an order closed, a split, a rework round, a review verdict, or a checkpoint or
+return. The lead has no clock (no Bash), so staleness comes from `seq` not moving across two
+Director check-ins.
 
 ### Lead report format (its final message; ≤ ~25 lines; detail lives in its ledger)
 
 ```
 STATUS: DONE | CHECKPOINT | ESCALATION | BLOCKED
-TRIGGER: <budget clock | maxTurns | scope change | done-criteria change | double REVISE |
-          reviewer–executor disagreement | rung outside LEAD_TEAM needed | needs the user | n/a>
+TRIGGER: <budget clock | maxTurns | plan growth | second split | rework budget | double REVISE |
+          scope change | done-criteria change | reviewer–executor disagreement |
+          rung outside the team | needs the user | n/a>
+AGENT ID: <this lead's agent_id, for the Director's dispatch-count check>
 DONE-CRITERIA
 - [x] / [ ] <each charter criterion> — <evidence: commit, verdict, check>
-ORDERS: <done>/<planned> — <WO-id · rung · verdict · rounds>, one per line
+ORDERS: closed <c> / planned <p> (chartered <n>) · GROWTH <p−n> of +2 · REWORK <r> of <budget>
+- <WO-id · rung · verdict · runs>, one per line
 REVIEW: <lane · verdict · base..head | not yet>
 BRANCH: <branch> @ <sha>
 DECISIONS: <taken inside the charter's delegated bounds — or none>
@@ -231,8 +299,10 @@ NEXT: <what a resume continues with — or none>
 
 The lead writes its status file and returns when:
 - a done-criterion or the scope would have to change;
+- plan growth would exceed +2, or a piece that was already split would be split again;
+- rework would exceed its budget;
 - one change takes two REVISE cycles;
-- an order needs a rung outside LEAD_TEAM;
+- an order needs a rung outside its team;
 - its reviewer and executor disagree;
 - a merge or worktree conflict blocks it;
 - anything needs the user;
@@ -257,13 +327,16 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 
 ## Done-criteria
 
-- [ ] WO-0 probe results recorded, and every design assumption confirmed or the plan amended
-      before WO-1 starts.
-- [ ] `executor-mechanical-haiku`, `lead`, the guard rules and the budget clock ship as 3.9.0 on
-      the trial branch. All eight CI suites are green on the Windows matrix.
-      `node install.js --lint` is clean.
-- [ ] `ORCHESTRA.md` gains a tight Leads section (~25 lines) without restating rules that
-      already exist.
+- [ ] WO-0 probe results are recorded in `plans/team-leads-probe-results.md`, and every design
+      assumption is confirmed or the plan amended before WO-1 starts.
+- [ ] On the 3.9.0 trial branch, the following ship:
+  - `executor-mechanical-haiku`, `lead`, `lead-xhigh`;
+  - the guard rules, the budget clock and the dispatch counts.
+
+  All eight CI suites are green on the Windows matrix, and `node install.js --lint` is clean.
+  `main` is untouched.
+- [ ] `ORCHESTRA.md` gains a tight Leads section (~25 lines) without restating rules that already
+      exist.
 - [ ] The installed tree in a scratch project shows the new agents. The `SubagentStart`
       registration is in `.claude/settings.json`. Uninstall removes all of it.
 - [ ] The trial protocol below has been run, and the readout is recorded in
@@ -273,23 +346,18 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 
 ### WO-0: Platform probes (owner-run, interactive)
 - **Kind:** measurement
-- **Scope:** a scratch project with this branch installed; no harness edits
-- **Probes:**
-  1. A logging `PreToolUse` and `SubagentStart` hook. Spawn Director → test lead → executor →
-     scout. Record `agent_type`/`agent_id` on each level's tool calls, including the `Agent`
-     call's caller identity, `tool_input.subagent_type` and `tool_input.model`. Check whether a
-     `SubagentStart` matcher can target `lead`.
-  2. `maxTurns: 5` on a test agent. What counts as a turn? Does a long foreground child count
-     as one turn? What does the parent receive at the cap? Does a resume reset the count?
-  3. A background lead with foreground parallel children:
-     - Does the Director wake on its completion notification?
-     - Does `TaskStop` on the lead stop its children?
-     - Can the lead `SendMessage`-resume its own child?
-  4. `CronCreate` every 2 min while the Director waits on a background lead. Does it fire?
-  5. `reviewer-codex` spawned by the test lead (depth 2) calls `orchestra_review` successfully.
-  6. `model: claude-haiku-5-5` is served as Haiku 5.5 (check the transcript's model field).
-- **Acceptance:** `plans/team-leads-probe-results.md` lists each probe with the observed
-  behavior. Every "no" names the design change it forces.
+- **Scope:** a throwaway project with the current harness and `plans/team-leads-probe-kit/`
+  installed per its README; no harness edits
+- **Probes:** the kit's probes 1–6 cover:
+  - identity, matcher scoping and deny on a subagent spawn;
+  - `maxTurns` semantics;
+  - background lead mechanics: completion wake, `TaskStop` reach, child resume, `SubagentStart`
+    on resume;
+  - cron while waiting;
+  - MCP at depth 2;
+  - the Haiku model actually served.
+- **Acceptance:** `plans/team-leads-probe-results.md` is filled in from the kit's template. Every
+  "no" names the design change it forces, and this plan is amended before WO-1.
 - **Depends on:** none
 
 ### WO-1: Haiku mechanical rung
@@ -304,12 +372,12 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
     `executor-mechanical`, `executor-bounded`, `executor-heavy`, `executor-heavy-xhigh`, the
     Codex launchers, `skills/orchestra-status`
   - `tests/exec-lane.test.js` (new doctrine section modelled on the §19 `executor-bounded` pins)
-  - `CHANGELOG.md` (opens the 3.9.0 trial entry); `VERSION` → 3.9.0
+  - `CHANGELOG.md` (opens the 3.9.0 entry with the branch-only line); `VERSION` → 3.9.0
 - **Constraints:** `executor-mechanical` is unchanged. The §3.5 escalation chain is unchanged.
 - **Acceptance:**
   - The tests pin: name, `disallowedTools: Agent`, `model: claude-haiku-5-5`, `effort: high`,
-    the four routing conditions in the description, the UNVERIFIED section, the one-strike
-    rule, and that the rung is absent from the §3.5 chain.
+    the four routing conditions in the description, the UNVERIFIED section, the one-strike rule,
+    and that the rung is absent from the §3.5 chain.
   - The install suite sees the new agent installed and removed.
 - **Verification:** TIER: full. Run all eight suites plus `node install.js --lint`.
 - **Depends on:** WO-0 probe 6
@@ -323,22 +391,24 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
   - Agent types the harness doesn't ship are untouched.
   - Replace the stale comment at `hooks/orchestra-guard.js:1039` ("PreToolUse hooks only fire
     for the main session") with what the docs now say.
-- **Acceptance:** guard tests cover every row of the rule table:
+- **Acceptance:** guard tests cover every row of the rule table, for both lead types:
   - allowed and denied lead writes, including `.md`-only and symlink/hardlink escapes;
   - lead Bash/Grep/Glob denied;
-  - lead `Agent` allowlist hit and miss; `lead` → `lead` denied; model override denied;
+  - lead `Agent` allowlist hit and miss; lead → lead and lead → any Fable profile denied; model
+    override denied;
   - `leadAllowedAgents` extending the list;
   - Orchestra executors' `Agent` denied; non-Orchestra types untouched;
   - pause file standing everything down.
 - **Verification:** TIER: full — the guard suite plus all others.
-- **Depends on:** WO-0 probe 1 (caller identity on `Agent` calls)
+- **Depends on:** WO-0 probes 1c, 1d
 
-### WO-3: Lead budget clock
+### WO-3: Lead budget clock and dispatch counts
 - **Kind:** hook behavior + installer registration
 - **Scope:**
-  - `hooks/orchestra-guard.js` (a `SubagentStart` branch and the lead `Agent` budget check)
+  - `hooks/orchestra-guard.js` (a `SubagentStart` branch, the lead `Agent` budget check, the
+    counts)
   - `install.js` (register and unregister the `SubagentStart` entry, alongside the existing
-    `PreToolUse` merge)
+    `PreToolUse` merge; use a matcher only if probe 1b shows one works)
   - `tests/guard.test.js`, `tests/install.test.js`, the README
 - **Constraints:**
   - State is only `.claude/orchestra-leads/<agent_id>.json`.
@@ -346,50 +416,53 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
   - The `leads.maxMinutes` and `leads.maxDispatches` defaults are 120 and 20, read from
     `.claude/orchestra.json`.
 - **Acceptance:** tests cover:
-  - start, resume reset, the minutes trip, the dispatch trip, the exact denial text;
+  - start; resume resetting `segment` while keeping `lifetime`; per-type counts;
+  - the minutes trip, the dispatch trip, the exact denial text;
   - corrupt state failing open;
   - two concurrent dispatches not crashing;
   - install registering the entry, re-install staying idempotent, uninstall removing it while
     preserving user hooks.
 - **Verification:** TIER: full
-- **Depends on:** WO-2; WO-0 probes 1–2
+- **Depends on:** WO-2; WO-0 probes 1a, 1b, 3c, 3d
 
-### WO-4: The lead role and the Director's side of it
-- **Kind:** new agent profile + protocol
+### WO-4: The leads and the Director's side of them
+- **Kind:** new agent profiles + protocol
 - **Scope:**
-  - `agents/lead.md` (new): frontmatter with `tools: Agent, Read, Write, Edit, SendMessage`,
-    `model: opus`, `effort: high`, `maxTurns` from WO-0; law; report format; status schema;
-    triggers
+  - `agents/lead.md` and `agents/lead-xhigh.md` (new, one law): frontmatter with
+    `tools: Agent, Read, Write, Edit, SendMessage`, `model: opus`, `effort: high` / `xhigh`, and
+    `maxTurns` set from probe 2. The law covers the status schema, report format, return
+    triggers including the D6 counters, foreground dispatch, and "never edits".
   - `install.js` (`AGENTS`)
   - `ORCHESTRA.md`:
-    - §2: a company row and a "Leads" paragraph covering when a sub-goal gets a lead (≥3 work
-      orders, or its own review cycle), the charter, background launch, status pull, the
-      `CronCreate` check-in, the return triggers, and that leads never edit
+    - §2: company rows and a "Leads" paragraph covering when a sub-goal gets a lead (≥3 work
+      orders, or its own review cycle), the tier choice, the charter, background launch, status
+      pull, the `CronCreate` check-in, the dispatch-count cross-check, the Director's options on
+      escalation, and interactive-only
     - §4: the Director's loop with leads, plus integration and merge orders
     - §5: the integration-review rule for ≥2 leads
   - `skills/orchestra-plan/SKILL.md`: when to charter a lead, and the charter template
   - `skills/orchestra-status/SKILL.md`: list leads and point at their status files
   - `README.md`, `tests/exec-lane.test.js` (lead doctrine pins), `CHANGELOG.md`
 - **Constraints:**
-  - The new `ORCHESTRA.md` text is ≤ ~25 lines and cross-references the existing rules
-    instead of restating them.
-  - Flat direction stays the default for anything below the lead threshold.
-  - Leads are documented as interactive-only.
+  - The new `ORCHESTRA.md` text is ≤ ~25 lines and cross-references the existing rules instead
+    of restating them.
+  - Flat direction stays the default below the lead threshold.
 - **Acceptance:** the tests pin:
-  - the lead's frontmatter (tool list excludes Bash/Grep/Glob, `opus`, `high`, `maxTurns`
-    present);
-  - the report sections, including ASSUMPTIONS and CLARIFY;
+  - both leads' frontmatter (tool list excludes Bash/Grep/Glob, `opus`, the two efforts,
+    `maxTurns` present);
+  - the report sections, including ASSUMPTIONS, CLARIFY, GROWTH and REWORK;
   - the status schema's `seq`;
-  - the `ORCHESTRA.md` clauses: integration review, check-in, never edits, the threshold.
+  - the `ORCHESTRA.md` clauses: integration review, check-in, never edits, the threshold, the
+    8-order cap.
 - **Verification:** TIER: full
 - **Depends on:** WO-1, WO-2, WO-3
 
 ### WO-5 (deferred until the leads readout): executor-spawned Haiku scouts
 - **Kind:** profile + guard rule
 - **Scope:**
-  - drop `disallowedTools: Agent` from `executor-heavy`, `executor-heavy-xhigh`,
-    `executor-principal`, `executor-principal-xhigh`
-  - a law clause in each: scouts only for files the executor will not edit and for searchable
+  - drop `disallowedTools: Agent` from `executor-heavy` and `executor-heavy-xhigh` (the Fable
+    principal profiles stay closed, D11)
+  - a law clause: scouts only for files the executor will not edit and for searchable
     enumeration; scout output is pointers, not facts; a DELEGATED RECON report section
   - a guard row opening `Agent` → `scout` only, no model override
   - tests
@@ -397,14 +470,13 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 
 ## Sequencing
 
-- Serial: WO-0 → WO-1 → WO-2 → WO-3 → WO-4. WO-1 and WO-2 touch disjoint files and could run in
-  parallel worktrees, but WO-1 is small. Serial keeps the review batch simple.
-- Gate: WO-0 must come back before any order is cut. A failed probe amends this plan first.
+- Serial: WO-0 → WO-1 → WO-2 → WO-3 → WO-4.
+- Gate: WO-0 results must be in before any order is cut. A failed probe amends this plan first.
 
 ## Review checkpoints
 
-- One batched cross-family review over WO-1..WO-4 (commit-pinned base/head). Agent, skill,
-  `ORCHESTRA.md` and hook changes are behavior, so this is a full-tier review.
+- One batched cross-family review over WO-1..WO-4 (commit-pinned base/head on the trial branch).
+  Agent, skill, `ORCHESTRA.md` and hook changes are behavior, so this is a full-tier review.
 - An earlier checkpoint after WO-2/WO-3 only if WO-4's text ends up depending on guard behavior
   that changed under review.
 
@@ -422,6 +494,8 @@ arms.
 | Wall-clock INTAKE → REPORT | ledger | no worse than +10% |
 | REVISE rate; integration-review findings at seams; escapes | verdicts, later bugs | REVISE no worse than +10%; seam findings recorded either way |
 | Runaway incidents, and which layer caught each | ledger notes | every incident caught by layers 1–4; zero lead edits; zero guard bypasses |
+| Cap triggers (growth, rework, second split) and the Director's call on each | lead reports, ledger | recorded. At readout, judge whether each trigger fired on a real balloon and whether the call helped, then tune the +2 / half-of-orders defaults |
+| Lead self-report vs. guard dispatch counts | status files, state files | gaps recorded; any unexplained gap is a finding |
 
 **Haiku arm:** at least 15 orders that meet the four conditions, compared with
 `executor-mechanical` on the same order class.
@@ -446,16 +520,27 @@ arms.
   concurrent reviews (`packs/codex/hooks/orchestra-review.js:1686`). Watch the pool readings.
 - **Interactive only.** Headless runs drop background work after 10 minutes, and cron needs an
   open session. The protocol says so; leads are not for `-p` runs.
-- **Complexity creep, the 3.0 lesson.** The new code is the guard rules plus one state file.
-  Budget: ≤ ~250 lines of guard code, including the clock. No ledger machinery, no new state
-  machine, and no edits during the trial.
+- **Complexity creep, the 3.0 lesson.** The new code is the guard rules plus one state file per
+  lead. Budget: ≤ ~300 lines of guard code, including the clock and counts. No ledger machinery,
+  no new state machine, and no edits during the trial.
 - **Haiku prose-following.** Short law, structural checks (scout audit, review), one strike.
 
 ## Open questions for the owner
 
-1. Lead model: Opus high only (recommended), or also a Fable lead variant reached only on user
-   request?
-2. Should 3.9.0 stay branch-only until its trial passes? The 3.8.0 entry said branch-only, but
-   PR #48 merged it to `main`.
-3. Budget defaults: 120 min / 20 dispatches per segment, and a check-in every 45 min. Accept, or
-   tune?
+1. D11 says nothing reaches Fable unless the user asks. But `ORCHESTRA.md` §2 (and
+   `executor-principal`'s description) still lets the Director substitute the Fable
+   `executor-principal`, announced, when the Astra rung is unavailable. This plan leaves that
+   rule alone; leads can't reach it either way and escalate instead. Should the substitute rule
+   be retired, so that a missing Astra rung means "ask the user"? If so, it is a separate small
+   change, and it can ride in WO-1's protocol edit.
+2. Budget defaults: 120 min / 20 dispatches per lead segment, and a 45-min Director check-in.
+   They ship as trial defaults and get tuned at readout unless you want other starting numbers.
+
+## Resolved (owner, 2026-10-08)
+
+- Leads: Opus high and Opus xhigh only, picked by the Director by goal complexity. Never Fable.
+- Fable: user request only (the Director model the user starts with, or a Fable profile the user
+  names).
+- The 8-work-order cap stays as a hard ceiling. D6's consumption counters do the real capping.
+- Haiku mechanical rung: details as specified.
+- 3.9.0 is branch-only.

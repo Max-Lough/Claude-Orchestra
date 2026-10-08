@@ -97,6 +97,18 @@ platform probes: `plans/team-leads-probe-results.md`.
   order, and §5 an integration review for campaigns with two or more leads.
   `/orchestra-plan` carries the LEAD CHARTER template, and `/orchestra-status`
   lists leads with their status lines.
+- **Review round 1 (Sol, REVISE) fixes.**
+  - The non-spawning rule no longer depends on a hand list: it adds the
+    cross-compare architects and synthesizer, and covers any installed agent
+    whose definition is ours (name matches, description starts with
+    `Orchestra`), so specialists are included.
+  - The clock's state path must resolve inside the project, so a junction at
+    `.claude/orchestra-leads` fails the clock open instead of writing outside.
+    Count maps have no prototype, so a type named `constructor` counts
+    normally, and `leadAllowedAgents` can't name `resume`. Uninstall removes
+    the clock files.
+  - The ‡ footnote and the user-request-only paragraphs no longer read as if
+    `executorEngine` could select a Fable executor. It selects Sol alone.
 
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 

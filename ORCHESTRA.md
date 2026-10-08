@@ -45,7 +45,7 @@ not change session identity.
 | Cross-compare architects † | `architect-claude-xhigh`/`-max` / `architect-codex` | Fable / GPT-6 Astra (xhigh or max, matched) | independent plans, cross-critique, revision (`/cross-compare-plan`) |
 | Plan synthesizer † | `plan-synthesizer` | Opus, fresh/blind | adjudicate revised plans without lane identity |
 
-‡ **User request only.** These are never chosen by a routing rule: they run when the user names them, or when `executorEngine` selects the Codex lane (§2).
+‡ **User request only.** These are never chosen by a routing rule: they run when the user names them. `executorEngine: "codex"` is the durable form of that request for the Sol executor alone (§2); it never selects a Fable or Luna executor.
 
 † Installed only with the optional `codex` pack. Without it the Opus principal rung is the top (§2), and review falls to fresh-context Opus; report the missing cross-family lane plainly. Projects may add **specialist executors** (domain-tuned variants of `executor`, see §7). Route to agents that exist in this project (`/orchestra-status` lists them); routing to an uninstalled agent is a plan error, not a fallback.
 
@@ -66,7 +66,7 @@ not change session identity.
 
 The Astra rung crosses the vendor line, so a double bounce at the heavy tier escalates straight to Astra. Principal orders name any decision they delegate and its bounds; the principal records what it chose under DECISIONS.
 
-**Everything else on the bench is user request only** — the Fable executors (`executor-fable`, `executor-fable-xhigh`), the Sol executor (`executor-codex-heavy`) and the Luna executor (`executor-codex-luna`). No routing rule reaches them. They run when the user names them, or when `executorEngine: "codex"` in `.claude/orchestra.json` makes the Codex lane this project's executor lane; an in-conversation instruction does the same for one session or order. The Codex lane there means Sol: Luna runs only when the user names it. Never promote an order into them on your own judgment, and never explain a bounce by reaching for one.
+**Everything else on the bench is user request only** — the Fable executors (`executor-fable`, `executor-fable-xhigh`), the Sol executor (`executor-codex-heavy`) and the Luna executor (`executor-codex-luna`). No routing rule reaches them. They run when the user names them. The Sol executor also runs when `executorEngine: "codex"` in `.claude/orchestra.json` makes the Codex lane this project's executor lane; an in-conversation instruction does the same for one session or order. That lane means Sol alone: the Fable and Luna executors run only when the user names them. Never promote an order into them on your own judgment, and never explain a bounce by reaching for one.
 
 **When the Astra rung is unavailable** — the `codex` pack is not installed, or the lane cannot run — the Opus principal rung is the top. Principal-shaped orders go to `executor-principal` (Opus 5.5, xhigh) at PLAN time, and a double bounce at `executor-heavy-xhigh` escalates to `executor-principal-max` (Opus 5.5, max): escalation adds effort, and `executor-heavy-xhigh` already runs Opus at xhigh. Say in one line that Astra did not run, and name it in the REPORT. The principal charter is unchanged. Opus-principal work is Claude-authored, so its review goes to `reviewer-codex` (§5).
 

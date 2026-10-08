@@ -507,7 +507,12 @@ function loadPolicy() {
       planPatternsRaw: rawPlanPatterns,
       planPatterns: cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [],
       memoryPatterns: cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [],
-      leadAllowedAgents: cfg ? arrOfStrings(cfg.leadAllowedAgents).slice(0, MAX_PATTERN_ARRAY_LEN) : [],
+      // Never another lead (leads don't nest), and never the `resume` count key.
+      leadAllowedAgents: cfg
+        ? arrOfStrings(cfg.leadAllowedAgents)
+            .slice(0, MAX_PATTERN_ARRAY_LEN)
+            .filter((t) => t !== 'lead' && t !== 'lead-xhigh' && t !== 'resume')
+        : [],
       leadMaxMinutes: positiveOr(leads.maxMinutes, empty.leadMaxMinutes),
       leadMaxDispatches: positiveOr(leads.maxDispatches, empty.leadMaxDispatches),
     });
@@ -1032,8 +1037,10 @@ const LEAD_TEAM = new Set([
   'reviewer-codex',
 ]);
 
-// Orchestra agents that never spawn: every executor rung, recon, review and
-// the Codex launchers.
+// Orchestra agents that never spawn: every core and pack agent except the
+// leads. isOrchestraAgent() also covers any installed agent whose definition
+// is ours (specialists, and anything added later), so the rule does not
+// depend on this list staying complete.
 const NON_SPAWNING = new Set([
   'scout',
   'detective',
@@ -1052,7 +1059,28 @@ const NON_SPAWNING = new Set([
   'executor-codex-principal',
   'executor-codex-heavy',
   'executor-codex-luna',
+  'architect-claude-xhigh',
+  'architect-claude-max',
+  'architect-codex',
+  'plan-synthesizer',
 ]);
+
+// Ours when the installed .claude/agents/<type>.md names itself <type> and its
+// description starts with "Orchestra" — the installer's ownership test.
+function isOrchestraAgent(type) {
+  if (NON_SPAWNING.has(type)) return true;
+  if (!SAFE_AGENT_ID.test(type)) return false;
+  try {
+    const text = fs.readFileSync(path.join(projectDir(), '.claude', 'agents', type + '.md'), 'utf8');
+    const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+    if (!fm) return false;
+    const field = (k) =>
+      ((new RegExp('^' + k + ':[ \t]*(.*?)[ \t]*\r?$', 'm').exec(fm[1]) || [])[1] || '').replace(/^["']/, '');
+    return field('name').replace(/["']$/, '') === type && field('description').startsWith('Orchestra');
+  } catch (_) {
+    return false;
+  }
+}
 
 const LEAD_PLANS_REL = path.join('.claude', PLANS_DIRNAME, 'leads');
 const LEAD_DENIED_TOOLS = new Set(['Bash', 'PowerShell', 'Grep', 'Glob']);
@@ -1065,14 +1093,13 @@ function denyCompany(msg) {
 function subagentLaw(input, toolName, policy) {
   const type = input.agent_type;
   if (typeof type !== 'string') return;
-  if (NON_SPAWNING.has(type)) {
-    if (toolName !== 'Agent') return;
+  if (!LEAD_TYPES.has(type)) {
+    if (toolName !== 'Agent' || !isOrchestraAgent(type)) return;
     return denyCompany(
       type + ' does not spawn agents. Finish your order and name what else is needed ' +
         'under CONCERNS; the Director (or your lead) dispatches it.'
     );
   }
-  if (!LEAD_TYPES.has(type)) return;
 
   if (PAUSE_WRITE_TOOLS.has(toolName)) {
     const plan = classifyPlanOperation(toolName, input.tool_input, [], LEAD_PLANS_REL);
@@ -1092,10 +1119,7 @@ function subagentLaw(input, toolName, policy) {
   if (toolName === 'Agent') {
     const ti = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
     const target = ti.subagent_type;
-    const onTeam =
-      LEAD_TEAM.has(target) ||
-      (typeof target === 'string' && !LEAD_TYPES.has(target) && policy.leadAllowedAgents.includes(target));
-    if (!onTeam) {
+    if (!LEAD_TEAM.has(target) && !policy.leadAllowedAgents.includes(target)) {
       return denyCompany(
         (typeof target === 'string' ? target : 'an untyped agent') + ' is outside a lead\'s team. ' +
           'Write your status file and return STATUS: ESCALATION with TRIGGER: rung outside the team.'
@@ -1135,9 +1159,21 @@ function subagentLaw(input, toolName, policy) {
 const LEADS_STATE_REL = path.join('.claude', 'orchestra-leads');
 const SAFE_AGENT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
+// Null unless the state file's REAL path is exactly <project>/.claude/
+// orchestra-leads/<agent_id>.json: a junction or symlink along the way must
+// not carry the state outside the project (realish(), as the plan carve-out).
 function leadStatePath(agentId) {
   if (typeof agentId !== 'string' || !SAFE_AGENT_ID.test(agentId)) return null;
-  return path.join(projectDir(), LEADS_STATE_REL, agentId + '.json');
+  const root = projectDir();
+  const rel = path.join(LEADS_STATE_REL, agentId + '.json');
+  const file = path.join(root, rel);
+  return path.relative(realish(root), realish(file)) === rel ? file : null;
+}
+
+// Count maps have no prototype, so an agent type named `constructor` or
+// `__proto__` is an ordinary key.
+function counts(o) {
+  return Object.assign(Object.create(null), o);
 }
 
 function isCounts(o) {
@@ -1157,7 +1193,7 @@ function readLeadState(file) {
   try {
     const s = JSON.parse(raw);
     return s && Number.isFinite(s.segmentStart) && isCounts(s.segment) && isCounts(s.lifetime)
-      ? s
+      ? { segmentStart: s.segmentStart, segment: counts(s.segment), lifetime: counts(s.lifetime) }
       : undefined;
   } catch (_) {
     return undefined;
@@ -1168,7 +1204,7 @@ function writeLeadState(file, state) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = file + '.' + process.pid + '-' + Date.now() + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(state), 'utf8');
+    fs.writeFileSync(tmp, JSON.stringify(state), { encoding: 'utf8', flag: 'wx' });
     try {
       fs.renameSync(tmp, file);
     } catch (_) {
@@ -1184,7 +1220,7 @@ function leadBudget(agentId, key, policy) {
   if (!file) return allow();
   let state = readLeadState(file);
   if (state === undefined) return allow();
-  if (state === null) state = { segmentStart: Date.now(), segment: {}, lifetime: {} };
+  if (state === null) state = { segmentStart: Date.now(), segment: counts({}), lifetime: counts({}) };
 
   const minutes = (Date.now() - state.segmentStart) / 60000;
   const dispatched = Object.keys(state.segment).reduce((n, k) => n + state.segment[k], 0);
@@ -1221,7 +1257,7 @@ function restartLeadSegment(toolInput) {
       const state = readLeadState(file);
       if (!state) continue;
       state.segmentStart = Date.now();
-      state.segment = {};
+      state.segment = counts({});
       writeLeadState(file, state);
     }
   } catch (_) {

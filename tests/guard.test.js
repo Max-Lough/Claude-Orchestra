@@ -1411,6 +1411,72 @@ function case29_leadBudgetClock() {
   check('no temp files are left behind', leftovers.length === 0, leftovers.join(','));
 }
 
+// Review round 1 (Sol REVISE) regressions: the non-spawning rule covers every
+// agent that is ours, not a hand list; the clock's state never leaves the
+// project through a link; count keys can't collide with Object.prototype.
+function case30_reviewRound1() {
+  section('30. Company law and clock hardening: planning lanes and specialists, junctioned state dir, prototype-named types');
+
+  const p = tmpdir('orchestra-guard-');
+  for (const t of ['architect-claude-xhigh', 'architect-claude-max', 'architect-codex', 'plan-synthesizer']) {
+    const d = decisionOf(runGuard(p, subagentCall(t, 'Agent', leadSpawn('scout'))));
+    check(t + ' Agent -> deny', d.decision === 'deny' && /does not spawn agents/.test(d.reason), JSON.stringify(d));
+  }
+  // An installed specialist is recognised by its definition, not by a list.
+  const agentsDir = path.join(p, '.claude', 'agents');
+  fs.mkdirSync(agentsDir, { recursive: true });
+  fs.writeFileSync(path.join(agentsDir, 'modeler.md'), '---\nname: modeler\ndescription: Orchestra specialist executor for 3D asset work.\ndisallowedTools: Agent\n---\n\nbody\n', 'utf8');
+  fs.writeFileSync(path.join(agentsDir, 'crlf-spec.md'), '---\r\nname: crlf-spec\r\ndescription: "Orchestra specialist, quoted, CRLF."\r\n---\r\n', 'utf8');
+  fs.writeFileSync(path.join(agentsDir, 'mine.md'), '---\nname: mine\ndescription: My own helper agent.\n---\n', 'utf8');
+  fs.writeFileSync(path.join(agentsDir, 'renamed.md'), '---\nname: something-else\ndescription: Orchestra-looking but named otherwise.\n---\n', 'utf8');
+  for (const [t, want] of [['modeler', 'deny'], ['crlf-spec', 'deny'], ['mine', 'allow'], ['renamed', 'allow'], ['not-installed', 'allow']]) {
+    const d = decisionOf(runGuard(p, subagentCall(t, 'Agent', leadSpawn('scout'))));
+    check('installed agent ' + t + ' Agent -> ' + want, d.decision === want, JSON.stringify(d));
+  }
+  const specEdit = decisionOf(runGuard(p, subagentCall('modeler', 'Write', { file_path: 'src/a.js', content: 'x' })));
+  check('an Orchestra specialist Write -> allow (only Agent is ruled)', specEdit.decision === 'allow', JSON.stringify(specEdit));
+
+  // A junction at .claude/orchestra-leads never carries state outside.
+  const pj = tmpdir('orchestra-guard-');
+  const outside = tmpdir('orchestra-guard-outside-');
+  fs.mkdirSync(path.join(pj, '.claude'), { recursive: true });
+  let linked = true;
+  try {
+    fs.symlinkSync(outside, path.join(pj, '.claude', 'orchestra-leads'), 'junction');
+  } catch (e) {
+    try {
+      fs.symlinkSync(outside, path.join(pj, '.claude', 'orchestra-leads'), 'dir');
+    } catch (e2) {
+      linked = false;
+      check('junctioned clock dir', true, 'SKIPPED — cannot create a symlink/junction (' + (e2 && e2.message) + ')');
+    }
+  }
+  if (linked) {
+    const d = decisionOf(runGuard(pj, { tool_name: 'Agent', agent_id: 'ajunc0001', agent_type: 'lead', tool_input: leadSpawn('executor') }));
+    check('junctioned .claude/orchestra-leads -> allow (fail open), nothing written outside the project',
+      d.decision === 'allow' && fs.readdirSync(outside).length === 0, fs.readdirSync(outside).join(','));
+    fs.writeFileSync(path.join(outside, 'ajunc0001.json'), JSON.stringify({ segmentStart: Date.now(), segment: {}, lifetime: {} }), 'utf8');
+    const before = fs.readFileSync(path.join(outside, 'ajunc0001.json'), 'utf8');
+    runGuard(pj, directorSendTo('ajunc0001'));
+    check('a Director restart through the junction does not touch the outside file', fs.readFileSync(path.join(outside, 'ajunc0001.json'), 'utf8') === before, '');
+  }
+
+  // Prototype-named agent types count as ordinary keys; `resume` can't be a type.
+  const pp = tmpdir('orchestra-guard-');
+  setManifest(pp, { leadAllowedAgents: ['constructor', '__proto__', 'toString', 'resume'] });
+  const call = (ti) => decisionOf(runGuard(pp, { tool_name: 'Agent', agent_id: 'aproto0001', agent_type: 'lead', tool_input: ti }));
+  for (const t of ['constructor', 'constructor', '__proto__', 'toString']) call(leadSpawn(t));
+  let st = null;
+  try { st = JSON.parse(fs.readFileSync(path.join(pp, '.claude', 'orchestra-leads', 'aproto0001.json'), 'utf8')); } catch (_) { /* reported below */ }
+  check('prototype-named types are counted as numbers',
+    st && st.segment.constructor === 2 && Object.prototype.hasOwnProperty.call(st.segment, '__proto__') && st.segment.__proto__ === 1 &&
+      st.segment.toString === 1 && st.lifetime.constructor === 2, JSON.stringify(st));
+  const after = call(leadSpawn('constructor'));
+  check('...and the clock keeps counting afterwards (state not treated as malformed)', after.decision === 'allow' && JSON.parse(fs.readFileSync(path.join(pp, '.claude', 'orchestra-leads', 'aproto0001.json'), 'utf8')).segment.constructor === 3, '');
+  const resume = call(leadSpawn('resume'));
+  check('leadAllowedAgents cannot admit a type named resume (the SendMessage count key)', resume.decision === 'deny', JSON.stringify(resume));
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1452,6 +1518,7 @@ try {
   case27_pauseOrderingSubagentException();
   case28_companyLaw();
   case29_leadBudgetClock();
+  case30_reviewRound1();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

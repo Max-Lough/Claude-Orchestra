@@ -104,6 +104,36 @@ function isOurRetiredAgent(file, name) {
   return field('name') === name && field('description').startsWith('Orchestra');
 }
 
+// The guard's per-lead budget clocks (.claude/orchestra-leads/<agent_id>.json)
+// are harness runtime state, so uninstall removes them: only the guard's own
+// .json/.tmp files, then the directory if that leaves it empty. A link at the
+// path is unlinked, never followed.
+const LEAD_CLOCKS_DIRNAME = 'orchestra-leads';
+
+function removeLeadClocks(dir) {
+  let st;
+  try {
+    st = fs.lstatSync(dir);
+  } catch (_) {
+    return;
+  }
+  try {
+    if (st.isSymbolicLink()) {
+      fs.unlinkSync(dir);
+    } else if (st.isDirectory()) {
+      for (const f of fs.readdirSync(dir)) {
+        if (/\.(json|tmp)$/.test(f) && fs.lstatSync(path.join(dir, f)).isFile()) fs.unlinkSync(path.join(dir, f));
+      }
+      if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
+    } else {
+      return;
+    }
+    did('removed .claude/' + LEAD_CLOCKS_DIRNAME + '/ (lead budget clocks)');
+  } catch (_) {
+    /* best effort: leftover clock state is inert */
+  }
+}
+
 function pruneRetiredAgents(agentsDir) {
   for (const a of RETIRED_AGENTS) {
     const f = path.join(agentsDir, a);
@@ -2489,6 +2519,7 @@ if (!uninstall) {
     }
   }
   pruneRetiredAgents(agentsDir);
+  removeLeadClocks(path.join(target, '.claude', LEAD_CLOCKS_DIRNAME));
   const hookFiles = [GUARD, HOOKS_PACKAGE_JSON].concat(packHooks).map((h) => path.join(hooksDir, h));
   for (const f of hookFiles.concat([orchestraMd, pauseFile, stateFile])) {
     if (fs.existsSync(f)) {

@@ -653,6 +653,32 @@ function case16_retiredAgentPrune() {
   check('uninstall prunes our retired agent (CRLF copy too)', !fs.existsSync(retired2), census(target2).join(','));
 }
 
+function case17_uninstallRemovesLeadClocks() {
+  section('17. Uninstall removes the guard\'s lead budget clocks (.claude/orchestra-leads/)');
+
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--no-packs', '--no-specialists']);
+  const dir = path.join(target, '.claude', 'orchestra-leads');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'a1234.json'), '{"segmentStart":1,"segment":{},"lifetime":{"executor":3}}', 'utf8');
+  fs.writeFileSync(path.join(dir, 'a1234.json.99-1.tmp'), '{}', 'utf8');
+  const rUpd = install(target, []);
+  check('an update keeps lead clocks (runtime state of a live project)', ok(rUpd) && fs.existsSync(path.join(dir, 'a1234.json')), out(rUpd));
+  const r = install(target, ['--uninstall']);
+  check('uninstall succeeds', ok(r), out(r));
+  check('uninstall removes .claude/orchestra-leads/ and its clock files', !fs.existsSync(dir), census(target).join(','));
+
+  // A stray non-clock file is the user's: keep it and the directory.
+  const t2 = tmpdir('orchestra-install-');
+  install(t2, ['--no-packs', '--no-specialists']);
+  const d2 = path.join(t2, '.claude', 'orchestra-leads');
+  fs.mkdirSync(d2, { recursive: true });
+  fs.writeFileSync(path.join(d2, 'a1.json'), '{}', 'utf8');
+  fs.writeFileSync(path.join(d2, 'notes.md'), 'mine', 'utf8');
+  install(t2, ['--uninstall']);
+  check('uninstall removes clock files but keeps a non-clock file', !fs.existsSync(path.join(d2, 'a1.json')) && fs.existsSync(path.join(d2, 'notes.md')), '');
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -684,6 +710,7 @@ try {
   case14_noRosterKeyInInstallState();
   case15_uninstallIgnoreManifest();
   case16_retiredAgentPrune();
+  case17_uninstallRemovesLeadClocks();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

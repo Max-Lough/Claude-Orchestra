@@ -70,9 +70,50 @@ const AGENTS = [
   'executor-heavy.md',
   'executor-heavy-xhigh.md',
   'executor-principal.md',
-  'executor-principal-xhigh.md',
+  'executor-principal-max.md',
+  'executor-fable.md',
+  'executor-fable-xhigh.md',
   'reviewer.md',
 ];
+
+// Core agents a past release shipped and a later one dropped or renamed.
+// Install, update and uninstall remove each one, but only when its
+// frontmatter `name` is the retired name and its description starts with
+// "Orchestra" — a user's own file of that name is never touched. Without
+// this, a rename leaves the old file behind in every updated project (the
+// 3.0 port's finding F6).
+const RETIRED_AGENTS = [
+  'executor-principal-xhigh.md', // 3.9.0: the Fable profiles became executor-fable(-xhigh)
+];
+
+function isOurRetiredAgent(file, name) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return false;
+  }
+  const fm = extractFrontmatterBlock(text);
+  if (!fm.present || fm.unterminated) return false;
+  const field = (key) => {
+    const line = fm.lines.find((l) => l.startsWith(key + ':'));
+    return line === undefined ? '' : line.slice(key.length + 1).trim().replace(/^(["'])(.*)\1$/, '$2');
+  };
+  return field('name') === name && field('description').startsWith('Orchestra');
+}
+
+function pruneRetiredAgents(agentsDir) {
+  for (const a of RETIRED_AGENTS) {
+    const f = path.join(agentsDir, a);
+    if (!fs.existsSync(f)) continue;
+    if (isOurRetiredAgent(f, a.replace(/\.md$/, ''))) {
+      fs.unlinkSync(f);
+      did('removed retired .claude/agents/' + a);
+    } else {
+      did('kept .claude/agents/' + a + ' (a retired Orchestra name, but not our file)');
+    }
+  }
+}
 const SPECIALISTS_DIR = path.join(SRC, 'agents', 'specialists');
 const SKILLS_DIR = path.join(SRC, 'skills');
 const PACKS_DIR = path.join(SRC, 'packs');
@@ -1806,6 +1847,7 @@ if (!uninstall) {
     copyFileStamped(path.join(SRC, 'agents', a), path.join(agentsDir, a));
   }
   did('agents: ' + AGENTS.join(', ') + ' -> .claude/agents/');
+  pruneRetiredAgents(agentsDir);
 
   for (const s of specialists) {
     copyFileStamped(path.join(SPECIALISTS_DIR, s + '.md'), path.join(agentsDir, s + '.md'));
@@ -2444,6 +2486,7 @@ if (!uninstall) {
       did('removed .claude/agents/' + a);
     }
   }
+  pruneRetiredAgents(agentsDir);
   const hookFiles = [GUARD, HOOKS_PACKAGE_JSON].concat(packHooks).map((h) => path.join(hooksDir, h));
   for (const f of hookFiles.concat([orchestraMd, pauseFile, stateFile])) {
     if (fs.existsSync(f)) {

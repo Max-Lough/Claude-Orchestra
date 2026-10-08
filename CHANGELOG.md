@@ -29,6 +29,27 @@ platform probes: `plans/team-leads-probe-results.md`.
   `executor-bounded`, which is unchanged. Its law is `executor-mechanical`'s cut
   to seven short rules plus the `UNVERIFIED` report section, because long
   prose fails on Haiku (`CHANGELOG` 1.10.0, "Prose fails").
+- **The Anthropic principal rung is Opus 5.5 (owner).** `executor-principal`
+  now runs `claude-opus-5-5` (pinned) at xhigh, and the new
+  `executor-principal-max` runs it at max. Both keep the principal charter and
+  duties unchanged, and neither is user-only. Astra stays the default top
+  rung while the `codex` pack is installed and runs. When it is unavailable,
+  principal-shaped orders go to `executor-principal` at PLAN time, and a
+  double bounce at `executor-heavy-xhigh` escalates to `executor-principal-max`,
+  because escalation adds effort and the heavy rung already runs Opus at
+  xhigh. Opus-principal work is Claude-authored, so it goes to Sol review.
+- **Fable runs only at the user's request (owner).** The old Fable principal
+  profiles are renamed `executor-fable` (high) and `executor-fable-xhigh`, and
+  are USER REQUEST ONLY. The rule that let the Director substitute a Fable
+  principal for an unavailable Astra rung is retired. `/cross-compare-plan`
+  keeps its Fable architects, because that lane only runs when the user
+  invokes it.
+- **The installer prunes retired agents.** `RETIRED_AGENTS` starts with
+  `executor-principal-xhigh.md`. Install, update and uninstall remove a
+  retired file only when its frontmatter `name` matches and its description
+  starts with `Orchestra`, so a user's own file of that name is never touched.
+  Before this, a rename left the old file registered in every updated
+  project (the 3.0 port's finding F6).
 
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 

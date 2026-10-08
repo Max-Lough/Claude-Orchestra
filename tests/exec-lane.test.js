@@ -1074,7 +1074,7 @@ function case18() {
 // agent description that quietly re-promotes a demoted profile would change
 // where every escalated order goes, with no test red and no runtime error.
 function case19() {
-  section('19. Executor ladder doctrine: Astra on top, Fable and Sol demoted');
+  section('19. Executor ladder doctrine: Astra on top, Opus principal below it, Fable and Sol user-only');
 
   const read = (rel) => fs.readFileSync(path.join(MASTER, rel), 'utf8');
   const frontmatter = (rel) => (/^description: (.*)$/m.exec(read(rel)) || [])[1] || '';
@@ -1082,8 +1082,8 @@ function case19() {
   // 1. The demoted profiles must SAY they are demoted, in the description —
   //    that string is what the Director's agent picker actually sees.
   for (const rel of [
-    'agents/executor-principal.md',
-    'agents/executor-principal-xhigh.md',
+    'agents/executor-fable.md',
+    'agents/executor-fable-xhigh.md',
     'packs/codex/agents/executor-codex-heavy.md',
     'packs/codex/agents/executor-codex-luna.md',
   ]) {
@@ -1300,7 +1300,7 @@ function case19() {
   check(
     'ORCHESTRA.md marks the Fable, Sol and Luna executors user-request-only',
     /\*\*Everything else on the bench is user request only\*\*/.test(protocol) &&
-      /`executor-principal`, `executor-principal-xhigh`\), the Sol executor \(`executor-codex-heavy`\) and the Luna executor/.test(protocol),
+      /the Fable executors \(`executor-fable`, `executor-fable-xhigh`\), the Sol executor \(`executor-codex-heavy`\) and the Luna executor/.test(protocol),
     'the user-request-only paragraph is missing or reworded'
   );
   check(
@@ -1495,11 +1495,80 @@ function case19() {
     (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 300)
   );
 
+  // The Anthropic principal rung (3.9.0, D13): Opus 5.5 pinned at xhigh and
+  // max, NOT user-only, but never claiming the default ladder's top while
+  // Astra is available. The Fable substitute for an unavailable Astra rung
+  // is retired, so no Fable profile may be reachable by any routing text.
+  for (const [rel, name, effort] of [
+    ['agents/executor-principal.md', 'executor-principal', 'xhigh'],
+    ['agents/executor-principal-max.md', 'executor-principal-max', 'max'],
+  ]) {
+    const t = read(rel);
+    const d = frontmatter(rel);
+    check(
+      rel + ': is ' + name + ', pinned claude-opus-5-5 at ' + effort + ', and cannot spawn agents',
+      new RegExp('^name: ' + name + '$', 'm').test(t) && /^model: claude-opus-5-5$/m.test(t) &&
+        new RegExp('^effort: ' + effort + '$', 'm').test(t) && /^disallowedTools: Agent$/m.test(t),
+      (t.match(/^(name|model|effort|disallowedTools): .*$/gm) || []).join(' | ')
+    );
+    check(rel + ': is not user-request-only', !/USER REQUEST ONLY/.test(d), d.slice(0, 200));
+    check(
+      rel + ': does not claim the default ladder\'s top, and says Astra keeps it while the pack runs',
+      !/\bthe top rung of the default\b|\bTOP RUNG OF THE DEFAULT\b/.test(d) &&
+        /Astra stays the default ladder's top/.test(d),
+      d.slice(0, 300)
+    );
+    check(
+      rel + ': keeps the principal charter (DECISIONS and CLASS SWEEP)',
+      /\*\*Decide only what the order delegates\.\*\*/.test(t) && /^DECISIONS$/m.test(t) &&
+        /^CLASS SWEEP$/m.test(t),
+      'the principal duties did not survive into ' + rel
+    );
+  }
   check(
-    'ORCHESTRA.md requires the Astra-unavailable substitution to be announced',
-    /When the Astra rung is unavailable/.test(protocol) &&
-      /escalate to `executor-principal` instead/.test(protocol),
-    'the unavailable-rung fallback rule is missing'
+    'executor-principal-max is the escalation target after a double bounce at executor-heavy-xhigh',
+    /escalation target after a double bounce at executor-heavy-xhigh/.test(frontmatter('agents/executor-principal-max.md')),
+    frontmatter('agents/executor-principal-max.md').slice(0, 300)
+  );
+  for (const rel of ['agents/executor-fable.md', 'agents/executor-fable-xhigh.md']) {
+    const t = read(rel);
+    check(
+      rel + ': runs Fable and names no substitution route into itself',
+      /^model: fable$/m.test(t) && !/announced the substitution|announced substitute|as the named substitute/.test(t),
+      (t.match(/^.*substitut.*$/m) || ['ok'])[0].slice(0, 200)
+    );
+  }
+  check(
+    'ORCHESTRA.md carries no Fable-substitute clause',
+    !/Fable[^\n.]*(substitut|stand(s|ing)? in)/i.test(protocol) &&
+      !/(substitut|stand(s|ing)? in)[^\n.]*Fable/i.test(protocol),
+    (protocol.match(/^.*Fable.*substitut.*$|^.*substitut.*Fable.*$/im) || ['ok'])[0].slice(0, 300)
+  );
+  const unavailable = (protocol.match(/^\*\*When the Astra rung is unavailable\*\*.*$/m) || [''])[0];
+  for (const [name, phrase] of [
+    ['makes the Opus principal rung the top', 'the Opus principal rung is the top'],
+    ['routes principal-shaped orders to executor-principal at PLAN time',
+      'Principal-shaped orders go to `executor-principal` (Opus 5.5, xhigh) at PLAN time'],
+    ['escalates a double bounce at executor-heavy-xhigh to executor-principal-max',
+      'a double bounce at `executor-heavy-xhigh` escalates to `executor-principal-max` (Opus 5.5, max)'],
+    ['says in one line that Astra did not run', 'Say in one line that Astra did not run'],
+    ['routes Opus-principal work to Sol review', 'its review goes to `reviewer-codex`'],
+  ]) {
+    check(
+      'ORCHESTRA.md Astra-unavailable paragraph ' + name,
+      unavailable.includes(phrase),
+      'missing: ' + phrase + '\n' + (unavailable.slice(0, 200) || 'no Astra-unavailable paragraph')
+    );
+  }
+  check(
+    'ORCHESTRA.md 3.5 tops the chain at executor-principal-max when Astra is unavailable',
+    escalateRule.includes('or `executor-principal-max` when the Astra rung is unavailable'),
+    escalateRule.slice(0, 400)
+  );
+  check(
+    'ORCHESTRA.md 8.3 pins executor-principal at xhigh and executor-principal-max at max',
+    /`executor-principal` and `executor-fable-xhigh` at xhigh, `executor-principal-max` at max/.test(protocol),
+    (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 400)
   );
 }
 

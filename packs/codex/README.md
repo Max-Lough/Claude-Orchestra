@@ -12,9 +12,10 @@ Without it, the harness is Claude-only: reviews run on the fresh-context Opus
 **This pack is no longer purely additive.** Since 3.2.0 its
 `executor-codex-principal` (GPT-6 Astra) is the top rung of the harness's
 default executor ladder, so installing or removing the pack changes where
-escalated work goes. Without the pack the ladder has no top rung: the Director
-says so in one line, escalates to the Fable `executor-principal` instead, and
-names the substitution in the REPORT — announced, never silent. Review and
+escalated work goes. Without the pack the Opus principal rung is the top: principal orders go to
+`executor-principal` (Opus 5.5, xhigh), a double bounce at `executor-heavy-xhigh`
+escalates to `executor-principal-max` (Opus 5.5, max), and the Director says in
+one line that Astra did not run. Review and
 cross-compare still degrade to Claude-only exactly as before.
 
 ## What it installs
@@ -102,9 +103,9 @@ runner, reached in very different ways:
 So the harness's escalation path crosses the vendor line at the top: a double
 bounce at the Opus heavy tier goes straight to Astra, past Sol and Luna. No
 launcher ever escalates itself, and none is for routine work. The Fable
-principal profiles (`executor-principal`, `executor-principal-xhigh`) are
-likewise user-request-only, and stand in — announced, never silently — when
-this pack is absent and the ladder therefore has no top rung.
+executors (`executor-fable`, `executor-fable-xhigh`) are likewise
+user-request-only. When this pack is absent, the Opus principal rung
+(`executor-principal`, `executor-principal-max`) is the top instead.
 
 The rungs differ in model and effort and in nothing else: same sandbox,
 same idle precheck, same tree audit, same one-attempt law, same report

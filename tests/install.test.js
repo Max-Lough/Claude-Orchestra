@@ -107,11 +107,13 @@ const EXPECTED_LEGACY_CENSUS = [
   '.claude/ORCHESTRA.md',
   '.claude/agents/detective.md',
   '.claude/agents/executor-bounded.md',
+  '.claude/agents/executor-fable-xhigh.md',
+  '.claude/agents/executor-fable.md',
   '.claude/agents/executor-heavy-xhigh.md',
   '.claude/agents/executor-heavy.md',
   '.claude/agents/executor-mechanical-haiku.md',
   '.claude/agents/executor-mechanical.md',
-  '.claude/agents/executor-principal-xhigh.md',
+  '.claude/agents/executor-principal-max.md',
   '.claude/agents/executor-principal.md',
   '.claude/agents/executor.md',
   '.claude/agents/reviewer.md',
@@ -596,6 +598,59 @@ function case15_uninstallIgnoreManifest() {
   );
 }
 
+function case16_retiredAgentPrune() {
+  section('16. A retired core agent is pruned on update and uninstall when it is ours, and left alone when it is not');
+
+  // A 3.8.0 install shipped .claude/agents/executor-principal-xhigh.md (Fable).
+  // 3.9.0 renamed it executor-fable-xhigh, so an update must not leave the
+  // old file behind as a second, stale registration of the same profile.
+  const ours = [
+    '---',
+    'name: executor-principal-xhigh',
+    'description: Orchestra principal executor at xhigh effort on the Anthropic side (Fable). USER REQUEST ONLY.',
+    'disallowedTools: Agent',
+    'model: fable',
+    'effort: xhigh',
+    '---',
+    '',
+    'The 3.8.0 body.',
+    '',
+  ].join('\n');
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--no-packs', '--no-specialists']);
+  const retired = path.join(target, '.claude', 'agents', 'executor-principal-xhigh.md');
+  fs.writeFileSync(retired, ours, 'utf8');
+  const rUpd = install(target, []);
+  check('(setup) update over a 3.8.0-shaped tree succeeds', ok(rUpd), out(rUpd));
+  check('update prunes our retired executor-principal-xhigh.md', !fs.existsSync(retired), out(rUpd));
+  check('update says it removed the retired agent', /removed retired \.claude\/agents\/executor-principal-xhigh\.md/.test(out(rUpd)), out(rUpd));
+
+  // A user's own file of that name: different description, so not ours.
+  const theirs = ours.replace(/^description: .*$/m, 'description: My own principal profile, kept on purpose.');
+  fs.writeFileSync(retired, theirs, 'utf8');
+  const rKeep = install(target, []);
+  check('(setup) update with a user-authored file of the retired name succeeds', ok(rKeep), out(rKeep));
+  check('update leaves a user-authored executor-principal-xhigh.md byte-for-byte', fs.existsSync(retired) && fs.readFileSync(retired, 'utf8') === theirs, out(rKeep));
+  // Same description prefix but another name is not ours either.
+  const renamed = ours.replace(/^name: .*$/m, 'name: my-principal');
+  fs.writeFileSync(retired, renamed, 'utf8');
+  install(target, []);
+  check('a file whose frontmatter name differs is left alone', fs.existsSync(retired) && fs.readFileSync(retired, 'utf8') === renamed, '');
+
+  const rUn = install(target, ['--uninstall']);
+  check('uninstall succeeds with a user-authored retired-name file present', ok(rUn), out(rUn));
+  check('uninstall keeps the user-authored file', fs.existsSync(retired) && fs.readFileSync(retired, 'utf8') === renamed, census(target).join(','));
+
+  // Uninstall also prunes ours.
+  const target2 = tmpdir('orchestra-install-');
+  install(target2, ['--no-packs', '--no-specialists']);
+  const retired2 = path.join(target2, '.claude', 'agents', 'executor-principal-xhigh.md');
+  fs.writeFileSync(retired2, ours.replace(/\n/g, '\r\n'), 'utf8');
+  const rUn2 = install(target2, ['--uninstall']);
+  check('uninstall succeeds over a tree holding our retired agent', ok(rUn2), out(rUn2));
+  check('uninstall prunes our retired agent (CRLF copy too)', !fs.existsSync(retired2), census(target2).join(','));
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -626,6 +681,7 @@ try {
   case13_orphanedRuntimeDirWarns();
   case14_noRosterKeyInInstallState();
   case15_uninstallIgnoreManifest();
+  case16_retiredAgentPrune();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

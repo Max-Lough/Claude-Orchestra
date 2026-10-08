@@ -64,6 +64,7 @@ const AGENTS = [
   'scout.md',
   'detective.md',
   'executor-mechanical.md',
+  'executor-mechanical-haiku.md',
   'executor-bounded.md',
   'executor.md',
   'executor-heavy.md',

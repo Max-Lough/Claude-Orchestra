@@ -9,6 +9,27 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.9.0 — trial: team leads, a Haiku mechanical rung, and the company law behind them
+
+**Branch-only until its trial readout passes.** This entry describes a trial
+build on `trial/3.9.0-team-leads`. It is not on `main`, and `main` keeps
+shipping 3.8.0 until the readout passes. Plan: `plans/team-leads-trial.md`;
+platform probes: `plans/team-leads-probe-results.md`.
+
+- **`executor-mechanical-haiku`: Haiku 5.5 (pinned `claude-haiku-5-5`), high
+  effort, trial.** Fully spelled-out orders had no cheaper home than Sonnet,
+  and a lead (below) turns every trivial fix into a spawn, so that spawn
+  should cost cents. The rung takes an order only when all four conditions
+  hold: it spells out the exact files and the exact edit; it names checks that
+  exercise the change; it touches one subsystem (rough guide: ≤10 files, since
+  Haiku 5.5 bills 5× above 100K-token prompts); and it is not an escalation, a
+  findings fix order or a class sweep. Doubt goes to `executor-mechanical`.
+  **One strike:** any BLOCKED, PARTIAL or REVISE sends the next round to
+  `executor-mechanical` with both reports. It sits beside the §3.5 chain like
+  `executor-bounded`, which is unchanged. Its law is `executor-mechanical`'s cut
+  to seven short rules plus the `UNVERIFIED` report section, because long
+  prose fails on Haiku (`CHANGELOG` 1.10.0, "Prose fails").
+
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 
 **Branch-only until its field trial passes.** This entry describes a trial

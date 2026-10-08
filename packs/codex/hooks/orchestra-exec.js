@@ -4,8 +4,8 @@
  *
  * Drives an OpenAI model through the Codex CLI to CARRY OUT a work order —
  * edits, commands, builds, tests — in the project working tree. The default
- * ladder's Claude executors are `executor-mechanical` (Sonnet) and
- * `executor-bounded` (Sonnet 5.5), `executor` (Opus medium, the default) and
+ * ladder's Claude executors are `executor-mechanical` (Sonnet),
+ * `executor-mechanical-haiku` (Haiku 5.5) and `executor-bounded` (Sonnet 5.5), `executor` (Opus medium, the default) and
  * `executor-heavy` / `-xhigh` (Opus high / xhigh). This engine's `principal`
  * profile (GPT-6 Astra) is the top rung of that ladder; its other profiles
  * (Sol, Luna) are user request only, Sol also when `executorEngine` selects

@@ -1405,6 +1405,96 @@ function case19() {
     /`executor-bounded` at high/.test(protocol),
     (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 300)
   );
+  // The Haiku mechanical rung (trial, 3.9.0): Haiku 5.5 pinned beside
+  // executor-mechanical for fully spelled-out orders, one strike, off the
+  // 3.5 chain. Its law is short on purpose (Haiku fails on long prose), so
+  // what is pinned is identity, the four routing conditions, the evidence
+  // section, and the one-strike fall-through.
+  const haiku = read('agents/executor-mechanical-haiku.md');
+  const haikuFm = frontmatter('agents/executor-mechanical-haiku.md');
+  check(
+    'executor-mechanical-haiku is named executor-mechanical-haiku and cannot spawn agents',
+    /^name: executor-mechanical-haiku$/m.test(haiku) && /^disallowedTools: Agent$/m.test(haiku),
+    (haiku.match(/^(name|disallowedTools): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-mechanical-haiku is Haiku 5.5 (pinned model id) at high effort',
+    /^model: claude-haiku-5-5$/m.test(haiku) && /^effort: high$/m.test(haiku),
+    (haiku.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  for (const [name, phrase] of [
+    ['all four conditions must hold', 'all four hold'],
+    ['condition 1: the order spells out the exact files and the exact edit',
+      'the order spells out the change itself, the exact files and the exact edit'],
+    ['condition 1: nothing left to design or choose', 'with nothing left to design or choose'],
+    ['condition 2: named checks that can observe whether it is right',
+      'it names checks that exercise the change and can observe whether it is right'],
+    ['condition 3: one subsystem, about 10 files or fewer',
+      'it touches one subsystem and stays small, about 10 files or fewer'],
+    ['condition 4: not an escalation, a findings fix order, or a class sweep',
+      'it is not an escalation, not a fix order carrying reviewer findings, and not a class sweep'],
+    ['doubt falls through to executor-mechanical (Sonnet)',
+      'When any condition is in doubt the order goes to executor-mechanical (Sonnet)'],
+    ['one strike sends the next round to executor-mechanical',
+      'One strike — any BLOCKED, PARTIAL or REVISE sends the next round to executor-mechanical'],
+    ['it is never an escalation target', 'Never an escalation target'],
+  ]) {
+    check(
+      'executor-mechanical-haiku description pins ' + name,
+      haikuFm.includes(phrase),
+      'missing from the description: ' + phrase
+    );
+  }
+  check(
+    'executor-mechanical-haiku carries the evidence rule',
+    /\*\*Every claim carries its evidence\.\*\*/.test(haiku) && /\*\*Blocked beats guessed\.\*\*/.test(haiku),
+    'the evidence or blocked-beats-guessed rule is missing'
+  );
+  const haikuReport = (haiku.match(/Structure it exactly like this:\n\n```\n([\s\S]*?)\n```/) || [])[1] || '';
+  check(
+    'executor-mechanical-haiku report format has an UNVERIFIED section inside the report block',
+    /^UNVERIFIED$/m.test(haikuReport),
+    haikuReport.slice(0, 200) || 'no fenced report-format block found'
+  );
+  check(
+    'ORCHESTRA.md 3.5 escalation chain does not pass through executor-mechanical-haiku',
+    escalateRule !== '' && !/escalate one rung \([^)]*executor-mechanical-haiku/.test(escalateRule),
+    escalateRule.slice(0, 400) || 'no rule 5'
+  );
+  check(
+    'ORCHESTRA.md 3.5 gives executor-mechanical-haiku one strike, then executor-mechanical',
+    escalateRule.includes(
+      '`executor-mechanical-haiku` also sits beside the chain and allows one strike: any BLOCKED, ' +
+        'PARTIAL or REVISE sends the next round to `executor-mechanical` with both reports.'
+    ),
+    'the one-strike sentence is missing from rule 5'
+  );
+  const haikuRow = (protocol.match(/^\| \*\*down \(haiku\)\*\* \| `executor-mechanical-haiku` \(Haiku 5\.5, high; trial\) \|.*$/m) || [''])[0];
+  for (const phrase of [
+    'the exact files and the exact edit',
+    'nothing left to design or choose',
+    'it names checks that exercise the change and can observe whether it is right',
+    'it touches one subsystem',
+    'it is not an escalation, a fix order carrying reviewer findings, or a class sweep',
+    'When any condition is in doubt, it goes to `executor-mechanical`',
+  ]) {
+    check(
+      'ORCHESTRA.md steering row for executor-mechanical-haiku requires: ' + phrase,
+      haikuRow.includes(phrase),
+      'missing from the down (haiku) row: ' + phrase + '\n' + (haikuRow.slice(0, 120) || 'no down (haiku) row')
+    );
+  }
+  check(
+    'ORCHESTRA.md company row lists executor-mechanical-haiku on Haiku 5.5, high (trial)',
+    /^\| Haiku mechanical executor \| `executor-mechanical-haiku` \| Haiku 5\.5, high \(trial\) \|/m.test(protocol),
+    'no company row for executor-mechanical-haiku'
+  );
+  check(
+    'ORCHESTRA.md 8.3 pins executor-mechanical-haiku at high effort',
+    /`executor-mechanical-haiku` and `executor-bounded` at high/.test(protocol),
+    (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 300)
+  );
+
   check(
     'ORCHESTRA.md requires the Astra-unavailable substitution to be announced',
     /When the Astra rung is unavailable/.test(protocol) &&

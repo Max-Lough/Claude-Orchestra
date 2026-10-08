@@ -194,9 +194,10 @@ node "$kit\probe-models.js" "<agent_transcript_path>"
 
 ## Probe 7: the principal rung's frontmatter (feeds WO-1b)
 
-Run `/agents` in the session first.
+Ask the session first: `List every subagent_type you can spawn, exactly as named. Don't spawn anything.`
+(The `/agents` wizard was removed in Claude Code 2.1.294.)
 
-- **7a.** `probe-opus-max` is listed. An agent whose frontmatter is rejected never registers, and
+- **7a.** `probe-opus-max` is in the list. An agent whose frontmatter is rejected never registers, and
   nothing logs it.
 
 ```

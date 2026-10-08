@@ -1,7 +1,8 @@
 # Plan: team leads, a Haiku mechanical rung, and the company law behind them (3.9.0 trial)
 
-Date: 2026-10-08 · Status: APPROVED IN PRINCIPLE (owner, 2026-10-08). WO-0 probes run next,
-locally, with `plans/team-leads-probe-kit/`. Implementation is local, on a branch-only 3.9.0.
+Date: 2026-10-08 · Status: APPROVED IN PRINCIPLE (owner, 2026-10-08). WO-0 is done
+(`plans/team-leads-probe-results.md`), and this plan is amended for its results (see "WO-0
+amendments" at the end). WO-1 is next. Implementation is local, on a branch-only 3.9.0.
 
 ## Goal
 
@@ -62,9 +63,9 @@ only message the Director receives.
 | Layer | Mechanism | Catches | Misses |
 |---|---|---|---|
 | 1. Lead self-report | The lead's return triggers (below), including the D6 consumption caps | scope or done-criteria change, plan growth, rework over budget, double REVISE, disagreement, a rung it may not use | a lead that doesn't notice, or under-reports |
-| 2. Segment budget clock | Guard: `SubagentStart` (spawn *and* resume) starts a segment. The lead's `Agent` calls are denied once `leads.maxMinutes` or `leads.maxDispatches` is crossed, with an instruction to write status and return `STATUS: CHECKPOINT`. The same state file counts dispatches by agent type, which the lead can't write | runaway work. It also makes check-ins periodic: every segment ends in a short report. The counts catch an under-reporting lead (D6) | a lead hung inside one long child (no tool calls, so the clock never fires) |
-| 3. `maxTurns` | Platform hard stop in the lead's frontmatter. The run is marked partial and can be resumed | a looping lead that somehow slips layer 2 | the hung-child case |
-| 4. Director check-in | One recurring `CronCreate` task while any lead runs (default every 45 min). The Director reads each running lead's status file, flags a `seq` that hasn't moved across two check-ins, and checks drift against the charter. It acts only on a problem (`TaskStop`, then resume with a question, or a scout on the lead's worktree) and deletes the task when no lead runs | hung leads, slow drift inside budget | a closed Director session (cron needs an open interactive session) |
+| 2. Segment budget clock | Guard: a segment starts at the lead's first dispatch and restarts each time the Director messages (resumes) the lead. It does not restart on `SubagentStart`, which also fires whenever a child's reply re-wakes the lead (WO-0 3a, 3c). The lead's `Agent` and `SendMessage` calls are denied once `leads.maxMinutes` or `leads.maxDispatches` is crossed, with an instruction to write status and return `STATUS: CHECKPOINT`. The same state file counts dispatches by agent type, which the lead can't write | runaway work. It also makes check-ins periodic: every segment ends in a short report. The counts catch an under-reporting lead (D6) | a lead hung inside one long child (no tool calls, so the clock never fires) |
+| 3. `maxTurns` | Platform hard stop in the lead's frontmatter, set above what one segment needs so layer 2 fires first. The run is marked partial, with no report turn (WO-0 2a). The Director reads the status file and resumes the lead by agent id for its `CHECKPOINT` report; a resume gets a fresh count (2b) | a looping lead that somehow slips layer 2 | the hung-child case |
+| 4. Director check-in | One recurring `CronCreate` task while any lead runs (default every 45 min). It fires while the Director waits on a background lead, and a fire that comes due during a busy turn runs once afterwards (WO-0 4a, 4b). The Director reads each running lead's status file, flags a `seq` that hasn't moved across two check-ins, and checks drift against the charter. It acts only on a problem (`TaskStop`, which also stops the lead's children, then resume with a question; or a scout on the lead's worktree) and deletes the task when no lead runs | hung leads, slow drift inside budget | a closed Director session (cron needs an open interactive session) |
 
 The user remains the safeguard over the Director, as today. Layer 2 overruns by at most one
 child's duration, because it fires at the lead's next dispatch.
@@ -198,42 +199,47 @@ Calls made here without an explicit owner ruling (veto before WO-1b):
 ## Platform facts this plan relies on
 
 Taken from current Claude Code docs (sub-agents, hooks, scheduled-tasks, tools-reference,
-agent-teams) on 2026-10-08. Quotes came through a fetch tool, so WO-0 confirms every row that
-matters in the owner's environment.
+agent-teams) on 2026-10-08, then confirmed or corrected by WO-0 in the owner's environment
+(Claude Code 2.1.294, Windows 11, first-party API; `plans/team-leads-probe-results.md`). Probe
+ids are in parentheses.
 
 - Subagents nest up to three layers below the main session by default
   (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`; `1` turns nesting off). Director → lead → executor →
   scout fits exactly.
-- A subagent can resume a completed child with `SendMessage`; the child reports back to that
-  subagent. The main session can `TaskStop` a subagent and later resume it with its full
-  history.
+- **An `Agent` call that leaves `run_in_background` unset starts the child in the background**,
+  from the main session and from subagents alike (3a, 3c). The parent's turn then ends, and each
+  child's completion re-wakes it. Interactively, the parent still collects every result before
+  its final handback. Headless, it does not, and background waits end after 10 minutes.
+  **Leads are interactive only**, and they dispatch every child with `run_in_background: false`
+  set explicitly. Several such `Agent` calls in one message run concurrently (3b).
+- A subagent can resume a completed child with `SendMessage`. The call returns at once, and the
+  child's reply arrives later by re-waking the subagent (3c). The main session can `TaskStop` a
+  subagent, which interactively also stops its children within about 10 to 13 s (3b), and later
+  resume it by agent id with its full history (3d).
 - Settings hooks fire inside subagents. The input carries `agent_id`, plus `agent_type` equal to
-  the frontmatter `name`. `SubagentStart` fires on spawn and on resume.
-- In interactive sessions, a subagent waits for its background children before finishing. In
-  headless runs it does not, and background waits end after 10 minutes. **Leads are interactive
-  only**, and they dispatch their children in the foreground (several `Agent` calls in one
-  message for parallel work).
+  the frontmatter `name` (1a). On an `Agent` call it identifies the *calling* subagent (1c), and
+  a settings hook can deny a subagent's spawn (1d). No event carries a parent-agent id (1f).
+  A `SubagentStart` matcher can target one agent type (1b).
+- `SubagentStart` fires on spawn, on resume (3d), and every time a child's completion or reply
+  re-wakes the subagent (3a, 3c). `SubagentStop` does not fire on a `maxTurns` stop or a
+  `TaskStop` kill (2a, 3b), so nothing in this plan hangs off it.
+- `maxTurns` counts tool-calling turns: one per message, however long its children run (2a, 2c).
+  At the cap the run is marked partial ("stopped at its N-turn limit … had produced no report"),
+  with no report turn. A resume gets a fresh count (2b).
 - `isolation: "worktree"` branches from the default branch, not from the parent's HEAD. Leads
   never use it for executors that must see the lead's commits.
-- `CronCreate` tasks are session-scoped, have a 1-minute minimum interval, fire only while the
-  session is idle (a fire that comes due while busy waits for the turn to end), expire after 7
-  days, and are restored on `--resume` if unexpired.
+- `CronCreate` tasks are session-scoped, have a 1-minute minimum interval, expire after 7 days,
+  and are restored on `--resume` if unexpired. They fire only while the session is idle, and a
+  session waiting on a background lead counts as idle (4a). A fire that comes due while busy runs
+  once when the turn ends (4b). Observed fires landed up to about a minute after the scheduled
+  minute.
+- An MCP tool works at depth 2 when the agent's `tools:` names it (5a). `reviewer-codex` does.
 - The concurrent-subagent cap is 20.
-- The `haiku` alias resolves to Haiku 5.5 on the Anthropic API and to Haiku 4.5 on Bedrock,
-  Vertex and Foundry. Haiku 5.5 bills $0.10/$0.50 per MTok up to 100K-token prompts and
-  $0.50/$2.50 beyond.
-
-Not documented, so WO-0 probes them:
-- whether a session waiting on background subagents counts as idle for cron;
-- what `maxTurns` counts and whether it resets on resume;
-- whether `TaskStop` on a lead stops its children;
-- whether the `Agent` call's `PreToolUse` input carries the *calling* subagent's `agent_type`;
-- whether a settings hook can deny a subagent's spawn;
-- MCP access at depth 2;
-- whether a `SubagentStart` matcher can target one agent type;
-- which model actually serves `claude-haiku-5-5` and the `haiku` alias;
-- whether subagent frontmatter accepts `model: claude-opus-5-5` with `effort: max`, and what
-  serves it.
+- The `haiku` alias resolves to Haiku 5.5 on the Anthropic API (6b; `claude-haiku-5-5` served as
+  pinned, 6a) and, per the docs, to Haiku 4.5 on Bedrock, Vertex and Foundry (untested). Haiku 5.5
+  bills $0.10/$0.50 per MTok up to 100K-token prompts and $0.50/$2.50 beyond.
+- Subagent frontmatter accepts `model: claude-opus-5-5` with `effort: max`, and that model serves
+  it (7a, 7b). The `/agents` wizard was removed in 2.1.294.
 
 ## Specs
 
@@ -247,7 +253,9 @@ harness doesn't ship are untouched.
 |---|---|---|
 | `lead`, `lead-xhigh` | `Edit`, `MultiEdit`, `Write`, `NotebookEdit` | allow only `.md` files under `.claude/plans/leads/**`, with the plan carve-out's existing realpath/symlink/hardlink containment. Deny everything else |
 | `lead`, `lead-xhigh` | `Bash`, `PowerShell`, `Grep`, `Glob` | deny (also absent from their `tools:`, so this is belt and braces) |
-| `lead`, `lead-xhigh` | `Agent` | allow `subagent_type` ∈ LEAD_TEAM ∪ `leadAllowedAgents`; deny a `model` override; deny once the segment budget is crossed (WO-3) |
+| `lead`, `lead-xhigh` | `Agent` | allow `subagent_type` ∈ LEAD_TEAM ∪ `leadAllowedAgents`; deny a `model` override; deny unless `run_in_background` is exactly `false` (an unset flag backgrounds the child, WO-0 3a); deny once the segment budget is crossed (WO-3) |
+| `lead`, `lead-xhigh` | `SendMessage` | allow; counted as a `resume` dispatch; deny once the segment budget is crossed (WO-3) |
+| main session (no `agent_id`) | `SendMessage` to a lead's agent id | allow, unchanged; restarts that lead's segment (WO-3) |
 | any Orchestra executor, `scout`, `detective`, `reviewer`, Codex launchers | `Agent` | deny (WO-5 later opens `scout`-only for the heavy and principal executors) |
 
 LEAD_TEAM: `scout`, `detective`, `executor-mechanical-haiku`, `executor-mechanical`,
@@ -270,13 +278,22 @@ When a lead's order needs any of those, the lead returns `ESCALATION` and the Di
 - **State.** One file per lead, `.claude/orchestra-leads/<agent_id>.json`:
   `{ "segmentStart": <epoch ms>, "segment": { "<agent type>": n }, "lifetime": { "<agent type>": n } }`.
   It is written with an atomic temp-and-rename and sits outside the lead's writable
-  `.claude/plans/leads/`.
-- **Start.** On `SubagentStart` with `agent_type` `lead` or `lead-xhigh`, set `segmentStart` to
-  now and clear `segment`. Keep `lifetime` and create it if absent. Resume fires `SubagentStart`
-  again, so each resumed segment gets a fresh budget.
-- **Check.** On a lead's `PreToolUse` `Agent` call, increment `segment` and `lifetime` for the
-  requested `subagent_type`. If minutes since `segmentStart` exceed `leads.maxMinutes` (default
-  120), or the segment total exceeds `leads.maxDispatches` (default 20), deny with:
+  `.claude/plans/leads/`. The guard's existing `PreToolUse` entry (empty matcher, every tool)
+  sees every call involved, so no new hook registration is needed.
+- **Start.** On a lead's first counted call (`PreToolUse` `Agent` or `SendMessage` from
+  `agent_type` `lead` or `lead-xhigh`) with no state file, create it with `segmentStart` = now.
+  The clock therefore starts at the first dispatch, not at spawn. The lead's opening reads cost
+  minutes at most.
+- **Restart.** On a main-session `PreToolUse` `SendMessage` (no `agent_id`) whose target is an
+  agent id with a state file, set `segmentStart` to now and clear `segment`. Keep `lifetime`. So
+  each Director resume gets a fresh budget. `SubagentStart` is not used. It also fires each
+  time a child's reply re-wakes the lead (WO-0 3a, 3c), so it can't tell a Director resume from
+  a child wake.
+- **Check.** On a lead's `Agent` call, increment `segment` and `lifetime` for the requested
+  `subagent_type`. On a lead's `SendMessage`, increment them under `resume`, because a resumed
+  executor is rework (D6) that never passes through `Agent`. If minutes since `segmentStart`
+  exceed `leads.maxMinutes` (default 120), or the segment total exceeds `leads.maxDispatches`
+  (default 20), deny with:
   `Orchestra: lead budget crossed (<which>). Write your status file and return STATUS: CHECKPOINT now.`
 - **Director reads.** At each checkpoint the Director reads this file (an artifact its agent
   points to; the lead's report names its `agent_id`) and compares `lifetime` with the lead's
@@ -284,6 +301,9 @@ When a lead's order needs any of those, the lead returns `ESCALATION` and the Di
 - **Failure modes.**
   - Unreadable or missing state fails open; layers 3 and 4 still hold.
   - Parallel dispatches may race and undercount. It is a tripwire, not an accountant.
+  - A Director that resumes a lead by name instead of agent id doesn't restart the clock. The
+    lead trips on its next dispatch and returns `CHECKPOINT` at once, which is visible and safe.
+    The Director law says to resume leads by their `AGENT ID`.
 
 ### Lead charter (Director → lead; added to `skills/orchestra-plan`)
 
@@ -351,7 +371,13 @@ The lead writes its status file and returns when:
 - its reviewer and executor disagree;
 - a merge or worktree conflict blocks it;
 - anything needs the user;
-- the budget clock or `maxTurns` stops it.
+- the budget clock denies a dispatch.
+
+A `maxTurns` stop leaves the lead no turn to report (WO-0 2a). The Director reads its status
+file and resumes it by agent id. The lead then reports `CHECKPOINT` with `TRIGGER: maxTurns`.
+
+After `SendMessage` to a child, the lead does not report until that child's reply has arrived. The
+reply comes back as a later wake, not as the call's result (WO-0 3c).
 
 ### `executor-mechanical-haiku` routing conditions (all required)
 
@@ -372,8 +398,8 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 
 ## Done-criteria
 
-- [ ] WO-0 probe results are recorded in `plans/team-leads-probe-results.md`, and every design
-      assumption is confirmed or the plan amended before WO-1 starts.
+- [x] WO-0 probe results are recorded in `plans/team-leads-probe-results.md`, and every design
+      assumption is confirmed or the plan amended before WO-1 starts (2026-10-08).
 - [ ] On the 3.9.0 trial branch, the following ship:
   - `executor-mechanical-haiku`, `lead`, `lead-xhigh`;
   - `executor-principal` (Opus 5.5 xhigh) and `executor-principal-max` (Opus 5.5 max);
@@ -385,14 +411,17 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
   `main` is untouched.
 - [ ] `ORCHESTRA.md` gains a tight Leads section (~25 lines) without restating rules that already
       exist.
-- [ ] The installed tree in a scratch project shows the new agents. The `SubagentStart`
-      registration is in `.claude/settings.json`. Uninstall removes all of it.
+- [ ] The installed tree in a scratch project shows the new agents, with no new hook
+      registration in `.claude/settings.json`. Uninstall removes all of it.
 - [ ] The trial protocol below has been run, and the readout is recorded in
       `plans/team-leads-trial-readout.md`.
 
 ## Orders
 
-### WO-0: Platform probes (owner-run, interactive)
+### WO-0: Platform probes (owner-run, interactive) — DONE 2026-10-08
+- **Result:** headless runs, with the interactive-only rows (3a, 3b, 3c, 4a, 4b, 7a) re-run by
+  the owner. Everything held except two assumptions about background children and resume wakes.
+  This plan is amended for those (see "WO-0 amendments").
 - **Kind:** measurement
 - **Scope:** a throwaway project with the current harness and `plans/team-leads-probe-kit/`
   installed per its README; no harness edits
@@ -498,7 +527,7 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
   - allowed and denied lead writes, including `.md`-only and symlink/hardlink escapes;
   - lead Bash/Grep/Glob denied;
   - lead `Agent` allowlist hit and miss; lead → lead and lead → any Fable profile denied; model
-    override denied;
+    override denied; `run_in_background` unset or `true` denied, exactly `false` allowed;
   - `leadAllowedAgents` extending the list;
   - Orchestra executors' `Agent` denied; non-Orchestra types untouched;
   - pause file standing everything down.
@@ -508,39 +537,49 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 ### WO-3: Lead budget clock and dispatch counts
 - **Kind:** hook behavior + installer registration
 - **Scope:**
-  - `hooks/orchestra-guard.js` (a `SubagentStart` branch, the lead `Agent` budget check, the
-    counts)
-  - `install.js` (register and unregister the `SubagentStart` entry, alongside the existing
-    `PreToolUse` merge; use a matcher only if probe 1b shows one works)
-  - `tests/guard.test.js`, `tests/install.test.js`, the README
+  - `hooks/orchestra-guard.js`: the lead `Agent`/`SendMessage` budget check, the counts, and the
+    main-session `SendMessage` restart. There is no `SubagentStart` branch, and no `install.js`
+    change, because the existing empty-matcher `PreToolUse` entry already sees every call.
+  - `tests/guard.test.js`, the README
 - **Constraints:**
   - State is only `.claude/orchestra-leads/<agent_id>.json`.
   - Fail open on any state error.
   - The `leads.maxMinutes` and `leads.maxDispatches` defaults are 120 and 20, read from
     `.claude/orchestra.json`.
+  - Main-session decisions are unchanged. The only main-session effect is the restart on
+    `SendMessage` to a lead.
+  - First, capture one real main-session `SendMessage` hook input to pin the target field's name
+    (the probe kit's logger didn't record `tool_input`). The test fixture uses that capture.
 - **Acceptance:** tests cover:
-  - start; resume resetting `segment` while keeping `lifetime`; per-type counts;
-  - the minutes trip, the dispatch trip, the exact denial text;
+  - creation on the first counted call; a main-session `SendMessage` to the lead restarting
+    `segment` while keeping `lifetime`; a `SendMessage` to an unknown id changing nothing;
+  - per-type counts, with a lead `SendMessage` counted as `resume`;
+  - the minutes trip, the dispatch trip, the exact denial text, for both `Agent` and `SendMessage`;
   - corrupt state failing open;
-  - two concurrent dispatches not crashing;
-  - install registering the entry, re-install staying idempotent, uninstall removing it while
-    preserving user hooks.
+  - two concurrent dispatches not crashing.
 - **Verification:** TIER: full
-- **Depends on:** WO-2; WO-0 probes 1a, 1b, 3c, 3d
+- **Depends on:** WO-2; WO-0 probes 1c, 2b, 3a, 3c, 3d
 
 ### WO-4: The leads and the Director's side of them
 - **Kind:** new agent profiles + protocol
 - **Scope:**
   - `agents/lead.md` and `agents/lead-xhigh.md` (new, one law): frontmatter with
     `tools: Agent, Read, Write, Edit, SendMessage`, `model: opus`, `effort: high` / `xhigh`, and
-    `maxTurns` set from probe 2. The law covers the status schema, report format, return
-    triggers including the D6 counters, foreground dispatch, and "never edits".
+    `maxTurns: 60`. WO-0 2a found one turn per tool-calling message. A 20-dispatch segment plus
+    its status writes, reads and report fits well under 60, so the clock fires first. The law
+    covers:
+    - the status schema, report format, and return triggers including the D6 counters;
+    - "never edits";
+    - every `Agent` call sets `run_in_background: false`, with parallel work as several calls in
+      one message;
+    - no report while a resumed child's reply is outstanding.
   - `install.js` (`AGENTS`)
   - `ORCHESTRA.md`:
     - §2: company rows and a "Leads" paragraph covering when a sub-goal gets a lead (≥3 work
       orders, or its own review cycle), the tier choice, the charter, background launch, status
       pull, the `CronCreate` check-in, the dispatch-count cross-check, the Director's options on
-      escalation, and interactive-only
+      escalation, interactive-only, resuming a lead by its `AGENT ID`, and the `maxTurns`-stop
+      resume (read status, resume for `CHECKPOINT`)
     - §4: the Director's loop with leads, plus integration and merge orders
     - §5: the integration-review rule for ≥2 leads
   - `skills/orchestra-plan/SKILL.md`: when to charter a lead, and the charter template
@@ -552,7 +591,8 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
   - Flat direction stays the default below the lead threshold.
 - **Acceptance:** the tests pin:
   - both leads' frontmatter (tool list excludes Bash/Grep/Glob, `opus`, the two efforts,
-    `maxTurns` present);
+    `maxTurns: 60`);
+  - the law's `run_in_background: false` and outstanding-reply clauses;
   - the report sections, including ASSUMPTIONS, CLARIFY, GROWTH and REWORK;
   - the status schema's `seq`;
   - the `ORCHESTRA.md` clauses: integration review, check-in, never edits, the threshold, the
@@ -576,6 +616,7 @@ drops heartbeat, budget and class-sweep rules, because orders that need them nev
 - Serial: WO-0 → WO-1 → WO-1b → WO-2 → WO-3 → WO-4. WO-1 and WO-1b both edit the protocol's
   company and steering tables, so they never run in parallel.
 - Gate: WO-0 results must be in before any order is cut. A failed probe amends this plan first.
+  Met 2026-10-08.
 
 ## Review checkpoints
 
@@ -619,8 +660,10 @@ Astra-first default if Opus matches or beats it on comparable orders.
 
 ## Risks
 
-- **The probes may disagree with the docs.** WO-0 runs first, and the plan is amended before
-  any build.
+- **Platform drift.** WO-0 measured Claude Code 2.1.294. The lead rules lean on two
+  undocumented behaviors: an unset `run_in_background` backgrounds the child, and a reply
+  re-wakes the parent. Re-run the probe kit after any Claude Code update that touches subagents.
+  Both rules fail safe: the guard denies, or the lead checkpoints early.
 - **Context lost at each handoff.** Charter intent, plus the ASSUMPTIONS/CLARIFY sections; the
   owner watches for it in the trial.
 - **Parallel leads collide.** The Director gives parallel leads disjoint scopes and separate
@@ -640,6 +683,29 @@ Astra-first default if Opus matches or beats it on comparable orders.
 None blocking. D13 lists the calls made without an explicit ruling (Astra stays the default top,
 escalation from `executor-heavy-xhigh` goes to `executor-principal-max`, the model pin, and
 naming). Veto any of them before WO-1b.
+
+The WO-0 amendments below were also made without an explicit ruling on each mechanism: the clock
+restarting on a Director `SendMessage` instead of `SubagentStart`, `maxTurns: 60`, and the
+guard-enforced `run_in_background: false`. Veto any of them before WO-2.
+
+## WO-0 amendments (2026-10-08)
+
+The probes confirmed everything except two assumptions. The plan is amended as follows:
+
+- **Background children and wakes (3a, 3c).** An unset `run_in_background` backgrounds the child.
+  The parent's turn then ends, and every child completion or `SendMessage` reply re-wakes it with
+  a fresh `SubagentStart`.
+  - Leads must set `run_in_background: false` on every `Agent` call, and the guard enforces it
+    (rule table).
+  - The budget clock restarts only on a Director `SendMessage` to the lead, never on
+    `SubagentStart`. It needs no new hook registration (budget clock spec, WO-3).
+- **`SendMessage` replies are asynchronous (3c).** A lead doesn't report while a reply is
+  outstanding (return triggers, WO-4 law). A lead's `SendMessage` counts as a `resume` dispatch.
+- **`maxTurns` stops leave no report (2a)**, and `SubagentStop` doesn't fire on a `maxTurns` stop
+  or a `TaskStop` kill (2a, 3b). `maxTurns: 60` sits above one segment's need. The Director
+  resumes a stopped lead by agent id for its report (D3 layer 3, WO-4).
+- **Confirmed and now relied on:** `TaskStop` stops a lead's children (3b), cron fires while the
+  Director waits (4a/4b), and there is no parent-agent id (1f), so counts key on the caller.
 
 ## Resolved (owner, 2026-10-08)
 

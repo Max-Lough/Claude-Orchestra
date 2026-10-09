@@ -1036,6 +1036,10 @@ function denyLead(msg) {
   deny('Orchestra: ' + msg);
 }
 
+function isSet(v) {
+  return v !== undefined && v !== null && v !== '';
+}
+
 // Returns without deciding when the caller is not a lead.
 function subagentLaw(input, toolName, policy) {
   if (!LEAD_TYPES.has(input.agent_type)) return;
@@ -1053,14 +1057,19 @@ function subagentLaw(input, toolName, policy) {
           'STATUS: ESCALATION with TRIGGER: rung outside the team.'
       );
     }
-    if (ti.model !== undefined && ti.model !== null && ti.model !== '') {
-      return denyLead('a lead does not override an agent\'s model. Pick the rung whose model you need.');
+    if (isSet(ti.model) || isSet(ti.effort)) {
+      return denyLead('a lead does not override an agent\'s model or effort. Pick the rung whose tier you need.');
     }
-    if (ti.run_in_background !== false) {
-      return denyLead(
-        'a lead sets run_in_background: false on every Agent call (unset starts the child in the ' +
-          'background). Run parallel work as several Agent calls in one message.'
-      );
+    // Remote children run in the cloud, out of the charter's worktree and TaskStop's reach.
+    if (ti.isolation === 'remote') {
+      return denyLead('a lead does not start remote agents. Leave isolation unset or use "worktree".');
+    }
+    // Claude Code 2.1.295's Agent schema has no run_in_background: every
+    // child runs in the background and its reply wakes the lead. Only an
+    // explicit request for background is denied; a missing field, false or
+    // "false" (a model inventing the old law) falls through.
+    if (ti.run_in_background === true || ti.run_in_background === 'true') {
+      return denyLead('a lead never sets run_in_background. Run parallel work as several Agent calls in one message.');
     }
     return leadBudget(input.agent_id, ti.subagent_type, policy);
   }
@@ -1074,7 +1083,7 @@ function subagentLaw(input, toolName, policy) {
 //   { segmentStart: <epoch ms>, segment: { <type>: n }, lifetime: { <type>: n } }
 // Created on the lead's first counted call; a main-session SendMessage to the
 // lead's agent id restarts the segment and keeps `lifetime`. Not SubagentStart:
-// it also fires whenever a child's reply wakes the lead (WO-0 3a, 3c). Any
+// it also fires whenever a child's reply wakes the lead (WO-0 3a, 3c, Claude Code 2.1.294). Any
 // state error fails open, and racing parallel dispatches may undercount.
 
 const LEADS_STATE_REL = path.join('.claude', 'orchestra-leads');

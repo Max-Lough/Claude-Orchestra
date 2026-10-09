@@ -86,6 +86,31 @@ Everything else (1a-1e, 2b, 2c, 3d, 4a, 4b, 5a, 6a, 6b, 7a, 7b) matched the plan
 
 - None. 3c was re-checked interactively and passes by re-wake; the unset-`run_in_background` default backgrounds, for both the main session and leads (3a, 3c).
 
+## Re-check on Claude Code 2.1.295 (2026-10-08, for 3.9.1)
+
+The table above ran on **2.1.294**. A live PiratePartyPals lead then dispatched nothing on 2.1.295:
+the guard required `run_in_background: false`, and the interactive `Agent` schema no longer has
+that field. Two quick re-runs:
+
+- **Headless `claude -p --model sonnet` (2.1.295), 3a shape with 30 s workers.** The field still
+  exists headless. The main session and the lead both sent boolean `run_in_background: false`
+  (captured hook input), and the children ran in the foreground: no lead re-wake, and the lead
+  stopped 2 s after its last child (`06:31:42.557` worker stop, `06:31:44.675` lead stop UTC). The
+  lead reported both outputs.
+- **Interactive surface without the field (this build session, 2.1.295).** The `Agent` schema
+  exposes only `description`, `prompt`, `subagent_type`, `model`, `effort` and `isolation`. A
+  `general-purpose` subagent started two `general-purpose` children in one message. Both launches
+  returned at once with an `Async agent launched` acknowledgement. The subagent ended its turn,
+  both results woke it as hand-back messages, and it reported both outputs (`bg-31704`,
+  `bg-23500`). So **a background subagent is woken by its background children** on 2.1.295 when
+  the field is absent. The child was not an Orchestra `lead` in PiratePartyPals; the trial run
+  confirms that.
+
+What 3.9.1 takes from this: the field depends on the surface, not only the version. The guard
+allows a missing field, `false` or `"false"` and denies only an explicit `true`/`"true"`; lead law
+2 never names a value to set. 3a's wake behaviour holds on 2.1.295, so the rung keeps its wake
+mechanism.
+
 ## Cleanup
 
 No `setTimeout` node processes remained (checked by command line after the last probe). The cron

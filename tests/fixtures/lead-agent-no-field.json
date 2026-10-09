@@ -1,0 +1,21 @@
+{
+  "_note": "A lead Agent PreToolUse input. Shape captured 2026-10-08 from a real subagent Agent call (Claude Code 2.1.295, Windows 11, headless); agent_type is set to lead, subagent_type to executor, and session_id, cwd, prompt_id, transcript_path, description and prompt are placeholders. run_in_background is absent, as on a 2.1.295 surface whose Agent schema lacks it (interactive). The guard allows it.",
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "<transcript>",
+  "cwd": "<project>",
+  "prompt_id": "00000000-0000-0000-0000-000000000000",
+  "permission_mode": "default",
+  "agent_id": "a333ba8f03",
+  "agent_type": "lead",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Agent",
+  "tool_input": {
+    "description": "Run the WO-2 order",
+    "prompt": "<work order>",
+    "subagent_type": "executor"
+  },
+  "tool_use_id": "toolu_01WuWLMiN3aYLPXaWWk3xKbR"
+}

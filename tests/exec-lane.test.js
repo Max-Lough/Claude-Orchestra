@@ -1572,8 +1572,8 @@ function case19() {
   );
   // Leads (3.9.0 trial): two Opus tiers, one law. Pins the frontmatter the
   // platform acts on (tools, model, effort, maxTurns), the clauses WO-0
-  // forced (run_in_background: false; no report while a reply is
-  // outstanding), the report and status shapes the Director reads, and the
+  // forced (no report while a reply is outstanding), the 3.9.1 schema rule
+  // (never set run_in_background, model or effort), the report and status shapes the Director reads, and the
   // Director's own clauses in ORCHESTRA.md.
   const leadDoc = read('agents/lead.md');
   const leadXDoc = read('agents/lead-xhigh.md');
@@ -1601,9 +1601,10 @@ function case19() {
   for (const [name, text, phrase] of [
     ['never edits code', leadRule(1), '**You never edit code.**'],
     ['writes only under .claude/plans/leads/', leadRule(1), '`.claude/plans/leads/<your name>/`'],
-    ['every Agent call sets run_in_background: false', leadRule(2), '**Every `Agent` call sets `run_in_background: false`.**'],
+    ['never sets run_in_background, model or effort', leadRule(2), '**Never set `run_in_background`, `model` or `effort` on an `Agent` call, and never set `isolation` to `remote`.**'],
+    ['children report by waking the lead', leadRule(2), "Children run in the background, and each one's report wakes you."],
     ['parallel work is several Agent calls in one message', leadRule(2), 'Run parallel work as several `Agent` calls in one message.'],
-    ['never sets model', leadRule(2), 'Never set `model`'],
+    ['never reports while a child is outstanding', leadRule(2), 'Never report while a child is outstanding.'],
     ['counts plan growth', leadRule(5), '**Plan growth** = orders planned now − orders chartered'],
     ['counts rework', leadRule(5), '**Rework** = every executor run on an order after its first, plus every re-review after a REVISE'],
     ['never arbitrates past a REVISE', leadRule(6), '**Never arbitrate past a REVISE.**'],
@@ -1611,6 +1612,24 @@ function case19() {
     ['writes status at every milestone with seq +1', leadRule(8), 'add 1 to `seq` each write'],
   ]) {
     check('lead law: ' + name, text.includes(phrase), 'missing: ' + phrase + '\n' + (text.slice(0, 160) || 'the carrying rule is gone'));
+  }
+  // Claude Code 2.1.295's Agent tool has no run_in_background field. A law
+  // that demands it makes a model invent the field (3.9.1), so no shipped
+  // instruction may name it except as a field never to set.
+  {
+    const instructionFiles = ['ORCHESTRA.md'];
+    for (const dir of ['agents', 'agents/specialists', 'packs/codex/agents']) {
+      for (const f of fs.readdirSync(path.join(MASTER, dir))) if (/\.md$/.test(f)) instructionFiles.push(dir + '/' + f);
+    }
+    for (const dir of ['skills', 'packs/codex/skills']) {
+      if (!fs.existsSync(path.join(MASTER, dir))) continue;
+      for (const d of fs.readdirSync(path.join(MASTER, dir))) {
+        if (fs.existsSync(path.join(MASTER, dir, d, 'SKILL.md'))) instructionFiles.push(dir + '/' + d + '/SKILL.md');
+      }
+    }
+    const offenders = instructionFiles.filter((rel) =>
+      read(rel).split('\n').some((l) => l.includes('run_in_background') && !l.includes('Never set `run_in_background`')));
+    check('no agent, skill or ORCHESTRA.md line asks for run_in_background (the Agent schema lacks it)', offenders.length === 0, offenders.join(', '));
   }
   // Only the leads may start agents, and frontmatter is the enforcement point
   // for everyone else (the guard rules only on leads): every other shipped
@@ -1649,7 +1668,7 @@ function case19() {
     ['the threshold', 'A sub-goal of three or more work orders, or one that needs its own review cycle'],
     ['flat direction below it', 'Below that threshold, direct flat as above.'],
     ['the 8-order cap', 'at most 8 chartered work orders'],
-    ['background launch', 'Launch each lead in the background'],
+    ['launch and record the agent id', 'Launch each lead and record its agent id'],
     ['the CronCreate check-in', 'keep one `CronCreate` check-in (default every 45 min)'],
     ['a stale seq', 'flag a `seq` unchanged across two check-ins'],
     ['the dispatch-count cross-check', 'compare the guard\'s dispatch counts'],

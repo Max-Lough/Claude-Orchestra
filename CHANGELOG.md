@@ -9,6 +9,40 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.9.1 — trial fix: leads can spawn again under Claude Code 2.1.295
+
+**Branch-only, like 3.9.0.** An install carries this fix when its
+`.claude/orchestra-install.json` says `3.9.1`.
+
+- **The guard denied every lead spawn.** 3.9.0 allowed a lead's `Agent` call
+  only with `run_in_background: false` exactly, because the 2.1.294 probes
+  showed an unset flag backgrounds the child. On 2.1.295 the interactive
+  `Agent` tool has no `run_in_background` field (its schema is `description`,
+  `prompt`, `subagent_type`, `model`, `effort`, `isolation`), so the field
+  arrived missing, or as the string `"false"` when the model invented it to obey
+  the lead law. Either way the guard denied the call before the budget clock,
+  and a live PiratePartyPals lead dispatched nothing. The guard now denies only
+  an explicit `true` or `"true"`; a missing field, `false` or `"false"` goes on
+  to the budget clock. Headless `claude -p` on 2.1.295 still has the field, so
+  `false` stays legal there. Three hook-input fixtures
+  (`tests/fixtures/lead-agent-*.json`) cover a missing field (allow), `"false"`
+  (allow) and `true` (deny), and a mutation run kills every variant of the rule.
+- **Lead law 2 no longer asks for the field.** It now says never set
+  `run_in_background`, `model` or `effort`, and never set `isolation` to `remote`.
+  It also says children run in the background, each report wakes the lead,
+  parallel work is several `Agent` calls in one message, and the lead never
+  reports while a child is outstanding. A new test fails if any agent, skill
+  or `ORCHESTRA.md` line asks for `run_in_background`.
+- **A lead may not move an executor off its tier.** The `Agent` schema now
+  exposes `effort`, and §8.3 pins each rung's effort, so the guard denies a
+  lead's non-empty `effort` as it already denied `model`. It also denies
+  `isolation: "remote"`, which runs the child in the cloud, outside the charter's
+  worktree and `TaskStop`. For the Director, §8.3 now says never to set `model` or
+  `effort` on an `Agent` call; the guard still never gates the Director's
+  `Agent` calls.
+- **§2 Leads** no longer tells the Director to "leave `run_in_background`
+  unset" when launching a lead; that field does not exist on 2.1.295.
+
 ## 3.9.0 — trial: team leads, a Haiku mechanical rung, and the company law behind them
 
 **Branch-only until its trial readout passes.** This entry describes a trial

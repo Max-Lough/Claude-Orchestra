@@ -1130,7 +1130,7 @@ function subagentCall(agentType, toolName, toolInput) {
 }
 
 function leadSpawn(subagentType, extra) {
-  return Object.assign({ subagent_type: subagentType, prompt: 'x', run_in_background: false }, extra || {});
+  return Object.assign({ subagent_type: subagentType, prompt: 'x' }, extra || {});
 }
 
 function case28_companyLaw() {
@@ -1165,23 +1165,53 @@ function case28_companyLaw() {
     // Spawns.
     for (const t of ['scout', 'executor-mechanical-haiku', 'executor', 'executor-principal-max', 'reviewer-codex']) {
       const d = dec('Agent', leadSpawn(t));
-      check(lead + ' -> ' + t + ' with run_in_background: false -> allow', d.decision === 'allow', JSON.stringify(d));
+      check(lead + ' -> ' + t + ' -> allow', d.decision === 'allow', JSON.stringify(d));
     }
     for (const t of ['lead', 'lead-xhigh', 'executor-fable', 'executor-fable-xhigh', 'executor-codex-heavy', 'architect-codex', 'general-purpose']) {
       const d = dec('Agent', leadSpawn(t));
       check(lead + ' -> ' + t + ' -> deny (outside the team)', d.decision === 'deny' && /outside a lead's team/.test(d.reason), JSON.stringify(d));
     }
-    const untyped = dec('Agent', { prompt: 'x', run_in_background: false });
+    const untyped = dec('Agent', { prompt: 'x' });
     check(lead + ' -> untyped Agent -> deny', untyped.decision === 'deny', JSON.stringify(untyped));
     const model = dec('Agent', leadSpawn('executor', { model: 'opus' }));
     check(lead + ' model override -> deny', model.decision === 'deny' && /model/.test(model.reason), JSON.stringify(model));
-    const unset = dec('Agent', { subagent_type: 'executor', prompt: 'x' });
-    check(lead + ' run_in_background unset -> deny', unset.decision === 'deny' && /run_in_background: false/.test(unset.reason), JSON.stringify(unset));
-    for (const v of [true, 'false', 0, null]) {
+    for (const e of ['low', 'max']) {
+      const d = dec('Agent', leadSpawn('executor', { effort: e }));
+      check(lead + ' effort override ' + e + ' -> deny (the rung pins its effort, §8.3)', d.decision === 'deny' && /effort/.test(d.reason), JSON.stringify(d));
+    }
+    const remote = dec('Agent', leadSpawn('executor', { isolation: 'remote' }));
+    check(lead + ' isolation remote -> deny', remote.decision === 'deny' && /remote/.test(remote.reason), JSON.stringify(remote));
+    const wt = dec('Agent', leadSpawn('executor', { isolation: 'worktree' }));
+    check(lead + ' isolation worktree -> allow', wt.decision === 'allow', JSON.stringify(wt));
+    // Claude Code 2.1.295's Agent schema has no run_in_background (3.9.1):
+    // only an explicit request for background is denied.
+    for (const v of [false, 'false', null, '']) {
       const d = dec('Agent', leadSpawn('executor', { run_in_background: v }));
-      check(lead + ' run_in_background ' + JSON.stringify(v) + ' -> deny', d.decision === 'deny', JSON.stringify(d));
+      check(lead + ' run_in_background ' + JSON.stringify(v) + ' -> allow', d.decision === 'allow', JSON.stringify(d));
+    }
+    for (const v of [true, 'true']) {
+      const d = dec('Agent', leadSpawn('executor', { run_in_background: v }));
+      check(lead + ' run_in_background ' + JSON.stringify(v) + ' -> deny', d.decision === 'deny' && /never sets run_in_background/.test(d.reason), JSON.stringify(d));
     }
 
+  }
+
+  // Real-shaped lead Agent inputs (tests/fixtures/lead-agent-*.json): the
+  // field absent, the string "false" a model invents, and an explicit true.
+  // A deny must come from the rule, not the budget clock: dispatches stay at 0.
+  for (const [file, want] of [
+    ['lead-agent-no-field.json', 'allow'],
+    ['lead-agent-string-false.json', 'allow'],
+    ['lead-agent-true.json', 'deny'],
+  ]) {
+    const pf = tmpdir('orchestra-guard-');
+    const input = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', file), 'utf8'));
+    delete input._note;
+    const d = decisionOf(runGuard(pf, input));
+    const clock = path.join(pf, '.claude', 'orchestra-leads', input.agent_id + '.json');
+    const counted = fs.existsSync(clock) ? JSON.parse(fs.readFileSync(clock, 'utf8')).lifetime.executor : 0;
+    check('fixture ' + file + ' -> ' + want + (want === 'allow' ? ' (one dispatch counted)' : ' (nothing counted)'),
+      d.decision === want && counted === (want === 'allow' ? 1 : 0), JSON.stringify(d) + ' counted=' + counted);
   }
 
   // Lead write containment: a junction/symlink out of leads/ and a hardlink.
@@ -1379,7 +1409,7 @@ function case29_leadBudgetClock() {
   const script = [
     "const { spawn } = require('child_process');",
     'const [guard, proj] = process.argv.slice(1);',
-    "const input = JSON.stringify({ tool_name: 'Agent', agent_id: 'apar0001', agent_type: 'lead', tool_input: { subagent_type: 'executor', prompt: 'x', run_in_background: false } });",
+    "const input = JSON.stringify({ tool_name: 'Agent', agent_id: 'apar0001', agent_type: 'lead', tool_input: { subagent_type: 'executor', prompt: 'x' } });",
     'const env = Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: proj }); delete env.ORCHESTRA_PAUSE;',
     'const runs = [0, 1].map(() => new Promise((res) => {',
     "  const c = spawn(process.execPath, [guard], { env }); let out = '';",

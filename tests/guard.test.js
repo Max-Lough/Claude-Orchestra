@@ -27,7 +27,8 @@
  *      `.claude/orchestra.pause`; the pause switch is out-of-band only:
  *      `ORCHESTRA_PAUSE=1`, or the file pre-existing before the tool call
  *      (created by the user outside the tool loop) — and a genuine pause
- *      releases Agent too. This is Director law, not an absolute rule
+ *      releases Agent too (a lead's write is denied by type in any
+ *      session — company law, case 30). Otherwise this is Director law, not an absolute rule
  *      independent of it: a Sonnet/Haiku session, or one whose model cannot
  *      yet be determined, is unrestricted, same as every other denial here.
  *   5. Both remaining carve-outs (plan/memory) refuse a resolved target
@@ -503,7 +504,8 @@ function case7_pauseHardening() {
   // positively identified Fable/Opus at the helm) — it is NOT an absolute
   // rule independent of Director law. Sonnet, Haiku, and an undetermined
   // model (no transcript, corrupt transcript) all stand down for a pause-file
-  // write, exactly like any other tool call from that session.
+  // write, exactly like any other tool call from that session. (A lead's
+  // write is the exception: company law denies it by type — case 30.)
   const sonnetTranscript = writeTranscript(proj, [assistantTurn('claude-sonnet-4-8')]);
   const rSonnetSelfPause = runGuard(proj, { tool_name: 'Write', tool_input: { file_path: '.claude/orchestra.pause', content: '' }, transcript_path: sonnetTranscript });
   check(
@@ -1119,6 +1121,373 @@ function case27_pauseOrderingSubagentException() {
   );
 }
 
+// Company law (3.9.0, WO-2, trimmed): settings hooks fire inside subagents
+// with agent_id + agent_type, so the guard enforces what frontmatter cannot —
+// a lead's write scope and team. Non-lead agents are left to their frontmatter. Keyed on agent_type alone — no transcript is passed, so
+// every decision here is independent of the Director-model check.
+function subagentCall(agentType, toolName, toolInput) {
+  return { tool_name: toolName, agent_id: 'a1b2c3d4-' + agentType, agent_type: agentType, tool_input: toolInput || {} };
+}
+
+function leadSpawn(subagentType, extra) {
+  return Object.assign({ subagent_type: subagentType, prompt: 'x' }, extra || {});
+}
+
+function case28_companyLaw() {
+  section('28. Company law for leads: writes, spawns, non-leads left to frontmatter, pause');
+
+  for (const lead of ['lead', 'lead-xhigh']) {
+    const proj = tmpdir('orchestra-guard-');
+    fs.mkdirSync(path.join(proj, '.claude', 'plans', 'leads', 'auth'), { recursive: true });
+    const dec = (tool, input) => decisionOf(runGuard(proj, subagentCall(lead, tool, input)));
+
+    // Writes: .md under .claude/plans/leads/** only.
+    for (const tool of ['Write', 'Edit', 'MultiEdit']) {
+      const d = dec(tool, { file_path: '.claude/plans/leads/auth/status.md', content: 'x', old_string: 'a', new_string: 'b', edits: [] });
+      check(lead + ' ' + tool + ' of its status file -> allow', d.decision === 'allow', JSON.stringify(d));
+    }
+    for (const [label, file] of [
+      ['source code', 'src/index.js'],
+      ['a non-.md file under leads/', '.claude/plans/leads/auth/status.txt'],
+      ['a plan outside leads/', '.claude/plans/campaign.md'],
+      ['a path that climbs out of leads/', '.claude/plans/leads/../campaign.md'],
+      ['CLAUDE.md', 'CLAUDE.md'],
+    ]) {
+      const d = dec('Write', { file_path: file, content: 'x' });
+      check(lead + ' Write of ' + label + ' -> deny', d.decision === 'deny' && /a lead writes only \.md files under \.claude\/plans\/leads\//.test(d.reason), JSON.stringify(d));
+    }
+    const nb = dec('NotebookEdit', { notebook_path: '.claude/plans/leads/auth/n.ipynb', new_source: 'x' });
+    check(lead + ' NotebookEdit -> deny', nb.decision === 'deny', JSON.stringify(nb));
+
+    const read = dec('Read', { file_path: 'src/index.js' });
+    check(lead + ' Read -> allow', read.decision === 'allow', JSON.stringify(read));
+
+    // Spawns.
+    for (const t of ['scout', 'executor-mechanical-haiku', 'executor', 'executor-principal-max', 'reviewer-codex']) {
+      const d = dec('Agent', leadSpawn(t));
+      check(lead + ' -> ' + t + ' -> allow', d.decision === 'allow', JSON.stringify(d));
+    }
+    for (const t of ['lead', 'lead-xhigh', 'executor-fable', 'executor-fable-xhigh', 'executor-codex-heavy', 'architect-codex', 'general-purpose']) {
+      const d = dec('Agent', leadSpawn(t));
+      check(lead + ' -> ' + t + ' -> deny (outside the team)', d.decision === 'deny' && /outside a lead's team/.test(d.reason), JSON.stringify(d));
+    }
+    const untyped = dec('Agent', { prompt: 'x' });
+    check(lead + ' -> untyped Agent -> deny', untyped.decision === 'deny', JSON.stringify(untyped));
+    const model = dec('Agent', leadSpawn('executor', { model: 'opus' }));
+    check(lead + ' model override -> deny', model.decision === 'deny' && /model/.test(model.reason), JSON.stringify(model));
+    for (const e of ['low', 'max']) {
+      const d = dec('Agent', leadSpawn('executor', { effort: e }));
+      check(lead + ' effort override ' + e + ' -> deny (the rung pins its effort, §8.3)', d.decision === 'deny' && /effort/.test(d.reason), JSON.stringify(d));
+    }
+    const remote = dec('Agent', leadSpawn('executor', { isolation: 'remote' }));
+    check(lead + ' isolation remote -> deny', remote.decision === 'deny' && /remote/.test(remote.reason), JSON.stringify(remote));
+    const wt = dec('Agent', leadSpawn('executor', { isolation: 'worktree' }));
+    check(lead + ' isolation worktree -> allow', wt.decision === 'allow', JSON.stringify(wt));
+    // Claude Code 2.1.295's Agent schema has no run_in_background (3.9.1):
+    // only an explicit request for background is denied.
+    for (const v of [false, 'false', null, '']) {
+      const d = dec('Agent', leadSpawn('executor', { run_in_background: v }));
+      check(lead + ' run_in_background ' + JSON.stringify(v) + ' -> allow', d.decision === 'allow', JSON.stringify(d));
+    }
+    for (const v of [true, 'true']) {
+      const d = dec('Agent', leadSpawn('executor', { run_in_background: v }));
+      check(lead + ' run_in_background ' + JSON.stringify(v) + ' -> deny', d.decision === 'deny' && /never sets run_in_background/.test(d.reason), JSON.stringify(d));
+    }
+
+  }
+
+  // Real-shaped lead Agent inputs (tests/fixtures/lead-agent-*.json): the
+  // field absent, the string "false" a model invents, and an explicit true.
+  // A deny must come from the rule, not the budget clock: dispatches stay at 0.
+  for (const [file, want] of [
+    ['lead-agent-no-field.json', 'allow'],
+    ['lead-agent-string-false.json', 'allow'],
+    ['lead-agent-true.json', 'deny'],
+  ]) {
+    const pf = tmpdir('orchestra-guard-');
+    const input = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', file), 'utf8'));
+    delete input._note;
+    const d = decisionOf(runGuard(pf, input));
+    const clock = path.join(pf, '.claude', 'orchestra-leads', input.agent_id + '.json');
+    const counted = fs.existsSync(clock) ? JSON.parse(fs.readFileSync(clock, 'utf8')).lifetime.executor : 0;
+    check('fixture ' + file + ' -> ' + want + (want === 'allow' ? ' (one dispatch counted)' : ' (nothing counted)'),
+      d.decision === want && counted === (want === 'allow' ? 1 : 0), JSON.stringify(d) + ' counted=' + counted);
+  }
+
+  // Lead write containment: a junction/symlink out of leads/ and a hardlink.
+  const proj = tmpdir('orchestra-guard-');
+  const outside = tmpdir('orchestra-guard-outside-');
+  fs.mkdirSync(path.join(proj, '.claude', 'plans', 'leads'), { recursive: true });
+  let linked = true;
+  try {
+    fs.symlinkSync(outside, path.join(proj, '.claude', 'plans', 'leads', 'esc'), 'junction');
+  } catch (e) {
+    try {
+      fs.symlinkSync(outside, path.join(proj, '.claude', 'plans', 'leads', 'esc'), 'dir');
+    } catch (e2) {
+      linked = false;
+      check('lead write through a symlink escape denied', true, 'SKIPPED — cannot create a symlink/junction (' + (e2 && e2.message) + ')');
+    }
+  }
+  if (linked) {
+    const d = decisionOf(runGuard(proj, subagentCall('lead', 'Write', { file_path: '.claude/plans/leads/esc/status.md', content: 'x' })));
+    check('lead write through a junction out of the project -> deny', d.decision === 'deny', JSON.stringify(d));
+  }
+  const hl = tryHardlink(GUARD, path.join(proj, '.claude', 'plans', 'leads', 'evil.md'));
+  if (hl.ok) {
+    const d = decisionOf(runGuard(proj, subagentCall('lead', 'Edit', { file_path: '.claude/plans/leads/evil.md', old_string: 'a', new_string: 'b' })));
+    check('lead edit of a leads/*.md hardlinked to the guard -> deny (hardlinked target)', d.decision === 'deny' && /hardlinked target/.test(d.reason), JSON.stringify(d));
+  } else {
+    check('lead hardlink escape denied', true, 'SKIPPED — could not create a hardlink (' + hl.reason + ')');
+  }
+
+  // Every non-lead subagent is untouched by company law.
+  const p2 = tmpdir('orchestra-guard-');
+  const exEdit = decisionOf(runGuard(p2, subagentCall('executor', 'Edit', { file_path: 'src/a.js', old_string: 'a', new_string: 'b' })));
+  check('executor Edit -> allow (Director law never binds subagents)', exEdit.decision === 'allow', JSON.stringify(exEdit));
+  const exBash = decisionOf(runGuard(p2, subagentCall('executor', 'Bash', { command: 'npm test' })));
+  check('executor Bash -> allow', exBash.decision === 'allow', JSON.stringify(exBash));
+
+  // Agent types the harness doesn't ship are untouched.
+  for (const [tool, input] of [['Agent', { subagent_type: 'x', prompt: 'x' }], ['Write', { file_path: 'src/a.js', content: 'x' }], ['Bash', { command: 'ls' }]]) {
+    const d = decisionOf(runGuard(p2, subagentCall('my-own-agent', tool, input)));
+    check('non-Orchestra agent type ' + tool + ' -> allow', d.decision === 'allow', JSON.stringify(d));
+  }
+
+  // Main-session Director behavior is unchanged: it may launch a lead in the
+  // background, with no run_in_background and no agent identity.
+  const p3 = tmpdir('orchestra-guard-');
+  const transcript = writeTranscript(p3, [assistantTurn('claude-opus-5-5')]);
+  const dirSpawn = decisionOf(runGuard(p3, { tool_name: 'Agent', tool_input: { subagent_type: 'lead', prompt: 'x' }, transcript_path: transcript }));
+  check('Director Agent -> lead (background) -> allow, unchanged', dirSpawn.decision === 'allow', JSON.stringify(dirSpawn));
+
+  // A non-lead Orchestra agent's Agent call is left to its frontmatter.
+  const exAgent = decisionOf(runGuard(p2, subagentCall('executor', 'Agent', leadSpawn('scout'))));
+  check('executor Agent -> allow (frontmatter disallowedTools is the enforcement point)', exAgent.decision === 'allow', JSON.stringify(exAgent));
+
+  // A genuine pause file stands every company rule down.
+  const p4 = tmpdir('orchestra-guard-');
+  fs.mkdirSync(path.join(p4, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(p4, '.claude', 'orchestra.pause'), '', 'utf8');
+  for (const [type, tool, input] of [
+    ['lead', 'Write', { file_path: 'src/a.js', content: 'x' }],
+    ['lead', 'Agent', { subagent_type: 'lead', prompt: 'x' }],
+    ['lead-xhigh', 'Agent', { subagent_type: 'executor', prompt: 'x' }],
+  ]) {
+    const d = decisionOf(runGuard(p4, subagentCall(type, tool, input)));
+    check('pause file: ' + type + ' ' + tool + ' -> allow', d.decision === 'allow', JSON.stringify(d));
+  }
+}
+
+// Lead budget clock (3.9.0, WO-3). The main-session SendMessage fixture is a
+// real captured hook input (tests/fixtures/sendmessage-hook-input.json): the
+// target is tool_input.to (mirrored into recipient) and there is no agent_id.
+const SEND_FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'sendmessage-hook-input.json'), 'utf8'));
+
+function directorSendTo(agentId) {
+  const input = JSON.parse(JSON.stringify(SEND_FIXTURE));
+  delete input._note;
+  input.tool_input.to = agentId;
+  input.tool_input.recipient = agentId;
+  return input;
+}
+
+function case29_leadBudgetClock() {
+  section('29. Lead budget clock: creation, per-type counts, Director restart, trips, fail-open, concurrency');
+
+  check('the captured SendMessage fixture is a main-session call (no agent_id / agent_type)',
+    SEND_FIXTURE.tool_name === 'SendMessage' && !('agent_id' in SEND_FIXTURE) && !('agent_type' in SEND_FIXTURE) &&
+      typeof SEND_FIXTURE.tool_input.to === 'string',
+    JSON.stringify(SEND_FIXTURE).slice(0, 300));
+
+  const DENY_TEXT = /^Orchestra: lead budget crossed \((\d+ minutes of \d+|\d+ dispatches of \d+)\)\. Write your status file and return STATUS: CHECKPOINT now\.$/;
+
+  for (const lead of ['lead', 'lead-xhigh']) {
+    const proj = tmpdir('orchestra-guard-');
+    const id = 'a' + lead.replace(/-/g, '') + '0001';
+    const stateFile = path.join(proj, '.claude', 'orchestra-leads', id + '.json');
+    const readState = () => JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const call = (tool, ti) => decisionOf(runGuard(proj, { tool_name: tool, agent_id: id, agent_type: lead, tool_input: ti }));
+
+    check(lead + ': no state file before the first counted call', !fs.existsSync(stateFile), '');
+    const before = Date.now();
+    const d1 = call('Agent', leadSpawn('executor'));
+    check(lead + ': first Agent dispatch -> allow', d1.decision === 'allow', JSON.stringify(d1));
+    const s1 = readState();
+    check(lead + ': the first counted call creates the state file, segment started now',
+      s1.segmentStart >= before && s1.segmentStart <= Date.now(), JSON.stringify(s1));
+    check(lead + ': per-type counts after one executor dispatch',
+      JSON.stringify(s1.segment) === '{"executor":1}' && JSON.stringify(s1.lifetime) === '{"executor":1}', JSON.stringify(s1));
+
+    call('Agent', leadSpawn('scout'));
+    call('Agent', leadSpawn('executor'));
+    const dSend = call('SendMessage', { to: 'aexecutor0001', message: 'fix it' });
+    check(lead + ': a lead SendMessage -> allow', dSend.decision === 'allow', JSON.stringify(dSend));
+    const s2 = readState();
+    check(lead + ': counts by type, with the lead SendMessage counted as resume',
+      s2.segment.executor === 2 && s2.segment.scout === 1 && s2.segment.resume === 1 && s2.lifetime.resume === 1,
+      JSON.stringify(s2));
+    // A non-dispatch tool is never counted.
+    call('Write', { file_path: '.claude/plans/leads/x/status.md', content: 'x' });
+    check(lead + ': a status-file write is not counted', JSON.stringify(readState().segment) === JSON.stringify(s2.segment), JSON.stringify(readState()));
+
+    // Director resume: the captured main-session SendMessage, retargeted.
+    const old = Object.assign({}, s2, { segmentStart: Date.now() - 90 * 60000 });
+    fs.writeFileSync(stateFile, JSON.stringify(old), 'utf8');
+    const tRestart = Date.now();
+    const dDir = decisionOf(runGuard(proj, directorSendTo(id)));
+    check(lead + ': Director SendMessage to the lead -> allow (decision unchanged)', dDir.decision === 'allow', JSON.stringify(dDir));
+    const s3 = readState();
+    check(lead + ': Director SendMessage restarts the segment', s3.segmentStart >= tRestart && JSON.stringify(s3.segment) === '{}', JSON.stringify(s3));
+    check(lead + ': ...and keeps lifetime', JSON.stringify(s3.lifetime) === JSON.stringify(s2.lifetime), JSON.stringify(s3));
+
+    // A Director SendMessage to an unknown id changes nothing.
+    const leadsDir = path.dirname(stateFile);
+    const listBefore = fs.readdirSync(leadsDir).sort().join(',');
+    const contentBefore = fs.readFileSync(stateFile, 'utf8');
+    const dUnknown = decisionOf(runGuard(proj, directorSendTo('a-not-a-lead')));
+    check(lead + ': Director SendMessage to an unknown id -> allow, no file created, state untouched',
+      dUnknown.decision === 'allow' && fs.readdirSync(leadsDir).sort().join(',') === listBefore &&
+        fs.readFileSync(stateFile, 'utf8') === contentBefore, fs.readdirSync(leadsDir).join(','));
+    // A send by name (not an agent id) is also no restart.
+    const dByName = decisionOf(runGuard(proj, directorSendTo(lead)));
+    check(lead + ': Director SendMessage by name changes nothing', dByName.decision === 'allow' && fs.readFileSync(stateFile, 'utf8') === contentBefore, '');
+    // A SUBAGENT's SendMessage to the lead id is not a Director resume.
+    const fromSub = directorSendTo(id);
+    fromSub.agent_id = 'aother0001';
+    fromSub.agent_type = 'my-own-agent';
+    runGuard(proj, fromSub);
+    check(lead + ': a subagent SendMessage to the lead id does not restart it', fs.readFileSync(stateFile, 'utf8') === contentBefore, '');
+
+    // Minutes trip, for Agent and SendMessage, with the exact text.
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: Date.now() - 121 * 60000, segment: { executor: 1 }, lifetime: { executor: 5 } }), 'utf8');
+    for (const [tool, ti] of [['Agent', leadSpawn('executor')], ['SendMessage', { to: 'x', message: 'y' }]]) {
+      const d = call(tool, ti);
+      check(lead + ': minutes budget crossed -> ' + tool + ' denied with the exact text',
+        d.decision === 'deny' && DENY_TEXT.test(d.reason) && /\(121 minutes of 120\)/.test(d.reason), d.reason);
+    }
+    check(lead + ': a denied dispatch is not counted', readState().segment.executor === 1 && readState().lifetime.executor === 5, JSON.stringify(readState()));
+
+    // Dispatch trip at the default 20.
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: Date.now(), segment: { executor: 12, resume: 8 }, lifetime: { executor: 30, resume: 8 } }), 'utf8');
+    for (const [tool, ti] of [['Agent', leadSpawn('scout')], ['SendMessage', { to: 'x', message: 'y' }]]) {
+      const d = call(tool, ti);
+      check(lead + ': 20 dispatches already in the segment -> ' + tool + ' denied with the exact text',
+        d.decision === 'deny' && DENY_TEXT.test(d.reason) && /\(20 dispatches of 20\)/.test(d.reason), d.reason);
+    }
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: Date.now(), segment: { executor: 19 }, lifetime: { executor: 19 } }), 'utf8');
+    check(lead + ': the 20th dispatch is still allowed', call('Agent', leadSpawn('scout')).decision === 'allow', JSON.stringify(readState()));
+
+    // Corrupt state fails open and is left alone.
+    fs.writeFileSync(stateFile, '{ not json', 'utf8');
+    const dCorrupt = call('Agent', leadSpawn('executor'));
+    check(lead + ': corrupt state -> allow (fail open), file untouched', dCorrupt.decision === 'allow' && fs.readFileSync(stateFile, 'utf8') === '{ not json', JSON.stringify(dCorrupt));
+    fs.writeFileSync(stateFile, JSON.stringify({ segmentStart: 'yesterday', segment: {}, lifetime: {} }), 'utf8');
+    check(lead + ': malformed state shape -> allow', call('Agent', leadSpawn('executor')).decision === 'allow', '');
+  }
+
+  // Budgets come from orchestra.json leads.maxMinutes / leads.maxDispatches.
+  const pc = tmpdir('orchestra-guard-');
+  setManifest(pc, { leads: { maxMinutes: 5, maxDispatches: 2 } });
+  const cfgCall = (tool, ti) => decisionOf(runGuard(pc, { tool_name: tool, agent_id: 'acfg0001', agent_type: 'lead', tool_input: ti }));
+  cfgCall('Agent', leadSpawn('executor'));
+  cfgCall('SendMessage', { to: 'x', message: 'y' });
+  const dCfg = cfgCall('Agent', leadSpawn('executor'));
+  check('leads.maxDispatches from orchestra.json is honoured', dCfg.decision === 'deny' && /\(2 dispatches of 2\)/.test(dCfg.reason), dCfg.reason);
+  fs.writeFileSync(path.join(pc, '.claude', 'orchestra-leads', 'acfg0001.json'), JSON.stringify({ segmentStart: Date.now() - 6 * 60000, segment: {}, lifetime: {} }), 'utf8');
+  const dCfgMin = cfgCall('Agent', leadSpawn('executor'));
+  check('leads.maxMinutes from orchestra.json is honoured', dCfgMin.decision === 'deny' && /\(6 minutes of 5\)/.test(dCfgMin.reason), dCfgMin.reason);
+
+  // An unsafe agent id never becomes a path; the call is allowed uncounted.
+  const pu = tmpdir('orchestra-guard-');
+  const dUnsafe = decisionOf(runGuard(pu, { tool_name: 'Agent', agent_id: '../../evil', agent_type: 'lead', tool_input: leadSpawn('executor') }));
+  check('an unsafe agent_id -> allow, no state written', dUnsafe.decision === 'allow' && !fs.existsSync(path.join(pu, '.claude', 'orchestra-leads')), JSON.stringify(dUnsafe));
+
+  // Two concurrent dispatches from one lead: neither crashes, the state stays
+  // parseable, and at least one is counted (a race may undercount).
+  const pp = tmpdir('orchestra-guard-');
+  const script = [
+    "const { spawn } = require('child_process');",
+    'const [guard, proj] = process.argv.slice(1);',
+    "const input = JSON.stringify({ tool_name: 'Agent', agent_id: 'apar0001', agent_type: 'lead', tool_input: { subagent_type: 'executor', prompt: 'x' } });",
+    'const env = Object.assign({}, process.env, { CLAUDE_PROJECT_DIR: proj }); delete env.ORCHESTRA_PAUSE;',
+    'const runs = [0, 1].map(() => new Promise((res) => {',
+    "  const c = spawn(process.execPath, [guard], { env }); let out = '';",
+    "  c.stdout.on('data', (d) => (out += d)); c.on('close', (code) => res({ code, out }));",
+    '  c.stdin.end(input);',
+    '}));',
+    'Promise.all(runs).then((r) => console.log(JSON.stringify(r)));',
+  ].join('\n');
+  const rPar = spawnSync(process.execPath, ['-e', script, GUARD, pp], { encoding: 'utf8', timeout: 30000 });
+  let results = [];
+  try { results = JSON.parse(rPar.stdout); } catch (_) { /* reported below */ }
+  check('two concurrent lead dispatches both exit 0 and allow',
+    results.length === 2 && results.every((r) => r.code === 0 && r.out.trim() === ''), rPar.stdout + rPar.stderr);
+  let parState = null;
+  try { parState = JSON.parse(fs.readFileSync(path.join(pp, '.claude', 'orchestra-leads', 'apar0001.json'), 'utf8')); } catch (_) { /* reported below */ }
+  check('after two concurrent dispatches the state is parseable and counts 1 or 2',
+    parState && parState.segment.executor >= 1 && parState.segment.executor <= 2, JSON.stringify(parState));
+  const leftovers = fs.readdirSync(path.join(pp, '.claude', 'orchestra-leads')).filter((f) => /\.tmp$/.test(f));
+  check('no temp files are left behind', leftovers.length === 0, leftovers.join(','));
+}
+
+// Review-round regressions that survive the guard trim: the clock's state
+// never leaves the project through a link, and a lead never writes the pause
+// path, whatever the Director-model evidence.
+function case30_reviewRound1() {
+  section('30. Clock and lead-write hardening: junctioned state dir, a lead writing the pause path');
+
+  // A junction at .claude/orchestra-leads never carries state outside.
+  const pj = tmpdir('orchestra-guard-');
+  const outside = tmpdir('orchestra-guard-outside-');
+  fs.mkdirSync(path.join(pj, '.claude'), { recursive: true });
+  let linked = true;
+  try {
+    fs.symlinkSync(outside, path.join(pj, '.claude', 'orchestra-leads'), 'junction');
+  } catch (e) {
+    try {
+      fs.symlinkSync(outside, path.join(pj, '.claude', 'orchestra-leads'), 'dir');
+    } catch (e2) {
+      linked = false;
+      check('junctioned clock dir', true, 'SKIPPED — cannot create a symlink/junction (' + (e2 && e2.message) + ')');
+    }
+  }
+  if (linked) {
+    const d = decisionOf(runGuard(pj, { tool_name: 'Agent', agent_id: 'ajunc0001', agent_type: 'lead', tool_input: leadSpawn('executor') }));
+    check('junctioned .claude/orchestra-leads -> allow (fail open), nothing written outside the project',
+      d.decision === 'allow' && fs.readdirSync(outside).length === 0, fs.readdirSync(outside).join(','));
+    fs.writeFileSync(path.join(outside, 'ajunc0001.json'), JSON.stringify({ segmentStart: Date.now(), segment: {}, lifetime: {} }), 'utf8');
+    const before = fs.readFileSync(path.join(outside, 'ajunc0001.json'), 'utf8');
+    runGuard(pj, directorSendTo('ajunc0001'));
+    check('a Director restart through the junction does not touch the outside file', fs.readFileSync(path.join(outside, 'ajunc0001.json'), 'utf8') === before, '');
+  }
+
+  // Review round 2: a lead's write to the pause path is denied by type, before
+  // the self-pause branch can stand down on missing or non-Director evidence.
+  for (const [label, transcriptModel] of [['no transcript', null], ['a Sonnet session', 'claude-sonnet-5-5']]) {
+    const pz = tmpdir('orchestra-guard-');
+    const tp = transcriptModel ? writeTranscript(pz, [assistantTurn(transcriptModel)]) : undefined;
+    for (const lead of ['lead', 'lead-xhigh']) {
+      for (const [tool, ti] of [
+        ['Write', { file_path: '.claude/orchestra.pause', content: '' }],
+        ['Edit', { file_path: '.claude/orchestra.pause', old_string: 'a', new_string: 'b' }],
+        ['MultiEdit', { file_path: '.claude/ORCHESTRA.PAUSE.', edits: [] }],
+        ['NotebookEdit', { notebook_path: '.claude/orchestra.pause/x.ipynb', new_source: 'x' }],
+      ]) {
+        const input = subagentCall(lead, tool, ti);
+        if (tp) input.transcript_path = tp;
+        const d = decisionOf(runGuard(pz, input));
+        check(label + ': ' + lead + ' ' + tool + ' of the pause path -> deny', d.decision === 'deny', JSON.stringify(d));
+      }
+    }
+    check(label + ': no pause file was created', !fs.existsSync(path.join(pz, '.claude', 'orchestra.pause')), '');
+    // An executor in a non-Director session is unchanged (Director law, not company law).
+    const ex = subagentCall('executor', 'Write', { file_path: '.claude/orchestra.pause', content: '' });
+    if (tp) ex.transcript_path = tp;
+    check(label + ': an executor pause-path Write keeps its pre-3.9.0 outcome (allow)', decisionOf(runGuard(pz, ex)).decision === 'allow', '');
+  }
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -1158,6 +1527,9 @@ try {
   case25_isSidechainStrictBoolean();
   case26_pauseNameNormalization();
   case27_pauseOrderingSubagentException();
+  case28_companyLaw();
+  case29_leadBudgetClock();
+  case30_reviewRound1();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

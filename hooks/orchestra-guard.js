@@ -4,10 +4,12 @@
  *
  * Enforces Director law: the main session (the Director) may not edit files,
  * run commands, or search the codebase — those belong to the scout, detective,
- * and executor subagents. Subagent tool calls are exempt.
+ * and executor subagents. Subagent tool calls are exempt from Director law;
+ * a short company law (subagentLaw()) binds the leads.
  *
- * The settings.json matcher fires this hook on every main-session tool call;
- * this script is the single source of truth for what the Director may do.
+ * The settings.json matcher fires this hook on every tool call, the main
+ * session's and its subagents' alike; this script is the single source of
+ * truth for what the Director, and a lead, may do.
  *
  * -------------------------------------------------------------- model-aware
  *
@@ -52,7 +54,9 @@
  * Agent handling — but the DENY itself (denySelfPause()) fires only once the
  * model is positively identified as Fable/Opus, same as every other denial
  * in this guard: nothing is enforced against a Sonnet/Haiku session, or one
- * whose model cannot yet be determined. Windows spelling aliases (case, NTFS
+ * whose model cannot yet be determined. The one exception is a lead (lead,
+ * lead-xhigh): company law denies its pause-path write by type, in any
+ * session (main()). Windows spelling aliases (case, NTFS
  * ADS suffix, trailing dots/spaces) are normalised before comparison so none
  * of them dodge the deny once it applies.
  *
@@ -454,6 +458,10 @@ function compileGlobsTightening(arr) {
   return { patterns, invalid };
 }
 
+function positiveOr(v, fallback) {
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
 function arrOfStrings(arr) {
   return (Array.isArray(arr) ? arr : []).filter((s) => typeof s === 'string');
 }
@@ -471,6 +479,8 @@ function loadPolicy() {
     planPatterns: [],
     planPatternsRaw: [],
     memoryPatterns: [],
+    leadMaxMinutes: 120,
+    leadMaxDispatches: 20,
   };
   try {
     const manifestPath = path.join(projectDir(), '.claude', CONFIG_BASENAME);
@@ -485,6 +495,7 @@ function loadPolicy() {
     }
 
     const g = compileGlobsTightening(cfg ? cfg.directorBlockedPatterns : null);
+    const leads = cfg && cfg.leads && typeof cfg.leads === 'object' ? cfg.leads : {};
     const rawPlanPatterns =
       cfg && Array.isArray(cfg.directorPlanPatterns) && cfg.directorPlanPatterns.length <= MAX_PATTERN_ARRAY_LEN
         ? arrOfStrings(cfg.directorPlanPatterns)
@@ -497,6 +508,8 @@ function loadPolicy() {
       planPatternsRaw: rawPlanPatterns,
       planPatterns: cfg ? compileGlobsLoosening(cfg.directorPlanPatterns) : [],
       memoryPatterns: cfg ? compileGlobsLoosening(cfg.directorMemoryPatterns) : [],
+      leadMaxMinutes: positiveOr(leads.maxMinutes, empty.leadMaxMinutes),
+      leadMaxDispatches: positiveOr(leads.maxDispatches, empty.leadMaxDispatches),
     });
   } catch (_) {
     return Object.assign({}, empty);
@@ -729,7 +742,8 @@ function pauseWriteTargetPath(toolName, toolInput) {
 // Self-pause write detector. In an identified Director session (Fable/Opus)
 // no tool call may create or edit .claude/orchestra.pause: the pause switch
 // is out-of-band only (env var, or the user creating the file directly). The
-// caller applies this only after the model gate; NORMAL-mode sessions are not
+// caller applies this only after the model gate (a lead's write excepted —
+// it is denied by type); NORMAL-mode sessions are not
 // policed. A write whose target resolves to
 // that exact path — OR is nested UNDER it, treating the pause path as a
 // directory — is flagged for denial here, unconditionally, before any
@@ -822,8 +836,10 @@ function pauseFileStatus(root) {
 // project, and BOTH routes require a .md extension on the resolved path. A
 // match that resolves to a link-unsafe target (linkSafety()) is refused, not
 // silently downgraded to "not a plan file".
+// `plansRel` narrows the default root (a lead may write only under
+// .claude/plans/leads/ — see subagentLaw()); it defaults to .claude/plans.
 // Returns 'none' | 'allow' | 'hardlink'.
-function classifyPlanOperation(toolName, toolInput, planPatterns) {
+function classifyPlanOperation(toolName, toolInput, planPatterns, plansRel) {
   if (!FILE_WRITE_TOOLS.has(toolName)) return 'none';
   if (!toolInput || typeof toolInput !== 'object') return 'none';
   if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '') return 'none';
@@ -848,7 +864,7 @@ function classifyPlanOperation(toolName, toolInput, planPatterns) {
   }
 
   // Default carve-out: .claude/plans/**/*.md
-  const plansRoot = path.join(root, '.claude', PLANS_DIRNAME);
+  const plansRoot = path.join(root, plansRel || path.join('.claude', PLANS_DIRNAME));
   const realPlansRoot = realish(plansRoot);
   const relToPlans = path.relative(realPlansRoot, realResolved);
   const inPlansDir =
@@ -983,6 +999,166 @@ function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
   }
 }
 
+// ------------------------------------------------------------ company law
+//
+// Settings hooks fire inside subagents too, with agent_type naming the
+// CALLING agent (plans/team-leads-probe-results.md 1a, 1c). Frontmatter
+// already keeps Agent from every non-lead Orchestra agent and Bash/Grep/Glob
+// from the leads; what it cannot express is a lead's write scope and which
+// types a lead may start (an Agent(type) allowlist in a subagent definition is
+// ignored). Those rules, and the lead budget clock, live here. They key on
+// agent_type alone, independent of the Director-model check; a genuine pause
+// file stands them down.
+
+const LEAD_TYPES = new Set(['lead', 'lead-xhigh']);
+
+// Who a lead may start. Never another lead, a Fable or user-only Codex
+// executor, or a planning lane: an order needing one is an ESCALATION.
+const LEAD_TEAM = new Set([
+  'scout',
+  'detective',
+  'executor-mechanical-haiku',
+  'executor-mechanical',
+  'executor-bounded',
+  'executor',
+  'executor-heavy',
+  'executor-heavy-xhigh',
+  'executor-codex-principal',
+  'executor-principal',
+  'executor-principal-max',
+  'reviewer',
+  'reviewer-codex',
+]);
+
+const LEAD_PLANS_REL = path.join('.claude', PLANS_DIRNAME, 'leads');
+
+function denyLead(msg) {
+  deny('Orchestra: ' + msg);
+}
+
+function isSet(v) {
+  return v !== undefined && v !== null && v !== '';
+}
+
+// Returns without deciding when the caller is not a lead.
+function subagentLaw(input, toolName, policy) {
+  if (!LEAD_TYPES.has(input.agent_type)) return;
+  if (PAUSE_WRITE_TOOLS.has(toolName)) {
+    const plan = classifyPlanOperation(toolName, input.tool_input, [], LEAD_PLANS_REL);
+    if (plan === 'allow') return allow();
+    if (plan === 'hardlink') return denyHardlinkedTarget(toolName, policy);
+    return denyLead('a lead writes only .md files under .claude/plans/leads/. Route the change to an executor.');
+  }
+  if (toolName === 'Agent') {
+    const ti = input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
+    if (!LEAD_TEAM.has(ti.subagent_type)) {
+      return denyLead(
+        String(ti.subagent_type) + ' is outside a lead\'s team. Write your status file and return ' +
+          'STATUS: ESCALATION with TRIGGER: rung outside the team.'
+      );
+    }
+    if (isSet(ti.model) || isSet(ti.effort)) {
+      return denyLead('a lead does not override an agent\'s model or effort. Pick the rung whose tier you need.');
+    }
+    // Remote children run in the cloud, out of the charter's worktree and TaskStop's reach.
+    if (ti.isolation === 'remote') {
+      return denyLead('a lead does not start remote agents. Leave isolation unset or use "worktree".');
+    }
+    // Claude Code 2.1.295's Agent schema has no run_in_background: every
+    // child runs in the background and its reply wakes the lead. Only an
+    // explicit request for background is denied; a missing field, false or
+    // "false" (a model inventing the old law) falls through.
+    if (ti.run_in_background === true || ti.run_in_background === 'true') {
+      return denyLead('a lead never sets run_in_background. Run parallel work as several Agent calls in one message.');
+    }
+    return leadBudget(input.agent_id, ti.subagent_type, policy);
+  }
+  // A lead's SendMessage resumes a child: rework that never passes through Agent.
+  if (toolName === 'SendMessage') return leadBudget(input.agent_id, 'resume', policy);
+}
+
+// ------------------------------------------------------- lead budget clock
+//
+// .claude/orchestra-leads/<agent_id>.json, outside the lead's writable dir:
+//   { segmentStart: <epoch ms>, segment: { <type>: n }, lifetime: { <type>: n } }
+// Created on the lead's first counted call; a main-session SendMessage to the
+// lead's agent id restarts the segment and keeps `lifetime`. Not SubagentStart:
+// it also fires whenever a child's reply wakes the lead (WO-0 3a, 3c, Claude Code 2.1.294). Any
+// state error fails open, and racing parallel dispatches may undercount.
+
+const LEADS_STATE_REL = path.join('.claude', 'orchestra-leads');
+const SAFE_AGENT_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+// Null unless the file's REAL path is exactly that state path, so a junction
+// or symlink cannot carry the state outside the project.
+function leadStatePath(agentId) {
+  if (typeof agentId !== 'string' || !SAFE_AGENT_ID.test(agentId)) return null;
+  const root = projectDir();
+  const rel = path.join(LEADS_STATE_REL, agentId + '.json');
+  const file = path.join(root, rel);
+  return path.relative(realish(root), realish(file)) === rel ? file : null;
+}
+
+function isCounts(o) {
+  return !!o && typeof o === 'object' && !Array.isArray(o) &&
+    Object.keys(o).every((k) => Number.isFinite(o[k]) && o[k] >= 0);
+}
+
+// The state, null when there is none yet, or undefined when unreadable or
+// malformed (fail open).
+function readLeadState(file) {
+  try {
+    const s = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return s && Number.isFinite(s.segmentStart) && isCounts(s.segment) && isCounts(s.lifetime) ? s : undefined;
+  } catch (e) {
+    return e && e.code === 'ENOENT' ? null : undefined;
+  }
+}
+
+function writeLeadState(file, state) {
+  const tmp = file + '.' + process.pid + '-' + Date.now() + '.tmp';
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(state), { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(tmp, file);
+  } catch (_) {
+    try { fs.unlinkSync(tmp); } catch (_e) { /* best effort */ }
+  }
+}
+
+function leadBudget(agentId, key, policy) {
+  const file = leadStatePath(agentId);
+  const state = file ? readLeadState(file) : undefined;
+  if (state === undefined) return allow();
+  const s = state || { segmentStart: Date.now(), segment: {}, lifetime: {} };
+  const minutes = (Date.now() - s.segmentStart) / 60000;
+  const dispatched = Object.keys(s.segment).reduce((n, k) => n + s.segment[k], 0);
+  const crossed =
+    minutes > policy.leadMaxMinutes ? Math.floor(minutes) + ' minutes of ' + policy.leadMaxMinutes
+      : dispatched >= policy.leadMaxDispatches ? dispatched + ' dispatches of ' + policy.leadMaxDispatches
+        : '';
+  if (crossed) {
+    return deny('Orchestra: lead budget crossed (' + crossed + '). Write your status file and return STATUS: CHECKPOINT now.');
+  }
+  s.segment[key] = (s.segment[key] || 0) + 1;
+  s.lifetime[key] = (s.lifetime[key] || 0) + 1;
+  writeLeadState(file, s);
+  return allow();
+}
+
+// Main session only: a SendMessage whose `to` is a lead's agent id is a
+// Director resume (captured input: tests/fixtures/sendmessage-hook-input.json).
+// A send by name matches no state file; the lead then trips on its next
+// dispatch and checkpoints at once. Never decides the call.
+function restartLeadSegment(toolInput) {
+  const file = leadStatePath(toolInput && toolInput.to);
+  const state = file ? readLeadState(file) : null;
+  if (!state) return;
+  state.segmentStart = Date.now();
+  state.segment = {};
+  writeLeadState(file, state);
+}
+
 function main(raw) {
   // Escape hatch (user-controlled). ORCHESTRA_PAUSE=1 is checked first,
   // independent of the (possibly unparseable) input payload.
@@ -1003,7 +1179,8 @@ function main(raw) {
 
   // Self-pause: checked before EVERY other carve-out and exemption — before
   // the subagent exemption, before Agent handling, before the pause-exists
-  // short-circuit — but the actual denial fires only once the model is
+  // short-circuit — but, except for a lead's write (denied by type below),
+  // the actual denial fires only once the model is
   // positively identified as the Director (Fable/Opus), same as every other
   // denial in this guard: under 3.0 the guard enforces NOTHING until it has
   // that positive identification, so a Sonnet/Haiku session (or one whose
@@ -1013,6 +1190,9 @@ function main(raw) {
   // (Set.has() on anything just returns false), so this is safe to run
   // before the `typeof toolName !== 'string'` check further down too.
   if (classifyPauseWrite(toolName, input.tool_input) === 'deny') {
+    // A lead's write rule is company law, keyed on its type alone: it holds
+    // here too, whatever the Director-model evidence says.
+    if (LEAD_TYPES.has(input.agent_type)) return denySelfPause(toolName, policy);
     const pauseModel = latestMainModel(input);
     if (pauseModel.model && DIRECTOR_MODEL.test(pauseModel.model)) {
       return denySelfPause(toolName, policy);
@@ -1036,10 +1216,15 @@ function main(raw) {
   if (pauseStatus.state === 'active') return allow();
   if (pauseStatus.state === 'ignored') policy.pauseIgnoredReason = pauseStatus.reason;
 
-  // Subagent calls are never restricted for Director-law purposes. Project-
-  // settings PreToolUse hooks only fire for the main session in current
-  // Claude Code, but if this input carries subagent identity (agent_id /
-  // agent_type), exempt it explicitly.
+  // Company law for leads, and the clock's one main-session side effect.
+  subagentLaw(input, toolName, policy);
+  if (!input.agent_id && !input.agent_type && toolName === 'SendMessage') {
+    try { restartLeadSegment(input.tool_input); } catch (_) { /* fail open */ }
+  }
+
+  // Otherwise subagent calls are never restricted for Director-law purposes.
+  // Settings PreToolUse hooks fire inside subagents too, with agent_id and
+  // agent_type on the input; Director law binds only the main session.
   if ((input.agent_id || input.agent_type) && toolName !== 'Agent') return allow();
 
   if (typeof toolName !== 'string') return allow();

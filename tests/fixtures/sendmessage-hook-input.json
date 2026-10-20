@@ -1,0 +1,21 @@
+{
+  "_note": "A real main-session PreToolUse input for SendMessage, captured 2026-10-08 (Claude Code, Windows 11) by a logging hook while the main session resumed a background subagent by agent id. session_id, cwd, scratchpad_dir, prompt_id and transcript_path are replaced with placeholders; every other field is verbatim. No agent_id or agent_type: the caller is the main session. The target is tool_input.to, mirrored into tool_input.recipient.",
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "cwd": "<project>",
+  "scratchpad_dir": "<scratchpad>",
+  "prompt_id": "00000000-0000-0000-0000-000000000000",
+  "permission_mode": "auto",
+  "effort": { "level": "high" },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "SendMessage",
+  "tool_input": {
+    "to": "a92618a36e807ecec",
+    "summary": "hook capture probe message",
+    "message": "Hook-capture probe: reply GOT.",
+    "type": "message",
+    "recipient": "a92618a36e807ecec",
+    "recipient_kind": "agent",
+    "content": "Hook-capture probe: reply GOT."
+  },
+  "tool_use_id": "toolu_01ArbtM4aZX1f1i2Mwdc5Tfc"
+}

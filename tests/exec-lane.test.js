@@ -217,7 +217,7 @@ function case1() {
   );
   check(
     'the default effort is high, pinned as a config value, not prose',
-    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
+    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false' &&
       /effort: high/.test(out.split('\n')[0]),
     'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES') + ' — ' + out.split('\n')[0]
   );
@@ -239,7 +239,7 @@ function case1() {
   const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
   check(
     'user-supplied executor args cannot undo the coexistence boundary',
-    hostileOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    hostileOverrides.slice(-5).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
   );
   check(
@@ -304,7 +304,7 @@ function case2() {
   const effortCfg = runExec(fx2, []);
   check(
     'orchestra.json (codex.execHeavyEffort) supplies the effort',
-    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
+    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false' &&
       /effort: medium/.test((effortCfg.stdout || '').split('\n')[0]),
     (effortCfg.stdout || '').split('\n')[0]
   );
@@ -952,7 +952,7 @@ function case18() {
   check(
     'the principal rung sends its effort to codex, not just to the header',
     field(pout, 'CONFIG_OVERRIDES') ===
-      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + field(pout, 'CONFIG_OVERRIDES')
   );
 
@@ -1074,7 +1074,7 @@ function case18() {
 // agent description that quietly re-promotes a demoted profile would change
 // where every escalated order goes, with no test red and no runtime error.
 function case19() {
-  section('19. Executor ladder doctrine: Astra on top, Fable and Sol demoted');
+  section('19. Executor ladder doctrine: Astra on top, Opus principal below it, Fable and Sol user-only');
 
   const read = (rel) => fs.readFileSync(path.join(MASTER, rel), 'utf8');
   const frontmatter = (rel) => (/^description: (.*)$/m.exec(read(rel)) || [])[1] || '';
@@ -1082,8 +1082,8 @@ function case19() {
   // 1. The demoted profiles must SAY they are demoted, in the description —
   //    that string is what the Director's agent picker actually sees.
   for (const rel of [
-    'agents/executor-principal.md',
-    'agents/executor-principal-xhigh.md',
+    'agents/executor-fable.md',
+    'agents/executor-fable-xhigh.md',
     'packs/codex/agents/executor-codex-heavy.md',
     'packs/codex/agents/executor-codex-luna.md',
   ]) {
@@ -1131,6 +1131,11 @@ function case19() {
       !/You are the top execution tier/.test(t) &&
         !/there is no higher tier to re-send the order to/.test(t),
       (t.match(/^.*top execution tier.*$/m) || ['ok'])[0].slice(0, 200)
+    );
+    check(
+      rel + ': does not claim to be the deepest-reasoning point in the company (executor-principal-max is)',
+      !/deepest[- ]reasoning[^.]*in the company/i.test(frontmatter(rel)),
+      frontmatter(rel).slice(0, 200)
     );
     check(
       rel + ': names the principal rung as where a dead end escalates',
@@ -1300,7 +1305,7 @@ function case19() {
   check(
     'ORCHESTRA.md marks the Fable, Sol and Luna executors user-request-only',
     /\*\*Everything else on the bench is user request only\*\*/.test(protocol) &&
-      /`executor-principal`, `executor-principal-xhigh`\), the Sol executor \(`executor-codex-heavy`\) and the Luna executor/.test(protocol),
+      /the Fable executors \(`executor-fable`, `executor-fable-xhigh`\), the Sol executor \(`executor-codex-heavy`\) and the Luna executor/.test(protocol),
     'the user-request-only paragraph is missing or reworded'
   );
   check(
@@ -1405,11 +1410,287 @@ function case19() {
     /`executor-bounded` at high/.test(protocol),
     (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 300)
   );
+  // The Haiku mechanical rung (trial, 3.9.0): Haiku 5.5 pinned beside
+  // executor-mechanical for fully spelled-out orders, one strike, off the
+  // 3.5 chain. Its law is short on purpose (Haiku fails on long prose), so
+  // what is pinned is identity, the four routing conditions, the evidence
+  // section, and the one-strike fall-through.
+  const haiku = read('agents/executor-mechanical-haiku.md');
+  const haikuFm = frontmatter('agents/executor-mechanical-haiku.md');
   check(
-    'ORCHESTRA.md requires the Astra-unavailable substitution to be announced',
-    /When the Astra rung is unavailable/.test(protocol) &&
-      /escalate to `executor-principal` instead/.test(protocol),
-    'the unavailable-rung fallback rule is missing'
+    'executor-mechanical-haiku is named executor-mechanical-haiku and cannot spawn agents',
+    /^name: executor-mechanical-haiku$/m.test(haiku) && /^disallowedTools: Agent$/m.test(haiku),
+    (haiku.match(/^(name|disallowedTools): .*$/gm) || []).join(' | ')
+  );
+  check(
+    'executor-mechanical-haiku is Haiku 5.5 (pinned model id) at high effort',
+    /^model: claude-haiku-5-5$/m.test(haiku) && /^effort: high$/m.test(haiku),
+    (haiku.match(/^(model|effort): .*$/gm) || []).join(' | ')
+  );
+  for (const [name, phrase] of [
+    ['all four conditions must hold', 'all four hold'],
+    ['condition 1: the order spells out the exact files and the exact edit',
+      'the order spells out the change itself, the exact files and the exact edit'],
+    ['condition 1: nothing left to design or choose', 'with nothing left to design or choose'],
+    ['condition 2: named checks that can observe whether it is right',
+      'it names checks that exercise the change and can observe whether it is right'],
+    ['condition 3: one subsystem, about 10 files or fewer',
+      'it touches one subsystem and stays small, about 10 files or fewer'],
+    ['condition 4: not an escalation, a findings fix order, or a class sweep',
+      'it is not an escalation, not a fix order carrying reviewer findings, and not a class sweep'],
+    ['doubt falls through to executor-mechanical (Sonnet)',
+      'When any condition is in doubt the order goes to executor-mechanical (Sonnet)'],
+    ['one strike sends the next round to executor-mechanical',
+      'One strike — any BLOCKED, PARTIAL or REVISE sends the next round to executor-mechanical'],
+    ['it is never an escalation target', 'Never an escalation target'],
+  ]) {
+    check(
+      'executor-mechanical-haiku description pins ' + name,
+      haikuFm.includes(phrase),
+      'missing from the description: ' + phrase
+    );
+  }
+  check(
+    'executor-mechanical-haiku carries the evidence rule',
+    /\*\*Every claim carries its evidence\.\*\*/.test(haiku) && /\*\*Blocked beats guessed\.\*\*/.test(haiku),
+    'the evidence or blocked-beats-guessed rule is missing'
+  );
+  const haikuReport = (haiku.match(/Structure it exactly like this:\n\n```\n([\s\S]*?)\n```/) || [])[1] || '';
+  check(
+    'executor-mechanical-haiku report format has an UNVERIFIED section inside the report block',
+    /^UNVERIFIED$/m.test(haikuReport),
+    haikuReport.slice(0, 200) || 'no fenced report-format block found'
+  );
+  check(
+    'ORCHESTRA.md 3.5 escalation chain does not pass through executor-mechanical-haiku',
+    escalateRule !== '' && !/escalate one rung \([^)]*executor-mechanical-haiku/.test(escalateRule),
+    escalateRule.slice(0, 400) || 'no rule 5'
+  );
+  check(
+    'ORCHESTRA.md 3.5 gives executor-mechanical-haiku one strike, then executor-mechanical',
+    escalateRule.includes(
+      '`executor-mechanical-haiku` also sits beside the chain and allows one strike: any BLOCKED, ' +
+        'PARTIAL or REVISE sends the next round to `executor-mechanical` with both reports.'
+    ),
+    'the one-strike sentence is missing from rule 5'
+  );
+  const haikuRow = (protocol.match(/^\| \*\*down \(haiku\)\*\* \| `executor-mechanical-haiku` \(Haiku 5\.5, high; trial\) \|.*$/m) || [''])[0];
+  for (const phrase of [
+    'the exact files and the exact edit',
+    'nothing left to design or choose',
+    'it names checks that exercise the change and can observe whether it is right',
+    'it touches one subsystem',
+    'it is not an escalation, a fix order carrying reviewer findings, or a class sweep',
+    'When any condition is in doubt, it goes to `executor-mechanical`',
+  ]) {
+    check(
+      'ORCHESTRA.md steering row for executor-mechanical-haiku requires: ' + phrase,
+      haikuRow.includes(phrase),
+      'missing from the down (haiku) row: ' + phrase + '\n' + (haikuRow.slice(0, 120) || 'no down (haiku) row')
+    );
+  }
+  check(
+    'ORCHESTRA.md company row lists executor-mechanical-haiku on Haiku 5.5, high (trial)',
+    /^\| Haiku mechanical executor \| `executor-mechanical-haiku` \| Haiku 5\.5, high \(trial\) \|/m.test(protocol),
+    'no company row for executor-mechanical-haiku'
+  );
+  check(
+    'ORCHESTRA.md 8.3 pins executor-mechanical-haiku at high effort',
+    /`executor-mechanical-haiku` and `executor-bounded` at high/.test(protocol),
+    (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 300)
+  );
+
+  // The Anthropic principal rung (3.9.0, D13): Opus 5.5 pinned at xhigh and
+  // max, NOT user-only, but never claiming the default ladder's top while
+  // Astra is available. The Fable substitute for an unavailable Astra rung
+  // is retired, so no Fable profile may be reachable by any routing text.
+  for (const [rel, name, effort] of [
+    ['agents/executor-principal.md', 'executor-principal', 'xhigh'],
+    ['agents/executor-principal-max.md', 'executor-principal-max', 'max'],
+  ]) {
+    const t = read(rel);
+    const d = frontmatter(rel);
+    check(
+      rel + ': is ' + name + ', pinned claude-opus-5-5 at ' + effort + ', and cannot spawn agents',
+      new RegExp('^name: ' + name + '$', 'm').test(t) && /^model: claude-opus-5-5$/m.test(t) &&
+        new RegExp('^effort: ' + effort + '$', 'm').test(t) && /^disallowedTools: Agent$/m.test(t),
+      (t.match(/^(name|model|effort|disallowedTools): .*$/gm) || []).join(' | ')
+    );
+    check(rel + ': is not user-request-only', !/USER REQUEST ONLY/.test(d), d.slice(0, 200));
+    check(
+      rel + ': does not claim the default ladder\'s top, and says Astra keeps it while the pack runs',
+      !/\bthe top rung of the default\b|\bTOP RUNG OF THE DEFAULT\b/.test(d) &&
+        /Astra stays the default ladder's top/.test(d),
+      d.slice(0, 300)
+    );
+    check(
+      rel + ': keeps the principal charter (DECISIONS and CLASS SWEEP)',
+      /\*\*Decide only what the order delegates\.\*\*/.test(t) && /^DECISIONS$/m.test(t) &&
+        /^CLASS SWEEP$/m.test(t),
+      'the principal duties did not survive into ' + rel
+    );
+  }
+  check(
+    'executor-principal-max is the escalation target after a double bounce at executor-heavy-xhigh',
+    /escalation target after a double bounce at executor-heavy-xhigh/.test(frontmatter('agents/executor-principal-max.md')),
+    frontmatter('agents/executor-principal-max.md').slice(0, 300)
+  );
+  for (const rel of ['agents/executor-fable.md', 'agents/executor-fable-xhigh.md']) {
+    const t = read(rel);
+    check(
+      rel + ': runs Fable and names no substitution route into itself',
+      /^model: fable$/m.test(t) && !/announced the substitution|announced substitute|as the named substitute/.test(t),
+      (t.match(/^.*substitut.*$/m) || ['ok'])[0].slice(0, 200)
+    );
+  }
+  check(
+    'ORCHESTRA.md carries no Fable-substitute clause',
+    !/Fable[^\n.]*(substitut|stand(s|ing)? in)/i.test(protocol) &&
+      !/(substitut|stand(s|ing)? in)[^\n.]*Fable/i.test(protocol),
+    (protocol.match(/^.*Fable.*substitut.*$|^.*substitut.*Fable.*$/im) || ['ok'])[0].slice(0, 300)
+  );
+  const unavailable = (protocol.match(/^\*\*When the Astra rung is unavailable\*\*.*$/m) || [''])[0];
+  for (const [name, phrase] of [
+    ['makes the Opus principal rung the top', 'the Opus principal rung is the top'],
+    ['routes principal-shaped orders to executor-principal at PLAN time',
+      'Principal-shaped orders go to `executor-principal` (Opus 5.5, xhigh) at PLAN time'],
+    ['escalates a double bounce at executor-heavy-xhigh to executor-principal-max',
+      'a double bounce at `executor-heavy-xhigh` escalates to `executor-principal-max` (Opus 5.5, max)'],
+    ['says in one line that Astra did not run', 'Say in one line that Astra did not run'],
+    ['routes Opus-principal work to Sol review', 'its review goes to `reviewer-codex`'],
+  ]) {
+    check(
+      'ORCHESTRA.md Astra-unavailable paragraph ' + name,
+      unavailable.includes(phrase),
+      'missing: ' + phrase + '\n' + (unavailable.slice(0, 200) || 'no Astra-unavailable paragraph')
+    );
+  }
+  check(
+    'ORCHESTRA.md 3.5 tops the chain at executor-principal-max when Astra is unavailable',
+    escalateRule.includes('or `executor-principal-max` when the Astra rung is unavailable'),
+    escalateRule.slice(0, 400)
+  );
+  // Leads (3.9.0 trial): two Opus tiers, one law. Pins the frontmatter the
+  // platform acts on (tools, model, effort, maxTurns), the clauses WO-0
+  // forced (no report while a reply is outstanding), the 3.9.1 schema rule
+  // (never set run_in_background, model or effort), the report and status shapes the Director reads, and the
+  // Director's own clauses in ORCHESTRA.md.
+  const leadDoc = read('agents/lead.md');
+  const leadXDoc = read('agents/lead-xhigh.md');
+  const bodyOf = (t) => t.replace(/^---\n[\s\S]*?\n---\n/, '');
+  for (const [rel, t, name, effort] of [
+    ['agents/lead.md', leadDoc, 'lead', 'high'],
+    ['agents/lead-xhigh.md', leadXDoc, 'lead-xhigh', 'xhigh'],
+  ]) {
+    const tools = (/^tools: (.*)$/m.exec(t) || [])[1] || '';
+    check(
+      rel + ': is ' + name + ', Opus at ' + effort + ', maxTurns 60',
+      new RegExp('^name: ' + name + '$', 'm').test(t) && /^model: opus$/m.test(t) &&
+        new RegExp('^effort: ' + effort + '$', 'm').test(t) && /^maxTurns: 60$/m.test(t),
+      (t.match(/^(name|model|effort|maxTurns): .*$/gm) || []).join(' | ')
+    );
+    check(
+      rel + ': tools are exactly Agent, Read, Write, Edit, SendMessage (no Bash, Grep, Glob)',
+      tools.split(/,\s*/).sort().join(',') === 'Agent,Edit,Read,SendMessage,Write' &&
+        !/\b(Bash|PowerShell|Grep|Glob)\b/.test(tools),
+      tools
+    );
+  }
+  check('lead-xhigh carries the identical law to lead', bodyOf(leadXDoc) === bodyOf(leadDoc), 'the two lead bodies differ');
+  const leadRule = (n) => (leadDoc.match(new RegExp('^' + n + '\\. \\*\\*.*$', 'm')) || [''])[0];
+  for (const [name, text, phrase] of [
+    ['never edits code', leadRule(1), '**You never edit code.**'],
+    ['writes only under .claude/plans/leads/', leadRule(1), '`.claude/plans/leads/<your name>/`'],
+    ['never sets run_in_background, model or effort', leadRule(2), '**Never set `run_in_background`, `model` or `effort` on an `Agent` call, and never set `isolation` to `remote`.**'],
+    ['children report by waking the lead', leadRule(2), "Children run in the background, and each one's report wakes you."],
+    ['parallel work is several Agent calls in one message', leadRule(2), 'Run parallel work as several `Agent` calls in one message.'],
+    ['never reports while a child is outstanding', leadRule(2), 'Never report while a child is outstanding.'],
+    ['counts plan growth', leadRule(5), '**Plan growth** = orders planned now − orders chartered'],
+    ['counts rework', leadRule(5), '**Rework** = every executor run on an order after its first, plus every re-review after a REVISE'],
+    ['never arbitrates past a REVISE', leadRule(6), '**Never arbitrate past a REVISE.**'],
+    ['never reports while a reply is outstanding', leadRule(7), 'Never report while a reply you asked for is outstanding.'],
+    ['writes status at every milestone with seq +1', leadRule(8), 'add 1 to `seq` each write'],
+  ]) {
+    check('lead law: ' + name, text.includes(phrase), 'missing: ' + phrase + '\n' + (text.slice(0, 160) || 'the carrying rule is gone'));
+  }
+  // Claude Code 2.1.295's Agent tool has no run_in_background field. A law
+  // that demands it makes a model invent the field (3.9.1), so no shipped
+  // instruction may name it except as a field never to set.
+  {
+    const instructionFiles = ['ORCHESTRA.md'];
+    for (const dir of ['agents', 'agents/specialists', 'packs/codex/agents']) {
+      for (const f of fs.readdirSync(path.join(MASTER, dir))) if (/\.md$/.test(f)) instructionFiles.push(dir + '/' + f);
+    }
+    for (const dir of ['skills', 'packs/codex/skills']) {
+      if (!fs.existsSync(path.join(MASTER, dir))) continue;
+      for (const d of fs.readdirSync(path.join(MASTER, dir))) {
+        if (fs.existsSync(path.join(MASTER, dir, d, 'SKILL.md'))) instructionFiles.push(dir + '/' + d + '/SKILL.md');
+      }
+    }
+    const offenders = instructionFiles.filter((rel) =>
+      read(rel).split('\n').some((l) => l.includes('run_in_background') && !l.includes('Never set `run_in_background`')));
+    check('no agent, skill or ORCHESTRA.md line asks for run_in_background (the Agent schema lacks it)', offenders.length === 0, offenders.join(', '));
+  }
+  // Only the leads may start agents, and frontmatter is the enforcement point
+  // for everyone else (the guard rules only on leads): every other shipped
+  // agent either disallows Agent or lists tools without it.
+  const agentFiles = [];
+  for (const dir of ['agents', 'agents/specialists', 'packs/codex/agents']) {
+    for (const f of fs.readdirSync(path.join(MASTER, dir))) if (/\.md$/.test(f)) agentFiles.push(dir + '/' + f);
+  }
+  for (const rel of agentFiles) {
+    const t = read(rel);
+    const name = (/^name: (.*)$/m.exec(t) || [])[1] || rel;
+    if (name === 'lead' || name === 'lead-xhigh') continue;
+    const tools = (/^tools: (.*)$/m.exec(t) || [])[1];
+    const keepsAgentOut = /^disallowedTools: .*\bAgent\b/m.test(t) || (tools !== undefined && !/\bAgent\b/.test(tools));
+    check(rel + ': frontmatter keeps Agent out (only leads start agents)', keepsAgentOut,
+      (t.match(/^(tools|disallowedTools): .*$/gm) || ['no tools/disallowedTools line']).join(' | '));
+  }
+  // The law's team list and the guard's LEAD_TEAM must name the same agents.
+  const guardSrc = read('hooks/orchestra-guard.js');
+  const guardTeam = (((/const LEAD_TEAM = new Set\(\[([\s\S]*?)\]\)/.exec(guardSrc) || [])[1] || '').match(/'[^']+'/g) || [])
+    .map((q) => q.slice(1, -1)).sort();
+  const lawTeam = ((leadRule(3).split('**')[2] || '').split(', plus')[0].match(/`[^`]+`/g) || []).map((q) => q.slice(1, -1)).sort();
+  check('lead law team list matches the guard LEAD_TEAM', guardTeam.length > 0 && guardTeam.join(',') === lawTeam.join(','),
+    'guard: ' + guardTeam.join(',') + '\nlaw:   ' + lawTeam.join(','));
+  const leadReport = (leadDoc.match(/^## Report format[\s\S]*?```\n([\s\S]*?)\n```/m) || [])[1] || '';
+  for (const label of ['STATUS: DONE | CHECKPOINT | ESCALATION | BLOCKED', 'TRIGGER:', 'AGENT ID:', 'DONE-CRITERIA',
+    'GROWTH', 'REWORK', 'REVIEW:', 'BRANCH:', 'DECISIONS:', 'ASSUMPTIONS:', 'CLARIFY:', 'NEXT:']) {
+    check('lead report format carries ' + label, leadReport.includes(label), leadReport.slice(0, 200) || 'no report block');
+  }
+  check('lead status schema carries seq and state', /^lead: <name> · tier: high \| xhigh · seq: <n, \+1 per write> · state:/m.test(leadDoc), 'status schema line missing');
+  check('lead returns CHECKPOINT on a budget-clock denial and after a maxTurns stop',
+    /"lead budget crossed": return STATUS: CHECKPOINT with TRIGGER: budget clock/.test(leadDoc) &&
+      /STATUS: CHECKPOINT with TRIGGER: maxTurns/.test(leadDoc), 'a checkpoint trigger is missing');
+  const leadsPara = (protocol.match(/^\*\*Leads \(trial[\s\S]*?(?=\n\n)/m) || [''])[0];
+  for (const [name, phrase] of [
+    ['the threshold', 'A sub-goal of three or more work orders, or one that needs its own review cycle'],
+    ['flat direction below it', 'Below that threshold, direct flat as above.'],
+    ['the 8-order cap', 'at most 8 chartered work orders'],
+    ['launch and record the agent id', 'Launch each lead and record its agent id'],
+    ['the CronCreate check-in', 'keep one `CronCreate` check-in (default every 45 min)'],
+    ['a stale seq', 'flag a `seq` unchanged across two check-ins'],
+    ['the dispatch-count cross-check', 'compare the guard\'s dispatch counts'],
+    ['no silent continuation on an escalation', 'Never let it continue silently.'],
+    ['resume by agent id', '**Resume by agent id**'],
+    ['the maxTurns-stop resume', 'A lead stopped by `maxTurns` leaves no report'],
+    ['leads never edit code', 'Leads never edit code'],
+    ['interactive only', 'interactive sessions only'],
+  ]) {
+    check('ORCHESTRA.md Leads paragraph: ' + name, leadsPara.includes(phrase), 'missing: ' + phrase);
+  }
+  check('ORCHESTRA.md requires an integration review for two or more leads',
+    /a campaign with two or more leads also ends with one integration review/.test(protocol) &&
+      /pointed at the seams between their scopes/.test(protocol),
+    'the integration-review clause is missing from §5');
+  check('ORCHESTRA.md Leads paragraph stays one short block (≤ 8 lines; the plan budgets ~25 for all lead text)',
+    leadsPara.split('\n').length <= 8, leadsPara.split('\n').length + ' lines');
+
+  check(
+    'ORCHESTRA.md 8.3 pins executor-principal at xhigh and executor-principal-max at max',
+    /`executor-principal` and `executor-fable-xhigh` at xhigh, `executor-principal-max` at max/.test(protocol),
+    (protocol.match(/^3\. \*\*Effort follows the tier\.\*\*.*$/m) || ['no 8.3'])[0].slice(0, 400)
   );
 }
 
@@ -1521,7 +1802,7 @@ function case26() {
   check(
     'the luna rung sends its effort to codex, not just to the header',
     field(lout, 'CONFIG_OVERRIDES') ===
-      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + field(lout, 'CONFIG_OVERRIDES')
   );
   check(
@@ -1743,7 +2024,7 @@ function case21() {
   check('a quoted name is never addressed through -c (it would create a half-entry)', !/odd/.test(overrides), overrides);
   check(
     'the header states the MCP posture, including what could not be addressed',
-    /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(head),
+    /mcp: stripped \(2 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off, 1 not addressable\)/.test(head),
     head
   );
   check('the unaddressable name is reported in preflight', /"odd name"/.test(out), out.slice(0, 1500));
@@ -1802,6 +2083,8 @@ function case21() {
       '[mcp_servers.other]\ncommand = "x"\ndeveloper_instructions = "Use \'\'\' as the SQL example"\n[mcp_servers.claude]\ncommand = "node"\n',
       ['other', 'claude'], []],
     ['an escaped basic-string key', '[mcp_servers."clau\\u0064e"]\ncommand = "node"\n', ['claude'], []],
+    // Sol, PR #708: the ROOT key carries TOML escapes too.
+    ['an escaped root key', '["mcp_\\u0073ervers".escroot]\ncommand = "node"\n', ['escroot'], []],
   ];
   for (const [label, toml, wantBare, wantQuoted] of shapes) {
     const h = path.join(fx.root, 'codex-home-' + wantBare[0]);
@@ -1920,7 +2203,7 @@ function case21() {
   check(
     'server names come from `codex mcp list --json` when Codex answers, already-disabled ones included',
     lov.includes('mcp_servers.live_one.enabled=false') && lov.includes('mcp_servers.off.enabled=false') &&
-      /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
+      /mcp: stripped \(2 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
       !/own TOML reader/.test(live) && !/could not read/.test(live),
     live.split('\n')[0] + ' — ' + lov
   );
@@ -1938,6 +2221,138 @@ function case21() {
     hov.lastIndexOf('mcp_servers.off.enabled=false') > hov.indexOf('mcp_servers.off.enabled=true'),
     hov.join(' | ')
   );
+  // Sol, PR #708 (codex-cli 0.163.0): a bundled plugin contributes servers of
+  // its own, and `-c mcp_servers.<plugin server>.enabled=false` is a
+  // half-table 0.163 rejects ("invalid transport"); the 3.9.2 first cut
+  // skipped those servers and left them reachable. Strip mode now switches the
+  // plugin system off and disables every installed plugin by id BEFORE asking
+  // for server names, so what Codex still lists is config-declared — from any
+  // layer it loaded — and is disabled by name with no config.toml parsing.
+  // The stub drops a `plugin:` entry exactly when the question carried those
+  // switches, as 0.163 does (measured live, 2026-10-20).
+  const PLUGINS = JSON.stringify({
+    installed: [
+      { pluginId: 'code-review@openai-bundled', enabled: true },
+      { pluginId: 'codex-app-tools@openai-bundled', enabled: false },
+      { pluginId: 'odd.plugin@market', enabled: true },
+    ],
+    available: [],
+  });
+  const SERVERS = JSON.stringify([
+    { name: 'blender', enabled: true },
+    { name: 'code-review', enabled: true, plugin: 'code-review@openai-bundled' },
+    { name: 'codex_app', enabled: true, plugin: 'codex-app-tools@openai-bundled' },
+  ]);
+  const plug = runExec(fx, [], { STUB_CODEX_PLUGIN_JSON: PLUGINS, STUB_CODEX_MCP_JSON: SERVERS }).stdout || '';
+  const pov = field(plug, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'strip mode switches the plugin system off (local and remote) along with the apps connector',
+    ['features.apps=false', 'features.plugins=false', 'features.remote_plugin=false'].every((o) => pov.includes(o)),
+    pov.join(' | ')
+  );
+  check(
+    'every addressable installed plugin is disabled by id, an already-disabled one included',
+    pov.includes('plugins.code-review@openai-bundled.enabled=false') &&
+      pov.includes('plugins.codex-app-tools@openai-bundled.enabled=false') &&
+      !pov.some((o) => /odd\.plugin/.test(o)) &&
+      /1 plugin id\(s\) cannot be addressed through -c[^\n]*"odd\.plugin@market"/.test(plug),
+    pov.join(' | ')
+  );
+  check(
+    'a plugin-contributed server gets no half-table override; the declared server is disabled by name',
+    pov.includes('mcp_servers.blender.enabled=false') && !pov.some((o) => /^mcp_servers\.(code-review|codex_app)\./.test(o)),
+    pov.join(' | ')
+  );
+  check(
+    'the header states what was applied',
+    /mcp: stripped \(1 server\(s\) disabled, plugins off \(2 disabled by id\), apps connector off\)/.test(plug.split('\n')[0]),
+    plug.split('\n')[0]
+  );
+  const reenable = runExec(fx, [], {
+    STUB_CODEX_PLUGIN_JSON: PLUGINS,
+    STUB_CODEX_MCP_JSON: SERVERS,
+    ORCHESTRA_EXEC_ARGS: '-c features.plugins=true -c plugins.code-review@openai-bundled.enabled=true',
+  }).stdout || '';
+  const rov = field(reenable, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'a user extra arg cannot re-enable a plugin: the disabling overrides come after it',
+    rov.lastIndexOf('features.plugins=false') > rov.indexOf('features.plugins=true') &&
+      rov.lastIndexOf('plugins.code-review@openai-bundled.enabled=false') >
+        rov.indexOf('plugins.code-review@openai-bundled.enabled=true'),
+    rov.join(' | ')
+  );
+  // Without `codex plugin list` the plugin system is still switched off, and
+  // discovery runs under that switch: no plugin server is named either way.
+  const noList = runExec(fx, [], { STUB_CODEX_MCP_JSON: SERVERS }).stdout || '';
+  const nov = field(noList, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'without `codex plugin list` the plugin switch alone keeps plugin servers out of the override list',
+    nov.includes('features.plugins=false') && nov.includes('mcp_servers.blender.enabled=false') &&
+      !nov.some((o) => /^plugins\.|^mcp_servers\.(code-review|codex_app)\./.test(o)) &&
+      /mcp: stripped \(1 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off\)/.test(
+        noList.split('\n')[0]
+      ) &&
+      /`codex plugin list --json` was unavailable/.test(noList),
+    noList.split('\n')[0] + ' — ' + nov.join(' | ')
+  );
+  // Sol, PR #708: a VALID empty table (`[mcp_servers]` with no entries, or
+  // `mcp_servers = {}`) read as opaque, which restored the unfiltered list —
+  // the plugin-server override that kills 0.163 at startup. No config parse
+  // decides anything on the live path now; the fallback reader reads an
+  // empty table as empty.
+  for (const [label, toml] of [['an empty [mcp_servers] table', '[mcp_servers]\n'], ['mcp_servers = {}', 'mcp_servers = {}\n']]) {
+    const h = path.join(fx.root, 'codex-home-empty-' + (toml[0] === '[' ? 'header' : 'inline'));
+    fs.mkdirSync(h, { recursive: true });
+    fs.writeFileSync(path.join(h, 'config.toml'), toml);
+    const e = runExec(fx, [], { CODEX_HOME: h, STUB_CODEX_MCP_JSON: SERVERS }).stdout || '';
+    const eov = field(e, 'CONFIG_OVERRIDES').split(' | ');
+    check(
+      label + ': a plugin server still gets no override, the declared one still does',
+      eov.includes('mcp_servers.blender.enabled=false') && !eov.some((o) => /^mcp_servers\.(code-review|codex_app)\./.test(o)),
+      eov.join(' | ')
+    );
+    const f = runExec(fx, [], { CODEX_HOME: h }).stdout || '';
+    check(
+      label + ': the fallback reader reads it as empty, not as an unreadable shape',
+      /mcp: stripped \(0 server\(s\) disabled/.test(f.split('\n')[0]) && !/could not read/.test(f),
+      f.slice(0, 1200)
+    );
+  }
+  // Sol, PR #708: `["mcp_servers".claude]` decodes to the mcp_servers
+  // table; the literal root matcher saw neither a declaration nor an opaque
+  // file, and a discovered `claude` lost its override.
+  const escHome = path.join(fx.root, 'codex-home-escaped-root');
+  fs.mkdirSync(escHome, { recursive: true });
+  fs.writeFileSync(path.join(escHome, 'config.toml'), '["mcp_\\u0073ervers".claude]\ncommand = "node"\n');
+  const esc = runExec(fx, [], {
+    CODEX_HOME: escHome,
+    STUB_CODEX_MCP_JSON: '[{"name":"claude","enabled":true},{"name":"code-review","enabled":true,"plugin":"code-review@openai-bundled"}]',
+  }).stdout || '';
+  check(
+    'an escaped root key: the server Codex lists is disabled by name',
+    /mcp_servers\.claude\.enabled=false/.test(field(esc, 'CONFIG_OVERRIDES')) &&
+      !/mcp_servers\.code-review\./.test(field(esc, 'CONFIG_OVERRIDES')),
+    field(esc, 'CONFIG_OVERRIDES')
+  );
+  // Sol, PR #708: Codex loads every project layer from the working directory
+  // up to the project root; the declaration allow-list read only the working
+  // directory's. fx.repo/.codex/config.toml declares `proj`, and the engine
+  // runs in a subdirectory.
+  const sub = path.join(fx.repo, 'sub');
+  fs.mkdirSync(sub, { recursive: true });
+  const anc = runExec(fx, ['--cd', sub], { STUB_CODEX_MCP_JSON: '[{"name":"proj","enabled":true}]' }).stdout || '';
+  check(
+    'a server declared only in an ancestor project config is disabled by name',
+    /mcp_servers\.proj\.enabled=false/.test(field(anc, 'CONFIG_OVERRIDES')),
+    anc.split('\n')[0] + ' — ' + field(anc, 'CONFIG_OVERRIDES')
+  );
+  const ancFallback = runExec(fx, ['--cd', sub]).stdout || '';
+  check(
+    'without `codex mcp list` the ancestor project config is still named in preflight',
+    /project-level [^\n]*\.codex[\\/]config\.toml declares 1 MCP server\(s\) \(proj\)/.test(ancFallback),
+    ancFallback.slice(0, 1500)
+  );
+  fs.rmSync(sub, { recursive: true, force: true });
 
   // Astra, same review: git resolves its global config from HOME first, and
   // os.homedir() on Windows is USERPROFILE — with the two apart, the include
@@ -3013,8 +3428,8 @@ function case27() {
   );
   check(
     'the coexistence boundary is still the LAST override with the stand-in on',
-    field(out, 'CONFIG_OVERRIDES').split(' | ').slice(-3).join(' | ') ===
-      'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    field(out, 'CONFIG_OVERRIDES').split(' | ').slice(-5).join(' | ') ===
+      'features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
   );
   check(

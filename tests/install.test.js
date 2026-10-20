@@ -107,12 +107,17 @@ const EXPECTED_LEGACY_CENSUS = [
   '.claude/ORCHESTRA.md',
   '.claude/agents/detective.md',
   '.claude/agents/executor-bounded.md',
+  '.claude/agents/executor-fable-xhigh.md',
+  '.claude/agents/executor-fable.md',
   '.claude/agents/executor-heavy-xhigh.md',
   '.claude/agents/executor-heavy.md',
+  '.claude/agents/executor-mechanical-haiku.md',
   '.claude/agents/executor-mechanical.md',
-  '.claude/agents/executor-principal-xhigh.md',
+  '.claude/agents/executor-principal-max.md',
   '.claude/agents/executor-principal.md',
   '.claude/agents/executor.md',
+  '.claude/agents/lead-xhigh.md',
+  '.claude/agents/lead.md',
   '.claude/agents/reviewer.md',
   '.claude/agents/scout.md',
   '.claude/hooks/orchestra-guard.js',
@@ -279,7 +284,7 @@ function case6_specialists() {
   const target = tmpdir('orchestra-install-');
   const r = install(target, ['--specialists', 'modeler', '--no-packs']);
   check('install with --specialists modeler succeeds', ok(r), out(r));
-  check('specialist file installed alongside the core eight', fs.existsSync(path.join(target, '.claude', 'agents', 'modeler.md')), '');
+  check('specialist file installed alongside the core agents', fs.existsSync(path.join(target, '.claude', 'agents', 'modeler.md')), '');
 
   const state = readJson(path.join(target, '.claude', 'orchestra-install.json'));
   check('orchestra-install.json records the specialist selection', Array.isArray(state.specialists) && state.specialists.includes('modeler'), JSON.stringify(state));
@@ -595,6 +600,97 @@ function case15_uninstallIgnoreManifest() {
   );
 }
 
+function case16_retiredAgentPrune() {
+  section('16. A retired core agent is pruned on update and uninstall when it is ours, and left alone when it is not');
+
+  // A 3.8.0 install shipped .claude/agents/executor-principal-xhigh.md (Fable).
+  // 3.9.0 renamed it executor-fable-xhigh, so an update must not leave the
+  // old file behind as a second, stale registration of the same profile.
+  const ours = [
+    '---',
+    'name: executor-principal-xhigh',
+    'description: Orchestra principal executor at xhigh effort on the Anthropic side (Fable). USER REQUEST ONLY.',
+    'disallowedTools: Agent',
+    'model: fable',
+    'effort: xhigh',
+    '---',
+    '',
+    'The 3.8.0 body.',
+    '',
+  ].join('\n');
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--no-packs', '--no-specialists']);
+  const retired = path.join(target, '.claude', 'agents', 'executor-principal-xhigh.md');
+  fs.writeFileSync(retired, ours, 'utf8');
+  const rUpd = install(target, []);
+  check('(setup) update over a 3.8.0-shaped tree succeeds', ok(rUpd), out(rUpd));
+  check('update prunes our retired executor-principal-xhigh.md', !fs.existsSync(retired), out(rUpd));
+  check('update says it removed the retired agent', /removed retired \.claude\/agents\/executor-principal-xhigh\.md/.test(out(rUpd)), out(rUpd));
+
+  // A user's own file of that name: different description, so not ours.
+  const theirs = ours.replace(/^description: .*$/m, 'description: My own principal profile, kept on purpose.');
+  fs.writeFileSync(retired, theirs, 'utf8');
+  const rKeep = install(target, []);
+  check('(setup) update with a user-authored file of the retired name succeeds', ok(rKeep), out(rKeep));
+  check('update leaves a user-authored executor-principal-xhigh.md byte-for-byte', fs.existsSync(retired) && fs.readFileSync(retired, 'utf8') === theirs, out(rKeep));
+  // Same description prefix but another name is not ours either.
+  const renamed = ours.replace(/^name: .*$/m, 'name: my-principal');
+  fs.writeFileSync(retired, renamed, 'utf8');
+  install(target, []);
+  check('a file whose frontmatter name differs is left alone', fs.existsSync(retired) && fs.readFileSync(retired, 'utf8') === renamed, '');
+
+  const rUn = install(target, ['--uninstall']);
+  check('uninstall succeeds with a user-authored retired-name file present', ok(rUn), out(rUn));
+  check('uninstall keeps the user-authored file', fs.existsSync(retired) && fs.readFileSync(retired, 'utf8') === renamed, census(target).join(','));
+
+  // Uninstall also prunes ours.
+  const target2 = tmpdir('orchestra-install-');
+  install(target2, ['--no-packs', '--no-specialists']);
+  const retired2 = path.join(target2, '.claude', 'agents', 'executor-principal-xhigh.md');
+  fs.writeFileSync(retired2, ours.replace(/\n/g, '\r\n'), 'utf8');
+  const rUn2 = install(target2, ['--uninstall']);
+  check('uninstall succeeds over a tree holding our retired agent', ok(rUn2), out(rUn2));
+  check('uninstall prunes our retired agent (CRLF copy too)', !fs.existsSync(retired2), census(target2).join(','));
+}
+
+function case17_uninstallRemovesLeadClocks() {
+  section('17. Uninstall removes the guard\'s lead budget clocks (.claude/orchestra-leads/)');
+
+  const target = tmpdir('orchestra-install-');
+  install(target, ['--no-packs', '--no-specialists']);
+  const dir = path.join(target, '.claude', 'orchestra-leads');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'a1234.json'), '{"segmentStart":1,"segment":{},"lifetime":{"executor":3}}', 'utf8');
+  fs.writeFileSync(path.join(dir, 'a1234.json.99-1.tmp'), '{}', 'utf8');
+  const rUpd = install(target, []);
+  check('an update keeps lead clocks (runtime state of a live project)', ok(rUpd) && fs.existsSync(path.join(dir, 'a1234.json')), out(rUpd));
+  const r = install(target, ['--uninstall']);
+  check('uninstall succeeds', ok(r), out(r));
+  check('uninstall removes .claude/orchestra-leads/ and its clock files', !fs.existsSync(dir), census(target).join(','));
+
+  // A stray non-clock file is the user's: keep it and the directory.
+  const t2 = tmpdir('orchestra-install-');
+  install(t2, ['--no-packs', '--no-specialists']);
+  const d2 = path.join(t2, '.claude', 'orchestra-leads');
+  fs.mkdirSync(d2, { recursive: true });
+  fs.writeFileSync(path.join(d2, 'a1.json'), '{"segmentStart":5,"segment":{"scout":1},"lifetime":{"scout":1}}', 'utf8');
+  const userFiles = {
+    'notes.md': 'mine',
+    'notes.json': '{"mine":true}',
+    'notes.tmp': 'scratch',
+    'a2.json': '{}',
+    'a3.json': '{"segmentStart":5,"segment":{"note":"mine"},"lifetime":{}}',
+    'a4.json': '{"segmentStart":5,"segment":{"x":-1},"lifetime":{}}',
+    'a5.json': '{"segmentStart":5,"segment":{"x":{"y":1}},"lifetime":{"z":null}}',
+  };
+  for (const [f, c] of Object.entries(userFiles)) fs.writeFileSync(path.join(d2, f), c, 'utf8');
+  install(t2, ['--uninstall']);
+  check('uninstall removes a clock-shaped file', !fs.existsSync(path.join(d2, 'a1.json')), fs.readdirSync(d2).join(','));
+  for (const [f, c] of Object.entries(userFiles)) {
+    check('uninstall keeps the non-clock file ' + f, fs.existsSync(path.join(d2, f)) && fs.readFileSync(path.join(d2, f), 'utf8') === c, '');
+  }
+}
+
 // ------------------------------------------------------------------ driver
 
 function finish() {
@@ -625,6 +721,8 @@ try {
   case13_orphanedRuntimeDirWarns();
   case14_noRosterKeyInInstallState();
   case15_uninstallIgnoreManifest();
+  case16_retiredAgentPrune();
+  case17_uninstallRemovesLeadClocks();
 } catch (e) {
   check('the suite ran to completion', false, (e && e.stack) || e);
 }

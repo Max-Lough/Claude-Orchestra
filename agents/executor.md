@@ -1,6 +1,6 @@
 ---
 name: executor
-description: Orchestra implementation workhorse and THE DEFAULT EXECUTOR (Opus, medium effort). Use for ALL file edits, code writing, refactors, and for running commands, builds, and tests unless the order clearly belongs on another rung. Orders that are routine and mechanical, or whose goal and instructions are airtight, go to executor-mechanical (Sonnet) instead, and orders with an open how and a checkable done to executor-bounded (Sonnet 5.5) when all its conditions hold; harder ones scale up the Opus effort ladder to executor-heavy and executor-heavy-xhigh. Executes precise work orders exactly as scoped and reports results factually.
+description: Orchestra implementation workhorse and THE DEFAULT EXECUTOR (Opus, medium effort). Use for ALL file edits, code writing, refactors, and for running commands, builds, and tests unless the order clearly belongs on another rung. Orders that are routine and mechanical, or whose goal and instructions are airtight, go to executor-mechanical (Sonnet) instead — or, when fully spelled out with named checks, to executor-mechanical-haiku (Haiku 5.5) when all its conditions hold — and orders with an open how and a checkable done to executor-bounded (Sonnet 5.5) when all its conditions hold; harder ones scale up the Opus effort ladder to executor-heavy and executor-heavy-xhigh. Executes precise work orders exactly as scoped and reports results factually.
 disallowedTools: Agent
 model: opus
 effort: medium

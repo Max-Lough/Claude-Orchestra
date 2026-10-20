@@ -123,10 +123,34 @@ if (argv[0] === 'mcp') {
     process.exit(0);
   }
   if (j) {
-    process.stdout.write(j + '\n');
+    // An entry carrying `plugin: "<id>"` is a plugin-contributed server, and
+    // is gone from the answer when the question was asked under
+    // `-c features.plugins=false` or `-c plugins.<id>.enabled=false` — what
+    // codex-cli 0.163 does (measured live, 2026-10-20). Without either switch
+    // it is listed, as the real binary lists it.
+    const sw = [];
+    for (let i = 0; i < argv.length; i++) if (argv[i] === '-c' && argv[i + 1]) sw.push(argv[i + 1]);
+    const pluginsOff = sw.includes('features.plugins=false');
+    const entries = JSON.parse(j).filter(
+      (e) => !e.plugin || (!pluginsOff && !sw.includes('plugins.' + e.plugin + '.enabled=false'))
+    );
+    process.stdout.write(JSON.stringify(entries.map(({ plugin, ...rest }) => rest)) + '\n');
     process.exit(0);
   }
   process.stderr.write('stub: mcp subcommand not modelled\n');
+  process.exit(2);
+}
+// `codex plugin list --json` — the runners enumerate installed plugins to
+// disable each by id. STUB_CODEX_PLUGIN_JSON is the answer (the real shape:
+// `{ "installed": [{ "pluginId": …, "enabled": … }], "available": [] }`);
+// without it the stub declines (exit 2), as a Codex without the subcommand.
+if (argv[0] === 'plugin') {
+  const j = process.env.STUB_CODEX_PLUGIN_JSON || '';
+  if (j) {
+    process.stdout.write(j + '\n');
+    process.exit(0);
+  }
+  process.stderr.write('stub: plugin subcommand not modelled\n');
   process.exit(2);
 }
 

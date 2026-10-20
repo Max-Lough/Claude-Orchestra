@@ -876,10 +876,11 @@ async function case8() {
     field(text, 'ORCHESTRA_ROLE') === 'planner-codex-external', field(text, 'ORCHESTRA_ROLE'));
   const crossplanOverrides = field(text, 'CONFIG_OVERRIDES').split(' | ');
   check('user-supplied crossplan args cannot undo the coexistence boundary',
-    crossplanOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    crossplanOverrides.slice(-5).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     crossplanOverrides.join(' | '));
   check('the crossplan engine runs with MCP stripped (header says so)',
-    /mcp: stripped \(0 server\(s\) disabled, apps connector off\)/.test(text), text.slice(0, 600));
+    /mcp: stripped \(0 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off\)/.test(text),
+    text.slice(0, 600));
   check('REPORT INTEGRITY verified the nonce', /REPORT INTEGRITY: verified/.test(text), text.slice(-400));
   const saved = fs.existsSync(path.join(fx.repo, OUT)) ? fs.readFileSync(path.join(fx.repo, OUT), 'utf8') : '';
   check('the document landed at out_path', !!saved.trim(), OUT + ' missing or empty');
@@ -922,6 +923,29 @@ async function case8() {
   check('the refused document was NOT saved to out_path',
     !fs.existsSync(path.join(fx.repo, STALE_OUT)), STALE_OUT + ' exists');
   s2.close();
+
+  // Sol, PR #708 (codex-cli 0.163.0): the planner engine runs with plugins
+  // off too — the switches, a per-id override for each installed plugin, and
+  // no half-table override for a plugin-contributed server.
+  const s3 = mcpSession({ fx, env: {
+    STUB_CODEX_PLUGIN_JSON: JSON.stringify({ installed: [{ pluginId: 'code-review@openai-bundled', enabled: true }], available: [] }),
+    STUB_CODEX_MCP_JSON: JSON.stringify([{ name: 'claude', enabled: true }, { name: 'code-review', enabled: true, plugin: 'code-review@openai-bundled' }]),
+  } });
+  await s3.start();
+  const plug = await s3.rpc('tools/call', {
+    name: 'orchestra_crossplan',
+    arguments: { phase: 'draft', brief: 'GOAL: anything.', out_path: '.claude/plans/cross-compare/test/plug.md', timeout_ms: 60000 },
+  }, 180000);
+  const plugText = resultText(plug);
+  const plugOv = field(plugText, 'CONFIG_OVERRIDES').split(' | ');
+  check('the crossplan engine runs with plugins off and every installed plugin disabled by id',
+    plugOv.includes('features.plugins=false') && plugOv.includes('plugins.code-review@openai-bundled.enabled=false') &&
+      plugOv.includes('mcp_servers.claude.enabled=false') && !plugOv.some((o) => /^mcp_servers\.code-review\./.test(o)),
+    plugOv.join(' | '));
+  check('the crossplan header states what was applied',
+    /mcp: stripped \(1 server\(s\) disabled, plugins off \(1 disabled by id\), apps connector off\)/.test(plugText),
+    plugText.slice(0, 600));
+  s3.close();
 }
 
 // 9. Cancellation. Stopping a codex-lane call must stop the ENGINE, not just

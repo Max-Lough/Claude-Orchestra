@@ -9,6 +9,200 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.9.2 — fix: strip MCP by switching plugins off, not by classifying servers
+
+**Branch-only, like 3.9.1.** An install carries this fix when its
+`.claude/orchestra-install.json` says `3.9.2`.
+
+- **Every Codex lane died at its auth probe with `invalid transport`.** Codex 0.163
+  rejects `-c mcp_servers.<name>.enabled=false` for a server with no
+  `[mcp_servers.<name>]` table, which is what a plugin-contributed server (for
+  example `code-review`) is. `mcpIsolation()` in the exec, review and crossplan
+  runners emitted that override for every name in `codex mcp list --json`.
+- **The first cut of this fix left those servers reachable.** It skipped every
+  listed server it could not find in the user or project `config.toml` and only
+  named it in a note, so an enabled plugin's review MCP stayed available under
+  `engineMcp: strip`. The allow-list also missed config layers the runner did not
+  parse (an ancestor project's `.codex/config.toml`, among others), read a valid
+  empty `[mcp_servers]` table as unreadable, and did not decode an escaped root
+  key such as `["mcp_servers".claude]` (Sol, PR #708).
+- **Strip mode now switches plugins off and classifies nothing.** It applies
+  `features.plugins=false` and `features.remote_plugin=false`, disables every
+  plugin `codex plugin list --json` reports by id (`plugins.<id>.enabled=false`),
+  and keeps the apps connector off. Only then does it ask `codex mcp list --json`
+  for server names, under those same switches, and disable each one by name. A
+  plugin's servers are already gone from that answer, and the rest come from
+  whichever config layers Codex loaded. A whole-table `mcp_servers={}` override
+  was tried and dropped: Codex deep-merges `-c` tables, and a declared server
+  still started. The header now reads, for example,
+  `mcp: stripped (2 server(s) disabled, plugins off (15 disabled by id), apps connector off)`.
+  The overrides were checked live on codex-cli 0.155.1, 0.159.3, 0.162.1 and
+  0.163.0.
+- The fallback TOML reader, used only when `codex mcp list` is missing, now
+  decodes the root key, reads an empty table as empty, and names every
+  project-level `.codex/config.toml` from the working directory up to the
+  project root. Tests cover the plugin overrides, empty tables, escaped root
+  keys, an ancestor-declared server and the header wording, and check that the
+  three runners carry identical isolation code.
+
+## 3.9.1 — trial fix: leads can spawn again under Claude Code 2.1.295
+
+**Branch-only, like 3.9.0.** An install carries this fix when its
+`.claude/orchestra-install.json` says `3.9.1`.
+
+- **The guard denied every lead spawn.** 3.9.0 allowed a lead's `Agent` call
+  only with `run_in_background: false` exactly, because the 2.1.294 probes
+  showed an unset flag backgrounds the child. On 2.1.295 the interactive
+  `Agent` tool has no `run_in_background` field (its schema is `description`,
+  `prompt`, `subagent_type`, `model`, `effort`, `isolation`), so the field
+  arrived missing, or as the string `"false"` when the model invented it to obey
+  the lead law. Either way the guard denied the call before the budget clock,
+  and a live PiratePartyPals lead dispatched nothing. The guard now denies only
+  an explicit `true` or `"true"`; a missing field, `false` or `"false"` goes on
+  to the budget clock. Headless `claude -p` on 2.1.295 still has the field, so
+  `false` stays legal there. Three hook-input fixtures
+  (`tests/fixtures/lead-agent-*.json`) cover a missing field (allow), `"false"`
+  (allow) and `true` (deny), and a mutation run kills every variant of the rule.
+- **Lead law 2 no longer asks for the field.** It now says never set
+  `run_in_background`, `model` or `effort`, and never set `isolation` to `remote`.
+  It also says children run in the background, each report wakes the lead,
+  parallel work is several `Agent` calls in one message, and the lead never
+  reports while a child is outstanding. A new test fails if any agent, skill
+  or `ORCHESTRA.md` line asks for `run_in_background`.
+- **A lead may not move an executor off its tier.** The `Agent` schema now
+  exposes `effort`, and §8.3 pins each rung's effort, so the guard denies a
+  lead's non-empty `effort` as it already denied `model`. It also denies
+  `isolation: "remote"`, which runs the child in the cloud, outside the charter's
+  worktree and `TaskStop`. For the Director, §8.3 now says never to set `model` or
+  `effort` on an `Agent` call; the guard still never gates the Director's
+  `Agent` calls.
+- **§2 Leads** no longer tells the Director to "leave `run_in_background`
+  unset" when launching a lead; that field does not exist on 2.1.295.
+
+## 3.9.0 — trial: team leads, a Haiku mechanical rung, and the company law behind them
+
+**Branch-only until its trial readout passes.** This entry describes a trial
+build on `trial/3.9.0-team-leads`. It is not on `main`, and `main` keeps
+shipping 3.8.0 until the readout passes. Plan: `plans/team-leads-trial.md`;
+platform probes: `plans/team-leads-probe-results.md`.
+
+- **`executor-mechanical-haiku`: Haiku 5.5 (pinned `claude-haiku-5-5`), high
+  effort, trial.** Fully spelled-out orders had no cheaper home than Sonnet,
+  and a lead (below) turns every trivial fix into a spawn, so that spawn
+  should cost cents. The rung takes an order only when all four conditions
+  hold: it spells out the exact files and the exact edit; it names checks that
+  exercise the change; it touches one subsystem (rough guide: ≤10 files, since
+  Haiku 5.5 bills 5× above 100K-token prompts); and it is not an escalation, a
+  findings fix order or a class sweep. Doubt goes to `executor-mechanical`.
+  **One strike:** any BLOCKED, PARTIAL or REVISE sends the next round to
+  `executor-mechanical` with both reports. It sits beside the §3.5 chain like
+  `executor-bounded`, which is unchanged. Its law is `executor-mechanical`'s cut
+  to seven short rules plus the `UNVERIFIED` report section, because long
+  prose fails on Haiku (`CHANGELOG` 1.10.0, "Prose fails").
+- **The Anthropic principal rung is Opus 5.5 (owner).** `executor-principal`
+  now runs `claude-opus-5-5` (pinned) at xhigh, and the new
+  `executor-principal-max` runs it at max. Both keep the principal charter and
+  duties unchanged, and neither is user-only. Astra stays the default top
+  rung while the `codex` pack is installed and runs. When it is unavailable,
+  principal-shaped orders go to `executor-principal` at PLAN time, and a
+  double bounce at `executor-heavy-xhigh` escalates to `executor-principal-max`,
+  because escalation adds effort and the heavy rung already runs Opus at
+  xhigh. Opus-principal work is Claude-authored, so it goes to Sol review.
+- **Fable runs only at the user's request (owner).** The old Fable principal
+  profiles are renamed `executor-fable` (high) and `executor-fable-xhigh`, and
+  are USER REQUEST ONLY. The rule that let the Director substitute a Fable
+  principal for an unavailable Astra rung is retired. `/cross-compare-plan`
+  keeps its Fable architects, because that lane only runs when the user
+  invokes it.
+- **The installer prunes retired agents.** `RETIRED_AGENTS` starts with
+  `executor-principal-xhigh.md`. Install, update and uninstall remove a
+  retired file only when its frontmatter `name` matches and its description
+  starts with `Orchestra`, so a user's own file of that name is never touched.
+  Before this, a rename left the old file registered in every updated
+  project (the 3.0 port's finding F6).
+- **Company law for leads, in the guard.** Settings hooks fire inside
+  subagents with `agent_type` naming the caller, and an `Agent(type)`
+  allowlist in a subagent definition is ignored, so the guard enforces what
+  frontmatter cannot: a lead may write only `.md` under `.claude/plans/leads/`
+  (the plan carve-out's containment, reused) and may start only its team,
+  never another lead, a Fable executor, a user-request-only Codex executor or
+  a planning lane. A lead spawn must set `run_in_background: false` exactly,
+  because an unset flag backgrounds the child (WO-0 3a), and it may not
+  override the model. Everything else is frontmatter's job: every other
+  Orchestra agent disallows `Agent` (pinned for every shipped agent by an
+  exec-lane test), and the leads' `tools:` list has no Bash, PowerShell, Grep
+  or Glob. The rules key on agent type alone, a pause file stands them down,
+  and the Director is unchanged. The stale comment claiming PreToolUse fires
+  only for the main session is gone.
+- **A budget clock makes a lead check in.** The guard keeps
+  `.claude/orchestra-leads/<agent_id>.json` per lead. It is created on the
+  lead's first dispatch, counts dispatches by agent type per segment and over
+  the lead's lifetime (a lead's `SendMessage` counts as `resume`), and denies
+  the lead's next `Agent` or `SendMessage` once the segment passes
+  `leads.maxMinutes` (120) or `leads.maxDispatches` (20), with an instruction
+  to write status and return `STATUS: CHECKPOINT`. A main-session
+  `SendMessage` to the lead's agent id restarts the segment and keeps the
+  lifetime counts. The target field (`tool_input.to`, mirrored into
+  `recipient`) was pinned from a real captured hook input, now the test
+  fixture. The clock never keys on `SubagentStart`: WO-0 found it also fires
+  every time a child's reply re-wakes the lead. State errors fail open, and no
+  hook registration changes. The Codex exec runner lists
+  `.claude/orchestra-leads/` as harness-owned, so its brief doesn't present
+  the lead's state file as project dirt.
+- **Leads: `lead` (Opus, high) and `lead-xhigh` (Opus, xhigh), one law.** A
+  long campaign filled the Director's context with every executor report,
+  scout audit and review verdict. A lead takes one chartered sub-goal of
+  three or more orders (or with its own review cycle), plans and routes its
+  orders, runs scouts and cross-family reviews, drives fix rounds, and returns
+  a report of about 25 lines with ASSUMPTIONS and CLARIFY sections. Its tools
+  are `Agent, Read, Write, Edit, SendMessage`, and it has `maxTurns: 60`,
+  which sits above one 20-dispatch segment so the budget clock fires first.
+  The law makes every spawn set `run_in_background: false` and forbids a
+  report while a resumed child's reply is outstanding (WO-0 3a, 3c). It counts
+  plan growth (above +2 is an ESCALATION) and rework against a budget, and
+  overwrites a status file with a `seq` at every milestone. `ORCHESTRA.md` §2
+  gains the Leads paragraph: the threshold, the tier choice, the 8-order
+  charter cap, background launch, the 45-minute `CronCreate` check-in, the
+  dispatch-count cross-check, the Director's options on an escalation, and
+  resume by agent id, including after a `maxTurns` stop. §4 gains the merge
+  order, and §5 an integration review for campaigns with two or more leads.
+  `/orchestra-plan` carries the LEAD CHARTER template, and `/orchestra-status`
+  lists leads with their status lines.
+- **Review round 1 (Sol, REVISE) fixes.**
+  - The non-spawning rule no longer depends on a hand list: it adds the
+    cross-compare architects and synthesizer, and covers any installed agent
+    whose definition is ours (name matches, description starts with
+    `Orchestra`), so specialists are included.
+  - The clock's state path must resolve inside the project, so a junction at
+    `.claude/orchestra-leads` fails the clock open instead of writing outside.
+    Count maps have no prototype, so a type named `constructor` counts
+    normally, and `leadAllowedAgents` can't name `resume`. Uninstall removes
+    the clock files.
+  - The ‡ footnote and the user-request-only paragraphs no longer read as if
+    `executorEngine` could select a Fable executor. It selects Sol alone.
+- **Review round 2 (Sol, REVISE) fixes.**
+  - A lead's write to the pause path is denied by its type. Before this, the
+    self-pause branch ran first and stood down when the Director model wasn't
+    identified, which let a lead pause the guard.
+  - `leadAllowedAgents` can add project specialists only. It can never
+    re-admit a built-in type kept off the lead's team.
+  - Uninstall removes only clock-shaped files from `.claude/orchestra-leads/`
+    and keeps a user's `notes.json`.
+  - `executor-heavy-xhigh` no longer calls itself the deepest-reasoning point
+    in the company.
+- **Guard trim (owner, after review round 3).** The guard's additions went
+  from 308 lines to about 190. It no longer repeats frontmatter: the
+  non-spawning rule for non-lead agents (and its specialist ownership check)
+  and the leads' Bash/Grep/Glob denial are gone. `leadAllowedAgents` is
+  dropped, because no project uses a specialist under a lead yet. The clock
+  restarts on `tool_input.to` alone. Several round-1 and round-2 fixes above
+  belonged to the removed code and went with it.
+- **Review round 3 (Sol, narrow, APPROVE).** Two minor findings were fixed
+  after the approval, without a further review round. Uninstall's clock check
+  now matches the guard's own validation (count maps of finite non-negative
+  numbers). The pause-path comments and the README now say a lead's write is
+  denied by type in any session.
+
 ## 3.8.0 — trial: executor-bounded, a Sonnet 5.5 rung between mechanical and the default
 
 **Branch-only until its field trial passes.** This entry describes a trial

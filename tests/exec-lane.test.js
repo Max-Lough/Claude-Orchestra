@@ -2219,6 +2219,26 @@ function case21() {
     hov.lastIndexOf('mcp_servers.off.enabled=false') > hov.indexOf('mcp_servers.off.enabled=true'),
     hov.join(' | ')
   );
+  // Field, 2026-10-19 (codex-cli 0.163.0): `codex mcp list` also names
+  // plugin-contributed servers, declared in no config.toml; an override for
+  // one is a half-table Codex rejects ("invalid transport"). Only declared
+  // servers (user file, or the project's — fx.repo declares `proj`) are hit.
+  const declHome = path.join(fx.root, 'codex-home-declared');
+  fs.mkdirSync(declHome, { recursive: true });
+  fs.writeFileSync(path.join(declHome, 'config.toml'), '[mcp_servers.blender]\ncommand = "node"\n');
+  const plug = runExec(fx, [], {
+    CODEX_HOME: declHome,
+    STUB_CODEX_MCP_JSON: '[{"name":"blender","enabled":true},{"name":"proj","enabled":true},{"name":"codex_app","enabled":true}]',
+  }).stdout || '';
+  const pov = field(plug, 'CONFIG_OVERRIDES');
+  check(
+    'a listed server declared in no config.toml (plugin-contributed) gets no override',
+    pov.includes('mcp_servers.blender.enabled=false') && pov.includes('mcp_servers.proj.enabled=false') &&
+      !/mcp_servers\.codex_app/.test(pov) &&
+      /mcp: stripped \(2 server\(s\) disabled, apps connector off\)/.test(plug.split('\n')[0]) &&
+      /plugin-contributed\) and were left to their \[plugins\] setting: codex_app/.test(plug),
+    plug.split('\n')[0] + ' — ' + pov
+  );
 
   // Astra, same review: git resolves its global config from HOME first, and
   // os.homedir() on Windows is USERPROFILE — with the two apart, the include

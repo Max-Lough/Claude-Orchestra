@@ -9,6 +9,20 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.9.2 — fix: Codex 0.163 lanes no longer die on plugin-contributed MCP servers
+
+**Branch-only, like 3.9.1.** An install carries this fix when its
+`.claude/orchestra-install.json` says `3.9.2`.
+
+- **Every Codex lane died at its auth probe with `invalid transport`.** Codex 0.163
+  rejects `-c mcp_servers.<name>.enabled=false` for a server with no
+  `[mcp_servers.<name>]` table, which is what a plugin-contributed server (for
+  example `code-review`) is. `mcpIsolation()` in the exec, review and crossplan
+  runners emitted that override for every name in `codex mcp list --json`. It now
+  strips only servers declared in the user or project `config.toml`, leaves the
+  rest to their `[plugins]` setting, and names them in the header note. An
+  unreadable config keeps the old, unfiltered list. Tests cover both cases.
+
 ## 3.9.1 — trial fix: leads can spawn again under Claude Code 2.1.295
 
 **Branch-only, like 3.9.0.** An install carries this fix when its

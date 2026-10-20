@@ -2312,7 +2312,15 @@ function case29() {
   // Astra, round 5: MCP discovery must run where the ENGINE runs. The stub
   // names one server after the directory it was asked in; a pinned review
   // asks in the throwaway worktree (…/attempt-1/wt), not the live project.
-  const where = runReview(fx, ['--head-ref', fx.head], { STUB_CODEX_MCP_JSON: 'CWD' }).stdout || '';
+  // Both names are declared in the user config: only a declared server is
+  // disabled by name (plugin-contributed ones are not — field, 2026-10-19).
+  const whereHome = path.join(fx.root, 'codex-home-where');
+  fs.mkdirSync(whereHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(whereHome, 'config.toml'),
+    '[mcp_servers.in_wt]\ncommand = "node"\n[mcp_servers.in_project]\ncommand = "node"\n'
+  );
+  const where = runReview(fx, ['--head-ref', fx.head], { STUB_CODEX_MCP_JSON: 'CWD', CODEX_HOME: whereHome }).stdout || '';
   check(
     'a pinned review discovers MCP servers in the worktree the engine runs in',
     /mcp_servers\.in_wt\.enabled=false/.test(field(where, 'CONFIG_OVERRIDES')) &&

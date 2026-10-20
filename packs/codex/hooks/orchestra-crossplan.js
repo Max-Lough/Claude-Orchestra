@@ -633,10 +633,31 @@ function mcpIsolation(dir) {
   let user;
   const live = mcpServersFromCodex(dir);
   if (live) {
+    // FIX (field, 2026-10-19, codex-cli 0.163.0): `codex mcp list` also names
+    // servers a bundled PLUGIN contributes (its .mcp.json, governed by
+    // `[plugins."…"] enabled`), and `-c mcp_servers.<plugin server>.enabled=false`
+    // creates a table with no command/url that 0.163 rejects ("invalid
+    // transport") — every lane died at its probe. Only a server some
+    // config.toml declares in [mcp_servers] is disabled by name; the rest are
+    // named in a note. An unreadable config keeps the old, unfiltered list.
+    const none = { bare: [], quoted: [], opaque: false };
+    const fromUser = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : none;
+    const fromProject = dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : none;
+    const unreadable = fromUser.opaque || fromProject.opaque;
+    const declared = [].concat(fromUser.bare, fromUser.quoted, fromProject.bare, fromProject.quoted);
+    const undeclared = [];
     user = { bare: [], quoted: [], opaque: false };
     for (const n of live) {
-      if (/^[A-Za-z0-9_-]+$/.test(n)) user.bare.push(n);
+      if (!unreadable && !declared.includes(n)) undeclared.push(n);
+      else if (/^[A-Za-z0-9_-]+$/.test(n)) user.bare.push(n);
       else user.quoted.push(n);
+    }
+    if (undeclared.length) {
+      notes.push(
+        'mcp: ' + undeclared.length + ' server(s) Codex lists are declared in no config.toml ' +
+          '[mcp_servers] table (plugin-contributed) and were left to their [plugins] setting: ' +
+          undeclared.join(', ')
+      );
     }
   } else {
     user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [], opaque: false };

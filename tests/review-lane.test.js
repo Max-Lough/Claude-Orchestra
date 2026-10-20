@@ -437,7 +437,7 @@ function case2and3() {
   const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
   check(
     'user-supplied reviewer args cannot undo the coexistence boundary',
-    hostileOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    hostileOverrides.slice(-5).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
   );
   check(
@@ -2282,8 +2282,11 @@ function case29() {
   );
   check(
     'MCP servers are stripped for the review engine by default (header + overrides)',
-    /mcp: stripped \(0 server\(s\) disabled, apps connector off\)/.test(g.split('\n')[0]) &&
-      /features\.apps=false/.test(field(g, 'CONFIG_OVERRIDES')),
+    /mcp: stripped \(0 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off\)/.test(
+      g.split('\n')[0]
+    ) &&
+      /features\.apps=false/.test(field(g, 'CONFIG_OVERRIDES')) &&
+      /features\.plugins=false/.test(field(g, 'CONFIG_OVERRIDES')),
     g.split('\n')[0] + ' — ' + field(g, 'CONFIG_OVERRIDES')
   );
 
@@ -2312,8 +2315,6 @@ function case29() {
   // Astra, round 5: MCP discovery must run where the ENGINE runs. The stub
   // names one server after the directory it was asked in; a pinned review
   // asks in the throwaway worktree (…/attempt-1/wt), not the live project.
-  // Both names are declared in the user config: only a declared server is
-  // disabled by name (plugin-contributed ones are not — field, 2026-10-19).
   const whereHome = path.join(fx.root, 'codex-home-where');
   fs.mkdirSync(whereHome, { recursive: true });
   fs.writeFileSync(
@@ -2326,6 +2327,59 @@ function case29() {
     /mcp_servers\.in_wt\.enabled=false/.test(field(where, 'CONFIG_OVERRIDES')) &&
       !/mcp_servers\.in_project\./.test(field(where, 'CONFIG_OVERRIDES')),
     field(where, 'CONFIG_OVERRIDES')
+  );
+
+  // Sol, PR #708 (codex-cli 0.163.0): a plugin-contributed server (here
+  // `code-review`, a review MCP — the exact delegation hole) must be gone, not
+  // noted: the plugin system is switched off, every installed plugin is
+  // disabled by id, and only what Codex still lists under those switches is
+  // disabled by name. The stub drops a `plugin:` entry exactly when the
+  // question carried those switches, as 0.163 does.
+  const plugRev = runReview(fx, ['--head-ref', fx.head], {
+    STUB_CODEX_PLUGIN_JSON: JSON.stringify({
+      installed: [{ pluginId: 'code-review@openai-bundled', enabled: true }],
+      available: [],
+    }),
+    STUB_CODEX_MCP_JSON: JSON.stringify([
+      { name: 'claude', enabled: true },
+      { name: 'code-review', enabled: true, plugin: 'code-review@openai-bundled' },
+    ]),
+  }).stdout || '';
+  const prov = field(plugRev, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'the review engine runs with plugins off: the plugin switches and the per-id override are applied',
+    prov.includes('features.plugins=false') && prov.includes('features.remote_plugin=false') &&
+      prov.includes('plugins.code-review@openai-bundled.enabled=false'),
+    prov.join(' | ')
+  );
+  check(
+    'a plugin-contributed review server gets no half-table override; a declared one is disabled',
+    prov.includes('mcp_servers.claude.enabled=false') && !prov.some((o) => /^mcp_servers\.code-review\./.test(o)),
+    prov.join(' | ')
+  );
+  check(
+    'the review header states what was applied',
+    /mcp: stripped \(1 server\(s\) disabled, plugins off \(1 disabled by id\), apps connector off\)/.test(
+      plugRev.split('\n')[0]
+    ),
+    plugRev.split('\n')[0]
+  );
+  // Each runner carries its own copy of the isolation code (they are
+  // self-contained); the TOML-shape, empty-table, escaped-root and ancestor
+  // cases are exercised in tests/exec-lane.test.js, which covers all three
+  // lanes only while the copies stay identical.
+  const isoSrc = (file) => {
+    const src = fs.readFileSync(path.join(path.dirname(RUNNER), file), 'utf8');
+    const a = src.indexOf('function mcpServerNames(file) {');
+    const e = src.indexOf('  return { args, label, notes };\n}', a);
+    return a < 0 || e < 0 ? '' : src.slice(a, e);
+  };
+  const isoReview = isoSrc('orchestra-review.js');
+  check(
+    'the MCP isolation code is identical in the review, exec and crossplan runners',
+    !!isoReview && isoReview === isoSrc('orchestra-exec.js') && isoReview === isoSrc('orchestra-crossplan.js'),
+    'lengths: review ' + isoReview.length + ', exec ' + isoSrc('orchestra-exec.js').length +
+      ', crossplan ' + isoSrc('orchestra-crossplan.js').length
   );
 
   // Astra, round 6: git's conditional includes must be resolved for the

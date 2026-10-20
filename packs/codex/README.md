@@ -210,7 +210,7 @@ Environment variables override the file; explicit runner flags override both.
 | `doNotRun` | Commands the reviewer is forbidden to execute. Injected into the brief as a hard prohibition. |
 | `worktreeRoot` | Where a pinned review materializes its throwaway worktree (default: the OS temp dir). Must be writable and outside the repository — and if you set it and it is not writable, the review **fails** rather than quietly using somewhere else. |
 | `gitConfigIsolation` | `true` by default: the engine reads a scratch global config that carries a copy of your real one and overrides only the excludes/attributes probing; set `false` to hand it your real global config directly. |
-| `engineMcp` | `strip` (default) disables every MCP server in the user's Codex config plus the apps connector for the engine child, in every lane; `inherit` leaves the engine's MCP config alone. |
+| `engineMcp` | `strip` (default) disables every MCP server Codex loads, every plugin, and the apps connector for the engine child, in every lane; `inherit` leaves the engine's MCP config alone. |
 | `reviewRetries` | Extra attempts after a failure that might go differently (default `1`, max `3`). Each retry gets a fresh checkout; the chain reports as one outcome. |
 | `authProbe` / `probeTimeoutMs` | The stage-a `codex exec` echo run before the real attempt (default on, 90 s). A dead or unauthenticated install then costs seconds, not a review budget. |
 | `worktreeWarmupCmd` / `worktreeWarmupTimeoutMs` | Command run inside the fresh checkout *before* the integrity baseline is taken (default none, 30-minute cap). A pinned review of a Godot project with none set says so in its preflight. For engines that import assets on first open. **Pinned reviews only** — it writes, and a live-tree review must not write into the tree it is reviewing. |
@@ -387,13 +387,17 @@ despite the blanket, exempt from `--no-tests` and from any restriction written
 into the order — the field case was a Python self-test the brief allowed and
 `--no-tests` then barred. The header reports `allowed commands: N`.
 
-**MCP isolation.** The engine child runs with every MCP server Codex has
-loaded disabled by name and the Codex apps connector off, in every lane
+**MCP isolation.** The engine child runs with the plugin system switched off
+(`features.plugins=false`, `features.remote_plugin=false`, and every plugin
+`codex plugin list --json` reports disabled by id), every MCP server Codex
+still loads disabled by name, and the Codex apps connector off, in every lane
 (`codex.engineMcp`, default `strip`; `inherit` leaves the config alone). The
-names come from `codex mcp list --json` — Codex's own account of what it
-loaded, from every config layer it applied — and only a Codex that lacks the
-command falls back to the runner reading `config.toml` itself, which the
-preflight says when it happens.
+server names come from `codex mcp list --json`, asked under those plugin
+switches. That is Codex's own account of what it loaded from every config layer
+it applied, with plugin-contributed servers already gone. A server override
+for a plugin's server is a table Codex 0.163 rejects ("invalid transport"),
+so none is ever written. Only a Codex that lacks the command falls back to the
+runner reading `config.toml` itself, and the preflight says when that happens.
 A Sol review once delegated itself to a Claude review MCP it found in the
 config and came back same-family under a Sol header; an executor with a GitHub
 connector can write past the workspace sandbox. The header's `mcp:` line says

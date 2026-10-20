@@ -217,9 +217,9 @@
  *                               credential helpers, LFS filters and URL
  *                               rewrites carry across; filter.lfs.* is also
  *                               copied in explicitly. 0 disables.
- *   ORCHESTRA_REVIEW_MCP        strip (default) disables every MCP server the
- *                               user's Codex config declares, plus the Codex
- *                               apps connector, for the engine child — a
+ *   ORCHESTRA_REVIEW_MCP        strip (default) disables every MCP server Codex
+ *                               loads, every plugin, and the Codex apps
+ *                               connector, for the engine child — a
  *                               reviewer that can delegate to a same-vendor
  *                               review MCP is not a cross-vendor reviewer.
  *                               inherit leaves the engine's MCP config alone.
@@ -1098,20 +1098,22 @@ function setupGitIsolation(cwd) {
 // the review to it, so the cross-family review silently became same-family.
 // "no MCP" in the brief did not stop it; a runner boundary does. Codex honours
 // `-c mcp_servers.<name>.enabled=false` for a server it has loaded, so every
-// server the user-level config declares is disabled by name and the Codex
-// apps connector (GitHub write tools, among others) is switched off. Verified
-// against codex-cli 0.153.2: with these overrides the engine reports no MCP
-// tools at all.
+// server Codex loaded is disabled by name, the plugins that contribute servers
+// of their own are switched off, and the Codex apps connector (GitHub write
+// tools, among others) is switched off. Verified against codex-cli 0.153.2:
+// with these overrides the engine reports no MCP tools at all.
 //
 // Limits, stated rather than hidden: a name that needs TOML quoting cannot be
 // addressed through -c (Codex splits the key on dots without unquoting), and
 // a server Codex has NOT loaded cannot be disabled either — the override
-// would create a half-entry that fails config validation and kills the run.
-// The names therefore come from Codex itself (`codex mcp list --json`, see
-// mcpServersFromCodex), which covers every layer it loaded, a trusted
-// project's own .codex/config.toml included. Only when that command is
-// unavailable does the reader below stand in, and then the user-level file
-// is the only one read: a project-level file is named in the header instead.
+// would create a half-entry that fails config validation and kills the run
+// (codex-cli 0.163 rejects it as "invalid transport"). The plugin system is
+// therefore switched off first, and the names then come from Codex itself
+// (`codex mcp list --json` under those switches, see mcpIsolation), which
+// covers every layer it loaded, a trusted project's own .codex/config.toml
+// and its ancestors' included. Only when that command is unavailable does
+// the reader below stand in, and then the user-level file is the only one
+// read: a project-level file is named in the header instead.
 function mcpServerNames(file) {
   let text;
   try {
@@ -1128,16 +1130,19 @@ function mcpServerNames(file) {
       if (e[0] === 'u' || e[0] === 'U') return String.fromCodePoint(parseInt(e.slice(1), 16));
       return { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' }[e];
     });
+  // A key as TOML decodes it: `"…"` carries escapes, `'…'` carries none.
+  const decodeKey = (raw) => {
+    const k = String(raw || '').trim();
+    if (k[0] === '"') return decodeTomlBasic(k.slice(1, -1));
+    if (k[0] === "'") return k.slice(1, -1);
+    return k;
+  };
   const add = (raw) => {
-    let k = String(raw || '').trim();
+    const k = decodeKey(raw);
     if (!k) return;
     // TOML decodes `"claude"` and `claude` to the same key, so a quoted name
     // that is bare-safe is addressable through -c like any other (Astra,
     // round 3). Only a name that NEEDS quoting is unaddressable.
-    // A basic-string key carries TOML escapes (`"claude"` is `claude`);
-    // a literal-string key carries none.
-    if (k[0] === '"') k = decodeTomlBasic(k.slice(1, -1));
-    else if (k[0] === "'") k = k.slice(1, -1);
     if (/^[A-Za-z0-9_-]+$/.test(k)) {
       if (!bare.includes(k)) bare.push(k);
     } else if (!quoted.includes(k)) quoted.push(k);
@@ -1215,14 +1220,22 @@ function mcpServerNames(file) {
     }
     return false;
   };
-  // The root key may itself be quoted: `["mcp_servers".claude]` is valid TOML
-  // (Astra, round 2). And a multi-line string (`"""…"""` / `'''…'''`, e.g.
-  // developer_instructions carrying an example header) is skipped wholesale
-  // — a header-shaped line inside it is prose, not a declaration.
-  const ROOT = '(?:"mcp_servers"|\'mcp_servers\'|mcp_servers)';
+  // The root key may itself be quoted, and is DECODED before it is compared:
+  // `["mcp_servers".claude]` and `["mcp_\u0073ervers".claude]` are both the
+  // mcp_servers table (Astra, round 2; Sol, PR #708). A multi-line string
+  // (`"""…"""` / `'''…'''`, e.g. developer_instructions carrying an example
+  // header) is skipped wholesale — a header-shaped line inside it is prose.
+  const isRoot = (raw) => decodeKey(raw) === 'mcp_servers';
   let section = '';
   let pending = '';
   let multi = '';
+  // `mentioned`: a root-position mcp_servers key or header was seen at all;
+  // `read`: one of the shapes below read it — an EMPTY table (`[mcp_servers]`
+  // with no entries, `mcp_servers = {}`) is read, not opaque (Sol, PR #708);
+  // `unread`: a line inside `[mcp_servers]` no shape understood.
+  let mentioned = false;
+  let read = false;
+  let unread = false;
   for (const raw of text.split('\n')) {
     const line = raw.replace(/\r$/, '');
     if (multi) {
@@ -1239,48 +1252,70 @@ function mcpServerNames(file) {
     const opened = openMultiline(t);
     if (opened) multi = opened;
     let m;
-    if ((m = new RegExp('^\\[\\s*' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t))) {
-      add(m[1]);
+    if ((m = new RegExp('^\\[\\s*' + KEY + '\\s*\\.\\s*' + KEY + '\\s*[\\].]').exec(t)) && isRoot(m[1])) {
+      add(m[2]);
+      mentioned = read = true;
       section = 'mcp_servers.x';
       continue;
     }
-    if (new RegExp('^\\[\\s*' + ROOT + '\\s*\\]').test(t)) {
+    if ((m = new RegExp('^\\[\\s*' + KEY + '\\s*\\]').exec(t)) && isRoot(m[1])) {
+      mentioned = read = true;
       section = 'mcp_servers';
       continue;
     }
     if (t[0] === '[') {
+      if ((m = new RegExp('^\\[+\\s*' + KEY).exec(t)) && isRoot(m[1])) mentioned = true;
       section = 'other';
       continue;
     }
-    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t))) {
-      add(m[1]);
+    if (section === '' && (m = new RegExp('^' + KEY + '\\s*\\.\\s*' + KEY + '\\s*[.=]').exec(t)) && isRoot(m[1])) {
+      add(m[2]);
+      mentioned = read = true;
       continue;
     }
-    if (section === '' && (m = new RegExp('^' + ROOT + '\\s*=\\s*(\\{[\\s\\S]*)$').exec(t))) {
-      if (!scanInline(m[1])) pending = m[1];
+    if (section === '' && (m = new RegExp('^' + KEY + '\\s*=\\s*(\\{[\\s\\S]*)$').exec(t)) && isRoot(m[1])) {
+      mentioned = read = true;
+      if (!scanInline(m[2])) pending = m[2];
       continue;
     }
-    if (section === 'mcp_servers' && (m = new RegExp('^' + KEY + '\\s*[.=]').exec(t))) {
-      add(m[1]);
+    if (section === '' && (m = new RegExp('^' + KEY).exec(t)) && isRoot(m[1])) {
+      mentioned = true;
       continue;
+    }
+    if (section === 'mcp_servers') {
+      if ((m = new RegExp('^' + KEY + '\\s*[.=]').exec(t))) add(m[1]);
+      else unread = true;
     }
   }
-  const opaque =
-    new RegExp('^\\s*\\[?\\s*' + ROOT + '\\b', 'm').test(text.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, '')) &&
-    !bare.length && !quoted.length;
+  const opaque = (unread || (mentioned && !read)) && !bare.length && !quoted.length;
   return { bare, quoted, opaque };
 }
 
-// The servers Codex has actually loaded, asked of Codex itself: `codex mcp
-// list --json` reports every server by its decoded name with its enabled
-// state, from every config layer Codex applied (a trusted project's own
-// .codex/config.toml included). Four review rounds of hand-reading
-// config.toml each found a TOML shape the reader missed; the authority is the
-// binary that loads the file. Returns null when the command is unavailable
-// (an older Codex, or the stub engine), and the TOML reader is the fallback.
-function mcpServersFromCodex(dir) {
+// Every `.codex/config.toml` from `dir` up to the project root (the first
+// directory holding `.git`) — the project layers Codex itself loads for a
+// trusted project, ancestors included (Sol, PR #708). Read only for the
+// header note when `codex mcp list` is unavailable.
+function projectCodexConfigs(dir, codexHome) {
+  const out = [];
+  const userFile = codexHome ? path.resolve(codexHome, 'config.toml') : '';
+  let d = path.resolve(dir);
+  for (;;) {
+    const f = path.join(d, '.codex', 'config.toml');
+    if (path.resolve(f) !== userFile && fs.existsSync(f)) out.push(f);
+    if (fs.existsSync(path.join(d, '.git'))) break;
+    const up = path.dirname(d);
+    if (up === d) break;
+    d = up;
+  }
+  return out;
+}
+
+// One `codex … --json` question, answered by the binary that loads the
+// config. Returns the parsed value, or null when the command is unavailable
+// (an older Codex, or the stub engine) or did not answer in JSON.
+function codexJson(dir, args, open) {
   try {
-    const r = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, ['mcp', 'list', '--json'], {
+    const r = spawnEngine(CONFIG.resolvedBin || CONFIG.bin, args, {
       cwd: dir || process.cwd(),
       encoding: 'utf8',
       input: '',
@@ -1291,18 +1326,42 @@ function mcpServersFromCodex(dir) {
     });
     if (r.error || r.status !== 0) return null;
     const out = String(r.stdout || '');
-    const start = out.indexOf('[');
+    const start = out.indexOf(open);
     if (start === -1) return null;
-    const parsed = JSON.parse(out.slice(start));
-    if (!Array.isArray(parsed)) return null;
-    // Every server Codex knows, the already-disabled ones included: the
-    // disabling override is written for each, because our -c flags come
-    // AFTER any user extra args and a `mcp_servers.x.enabled=true` there
-    // would otherwise win for a server we had skipped (Astra, round 5).
-    return parsed.filter((e) => e && typeof e.name === 'string').map((e) => e.name);
+    return JSON.parse(out.slice(start));
   } catch (_) {
     return null;
   }
+}
+
+// The servers Codex has actually loaded, asked of Codex itself: `codex mcp
+// list --json` reports every server by its decoded name with its enabled
+// state, from every config layer Codex applied (a trusted project's own
+// .codex/config.toml and its ancestors' included). Four review rounds of
+// hand-reading config.toml each found a TOML shape the reader missed; the
+// authority is the binary that loads the file. `overrides` are the plugin
+// switches the engine will run under, so a plugin-contributed server is gone
+// from the answer before any name is read. Returns null when the command is
+// unavailable, and the TOML reader is the fallback.
+function mcpServersFromCodex(dir, overrides) {
+  const parsed = codexJson(dir, ['mcp', 'list', '--json'].concat(overrides || []), '[');
+  if (!Array.isArray(parsed)) return null;
+  // Every server Codex knows, the already-disabled ones included: the
+  // disabling override is written for each, because our -c flags come
+  // AFTER any user extra args and a `mcp_servers.x.enabled=true` there
+  // would otherwise win for a server we had skipped (Astra, round 5).
+  return parsed.filter((e) => e && typeof e.name === 'string').map((e) => e.name);
+}
+
+// The plugins Codex has installed, asked of Codex itself (`codex plugin list
+// --json`, 0.155+), with remote plugins switched off as the engine will run:
+// a remote (account-managed connector) plugin's enablement is not a config
+// key at all, and `features.remote_plugin=false` is what removes it. Returns
+// null when the command is unavailable.
+function pluginsFromCodex(dir) {
+  const parsed = codexJson(dir, ['plugin', 'list', '--json', '-c', 'features.remote_plugin=false'], '{');
+  if (!parsed || !Array.isArray(parsed.installed)) return null;
+  return parsed.installed.filter((p) => p && typeof p.pluginId === 'string').map((p) => p.pluginId);
 }
 
 function mcpIsolation(dir) {
@@ -1310,34 +1369,52 @@ function mcpIsolation(dir) {
   const home = (process.env.HOME || '').trim() || os.homedir() || '';
   const codexHome = (process.env.CODEX_HOME || '').trim() || (home ? path.join(home, '.codex') : '');
   const notes = [];
+  // FIX (Sol, PR #708; codex-cli 0.163.0): a bundled PLUGIN contributes MCP
+  // servers of its own (its .mcp.json), and `-c mcp_servers.<plugin
+  // server>.enabled=false` creates a half-table 0.163 rejects ("invalid
+  // transport"). Skipping those servers left them reachable, and classifying
+  // provenance by reading config.toml missed every layer the reader did not
+  // parse. So the plugin system itself is switched off — `features.plugins`
+  // and `features.remote_plugin` — and every installed plugin is disabled by
+  // id as well, BEFORE the server names are asked for: what `codex mcp list`
+  // still reports under those switches is declared in some config layer
+  // Codex loaded, and is disabled by name. A whole-table `mcp_servers={}` was
+  // tried live and does nothing: Codex deep-merges -c tables, and the
+  // declared servers still started. Verified against codex-cli 0.155.1,
+  // 0.159.3, 0.162.1 and 0.163.0: every override here is accepted.
+  const args = ['-c', 'features.apps=false', '-c', 'features.plugins=false', '-c', 'features.remote_plugin=false'];
+  const plugins = pluginsFromCodex(dir);
+  let pluginsOff = 0;
+  if (plugins) {
+    const odd = [];
+    for (const id of plugins) {
+      // Codex splits a -c key on dots without unquoting: an id with a dot (or
+      // anything else outside this set) cannot be addressed, and relies on
+      // the features.plugins switch alone.
+      if (/^[A-Za-z0-9_@-]+$/.test(id)) {
+        args.push('-c', 'plugins.' + id + '.enabled=false');
+        pluginsOff++;
+      } else odd.push(id);
+    }
+    if (odd.length) {
+      notes.push(
+        'mcp: ' + odd.length + ' plugin id(s) cannot be addressed through -c and are off only through ' +
+          'features.plugins=false: ' + odd.map((n) => JSON.stringify(n)).join(', ')
+      );
+    }
+  } else {
+    notes.push(
+      'mcp: `codex plugin list --json` was unavailable, so no plugin was disabled by id — ' +
+        'features.plugins=false is the only plugin switch applied'
+    );
+  }
   let user;
-  const live = mcpServersFromCodex(dir);
+  const live = mcpServersFromCodex(dir, args.slice());
   if (live) {
-    // FIX (field, 2026-10-19, codex-cli 0.163.0): `codex mcp list` also names
-    // servers a bundled PLUGIN contributes (its .mcp.json, governed by
-    // `[plugins."…"] enabled`), and `-c mcp_servers.<plugin server>.enabled=false`
-    // creates a table with no command/url that 0.163 rejects ("invalid
-    // transport") — every lane died at its probe. Only a server some
-    // config.toml declares in [mcp_servers] is disabled by name; the rest are
-    // named in a note. An unreadable config keeps the old, unfiltered list.
-    const none = { bare: [], quoted: [], opaque: false };
-    const fromUser = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : none;
-    const fromProject = dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : none;
-    const unreadable = fromUser.opaque || fromProject.opaque;
-    const declared = [].concat(fromUser.bare, fromUser.quoted, fromProject.bare, fromProject.quoted);
-    const undeclared = [];
     user = { bare: [], quoted: [], opaque: false };
     for (const n of live) {
-      if (!unreadable && !declared.includes(n)) undeclared.push(n);
-      else if (/^[A-Za-z0-9_-]+$/.test(n)) user.bare.push(n);
+      if (/^[A-Za-z0-9_-]+$/.test(n)) user.bare.push(n);
       else user.quoted.push(n);
-    }
-    if (undeclared.length) {
-      notes.push(
-        'mcp: ' + undeclared.length + ' server(s) Codex lists are declared in no config.toml ' +
-          '[mcp_servers] table (plugin-contributed) and were left to their [plugins] setting: ' +
-          undeclared.join(', ')
-      );
     }
   } else {
     user = codexHome ? mcpServerNames(path.join(codexHome, 'config.toml')) : { bare: [], quoted: [], opaque: false };
@@ -1347,7 +1424,6 @@ function mcpIsolation(dir) {
         ' by the runner\'s own TOML reader — a project-level .codex/config.toml is not read that way'
     );
   }
-  const args = ['-c', 'features.apps=false'];
   for (const name of user.bare) args.push('-c', 'mcp_servers.' + name + '.enabled=false');
   if (user.opaque) {
     notes.push(
@@ -1361,17 +1437,21 @@ function mcpIsolation(dir) {
         'name cannot be addressed through -c: ' + user.quoted.map((n) => JSON.stringify(n)).join(', ')
     );
   }
-  const project = !live && dir ? mcpServerNames(path.join(dir, '.codex', 'config.toml')) : { bare: [], quoted: [] };
-  const projectNames = project.bare.concat(project.quoted);
-  if (projectNames.length) {
-    notes.push(
-      'mcp: the project\'s own .codex/config.toml declares ' + projectNames.length + ' MCP server(s) ' +
-        '(' + projectNames.join(', ') + ') — not disabled; Codex loads that file only for a trusted ' +
-        'project, and disabling a server it has not loaded would kill the run'
-    );
+  if (!live && dir) {
+    for (const file of projectCodexConfigs(dir, codexHome)) {
+      const project = mcpServerNames(file);
+      const projectNames = project.bare.concat(project.quoted);
+      if (!projectNames.length) continue;
+      notes.push(
+        'mcp: the project-level ' + file + ' declares ' + projectNames.length + ' MCP server(s) ' +
+          '(' + projectNames.join(', ') + ') — not disabled; Codex loads that file only for a trusted ' +
+          'project, and disabling a server it has not loaded would kill the run'
+      );
+    }
   }
   const label =
-    'stripped (' + user.bare.length + ' server(s) disabled, apps connector off' +
+    'stripped (' + user.bare.length + ' server(s) disabled, plugins off (' +
+    (plugins ? pluginsOff + ' disabled by id' : 'plugin list unavailable') + '), apps connector off' +
     (user.quoted.length ? ', ' + user.quoted.length + ' not addressable' : '') + ')';
   return { args, label, notes };
 }

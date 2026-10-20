@@ -9,7 +9,7 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
-## 3.9.2 — fix: Codex 0.163 lanes no longer die on plugin-contributed MCP servers
+## 3.9.2 — fix: strip MCP by switching plugins off, not by classifying servers
 
 **Branch-only, like 3.9.1.** An install carries this fix when its
 `.claude/orchestra-install.json` says `3.9.2`.
@@ -18,10 +18,32 @@ Entries name the failure that prompted the change. A harness that only records
   rejects `-c mcp_servers.<name>.enabled=false` for a server with no
   `[mcp_servers.<name>]` table, which is what a plugin-contributed server (for
   example `code-review`) is. `mcpIsolation()` in the exec, review and crossplan
-  runners emitted that override for every name in `codex mcp list --json`. It now
-  strips only servers declared in the user or project `config.toml`, leaves the
-  rest to their `[plugins]` setting, and names them in the header note. An
-  unreadable config keeps the old, unfiltered list. Tests cover both cases.
+  runners emitted that override for every name in `codex mcp list --json`.
+- **The first cut of this fix left those servers reachable.** It skipped every
+  listed server it could not find in the user or project `config.toml` and only
+  named it in a note, so an enabled plugin's review MCP stayed available under
+  `engineMcp: strip`. The allow-list also missed config layers the runner did not
+  parse (an ancestor project's `.codex/config.toml`, among others), read a valid
+  empty `[mcp_servers]` table as unreadable, and did not decode an escaped root
+  key such as `["mcp_servers".claude]` (Sol, PR #708).
+- **Strip mode now switches plugins off and classifies nothing.** It applies
+  `features.plugins=false` and `features.remote_plugin=false`, disables every
+  plugin `codex plugin list --json` reports by id (`plugins.<id>.enabled=false`),
+  and keeps the apps connector off. Only then does it ask `codex mcp list --json`
+  for server names, under those same switches, and disable each one by name. A
+  plugin's servers are already gone from that answer, and the rest come from
+  whichever config layers Codex loaded. A whole-table `mcp_servers={}` override
+  was tried and dropped: Codex deep-merges `-c` tables, and a declared server
+  still started. The header now reads, for example,
+  `mcp: stripped (2 server(s) disabled, plugins off (15 disabled by id), apps connector off)`.
+  The overrides were checked live on codex-cli 0.155.1, 0.159.3, 0.162.1 and
+  0.163.0.
+- The fallback TOML reader, used only when `codex mcp list` is missing, now
+  decodes the root key, reads an empty table as empty, and names every
+  project-level `.codex/config.toml` from the working directory up to the
+  project root. Tests cover the plugin overrides, empty tables, escaped root
+  keys, an ancestor-declared server and the header wording, and check that the
+  three runners carry identical isolation code.
 
 ## 3.9.1 — trial fix: leads can spawn again under Claude Code 2.1.295
 

@@ -217,7 +217,7 @@ function case1() {
   );
   check(
     'the default effort is high, pinned as a config value, not prose',
-    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
+    field(out, 'CONFIG_OVERRIDES') === 'model_reasoning_effort=high | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false' &&
       /effort: high/.test(out.split('\n')[0]),
     'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES') + ' — ' + out.split('\n')[0]
   );
@@ -239,7 +239,7 @@ function case1() {
   const hostileOverrides = field(hostile.stdout || '', 'CONFIG_OVERRIDES').split(' | ');
   check(
     'user-supplied executor args cannot undo the coexistence boundary',
-    hostileOverrides.slice(-3).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    hostileOverrides.slice(-5).join(' | ') === 'features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + hostileOverrides.join(' | ')
   );
   check(
@@ -304,7 +304,7 @@ function case2() {
   const effortCfg = runExec(fx2, []);
   check(
     'orchestra.json (codex.execHeavyEffort) supplies the effort',
-    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0 | features.apps=false' &&
+    field(effortCfg.stdout || '', 'CONFIG_OVERRIDES') === 'model_reasoning_effort=medium | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false' &&
       /effort: medium/.test((effortCfg.stdout || '').split('\n')[0]),
     (effortCfg.stdout || '').split('\n')[0]
   );
@@ -952,7 +952,7 @@ function case18() {
   check(
     'the principal rung sends its effort to codex, not just to the header',
     field(pout, 'CONFIG_OVERRIDES') ===
-      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + field(pout, 'CONFIG_OVERRIDES')
   );
 
@@ -1802,7 +1802,7 @@ function case26() {
   check(
     'the luna rung sends its effort to codex, not just to the header',
     field(lout, 'CONFIG_OVERRIDES') ===
-      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+      'model_reasoning_effort=xhigh | features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + field(lout, 'CONFIG_OVERRIDES')
   );
   check(
@@ -2024,7 +2024,7 @@ function case21() {
   check('a quoted name is never addressed through -c (it would create a half-entry)', !/odd/.test(overrides), overrides);
   check(
     'the header states the MCP posture, including what could not be addressed',
-    /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(head),
+    /mcp: stripped \(2 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off, 1 not addressable\)/.test(head),
     head
   );
   check('the unaddressable name is reported in preflight', /"odd name"/.test(out), out.slice(0, 1500));
@@ -2083,6 +2083,8 @@ function case21() {
       '[mcp_servers.other]\ncommand = "x"\ndeveloper_instructions = "Use \'\'\' as the SQL example"\n[mcp_servers.claude]\ncommand = "node"\n',
       ['other', 'claude'], []],
     ['an escaped basic-string key', '[mcp_servers."clau\\u0064e"]\ncommand = "node"\n', ['claude'], []],
+    // Sol, PR #708: the ROOT key carries TOML escapes too.
+    ['an escaped root key', '["mcp_\\u0073ervers".escroot]\ncommand = "node"\n', ['escroot'], []],
   ];
   for (const [label, toml, wantBare, wantQuoted] of shapes) {
     const h = path.join(fx.root, 'codex-home-' + wantBare[0]);
@@ -2201,7 +2203,7 @@ function case21() {
   check(
     'server names come from `codex mcp list --json` when Codex answers, already-disabled ones included',
     lov.includes('mcp_servers.live_one.enabled=false') && lov.includes('mcp_servers.off.enabled=false') &&
-      /mcp: stripped \(2 server\(s\) disabled, apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
+      /mcp: stripped \(2 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off, 1 not addressable\)/.test(live.split('\n')[0]) &&
       !/own TOML reader/.test(live) && !/could not read/.test(live),
     live.split('\n')[0] + ' — ' + lov
   );
@@ -2219,26 +2221,138 @@ function case21() {
     hov.lastIndexOf('mcp_servers.off.enabled=false') > hov.indexOf('mcp_servers.off.enabled=true'),
     hov.join(' | ')
   );
-  // Field, 2026-10-19 (codex-cli 0.163.0): `codex mcp list` also names
-  // plugin-contributed servers, declared in no config.toml; an override for
-  // one is a half-table Codex rejects ("invalid transport"). Only declared
-  // servers (user file, or the project's — fx.repo declares `proj`) are hit.
-  const declHome = path.join(fx.root, 'codex-home-declared');
-  fs.mkdirSync(declHome, { recursive: true });
-  fs.writeFileSync(path.join(declHome, 'config.toml'), '[mcp_servers.blender]\ncommand = "node"\n');
-  const plug = runExec(fx, [], {
-    CODEX_HOME: declHome,
-    STUB_CODEX_MCP_JSON: '[{"name":"blender","enabled":true},{"name":"proj","enabled":true},{"name":"codex_app","enabled":true}]',
-  }).stdout || '';
-  const pov = field(plug, 'CONFIG_OVERRIDES');
+  // Sol, PR #708 (codex-cli 0.163.0): a bundled plugin contributes servers of
+  // its own, and `-c mcp_servers.<plugin server>.enabled=false` is a
+  // half-table 0.163 rejects ("invalid transport"); the 3.9.2 first cut
+  // skipped those servers and left them reachable. Strip mode now switches the
+  // plugin system off and disables every installed plugin by id BEFORE asking
+  // for server names, so what Codex still lists is config-declared — from any
+  // layer it loaded — and is disabled by name with no config.toml parsing.
+  // The stub drops a `plugin:` entry exactly when the question carried those
+  // switches, as 0.163 does (measured live, 2026-10-20).
+  const PLUGINS = JSON.stringify({
+    installed: [
+      { pluginId: 'code-review@openai-bundled', enabled: true },
+      { pluginId: 'codex-app-tools@openai-bundled', enabled: false },
+      { pluginId: 'odd.plugin@market', enabled: true },
+    ],
+    available: [],
+  });
+  const SERVERS = JSON.stringify([
+    { name: 'blender', enabled: true },
+    { name: 'code-review', enabled: true, plugin: 'code-review@openai-bundled' },
+    { name: 'codex_app', enabled: true, plugin: 'codex-app-tools@openai-bundled' },
+  ]);
+  const plug = runExec(fx, [], { STUB_CODEX_PLUGIN_JSON: PLUGINS, STUB_CODEX_MCP_JSON: SERVERS }).stdout || '';
+  const pov = field(plug, 'CONFIG_OVERRIDES').split(' | ');
   check(
-    'a listed server declared in no config.toml (plugin-contributed) gets no override',
-    pov.includes('mcp_servers.blender.enabled=false') && pov.includes('mcp_servers.proj.enabled=false') &&
-      !/mcp_servers\.codex_app/.test(pov) &&
-      /mcp: stripped \(2 server\(s\) disabled, apps connector off\)/.test(plug.split('\n')[0]) &&
-      /plugin-contributed\) and were left to their \[plugins\] setting: codex_app/.test(plug),
-    plug.split('\n')[0] + ' — ' + pov
+    'strip mode switches the plugin system off (local and remote) along with the apps connector',
+    ['features.apps=false', 'features.plugins=false', 'features.remote_plugin=false'].every((o) => pov.includes(o)),
+    pov.join(' | ')
   );
+  check(
+    'every addressable installed plugin is disabled by id, an already-disabled one included',
+    pov.includes('plugins.code-review@openai-bundled.enabled=false') &&
+      pov.includes('plugins.codex-app-tools@openai-bundled.enabled=false') &&
+      !pov.some((o) => /odd\.plugin/.test(o)) &&
+      /1 plugin id\(s\) cannot be addressed through -c[^\n]*"odd\.plugin@market"/.test(plug),
+    pov.join(' | ')
+  );
+  check(
+    'a plugin-contributed server gets no half-table override; the declared server is disabled by name',
+    pov.includes('mcp_servers.blender.enabled=false') && !pov.some((o) => /^mcp_servers\.(code-review|codex_app)\./.test(o)),
+    pov.join(' | ')
+  );
+  check(
+    'the header states what was applied',
+    /mcp: stripped \(1 server\(s\) disabled, plugins off \(2 disabled by id\), apps connector off\)/.test(plug.split('\n')[0]),
+    plug.split('\n')[0]
+  );
+  const reenable = runExec(fx, [], {
+    STUB_CODEX_PLUGIN_JSON: PLUGINS,
+    STUB_CODEX_MCP_JSON: SERVERS,
+    ORCHESTRA_EXEC_ARGS: '-c features.plugins=true -c plugins.code-review@openai-bundled.enabled=true',
+  }).stdout || '';
+  const rov = field(reenable, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'a user extra arg cannot re-enable a plugin: the disabling overrides come after it',
+    rov.lastIndexOf('features.plugins=false') > rov.indexOf('features.plugins=true') &&
+      rov.lastIndexOf('plugins.code-review@openai-bundled.enabled=false') >
+        rov.indexOf('plugins.code-review@openai-bundled.enabled=true'),
+    rov.join(' | ')
+  );
+  // Without `codex plugin list` the plugin system is still switched off, and
+  // discovery runs under that switch: no plugin server is named either way.
+  const noList = runExec(fx, [], { STUB_CODEX_MCP_JSON: SERVERS }).stdout || '';
+  const nov = field(noList, 'CONFIG_OVERRIDES').split(' | ');
+  check(
+    'without `codex plugin list` the plugin switch alone keeps plugin servers out of the override list',
+    nov.includes('features.plugins=false') && nov.includes('mcp_servers.blender.enabled=false') &&
+      !nov.some((o) => /^plugins\.|^mcp_servers\.(code-review|codex_app)\./.test(o)) &&
+      /mcp: stripped \(1 server\(s\) disabled, plugins off \(plugin list unavailable\), apps connector off\)/.test(
+        noList.split('\n')[0]
+      ) &&
+      /`codex plugin list --json` was unavailable/.test(noList),
+    noList.split('\n')[0] + ' — ' + nov.join(' | ')
+  );
+  // Sol, PR #708: a VALID empty table (`[mcp_servers]` with no entries, or
+  // `mcp_servers = {}`) read as opaque, which restored the unfiltered list —
+  // the plugin-server override that kills 0.163 at startup. No config parse
+  // decides anything on the live path now; the fallback reader reads an
+  // empty table as empty.
+  for (const [label, toml] of [['an empty [mcp_servers] table', '[mcp_servers]\n'], ['mcp_servers = {}', 'mcp_servers = {}\n']]) {
+    const h = path.join(fx.root, 'codex-home-empty-' + (toml[0] === '[' ? 'header' : 'inline'));
+    fs.mkdirSync(h, { recursive: true });
+    fs.writeFileSync(path.join(h, 'config.toml'), toml);
+    const e = runExec(fx, [], { CODEX_HOME: h, STUB_CODEX_MCP_JSON: SERVERS }).stdout || '';
+    const eov = field(e, 'CONFIG_OVERRIDES').split(' | ');
+    check(
+      label + ': a plugin server still gets no override, the declared one still does',
+      eov.includes('mcp_servers.blender.enabled=false') && !eov.some((o) => /^mcp_servers\.(code-review|codex_app)\./.test(o)),
+      eov.join(' | ')
+    );
+    const f = runExec(fx, [], { CODEX_HOME: h }).stdout || '';
+    check(
+      label + ': the fallback reader reads it as empty, not as an unreadable shape',
+      /mcp: stripped \(0 server\(s\) disabled/.test(f.split('\n')[0]) && !/could not read/.test(f),
+      f.slice(0, 1200)
+    );
+  }
+  // Sol, PR #708: `["mcp_servers".claude]` decodes to the mcp_servers
+  // table; the literal root matcher saw neither a declaration nor an opaque
+  // file, and a discovered `claude` lost its override.
+  const escHome = path.join(fx.root, 'codex-home-escaped-root');
+  fs.mkdirSync(escHome, { recursive: true });
+  fs.writeFileSync(path.join(escHome, 'config.toml'), '["mcp_\\u0073ervers".claude]\ncommand = "node"\n');
+  const esc = runExec(fx, [], {
+    CODEX_HOME: escHome,
+    STUB_CODEX_MCP_JSON: '[{"name":"claude","enabled":true},{"name":"code-review","enabled":true,"plugin":"code-review@openai-bundled"}]',
+  }).stdout || '';
+  check(
+    'an escaped root key: the server Codex lists is disabled by name',
+    /mcp_servers\.claude\.enabled=false/.test(field(esc, 'CONFIG_OVERRIDES')) &&
+      !/mcp_servers\.code-review\./.test(field(esc, 'CONFIG_OVERRIDES')),
+    field(esc, 'CONFIG_OVERRIDES')
+  );
+  // Sol, PR #708: Codex loads every project layer from the working directory
+  // up to the project root; the declaration allow-list read only the working
+  // directory's. fx.repo/.codex/config.toml declares `proj`, and the engine
+  // runs in a subdirectory.
+  const sub = path.join(fx.repo, 'sub');
+  fs.mkdirSync(sub, { recursive: true });
+  const anc = runExec(fx, ['--cd', sub], { STUB_CODEX_MCP_JSON: '[{"name":"proj","enabled":true}]' }).stdout || '';
+  check(
+    'a server declared only in an ancestor project config is disabled by name',
+    /mcp_servers\.proj\.enabled=false/.test(field(anc, 'CONFIG_OVERRIDES')),
+    anc.split('\n')[0] + ' — ' + field(anc, 'CONFIG_OVERRIDES')
+  );
+  const ancFallback = runExec(fx, ['--cd', sub]).stdout || '';
+  check(
+    'without `codex mcp list` the ancestor project config is still named in preflight',
+    /project-level [^\n]*\.codex[\\/]config\.toml declares 1 MCP server\(s\) \(proj\)/.test(ancFallback),
+    ancFallback.slice(0, 1500)
+  );
+  fs.rmSync(sub, { recursive: true, force: true });
 
   // Astra, same review: git resolves its global config from HOME first, and
   // os.homedir() on Windows is USERPROFILE — with the two apart, the include
@@ -3314,8 +3428,8 @@ function case27() {
   );
   check(
     'the coexistence boundary is still the LAST override with the stand-in on',
-    field(out, 'CONFIG_OVERRIDES').split(' | ').slice(-3).join(' | ') ===
-      'features.hooks=false | project_doc_max_bytes=0 | features.apps=false',
+    field(out, 'CONFIG_OVERRIDES').split(' | ').slice(-5).join(' | ') ===
+      'features.hooks=false | project_doc_max_bytes=0 | features.apps=false | features.plugins=false | features.remote_plugin=false',
     'CONFIG_OVERRIDES: ' + field(out, 'CONFIG_OVERRIDES')
   );
   check(

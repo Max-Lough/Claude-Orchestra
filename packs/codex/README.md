@@ -24,7 +24,7 @@ cross-compare still degrade to Claude-only exactly as before.
 |---|---|
 | `agents/reviewer-codex.md` | Thin Haiku launcher; calls the `orchestra_review` MCP tool once and relays the OpenAI verdict verbatim. The default independent reviewer for Claude-authored campaign work. Never reviews the code itself. |
 | `agents/executor-codex-principal.md` | **The top rung of the harness's default executor ladder.** Thin Haiku launcher; calls the `orchestra_exec` MCP tool once with `profile: "principal"` (OpenAI GPT-6 Astra, xhigh reasoning effort by default) and relays the report + tree audit verbatim. Exceptional orders only — many coupled moving parts, an approach the plan cannot settle, or a second bounce at the Opus heavy tier. Never edits anything itself. |
-| `agents/executor-codex-heavy.md` | The cheaper cross-vendor executor, **user request only** — no routing rule reaches it. Same launcher shape with `profile: "heavy"` (OpenAI GPT-6 Sol, high reasoning effort by default). Never edits anything itself. |
+| `agents/executor-codex-heavy.md` | The cheaper cross-vendor executor, **user request only** — reached when the user names it, or for ordinary code and visual work under `executorEngine: "codex"` (Director and leads alike). Same launcher shape with `profile: "heavy"` (OpenAI GPT-6 Sol, high reasoning effort by default). Never edits anything itself. |
 | `agents/executor-codex-luna.md` | A lighter cross-vendor executor, **user request only** — no routing rule reaches it, `executorEngine` does not select it, and nothing escalates or substitutes into it. Same launcher shape with `profile: "luna"` (OpenAI GPT-6 Luna, xhigh reasoning effort by default). Never edits anything itself. |
 | `agents/architect-codex.md` | Thin Haiku launcher for the `/cross-compare-plan` GPT lane; calls `orchestra_crossplan` once per phase and relays the document's provenance verbatim. Never drafts, critiques, or revises itself. |
 | `agents/architect-claude-xhigh.md` | The `/cross-compare-plan` Claude architect (Fable, fresh context, xhigh effort — the default tier) — drafts, critiques the rival plan, revises under critique, anonymously, within the brief's ground-truth scope. Both lanes always run one identical effort level. |
@@ -97,7 +97,7 @@ runner, reached in very different ways:
 | Launcher | `--profile` | Default engine | How an order reaches it |
 |---|---|---|---|
 | `executor-codex-principal` | `principal` | GPT-6 Astra, xhigh effort | **the default ladder's top rung** — `executor` → `executor-heavy` → here, one rung per double bounce. Exceptional orders only, declared at PLAN time |
-| `executor-codex-heavy` | `heavy` (the runner's default) | GPT-6 Sol, high effort | **user request only** — the user names it, or `executorEngine: "codex"` makes the Codex lane this project's executor lane. No routing rule reaches it |
+| `executor-codex-heavy` | `heavy` (the runner's default) | GPT-6 Sol, high effort | **user request only** — the user names it, or `executorEngine: "codex"` makes the Codex lane this project's executor lane, and then ordinary code and visual work start here (ORCHESTRA.md §2) |
 | `executor-codex-luna` | `luna` | GPT-6 Luna, xhigh effort | **user request only** — the user names it. `executorEngine: "codex"` does not select it (that means Sol), no routing rule reaches it, and nothing escalates or substitutes into it |
 
 So the harness's escalation path crosses the vendor line at the top: a double

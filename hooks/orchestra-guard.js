@@ -1012,8 +1012,11 @@ function classifyMemoryOperation(toolName, toolInput, memoryPatterns) {
 
 const LEAD_TYPES = new Set(['lead', 'lead-xhigh']);
 
-// Who a lead may start. Never another lead, a Fable or user-only Codex
-// executor, or a planning lane: an order needing one is an ESCALATION.
+// Who a lead may start. Never another lead, a Fable executor, or a planning
+// lane: an order needing one is an ESCALATION. Every Codex executor is on the
+// team, as for the Director: Sol so a lead applies the same routing table
+// (ORCHESTRA.md §2: Sol under executorEngine "codex"), Luna for a charter
+// that carries the user's request for it.
 const LEAD_TEAM = new Set([
   'scout',
   'detective',
@@ -1023,6 +1026,8 @@ const LEAD_TEAM = new Set([
   'executor',
   'executor-heavy',
   'executor-heavy-xhigh',
+  'executor-codex-heavy',
+  'executor-codex-luna',
   'executor-codex-principal',
   'executor-principal',
   'executor-principal-max',

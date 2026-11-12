@@ -88,3 +88,14 @@ Ledger:           .claude/plans/leads/<name>/ledger.md
 ```
 
 Keep the ledger habit (§8.3.5): as orders complete, record tool calls, parts, wall-clock, and verification runs in `.claude/plans/ledger.md` — it calibrates the next plan's sizing.
+
+## Ledger template
+
+```markdown
+| Run | Agent | Outcome | Calls | Wall | Cheap rung | Notes |
+|---|---|---|---|---|---|---|
+| WO-3 commit batch | executor-mechanical-haiku | done | 9 | 2 min | pass | |
+| WO-4 null-guard fix | executor-bounded | REVISE | 31 | 14 min | strike → executor | check missed the empty-list case |
+```
+
+**Cheap rung:** `pass` or `strike → <next rung>` for `executor-mechanical-haiku`, `executor-mechanical` and `executor-bounded` runs; `—` for every other run. A strike is any BLOCKED, PARTIAL or REVISE. This column measures the routing trial's fix-round rate. The trial is re-evaluated after Early Access.

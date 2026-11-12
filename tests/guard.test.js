@@ -1163,11 +1163,11 @@ function case28_companyLaw() {
     check(lead + ' Read -> allow', read.decision === 'allow', JSON.stringify(read));
 
     // Spawns.
-    for (const t of ['scout', 'executor-mechanical-haiku', 'executor', 'executor-principal-max', 'reviewer-codex']) {
+    for (const t of ['scout', 'executor-mechanical-haiku', 'executor-bounded', 'executor', 'executor-codex-heavy', 'executor-codex-luna', 'executor-principal-max', 'reviewer-codex']) {
       const d = dec('Agent', leadSpawn(t));
       check(lead + ' -> ' + t + ' -> allow', d.decision === 'allow', JSON.stringify(d));
     }
-    for (const t of ['lead', 'lead-xhigh', 'executor-fable', 'executor-fable-xhigh', 'executor-codex-heavy', 'architect-codex', 'general-purpose']) {
+    for (const t of ['lead', 'lead-xhigh', 'executor-fable', 'executor-fable-xhigh', 'architect-codex', 'general-purpose']) {
       const d = dec('Agent', leadSpawn(t));
       check(lead + ' -> ' + t + ' -> deny (outside the team)', d.decision === 'deny' && /outside a lead's team/.test(d.reason), JSON.stringify(d));
     }

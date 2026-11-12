@@ -1155,8 +1155,8 @@ function case19() {
     (execFm.match(/^(model|effort): .*$/gm) || []).join(' | ')
   );
   check(
-    'executor declares itself THE DEFAULT EXECUTOR',
-    /THE DEFAULT EXECUTOR/.test(frontmatter('agents/executor.md')),
+    'executor declares itself the ordinary-code rung when Sol is not the executor lane (3.10.0 routing trial)',
+    /Use for ordinary code — UI and netcode included — when the Sol executor is not the project's executor lane/.test(frontmatter('agents/executor.md')),
     frontmatter('agents/executor.md').slice(0, 160)
   );
   const mech = read('agents/executor-mechanical.md');
@@ -1167,7 +1167,7 @@ function case19() {
   );
   check(
     'executor-mechanical is reserved by SPEC TIGHTNESS, not task size',
-    /RESERVED for orders that are routine and mechanical, or whose goal and instructions are airtight/.test(
+    /For orders whose goal and instructions are airtight but not fully spelled out/.test(
       frontmatter('agents/executor-mechanical.md')
     ),
     frontmatter('agents/executor-mechanical.md').slice(0, 200)
@@ -1217,8 +1217,8 @@ function case19() {
     ['condition 3: at most two named subsystems', 'at most two named subsystems'],
     ['condition 4: neither an escalation nor a root-cause investigation the plan depends on', 'neither an escalation nor a root-cause investigation the plan depends on'],
     [
-      'doubt falls through to executor (Opus medium)',
-      'When any condition is in doubt the order goes to executor (Opus medium)',
+      'doubt falls through to ordinary code (executor, or Sol under executorEngine codex)',
+      'When any condition is in doubt the order is ordinary code (executor, Opus medium, or Sol under executorEngine \"codex\")',
     ],
   ];
   for (const [name, phrase] of boundedClauses) {
@@ -1284,18 +1284,32 @@ function case19() {
   //    pre-existing checks that each pin two phrases), so a deleted phrase
   //    usually names itself. Not every sentence of ORCHESTRA.md is pinned.
   const protocol = read('ORCHESTRA.md');
+  // 3.10.0 routing trial: the steering table routes by order kind. Each
+  // first-rung row is pinned on its own.
+  for (const [name, re] of [
+    ['spelled-out mechanical orders start on executor-mechanical-haiku',
+      /^\| \*\*Spelled-out mechanical\*\*.*\| `executor-mechanical-haiku` \(Haiku 5\.5, high\) \| one strike \(BLOCKED, PARTIAL or REVISE\) → `executor-mechanical`/m],
+    ['small logic fixes start on executor-bounded',
+      /^\| \*\*Small logic fix\*\* whose done-criteria a named test can observe \| `executor-bounded`/m],
+    ['ordinary code goes to Sol under executorEngine codex, otherwise executor',
+      /^\| \*\*Ordinary code\*\*.*`executor-codex-heavy` \(Sol\) when the `codex` pack is installed and `executorEngine: "codex"`; otherwise `executor` \(Opus, medium\)/m],
+    ['visual work starts on executor-heavy or Sol, xhigh only after a bounce',
+      /^\| \*\*Visual, VFX, port builds\*\* \| `executor-heavy` \(Opus, high\), or Sol under `executorEngine: "codex"` \| `executor-heavy-xhigh`, only after a bounce \|/m],
+    ['foundational plumbing is what reaches executor-heavy-xhigh at PLAN time',
+      /^\| \*\*Foundational plumbing\*\*.*\| `executor-heavy-xhigh` \(Opus, xhigh\)/m],
+  ]) {
+    check('ORCHESTRA.md steering table: ' + name, re.test(protocol), 'steering row missing or reworded');
+  }
   check(
-    'ORCHESTRA.md makes executor (Opus medium) the default rung',
-    /`executor` \(Opus, medium\) is the default/.test(protocol),
-    (protocol.match(/^\*\*Executor steering\.\*\*.*$/m) || ['no steering line'])[0].slice(0, 300)
+    'ORCHESTRA.md reserves the xhigh and principal rungs for foundational plumbing and double bounces',
+    /\*\*The xhigh and principal rungs are reserved\.\*\*/.test(protocol) &&
+      /take foundational plumbing at PLAN time and double bounces \(§3\.5\), and nothing else/.test(protocol),
+    'the reserved-rungs paragraph is missing or reworded'
   );
   check(
-    'ORCHESTRA.md routes by thinking difficulty, not diff size',
-    /Route by how hard the thinking is, not by how big the diff is/.test(protocol) &&
-      /Sonnet is not the small-task rung: `executor-mechanical` is the tight-spec rung and `executor-bounded` the checkable-done rung/.test(
-        protocol
-      ),
-    'the route-by-thinking rule is missing — this is the rule that keeps Sonnet from being overloaded'
+    'ORCHESTRA.md routes by what the order leaves open, not diff size',
+    /Route by what the order leaves open, not by how big the diff is/.test(protocol),
+    'the route-by-openness rule is missing — this is the rule that keeps Sonnet from being overloaded'
   );
   check(
     'ORCHESTRA.md still escalates across the vendor line to Astra',
@@ -1332,11 +1346,6 @@ function case19() {
       'missing from rule 5: ' + sentence
     );
   }
-  check(
-    'ORCHESTRA.md steers down to executor-bounded with its own row',
-    /^\| \*\*down \(bounded\)\*\* \| `executor-bounded` \(Sonnet 5\.5, high; trial\) \|/m.test(protocol),
-    (protocol.match(/^\| \*\*down.*$/gm) || ['no down row']).join(' | ').slice(0, 300)
-  );
   const companyRow =
     (protocol.match(/^\| Bounded executor \| `executor-bounded` \|.*$/m) || [''])[0];
   for (const [name, phrase] of [
@@ -1353,7 +1362,9 @@ function case19() {
         (companyRow.slice(0, 200) || 'no company row')
     );
   }
-  const downRow = (protocol.match(/^\| \*\*down \(bounded\)\*\*.*$/m) || [''])[0];
+  // 3.10.0: the conditions moved from the old down (bounded) row into the
+  // bounded-rung paragraph.
+  const downRow = (protocol.match(/^\*\*The bounded rung asks one more question.*$/m) || [''])[0];
   for (const phrase of [
     'Never when correctness rests on',
     'rendering or visual equivalence',
@@ -1364,9 +1375,9 @@ function case19() {
     'a data migration',
   ]) {
     check(
-      'ORCHESTRA.md steering row for executor-bounded excludes: ' + phrase,
+      'ORCHESTRA.md bounded-rung paragraph excludes: ' + phrase,
       downRow.includes(phrase),
-      'missing from the down (bounded) row: ' + phrase
+      'missing from the bounded-rung paragraph: ' + phrase
     );
   }
   for (const [name, phrase] of [
@@ -1380,9 +1391,9 @@ function case19() {
       'neither an escalation nor a root-cause investigation the plan depends on'],
   ]) {
     check(
-      'ORCHESTRA.md steering row for executor-bounded requires ' + name,
+      'ORCHESTRA.md bounded-rung paragraph requires ' + name,
       downRow.includes(phrase),
-      'missing from the down (bounded) row: ' + phrase
+      'missing from the bounded-rung paragraph: ' + phrase
     );
   }
   check(
@@ -1394,7 +1405,7 @@ function case19() {
     (protocol.match(/^\*\*The bounded rung asks one more question.*$/m) || [''])[0];
   for (const [name, sentence] of [
     ['sends an order in doubt on any bounded condition to executor',
-      'When any bounded condition is in doubt, it goes to `executor`.'],
+      'When any bounded condition is in doubt, the order is ordinary code.'],
     ['requires a bounded order to name its checks and state its routing basis',
       'An order to `executor-bounded` names its checks under verification and states its ' +
         'routing basis (which conditions held and why), so a bounce can be read against it.'],
@@ -1442,7 +1453,7 @@ function case19() {
       'When any condition is in doubt the order goes to executor-mechanical (Sonnet)'],
     ['one strike sends the next round to executor-mechanical',
       'One strike — any BLOCKED, PARTIAL or REVISE sends the next round to executor-mechanical'],
-    ['it is never an escalation target', 'Never an escalation target'],
+    ['it is never an escalation target', 'Never an escalation target; it is the bottom of the escalation chain.'],
   ]) {
     check(
       'executor-mechanical-haiku description pins ' + name,
@@ -1462,19 +1473,21 @@ function case19() {
     haikuReport.slice(0, 200) || 'no fenced report-format block found'
   );
   check(
-    'ORCHESTRA.md 3.5 escalation chain does not pass through executor-mechanical-haiku',
-    escalateRule !== '' && !/escalate one rung \([^)]*executor-mechanical-haiku/.test(escalateRule),
+    'ORCHESTRA.md 3.5 escalation chain starts at executor-mechanical-haiku (3.10.0)',
+    escalateRule.includes('escalate one rung (`executor-mechanical-haiku` → `executor-mechanical` → `executor`'),
     escalateRule.slice(0, 400) || 'no rule 5'
   );
   check(
     'ORCHESTRA.md 3.5 gives executor-mechanical-haiku one strike, then executor-mechanical',
     escalateRule.includes(
-      '`executor-mechanical-haiku` also sits beside the chain and allows one strike: any BLOCKED, ' +
+      '`executor-mechanical-haiku`, the chain\'s first rung, allows one strike: any BLOCKED, ' +
         'PARTIAL or REVISE sends the next round to `executor-mechanical` with both reports.'
     ),
     'the one-strike sentence is missing from rule 5'
   );
-  const haikuRow = (protocol.match(/^\| \*\*down \(haiku\)\*\* \| `executor-mechanical-haiku` \(Haiku 5\.5, high; trial\) \|.*$/m) || [''])[0];
+  // 3.10.0: the conditions moved from the old down (haiku) row into the
+  // Haiku-rung paragraph.
+  const haikuRow = (protocol.match(/^\*\*The Haiku rung takes the change itself.*$/m) || [''])[0];
   for (const phrase of [
     'the exact files and the exact edit',
     'nothing left to design or choose',
@@ -1484,9 +1497,9 @@ function case19() {
     'When any condition is in doubt, it goes to `executor-mechanical`',
   ]) {
     check(
-      'ORCHESTRA.md steering row for executor-mechanical-haiku requires: ' + phrase,
+      'ORCHESTRA.md Haiku-rung paragraph requires: ' + phrase,
       haikuRow.includes(phrase),
-      'missing from the down (haiku) row: ' + phrase + '\n' + (haikuRow.slice(0, 120) || 'no down (haiku) row')
+      'missing from the Haiku-rung paragraph: ' + phrase + '\n' + (haikuRow.slice(0, 120) || 'no Haiku-rung paragraph')
     );
   }
   check(

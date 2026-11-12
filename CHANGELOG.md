@@ -9,6 +9,37 @@ touches.
 Entries name the failure that prompted the change. A harness that only records
 *what* it changed teaches nobody why the old way looked reasonable.
 
+## 3.10.0 — trial: cheaper executors by default (routing trial, pre-Early-Access)
+
+**Branch-only, like 3.9.x.** An install carries the trial when its
+`.claude/orchestra-install.json` says `3.10.0`; `node install.js --scan <dir> --update`
+brings older installs up. The trial is re-evaluated after Early Access.
+
+- **Routine orders ran on Opus when a cheaper rung would have done.** `executor`
+  (Opus medium) was the default for every order not routed elsewhere. Haiku was a
+  side entry, and the bounded rung was an opt-in exception. Visual generation
+  defaulted to `executor-heavy-xhigh`, a project ruling the protocol did not
+  express. The xhigh and principal rungs were open to any order judged "hardest".
+- **ORCHESTRA.md §2 now routes by order kind.** Spelled-out mechanical orders go to
+  `executor-mechanical-haiku` first; one strike sends them to `executor-mechanical`.
+  Small logic fixes a named test can observe go to `executor-bounded`. Ordinary
+  code is unchanged: Sol under `executorEngine: "codex"`, otherwise `executor`.
+  Visual, VFX and port builds go to `executor-heavy` (or Sol), and reach
+  `executor-heavy-xhigh` only after a bounce. `executor-heavy-xhigh` and the
+  principal rungs are reserved for foundational plumbing (tick loops, replication,
+  rendering and bake pipelines, data contracts) and double bounces.
+- **§3.5:** Haiku is now the first rung of the escalation chain.
+- **Leads apply the same table.** The guard's lead team now includes every Codex
+  executor, as the Director has: `executor-codex-heavy`, so a lead can route
+  ordinary code to Sol under `executorEngine: "codex"`, and `executor-codex-luna`,
+  which stays user request only and reaches a lead through its charter. Fable and
+  planning lanes stay outside the team.
+- **The ledger gets a cheap-rung column** (`pass` / `strike → <next rung>` / `—`),
+  with a template in `/orchestra-plan`, so the trial's fix-round rate is visible.
+- Unchanged: Director law, the review gate and review routing (Sol for
+  Claude-authored work, fresh Opus for Codex-authored and docs-only work), and
+  the pause switch.
+
 ## 3.9.2 — fix: strip MCP by switching plugins off, not by classifying servers
 
 **Branch-only, like 3.9.1.** An install carries this fix when its

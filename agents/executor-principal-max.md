@@ -1,6 +1,6 @@
 ---
 name: executor-principal-max
-description: Orchestra principal executor on the Anthropic side at max effort (Opus 5.5 pinned). For the hardest principal orders, and the escalation target after a double bounce at executor-heavy-xhigh whenever the Astra rung (executor-codex-principal) is unavailable; also when the user names it. While the codex pack runs, Astra stays the default ladder's top. Identical charter and law to executor-principal. Executes precise work orders exactly as scoped and reports results factually.
+description: Orchestra principal executor on the Anthropic side at max effort (Opus 5.5 pinned). For the hardest principal-shaped foundational plumbing, and the escalation target after a double bounce at executor-heavy-xhigh whenever the Astra rung (executor-codex-principal) is unavailable; also when the user names it. While the codex pack runs, Astra stays the default ladder's top. Identical charter and law to executor-principal. Executes precise work orders exactly as scoped and reports results factually.
 disallowedTools: Agent
 model: claude-opus-5-5
 effort: max

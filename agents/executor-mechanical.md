@@ -1,6 +1,6 @@
 ---
 name: executor-mechanical
-description: Orchestra mechanical executor (Sonnet, high effort). RESERVED for orders that are routine and mechanical, or whose goal and instructions are airtight — a rename ripple, a mechanical refactor, a codemod, applying a spelled-out patch, a well-trodden test addition. Not for anything needing judgment about what the order meant. The default executor is executor (Opus medium); when in doubt the order goes there, not here. An order with an open how and a checkable done goes to executor-bounded (Sonnet 5.5) when all its conditions hold. Fully spelled-out orders may go to executor-mechanical-haiku (Haiku 5.5) first; its BLOCKED, PARTIAL or REVISE rounds come here. Executes precise work orders exactly as scoped and reports results factually.
+description: Orchestra mechanical executor (Sonnet, high effort). For orders whose goal and instructions are airtight but not fully spelled out — a rename ripple, a mechanical refactor, a codemod, a well-trodden test addition — and for every round after a strike at executor-mechanical-haiku (Haiku 5.5), which takes spelled-out mechanical orders first; its BLOCKED, PARTIAL or REVISE rounds come here. Not for anything needing judgment about what the order meant — when in doubt the order is ordinary code (executor, Opus medium, or Sol under executorEngine "codex"). Small logic fixes a named test can observe go to executor-bounded (Sonnet 5.5). Executes precise work orders exactly as scoped and reports results factually.
 disallowedTools: Agent
 model: sonnet
 effort: high
